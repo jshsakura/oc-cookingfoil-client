@@ -13,7 +13,7 @@ std::optional<uint64_t> totalSpace(const std::string &target);
 std::string systemLanguage();
 // While on, the console does not dim the screen or fall asleep on its own
 // (used during downloads).
-// While downloading: no dimming or sleep, and the CPU at its boost clock.
+// While downloading: no dimming or sleep.
 void keepAwake(bool on);
 // Starts `nro` again once this app exits (the homebrew loader's next load);
 // false where that is not possible (off the console, or no loader).
