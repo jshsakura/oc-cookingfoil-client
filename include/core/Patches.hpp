@@ -3,6 +3,7 @@
 #include "core/Types.hpp"
 #include <cstdio>
 #include <map>
+#include <optional>
 #include <set>
 namespace foil {
 // A user patch the server offers (feature: user-patches). Its files are laid
@@ -45,20 +46,34 @@ public:
   // True when the archive ended with its two empty blocks.
   bool finish();
   const std::string &error() const { return error_; }
+  // Resuming: a fresh writer told where in the stream its first byte sits,
+  // which must be a boundary an earlier writer reported.
+  void startAt(uint64_t offset) { fed_ = boundary_ = offset; }
+  // Stream offset after the last whole entry (its padding included): every
+  // file before it is complete on the card, so a download can continue here.
+  uint64_t boundary() const { return boundary_; }
+  // Bytes the entry being read still expects.
+  uint64_t entryLeft() const { return remaining_; }
+  // Closes and removes the file an unfinished entry was writing.
+  void abandon();
 
 private:
   bool header();
   void readPax();
   bool fail(const std::string &message);
-  bool openFile(const std::string &path);
-  std::string root_, titleId_, error_, block_, paxPath_;
+  bool openFile(const std::string &path, uint64_t size);
+  std::string root_, titleId_, error_, block_, paxPath_, current_;
   std::function<bool(const std::string &)> allow_, skip_;
   std::FILE *file_ = nullptr;
-  uint64_t remaining_ = 0, padding_ = 0;
+  uint64_t remaining_ = 0, padding_ = 0, fed_ = 0, boundary_ = 0;
+  std::optional<uint64_t> paxSize_;
   bool pax_ = false, paxGlobal_ = false, ended_ = false;
   std::string paxData_;
   int zeroBlocks_ = 0;
 };
+// A ustar size field (12 bytes): octal, or GNU base-256 when the first byte's
+// high bit is set (sizes past 8 GiB). UINT64_MAX when unreadable.
+uint64_t tarSize(const char *field);
 
 struct PatchRecord {
   std::string id, titleId, name, version, hash;

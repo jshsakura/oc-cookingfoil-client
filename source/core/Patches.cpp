@@ -1,11 +1,14 @@
 #include <cerrno>
 #include "core/Log.hpp"
 #include "core/Patches.hpp"
+#include "core/Resume.hpp"
 #include "core/Homebrew.hpp"
 #include "core/Json.hpp"
 #include "core/I18n.hpp"
+#include "platform/Storage.hpp"
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <utility>
@@ -66,6 +69,12 @@ std::string text(const char *field, size_t size) {
   return std::string(field, end ? size_t(end - field) : size);
 }
 uint64_t padding(uint64_t size) { return (Block - size % Block) % Block; }
+// A PAX number: digits only.
+std::optional<uint64_t> paxNumber(const std::string &text) {
+  if (text.empty() || text.size() > 19 || text.find_first_not_of("0123456789") != std::string::npos)
+    return std::nullopt;
+  return uint64_t(std::strtoull(text.c_str(), nullptr, 10));
+}
 std::vector<std::string> strings(json_object *array) {
   std::vector<std::string> out;
   if (!json_object_is_type(array, json_type_array))
@@ -129,6 +138,20 @@ const char *patchKindLabel(const std::string &kind) {
   return tr("기타");
 }
 
+uint64_t tarSize(const char *field) {
+  const auto first = static_cast<unsigned char>(field[0]);
+  if (!(first & 0x80))
+    return octal(field, 12);
+  if (first == 0xFF)
+    return UINT64_MAX; // negative
+  uint64_t value = first & 0x7F;
+  for (size_t i = 1; i < 12; ++i) {
+    if (value >> 56)
+      return UINT64_MAX; // more than 64 bits
+    value = (value << 8) | static_cast<unsigned char>(field[i]);
+  }
+  return value;
+}
 TarWriter::TarWriter(std::string root, std::string titleId)
     : root_(std::move(root)), titleId_(std::move(titleId)) {}
 TarWriter::TarWriter(std::string root, std::function<bool(const std::string &)> allow)
@@ -146,11 +169,28 @@ bool TarWriter::fail(const std::string &message) {
   }
   return false;
 }
-bool TarWriter::openFile(const std::string &path) {
+void TarWriter::abandon() {
+  if (file_) {
+    std::fclose(file_);
+    file_ = nullptr;
+  }
+  if (!current_.empty() && remaining_ > 0) {
+    std::error_code ec;
+    fs::remove(root_ + "/" + current_, ec);
+  }
+  current_.clear();
+}
+bool TarWriter::openFile(const std::string &path, uint64_t size) {
   const fs::path full = root_ + "/" + path;
   std::error_code ec;
   makeDirectories(std::filesystem::path(full.parent_path()).string());
+  // 4 GiB or more: made as a split file first, or FAT32 would cut it short.
+  if (std::string reason; platform::needsBigFile(size) && !platform::createBigFile(full.string(), reason)) {
+    logLine("tar: cannot create big file " + full.string() + ": " + reason);
+    return fail(trf("4GB가 넘는 파일을 SD 카드에 만들지 못했습니다: {0}", {path}) + " (" + reason + ")");
+  }
   file_ = std::fopen(full.string().c_str(), "wb");
+  current_ = path;
   writeBuffer(file_);
   if (!file_) {
     // The system's reason goes on screen too: on the console log.txt is out
@@ -177,7 +217,7 @@ bool TarWriter::header() {
     sum += (i >= 148 && i < 156) ? unsigned(' ') : unsigned(static_cast<unsigned char>(b[i]));
   if (octal(b + 148, 8) != sum)
     return fail(tr("받은 패치 파일이 손상되었습니다."));
-  const uint64_t size = octal(b + 124, 12);
+  uint64_t size = tarSize(b + 124);
   if (size == UINT64_MAX)
     return fail(tr("받은 패치 파일이 손상되었습니다."));
   const char type = b[156];
@@ -185,8 +225,12 @@ bool TarWriter::header() {
   const auto prefix = text(b + 345, 155);
   if (!prefix.empty())
     name = prefix + "/" + name;
-  if (!paxPath_.empty() && type != 'x' && type != 'g')
-    name = std::exchange(paxPath_, "");
+  if (type != 'x' && type != 'g') {
+    if (!paxPath_.empty())
+      name = std::exchange(paxPath_, "");
+    if (paxSize_)
+      size = *std::exchange(paxSize_, std::nullopt);
+  }
   remaining_ = size;
   padding_ = padding(size);
   if (type == 'x' || type == 'g') {
@@ -210,11 +254,12 @@ bool TarWriter::header() {
     return fail(trf("패치가 허용되지 않은 위치에 쓰려고 합니다: {0}", {name}));
   if (skip_ && skip_(name))
     return true; // its bytes pass by with no file open
-  if (!openFile(name))
+  if (!openFile(name, size))
     return false;
   if (size == 0) {
     std::fclose(file_);
     file_ = nullptr;
+    current_.clear();
   }
   return true;
 }
@@ -230,12 +275,20 @@ void TarWriter::readPax() {
     const auto record = paxData_.substr(space + 1, at + length - space - 2);
     if (!paxGlobal_ && record.rfind("path=", 0) == 0)
       paxPath_ = record.substr(5);
+    // Sizes past what the header's field holds come here.
+    if (!paxGlobal_ && record.rfind("size=", 0) == 0)
+      paxSize_ = paxNumber(record.substr(5));
     at += length;
   }
 }
 bool TarWriter::feed(const char *data, size_t size) {
   if (!error_.empty())
     return false;
+  const auto consume = [&](size_t take) {
+    data += take;
+    size -= take;
+    fed_ += take;
+  };
   while (size > 0) {
     if (remaining_ > 0) {
       const auto take = size_t(std::min<uint64_t>(remaining_, size));
@@ -244,39 +297,41 @@ bool TarWriter::feed(const char *data, size_t size) {
       else if (file_ && std::fwrite(data, 1, take, file_) != take)
         return fail(tr("SD 카드에 쓰지 못했습니다. 남은 공간을 확인합니다."));
       remaining_ -= take;
-      data += take;
-      size -= take;
+      consume(take);
       if (remaining_ == 0) {
         if (pax_) {
           readPax();
           pax_ = false;
-        } else if (file_) {
-          const bool closed = std::fclose(file_) == 0;
-          file_ = nullptr;
-          if (!closed)
-            return fail(tr("SD 카드에 쓰지 못했습니다. 남은 공간을 확인합니다."));
+        } else {
+          current_.clear();
+          if (file_) {
+            const bool closed = std::fclose(file_) == 0;
+            file_ = nullptr;
+            if (!closed)
+              return fail(tr("SD 카드에 쓰지 못했습니다. 남은 공간을 확인합니다."));
+          }
         }
       }
-      continue;
-    }
-    if (padding_ > 0) {
+    } else if (padding_ > 0) {
       const auto take = size_t(std::min<uint64_t>(padding_, size));
       padding_ -= take;
-      data += take;
-      size -= take;
-      continue;
+      consume(take);
+    } else {
+      if (ended_)
+        return true; // trailing zero blocks after the end marker
+      const auto take = std::min(Block - block_.size(), size);
+      block_.append(data, take);
+      consume(take);
+      if (block_.size() == Block) {
+        if (!header())
+          return false;
+        block_.clear();
+      }
     }
-    if (ended_)
-      return true; // trailing zero blocks after the end marker
-    const auto take = std::min(Block - block_.size(), size);
-    block_.append(data, take);
-    data += take;
-    size -= take;
-    if (block_.size() == Block) {
-      if (!header())
-        return false;
-      block_.clear();
-    }
+    // Between entries with nothing carried over: a place to resume from.
+    if (!remaining_ && !padding_ && block_.empty() && !pax_ && paxPath_.empty() && !paxSize_ &&
+        !zeroBlocks_ && !file_)
+      boundary_ = fed_;
   }
   return true;
 }
@@ -417,11 +472,13 @@ bool PatchStore::load(Error &error) {
   for (const auto &path : taken)
     if (!rebuildCheat(path, error))
       return false;
-  // Downloads cut off before commit start over.
+  // A download cut off before commit resumes from its record; one without a
+  // record cannot, and goes.
   if (fs::is_directory(storeRoot_, ec))
     for (const auto &entry : fs::directory_iterator(storeRoot_, ec)) {
       const auto name = entry.path().filename().string();
-      if (name.size() > 5 && name.compare(name.size() - 5, 5, ".part") == 0)
+      if (name.size() > 5 && name.compare(name.size() - 5, 5, ".part") == 0 &&
+          !fs::is_regular_file(entry.path() / ResumeFile, ec))
         fs::remove_all(entry.path(), ec);
     }
   return true;
