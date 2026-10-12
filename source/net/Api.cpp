@@ -139,7 +139,6 @@ Response get(const std::string& url, const std::vector<std::string>& headers, co
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     // The console has no IPv6 route; AAAA answers only slow down or fail the lookup.
-    curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     if (cancel) {
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
         curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel);
@@ -202,7 +201,6 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
     if (cancel) {
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -289,7 +287,6 @@ Response post(const std::string& url, const std::vector<std::string>& headers, c
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
     if (cancel) {
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
