@@ -1,0 +1,5 @@
+{"homebrew":[
+{"id":"fx-ftpd","name":"ftpd","version":"3.2.0","author":"mtheall","description":"FTP server.","size":1835008,"hash":"sha256:aa","file_name":"ftpd.nro","download_url":"/api/homebrew/fx-ftpd/download","kind":"tool"},
+{"id":"fx-nxshell","name":"NX-Shell","version":"4.1.0","author":"joel16","description":"File manager.","size":4194304,"hash":"sha256:bb","file_name":"NX-Shell.nro","download_url":"/api/homebrew/fx-nxshell/download","kind":"tool"},
+{"id":"fx-port","name":"Port 64","version":"1.0.0","author":"port team","size":20971520,"hash":"sha256:cc","file_name":"port64.nro","download_url":"/api/homebrew/fx-port/download","kind":"port"}
+]}

@@ -29,6 +29,9 @@ struct App {
   // means the .nro alone from downloadUrl.
   std::string installPath;
   std::vector<File> files;
+  // A file found on the SD card that no listed app owns: shown under 설치됨
+  // with what the file says, never downloaded or updated, only removed.
+  bool cardOnly = false;
 };
 // GET /api/homebrew's list; entries missing what is needed, or with a file
 // name that could leave its folder, are left out.
@@ -65,6 +68,9 @@ using Ledger = std::map<std::string, Record>; // by app id
 Ledger parseLedger(const std::string &json);
 std::string serializeLedger(const Ledger &ledger);
 enum class Status { Available, Installed, Update };
-// `exists` checks a path from the SD card root.
-Status status(const App &app, const Ledger &ledger, const std::function<bool(const std::string &)> &exists);
+// `exists` checks a path from the SD card root. Without a ledger entry on
+// the card, `cardVersion` (the version of the app's file the card scan
+// found, nullptr when none) decides: see cardStatus().
+Status status(const App &app, const Ledger &ledger, const std::function<bool(const std::string &)> &exists,
+              const std::string *cardVersion = nullptr);
 } // namespace foil::homebrew

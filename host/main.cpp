@@ -150,6 +150,9 @@ int main(int argc, char **argv) {
     auto [library, save] = fixtureInstalled(fixture);
     ui.previewInstalled(std::move(library), {save});
   }
+  // 홈브류 from the fixture's list, beside what the fake SD card holds.
+  if (servePort && !fixture.empty() && std::filesystem::exists(fixture + "/homebrew.json"))
+    ui.previewHomebrew(foil::homebrew::parse(foil::readFile(fixture + "/homebrew.json"), "http://fixture"));
   ui.render();
   if (servePort)
     return foil::host::serveWeb(ui, app, servePort);
