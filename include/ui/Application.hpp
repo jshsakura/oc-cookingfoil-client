@@ -120,7 +120,6 @@ public:
   bool managingGame() const { return managedGame_.has_value(); }
   bool viewingScreenshots() const { return galleryOpen_; }
   bool confirmingRemoval() const { return removal_.has_value(); }
-  bool confirmingInstall() const { return confirmInstall_; }
   const std::string &alert() const { return alert_; }
   size_t installedCount() const { return installed_.games.size(); }
 #ifndef __SWITCH__
@@ -142,11 +141,6 @@ public:
     deviceFixture_ = true;
   }
   void previewFeatures(std::set<std::string> features) { features_ = std::move(features); }
-  void previewHomebrew(std::vector<homebrew::App> apps) {
-    homebrew_ = std::move(apps);
-    homebrewLoaded_ = true;
-  }
-  int homebrewCount() const { return int(homebrewRows().size()); }
   void previewInstalled(InstalledLibrary library, std::vector<SaveEntry> saves = {}) {
     installed_ = std::move(library);
     installed_.games = sortInstalled(std::move(installed_.games), installedSort_);
@@ -617,8 +611,6 @@ private:
   int nav_ = 0, row_ = 1, selected_ = 0;
   // Filters that are on (indices into chips_, never 0 which is "전체").
   std::vector<int> activeChips_;
-  bool chipOn(int index) const;
-  void toggleChip(int index);
   // The filtered list is rebuilt only when its inputs change.
   mutable std::string listKey_;
   mutable std::vector<size_t> listCache_;

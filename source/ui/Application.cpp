@@ -648,22 +648,6 @@ bool Application::draftOn(int index) const {
   return index == 0 ? draftChips_.empty()
                     : std::find(draftChips_.begin(), draftChips_.end(), index) != draftChips_.end();
 }
-bool Application::chipOn(int index) const {
-  return index == 0 ? activeChips_.empty()
-                    : std::find(activeChips_.begin(), activeChips_.end(), index) != activeChips_.end();
-}
-// "전체" (0) clears the filters; any other chip toggles on top of the rest.
-void Application::toggleChip(int index) {
-  if (index <= 0) {
-    activeChips_.clear();
-    return;
-  }
-  const auto found = std::find(activeChips_.begin(), activeChips_.end(), index);
-  if (found == activeChips_.end())
-    activeChips_.push_back(index);
-  else
-    activeChips_.erase(found);
-}
 // Row 0 is the hero; rows 1.. are themes_.
 std::vector<size_t> Application::homeRow(int row) const {
   if (row <= 0)

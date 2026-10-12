@@ -41,7 +41,6 @@ public:
   bool extractAll(const std::string &destDir);
   std::vector<std::string> listFiles();
   bool hasFile(const std::string &archivePath);
-  bool isOpen() const { return zip_ || unz_; }
   bool isWriting() const { return zip_ != nullptr; }
   const std::string &error() const { return error_; }
 
