@@ -461,7 +461,8 @@ private:
   bool pickingPatch_ = false;
   int patchPickRow_ = 0;
   std::string patchPickId_;
-  std::vector<PatchRow> patchRows() const; // allPatchRows() under the current tab
+  std::vector<PatchRow> patchRows() const { return patchRows(allPatchRows()); } // allPatchRows() under the current tab
+  std::vector<PatchRow> patchRows(std::vector<PatchRow> all) const;          // `all` under the current tab
   PatchFilter patchFilter_ = PatchFilter::Stored; // 설치됨 first, as on 내 게임 and 홈브류
   void patchesScreen();
   void patchAction(Action action);
@@ -596,7 +597,7 @@ private:
   float dragRest_ = 0;
   std::vector<size_t> homeRow(int row) const;
   void openTheme(size_t row);
-  std::vector<size_t> libraryList() const;
+  const std::vector<size_t> &libraryList() const; // cached until its inputs change
   void message(const std::string &text);
   Painter paint_;
   std::unique_ptr<Images> images_;

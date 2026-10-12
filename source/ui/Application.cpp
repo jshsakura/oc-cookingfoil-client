@@ -575,7 +575,7 @@ void Application::poll() {
   error_ = {};
   offerResume();
 }
-std::vector<size_t> Application::libraryList() const {
+const std::vector<size_t> &Application::libraryList() const {
   std::string key = std::to_string(catalogVersion_) + "|" + std::to_string(int(librarySort_)) + "|";
   for (const auto i : activeChips_)
     key += std::to_string(i) + ",";
@@ -723,7 +723,7 @@ void Application::search(std::string query) {
 }
 std::string Application::selectedName() const {
   if (screen_ == Screen::Library) {
-    const auto list = libraryList();
+    const auto &list = libraryList();
     if (!list.empty())
       return groups_[list[std::clamp(selected_, 0, int(list.size() - 1))]]
           .representative.name;

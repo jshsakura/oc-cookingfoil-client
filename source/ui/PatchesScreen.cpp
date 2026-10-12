@@ -37,8 +37,7 @@ bool Application::patchFilterMatches(PatchFilter filter, const PatchRow &row) {
   }
   return true;
 }
-std::vector<Application::PatchRow> Application::patchRows() const {
-  auto rows = allPatchRows();
+std::vector<Application::PatchRow> Application::patchRows(std::vector<PatchRow> rows) const {
   rows.erase(std::remove_if(rows.begin(), rows.end(),
                             [this](const PatchRow &row) {
                               return !patchFilterMatches(patchFilter_, row) ||
@@ -440,8 +439,8 @@ void Application::patchesScreen() {
   if (!patchesLoaded_ && !patchFetching_ && !patchError_ && connected_)
     fetchPatches();
   needHomebrewList(); // apps' patches take the app's name and icon from it
-  const auto rows = patchRows();
   const auto all = allPatchRows();
+  const auto rows = patchRows(all);
   // The title counts what the tab shows, as on 내 게임 and 홈브류.
   int on = 0;
   for (const auto &row : rows)
