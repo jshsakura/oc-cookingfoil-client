@@ -470,14 +470,18 @@ void Application::poll() {
       pairPollAt_ = 0;
       refresh();
     }
-    // Reconnect on its own once the console comes back online.
-    constexpr uint32_t OfflineCheckMs = 3000;
-    if (!network_.joinable() && !connected_ && session_ &&
-        error_.message == net::offlineMessage() &&
-        SDL_GetTicks() - offlineCheckAt_ >= OfflineCheckMs) {
+    // Not connected: try the server again every few seconds. The console's
+    // own online check only picks the wording; it can say offline on a
+    // network that works (DNS that blocks the vendor's test servers), so it
+    // never stops a retry.
+    // A name that did not resolve or a server that did not answer is
+    // usually the network still coming up (just woken, Wi-Fi joining):
+    // those errors were never retried before, and the app stayed stuck.
+    constexpr uint32_t retryMs = 5000;
+    if (!network_.joinable() && !connected_ && session_ && error_ && !pairingPending_ &&
+        SDL_GetTicks() - offlineCheckAt_ >= retryMs) {
       offlineCheckAt_ = SDL_GetTicks();
-      if (net::internetConnected())
-        refresh();
+      refresh();
     }
     return;
   }
@@ -1329,13 +1333,18 @@ float Application::statusBar() {
                        : session_                         ? "연결 중" // i18n: keep
                                                           : "서버 없음"; // i18n: keep
   constexpr float Mid = 690;
-  float x = 32;
-  // The state in its color; a console with no internet also gets the
-  // Wi-Fi-off mark ahead of it.
-  if (offline) {
-    paint_.icon(20, x, Mid - 10, statusColor(status), 20);
-    x += 28;
+  float x = 28;
+  // First the console's own link, read once a second: a cut Wi-Fi shows
+  // at a glance, before any server error does. Then the state in its color.
+  if (SDL_GetTicks() - signalAt_ >= 1000 || !signalAt_) {
+    signalAt_ = SDL_GetTicks();
+    signal_ = net::signalStrength();
   }
+  // A server that answers outranks the console's own check, which can read
+  // offline on a working network.
+  const bool cut = !connected_ && (signal_ < 0 || offline);
+  paint_.icon(cut ? 20 : 39, x, Mid - 10, cut ? Bad : signal_ >= 0 && signal_ <= 1 ? Pending : Ink, 20);
+  x += 30;
   x = paint_.fonts.middle(tr(status), x, Mid, 17, statusColor(status), true) + 30;
   const struct {
     int icon;

@@ -312,6 +312,8 @@ private:
   // A retro game or RetroArch downloading (not a list loading).
   bool retroDownloading() const { return !retroBusy_.empty() && retroBusy_ != "list"; }
   float retroDownloadCard(float y); // 다운로드 > 진행 중; returns the height drawn
+  int signal_ = 3;          // net::signalStrength(), refreshed by statusBar
+  uint32_t signalAt_ = 0;
   bool installRetroShortcut(const retro::Game &game);
   bool installShortcut(const std::string &name, const std::string &icon, const std::string &url,
                        const std::string &titleId, uint64_t size, bool justDownloaded = true);

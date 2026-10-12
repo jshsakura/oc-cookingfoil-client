@@ -11,6 +11,8 @@ namespace foil::net {
 struct Response { long status = 0; std::string body, etag, error; };
 std::vector<std::string> authHeaders(const Server& server, const State& state, const std::string& url);
 bool internetConnected();
+// The console's link: -1 offline, else signal bars 0-3 (wired reads as 3).
+int signalStrength();
 const char* offlineMessage();
 std::string connectionError(int curlCode, const std::string& url);
 Response get(const std::string& url, const std::vector<std::string>& headers = {}, const std::string& etag = "", const std::atomic<bool>* cancel = nullptr);

@@ -76,7 +76,8 @@ std::vector<std::string> authHeaders(const Server& server, const State& state, c
 const char* offlineMessage() { return tr("본체가 인터넷에 연결되어 있지 않습니다. 인터넷 설정을 확인합니다."); }
 bool internetConnected() {
 #ifdef __SWITCH__
-    // With no connection at all nifm fails the query itself, so failure counts as offline.
+    // Only for wording: on a network whose DNS blocks the vendor's test
+    // servers this reads offline although the server is reachable.
     NifmInternetConnectionType type{};
     NifmInternetConnectionStatus status{};
     u32 strength = 0;
@@ -84,6 +85,19 @@ bool internetConnected() {
            status == NifmInternetConnectionStatus_Connected;
 #else
     return true;
+#endif
+}
+int signalStrength() {
+#ifdef __SWITCH__
+    NifmInternetConnectionType type{};
+    NifmInternetConnectionStatus status{};
+    u32 strength = 0;
+    if (R_FAILED(nifmGetInternetConnectionStatus(&type, &strength, &status)) ||
+        status != NifmInternetConnectionStatus_Connected)
+        return -1;
+    return type == NifmInternetConnectionType_Ethernet ? 3 : int(std::min<u32>(strength, 3));
+#else
+    return 3;
 #endif
 }
 std::string connectionError(int code, const std::string& url) {
