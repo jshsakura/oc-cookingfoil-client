@@ -17,3 +17,6 @@ __pycache__/
 /docs/*.md
 /CONTRIBUTING.md
 /SECURITY.md
+
+# Built from forwarder/hbl by makefiles/switch.mk
+/romfs/forwarder/

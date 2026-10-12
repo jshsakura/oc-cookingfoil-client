@@ -40,6 +40,20 @@ It includes or links the components below. Each remains under its own license.
 - License: MIT
 - Copyright (c) 2026 jshsakura
 
+### sphaira (HOME Menu shortcuts)
+
+- Source: https://github.com/ITotalJustice/sphaira (commit
+  `338348e74b6d278bc570a9be5373d25197bf6c8d`, ported and modified, not a submodule)
+- How sphaira builds and installs a forwarder (`owo.cpp`: RomFS, PFS0, NCA, CNMT, NPDM and
+  NACP patching, NCM and NS install; `keys.cpp`: the NCA header key sources) is ported into
+  `include/core/Forwarder.hpp`, `source/core/Forwarder.cpp` and `source/platform/Shortcut.cpp`.
+- Its homebrew loader `hbl` (`main.c`, `trampoline.s`, `hbl.json`) is in `forwarder/hbl/`,
+  unchanged apart from a header comment, and built into `romfs/forwarder/` by
+  `makefiles/switch.mk`.
+- License: GPL-3.0, by ITotalJustice
+- hbl derives from nx-hbloader: ISC, Copyright 2017-2018 nx-hbloader Authors
+  (`forwarder/hbl/nx-hbloader.LICENSE.md`)
+
 ### Icons
 
 - Some interface icons are redrawn from [Lucide](https://lucide.dev) (see comments in

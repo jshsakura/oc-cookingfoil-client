@@ -35,15 +35,31 @@ export INCLUDE := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) $(foreach dir,$(
 export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export LD := $(CXX)
 export NROFLAGS := --nacp=$(OUTPUT).nacp --icon=$(TOPDIR)/assets/icon.jpg --romfsdir=$(TOPDIR)/romfs
+# The loader HOME Menu shortcuts start (forwarder/hbl, sphaira's hbl): an
+# NSO and its NPDM, put in the RomFS for platform/Shortcut to embed.
+HBL_SRC := forwarder/hbl
+HBL_OUT := romfs/forwarder
+HBL_FILES := $(HBL_OUT)/main $(HBL_OUT)/main.npdm
 .PHONY: all $(BUILD)
 all: $(BUILD)
+$(BUILD): $(HBL_FILES)
+$(BUILD)/hbl/hbl.elf: $(HBL_SRC)/main.c $(HBL_SRC)/trampoline.s
+	@mkdir -p $(dir $@)
+	$(CC) -std=gnu11 -O2 -g -Wall $(ARCH) -ffunction-sections -D__SWITCH__ -DVERSION=\"3.0.0\" \
+	  -I$(LIBNX)/include $^ -specs=$(LIBNX)/switch.specs -Wl,--gc-sections,-wrap,exit -L$(LIBNX)/lib -lnx -o $@
+$(HBL_OUT)/main: $(BUILD)/hbl/hbl.elf
+	@mkdir -p $(HBL_OUT)
+	$(DEVKITPRO)/tools/bin/elf2nso $< $@
+$(HBL_OUT)/main.npdm: $(HBL_SRC)/hbl.json
+	@mkdir -p $(HBL_OUT)
+	$(DEVKITPRO)/tools/bin/npdmtool $< $@
 $(BUILD):
 	mkdir -p $(BUILD)
 	$(MAKE) --no-print-directory -C $(BUILD) -f $(TOPDIR)/makefiles/switch.mk
 else
 .PHONY: all
 all: $(OUTPUT).nro
-$(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp $(TOPDIR)/assets/icon.jpg $(wildcard $(TOPDIR)/romfs/fonts/*)
+$(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp $(TOPDIR)/assets/icon.jpg $(wildcard $(TOPDIR)/romfs/fonts/*) $(TOPDIR)/romfs/forwarder/main $(TOPDIR)/romfs/forwarder/main.npdm
 $(OUTPUT).elf: $(OFILES)
 -include $(OFILES:.o=.d)
 endif

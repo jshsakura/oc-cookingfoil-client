@@ -12,6 +12,7 @@ namespace foil::homebrew {
 struct NroInfo {
   std::string name, author, version;
   std::string icon; // JPEG bytes
+  std::string nacp; // the whole NACP (0x4000 bytes) when it has one, for a HOME Menu shortcut
 };
 // Reads `size` bytes at `offset` of the file into `out`; false when it cannot.
 using NroReader = std::function<bool(uint64_t offset, size_t size, std::string &out)>;
@@ -22,6 +23,8 @@ std::vector<int> nacpLanguages(const std::string &code);
 // asset section ("ASET") still returns true, with the fields left empty.
 bool readNro(uint64_t fileSize, const NroReader &read, const std::vector<int> &languages, NroInfo &out);
 bool parseNro(const std::string &bytes, const std::vector<int> &languages, NroInfo &out);
+// readNro() on a file; false when it cannot be opened or is no .nro.
+bool readNroFile(const std::string &path, const std::vector<int> &languages, NroInfo &out, uint64_t *size = nullptr);
 // An app file on the card, its path from the SD card root.
 struct CardNro {
   std::string path, name, author, version, icon;
