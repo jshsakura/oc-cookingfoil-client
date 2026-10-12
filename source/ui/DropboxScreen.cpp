@@ -373,8 +373,11 @@ void Application::dropboxTab() {
   paint_.keyLabel("Y", unlink, 1230 - uw, Top + AccountHeight / 2, 17, Secondary, true);
   hit(1230 - uw - 8, Top + 8, uw + 16, AccountHeight - 16, [this] { action(Action::Queue); });
   if (installed_.games.empty()) {
-    paint_.fonts.text(deviceBusy_ ? tr("설치 목록을 읽고 있습니다.") : tr("세이브를 관리할 게임이 없습니다."), 290,
-                      ListTop + 20, 19, Secondary);
+    // Still reading the console: the rows' shape, pulsing.
+    if (deviceBusy_)
+      for (int n = 0; n < Visible; ++n) paint_.skeleton(260, ListTop + n * RowStep, 992, RowHeight, 16);
+    else
+      paint_.fonts.text(tr("세이브를 관리할 게임이 없습니다."), 290, ListTop + 20, 19, Secondary);
     return;
   }
   const auto rows = dropboxGameRows();
@@ -494,8 +497,9 @@ void Application::dropboxDialog() {
   if (working)
     paint_.fonts.text(dropboxBusy_ == "upload" ? tr("드롭박스에 올리고 있습니다.") : tr("드롭박스에서 받고 있습니다."), x, line,
                       18, Secondary);
+  else if (revisions.empty() && dropboxListed_)
+    paint_.fonts.text(tr("드롭박스에 이 게임의 백업이 없습니다."), x, line, 18, Secondary);
   else if (revisions.empty())
-    paint_.fonts.text(dropboxListed_ ? tr("드롭박스에 이 게임의 백업이 없습니다.") : tr("드롭박스 목록을 불러오고 있습니다."), x,
-                      line, 18, Secondary);
+    paint_.skeleton(x, line - 2, 420, 22, 6); // the Dropbox list is on its way
 }
 } // namespace foil::ui

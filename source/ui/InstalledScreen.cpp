@@ -265,7 +265,8 @@ void Application::management() {
     paint_.fonts.text(trf("세이브를 받아 적용하고 있습니다 · {0}", {formatBytes(saveCopied_.load())}), x, y + 6, 19, Ink, true);
     paint_.fonts.text(tr("끝날 때까지 본체를 끄지 않습니다."), x, y + 36, 17, Secondary);
   } else if (deviceBusy_ && !removalOperation_) {
-    paint_.fonts.text(tr("세이브 목록을 읽고 있습니다."), x, y + 6, 19, Secondary);
+    // The save rows' shape while they are read.
+    for (int n = 0; n < listed; ++n) paint_.skeleton(x, y + n * (Row + Gap), w, Row, 14);
   } else if (deviceError_) {
     paint_.fonts.wrapped(deviceError_.message, x, y + 4, 19, Secondary, w, 2);
   } else if (saves_.empty()) {
