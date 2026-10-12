@@ -315,11 +315,6 @@ void Application::finishRetroEntry(const std::string &kind, history::Outcome out
   }
   saveHistory();
 }
-// The game's HOME Menu shortcut goes in through the installer like any
-// other title; false when the server has none or another install runs.
-bool Application::installRetroShortcut(const retro::Game &game) {
-  return installShortcut(game.name, game.iconUrl, game.forwarderUrl, game.forwarderTitleId, game.forwarderSize);
-}
 // A HOME Menu shortcut goes in through the installer like any other title;
 // false when there is none to make, 설정 turned them off, or the server has
 // none for it.

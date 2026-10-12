@@ -147,6 +147,12 @@ const Translation rows[] = {
     {"삭제 서비스를 열지 못했습니다.", "Could not open the delete service.", "削除サービスを開けませんでした。", "无法打开删除服务。"},
     {"삭제하지 못했습니다.", "Could not delete.", "削除できませんでした。", "删除失败。"},
     {"호스트에서는 게임과 세이브를 삭제하지 않습니다.", "Games and saves are not deleted on the host.", "ホストではゲームとセーブを削除しません。", "主机预览中不会删除游戏和存档。"},
+    // platform/Shortcut.cpp
+    {"바로가기를 설치하다 오류가 났습니다. 코드 {0}", "Installing the shortcut failed. Code {0}", "ショートカットのインストール中にエラーが発生しました。コード {0}", "安装快捷方式时出错。代码 {0}"},
+    {"바로가기에 쓰는 로더가 앱에 없습니다. CookingFoil을 새로 받아 설치하면 만들 수 있습니다.", "This build lacks the loader shortcuts need. Download and install CookingFoil again to make them.", "ショートカットに使うローダーがアプリにありません。CookingFoilをダウンロードし直してインストールしてください。", "应用中缺少快捷方式所需的加载器。请重新下载并安装 CookingFoil。"},
+    {"앱 파일에 아이콘이 없어 바로가기를 만들 수 없습니다.", "The app file has no icon, so no shortcut can be made.", "アプリのファイルにアイコンがないため、ショートカットを作成できません。", "应用文件没有图标，无法创建快捷方式。"},
+    {"본체에서 NCA 헤더 키를 만들지 못했습니다. Atmosphere로 부팅한 상태에서만 바로가기를 만들 수 있습니다. 본체를 Atmosphere로 다시 시작한 뒤 시도합니다.", "Could not derive the NCA header key on the console. Shortcuts can be made only when booted into Atmosphere. Restart into Atmosphere and try again.", "本体でNCAヘッダーキーを生成できませんでした。ショートカットはAtmosphereで起動しているときだけ作成できます。Atmosphereで再起動してから、もう一度お試しください。", "无法在主机上生成 NCA 头密钥。只有通过 Atmosphere 启动时才能创建快捷方式。请用 Atmosphere 重新启动后再试。"},
+    {"앱 파일을 읽어 바로가기를 만들지 못했습니다.", "Could not make a shortcut from the app file.", "アプリのファイルからショートカットを作成できませんでした。", "无法根据应用文件创建快捷方式。"},
     // main.cpp
     {"게임 이름을 입력합니다", "Enter a game name", "ゲーム名を入力", "输入游戏名称"},
 };

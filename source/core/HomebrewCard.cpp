@@ -85,6 +85,7 @@ bool readNro(uint64_t fileSize, const NroReader &read, const std::vector<int> &l
     for (int i = 0; i < int(NacpEntries) && out.name.empty(); ++i)
       if (!(out.name = entry(i)).empty()) out.author = text(nacp, size_t(i) * NacpEntry + NacpName, NacpAuthor);
     out.version = text(nacp, NacpVersionAt, NacpVersion);
+    if (nacp.size() == NacpSize) out.nacp = std::move(nacp);
   }
   const uint64_t iconAt = u64(asset, AssetIconAt), iconSize = u64(asset, AssetIconAt + 8);
   std::string icon;
@@ -99,6 +100,20 @@ bool parseNro(const std::string &bytes, const std::vector<int> &languages, NroIn
     if (!fits(offset, size, bytes.size())) return false;
     part = bytes.substr(size_t(offset), size);
     return true;
+  }, languages, out);
+}
+bool readNroFile(const std::string &path, const std::vector<int> &languages, NroInfo &out, uint64_t *size) {
+  std::ifstream file(path, std::ios::binary);
+  std::error_code sizeError;
+  const auto bytes = std::filesystem::file_size(path, sizeError);
+  if (!file || sizeError) return false;
+  if (size) *size = bytes;
+  return readNro(bytes, [&](uint64_t offset, size_t length, std::string &part) {
+    part.assign(length, '\0');
+    file.clear();
+    file.seekg(std::streamoff(offset));
+    file.read(part.data(), std::streamsize(length));
+    return bool(file) && size_t(file.gcount()) == length;
   }, languages, out);
 }
 bool cardNroPath(const std::string &path) {
@@ -149,19 +164,9 @@ std::vector<CardNro> scanCard(const std::string &sdRoot, const std::vector<int> 
   list(fs::path(sdRoot) / "switch", "switch/", true);
   std::vector<CardNro> out;
   for (const auto &path : cardNroPaths(paths)) {
-    std::ifstream file(sdRoot + "/" + path, std::ios::binary);
-    std::error_code sizeError;
-    const auto size = fs::file_size(sdRoot + "/" + path, sizeError);
-    if (!file || sizeError) continue;
     NroInfo info;
-    const bool nro = readNro(size, [&](uint64_t offset, size_t length, std::string &part) {
-      part.assign(length, '\0');
-      file.clear();
-      file.seekg(std::streamoff(offset));
-      file.read(part.data(), std::streamsize(length));
-      return bool(file) && size_t(file.gcount()) == length;
-    }, languages, info);
-    if (!nro) continue;
+    uint64_t size = 0;
+    if (!readNroFile(sdRoot + "/" + path, languages, info, &size)) continue;
     out.push_back({path, std::move(info.name), std::move(info.author), std::move(info.version), std::move(info.icon), size});
   }
   return out;

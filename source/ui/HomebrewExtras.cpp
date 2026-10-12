@@ -9,7 +9,7 @@
 #include <filesystem>
 namespace foil::ui {
 namespace {
-constexpr int Patches = 1, Saves = 2, Remove = 3;
+constexpr int Patches = 1, Saves = 2, Remove = 3, Shortcut = 4;
 constexpr const char *Getting = "받는 중"; // i18n: keep
 bool updateAvailable(const Application::PatchRow &row) {
   return row.record && row.onServer && !row.patch.hash.empty() && row.record->hash != row.patch.hash;
@@ -61,6 +61,7 @@ std::vector<int> Application::homebrewExtraKinds(const homebrew::App &app) const
   std::vector<int> kinds;
   if (!homebrewPatchRows(app).empty()) kinds.push_back(Patches);
   if (!homebrewSaveRows(app).empty()) kinds.push_back(Saves);
+  if (homebrewShortcutRow(app)) kinds.push_back(Shortcut);
   // An app on the card ends its rows with 지우기, as a patch's menu does.
   if (homebrewStatus(app) != homebrew::Status::Available) kinds.push_back(Remove);
   return kinds;

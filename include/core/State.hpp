@@ -14,6 +14,9 @@ struct State {
     bool reportErrors = true;
     // Install a HOME Menu shortcut with each retro game and homebrew app.
     bool makeShortcuts = true;
+    // This app's own HOME Menu shortcut was offered (opened from the album);
+    // the offer comes once, whatever the answer.
+    bool selfShortcutAsked = false;
     // "sd" or "nand", chosen in 설정; empty follows config.json's installTarget.
     std::string installTarget;
     std::map<std::string, std::string> accessKeys;
