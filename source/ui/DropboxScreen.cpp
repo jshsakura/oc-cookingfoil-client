@@ -17,11 +17,11 @@ std::string when(std::time_t at) {
   std::strftime(text, sizeof(text), "%Y-%m-%d %H:%M", &local);
   return text;
 }
-// The backup a game's upload sends: the newest made by hand, else the newest.
-const saves::LocalBackup *newestBackup(const std::vector<saves::LocalBackup> &backups) {
-  for (const auto &b : backups)
-    if (!b.meta.isAutoBackup) return &b;
-  return backups.empty() ? nullptr : &backups.front();
+// Where the upload list starts: the newest backup made by hand, else the newest.
+int newestBackup(const std::vector<saves::LocalBackup> &backups) {
+  for (size_t i = 0; i < backups.size(); ++i)
+    if (!backups[i].meta.isAutoBackup) return int(i);
+  return 0;
 }
 } // namespace
 
@@ -148,6 +148,7 @@ void Application::openDropboxGame() {
   dropboxLocal_ = saves::listBackups(saves::keeperRoot(sdRoot_), installed_.games[dropboxRow_].applicationId);
   dropboxPick_ = 0;
   dropboxOpen_ = true;
+  dropboxChoosing_ = false;
   dropboxMetas_.clear();
   // Which console each Dropbox backup came from, from its small .meta.
   const auto remote = dropboxRemote_.find(installed_.games[dropboxRow_].applicationId);
@@ -178,41 +179,14 @@ void Application::dropboxTransfer() {
   const auto game = installed_.games[dropboxRow_];
   const auto root = saves::keeperRoot(sdRoot_);
   const auto remote = dropboxRemote_.find(game.applicationId);
+  // The upload row opens the console's backups to pick from, even one.
   if (dropboxPick_ == 0) {
-    const auto *newest = newestBackup(dropboxLocal_);
-    if (!newest) {
+    if (dropboxLocal_.empty()) {
       message(tr("올릴 백업이 없습니다. 내 기기 탭에서 먼저 백업합니다."));
       return;
     }
-    const auto backup = *newest;
-    runDropboxJob("upload", [this, root, game, backup]() -> std::function<void()> {
-      // The .meta written for a backup that has none, as save-keeper does.
-      saves::BackupMeta meta;
-      meta.titleId = game.applicationId;
-      meta.titleName = game.name;
-      meta.backupName = meta.revisionId = backup.name;
-      meta.createdAt = backup.timestamp;
-      meta.size = backup.size;
-      meta.source = "local";
-      const auto device = saves::loadDevice(root, std::time(nullptr), unsigned(std::clock()));
-      if (!device.error) {
-        meta.deviceId = device.value.id;
-        meta.deviceLabel = device.value.label;
-        meta.devicePriority = device.value.priority;
-      }
-      const auto error = net::uploadBackup(*dropbox_, root, game.applicationId, backup, meta);
-      const bool revoked = dropbox_->revoked();
-      return [this, error, revoked, name = backup.name] {
-        if (revoked) dropboxLinked_ = false;
-        if (error) {
-          alertTitle_ = tr("드롭박스에 올리지 못했습니다");
-          alert_ = error.message;
-          return;
-        }
-        message(trf("{0} 백업을 드롭박스에 올렸습니다.", {name}));
-        listDropbox();
-      };
-    });
+    dropboxChoosing_ = true;
+    dropboxUploadPick_ = newestBackup(dropboxLocal_);
     return;
   }
   if (remote == dropboxRemote_.end() || dropboxPick_ > int(remote->second.size())) return;
@@ -234,6 +208,41 @@ void Application::dropboxTransfer() {
       backupCounts_.erase(id);
       dropboxLocal_ = saves::listBackups(root, id);
       message(tr("내 기기로 받았습니다. 내 기기 탭에서 이 백업으로 복원합니다."));
+    };
+  });
+}
+
+void Application::uploadDropbox(const saves::LocalBackup &backup) {
+  if (!dropboxOpen_ || dropboxRow_ < 0 || dropboxRow_ >= int(installed_.games.size()) || dropboxWorker_.joinable()) return;
+  const auto game = installed_.games[dropboxRow_];
+  const auto root = saves::keeperRoot(sdRoot_);
+  runDropboxJob("upload", [this, root, game, backup]() -> std::function<void()> {
+    // The .meta written for a backup that has none, as save-keeper does.
+    saves::BackupMeta meta;
+    meta.titleId = game.applicationId;
+    meta.titleName = game.name;
+    meta.backupName = meta.revisionId = backup.name;
+    meta.createdAt = backup.timestamp;
+    meta.size = backup.size;
+    meta.source = "local";
+    const auto device = saves::loadDevice(root, std::time(nullptr), unsigned(std::clock()));
+    if (!device.error) {
+      meta.deviceId = device.value.id;
+      meta.deviceLabel = device.value.label;
+      meta.devicePriority = device.value.priority;
+    }
+    const auto error = net::uploadBackup(*dropbox_, root, game.applicationId, backup, meta);
+    const bool revoked = dropbox_->revoked();
+    return [this, error, revoked, name = backup.name] {
+      if (revoked) dropboxLinked_ = false;
+      if (error) {
+        alertTitle_ = tr("드롭박스에 올리지 못했습니다");
+        alert_ = error.message;
+        return;
+      }
+      dropboxChoosing_ = false;
+      message(trf("{0} 백업을 드롭박스에 올렸습니다.", {name}));
+      listDropbox();
     };
   });
 }
@@ -263,6 +272,14 @@ void Application::dropboxAction(Action a) {
   }
   if (dropboxOpen_) {
     if (dropboxWorker_.joinable() && (dropboxBusy_ == "upload" || dropboxBusy_ == "download")) return;
+    if (dropboxChoosing_) {
+      const int last = int(dropboxLocal_.size()) - 1;
+      if (a == Action::Back) dropboxChoosing_ = false;
+      if (a == Action::Up) dropboxUploadPick_ = std::max(0, dropboxUploadPick_ - 1);
+      if (a == Action::Down) dropboxUploadPick_ = std::min(last, dropboxUploadPick_ + 1);
+      if (a == Action::Accept && last >= 0) uploadDropbox(dropboxLocal_[std::clamp(dropboxUploadPick_, 0, last)]);
+      return;
+    }
     const auto remote = dropboxRow_ >= 0 && dropboxRow_ < int(installed_.games.size())
                             ? dropboxRemote_.find(installed_.games[dropboxRow_].applicationId)
                             : dropboxRemote_.end();
@@ -435,6 +452,10 @@ void Application::dropboxDialog() {
     return;
   }
   if (!dropboxOpen_ || dropboxRow_ < 0 || dropboxRow_ >= int(installed_.games.size())) return;
+  if (dropboxChoosing_) {
+    dropboxUploadList();
+    return;
+  }
   const auto &game = installed_.games[dropboxRow_];
   const auto remote = dropboxRemote_.find(game.applicationId);
   static const std::vector<net::dropbox::Revision> none;
@@ -448,7 +469,6 @@ void Application::dropboxDialog() {
                           dropboxPick_ == 0 ? tr("올리기") : tr("받기"), 36);
   const float x = body.x + 32, w = body.w - 64;
   const int top = std::clamp(dropboxPick_ - rows / 2, 0, std::max(0, total - rows));
-  const auto *newest = newestBackup(dropboxLocal_);
   for (int n = top; n < top + rows; ++n) {
     const float y = body.y + 24 + (n - top) * (Row + Gap);
     hit(x, y, w, Row, [this, n] {
@@ -459,12 +479,10 @@ void Application::dropboxDialog() {
     else paint_.rect(x, y, w, Row, Ground, 12);
     if (n == 0) {
       paint_.icon(36, x + 20, y + 23, Ink, 26);
-      paint_.fonts.text(tr("최신 백업을 드롭박스에 올립니다"), x + 60, y + 10, 20, Ink, true, w - 80);
-      const bool there = newest && std::any_of(revisions.begin(), revisions.end(),
-                                                [&](const auto &r) { return r.name == newest->name; });
-      const std::string detail = !newest ? std::string(tr("내 기기에 백업이 없습니다. 내 기기 탭에서 먼저 백업합니다."))
-                                 : there ? trf("{0} · 이미 드롭박스에 있어 덮어씁니다", {when(newest->timestamp)})
-                                         : when(newest->timestamp) + " · " + formatBytes(uint64_t(newest->size));
+      paint_.fonts.text(tr("백업을 골라 드롭박스에 올립니다"), x + 60, y + 10, 20, Ink, true, w - 80);
+      const std::string detail = dropboxLocal_.empty()
+                                     ? std::string(tr("내 기기에 백업이 없습니다. 내 기기 탭에서 먼저 백업합니다."))
+                                     : trf("내 기기 {0}개", {std::to_string(dropboxLocal_.size())});
       paint_.fonts.text(detail, x + 60, y + 40, 16, Secondary, false, w - 80);
       continue;
     }
@@ -496,5 +514,39 @@ void Application::dropboxDialog() {
     paint_.fonts.text(tr("드롭박스에 이 게임의 백업이 없습니다."), x, line, 18, Secondary);
   else if (revisions.empty())
     paint_.skeleton(x, line - 2, 420, 22, 6); // the Dropbox list is on its way
+}
+// The console's backups of the open game: A sends the one picked.
+void Application::dropboxUploadList() {
+  const auto &game = installed_.games[dropboxRow_];
+  const auto remote = dropboxRemote_.find(game.applicationId);
+  const int total = int(dropboxLocal_.size());
+  if (!total) return;
+  constexpr float Row = 72, Gap = 8;
+  const int rows = std::min(total, PopupRows + 1);
+  const bool working = dropboxBusy_ == "upload";
+  dropboxUploadPick_ = std::clamp(dropboxUploadPick_, 0, total - 1);
+  const auto body = modal(860, 24 + rows * (Row + Gap) + 40, game.name, working ? "" : tr("뒤로"), "", tr("올리기"), 36);
+  const float x = body.x + 32, w = body.w - 64;
+  const int top = std::clamp(dropboxUploadPick_ - rows / 2, 0, std::max(0, total - rows));
+  for (int n = top; n < top + rows; ++n) {
+    const auto &b = dropboxLocal_[n];
+    const float y = body.y + 24 + (n - top) * (Row + Gap);
+    hit(x, y, w, Row, [this, n] {
+      dropboxUploadPick_ = n;
+      action(Action::Accept);
+    });
+    if (n == dropboxUploadPick_) paint_.focusRow(x, y, w, Row, Ground, 12);
+    else paint_.rect(x, y, w, Row, Ground, 12);
+    paint_.fonts.text(when(b.timestamp), x + 20, y + 10, 20, Ink, true, w - 220);
+    paint_.fonts.text(backupDetail(b), x + 20, y + 40, 16, Secondary, false, w - 220);
+    // One already on Dropbox is overwritten by the upload.
+    const bool there = remote != dropboxRemote_.end() &&
+                       std::any_of(remote->second.begin(), remote->second.end(), [&](const auto &r) { return r.name == b.name; });
+    const std::string side = there ? std::string(tr("드롭박스에 있음")) : formatBytes(uint64_t(b.size));
+    paint_.fonts.middle(side, x + w - 20 - paint_.fonts.measure(side, 17, true), y + Row / 2, 17, there ? Good : Ink, true);
+  }
+  const float line = body.y + 24 + rows * (Row + Gap) + 4;
+  paint_.fonts.text(working ? tr("드롭박스에 올리고 있습니다.") : tr("드롭박스에 있는 백업은 같은 이름으로 덮어씁니다."), x, line, 18,
+                    Secondary);
 }
 } // namespace foil::ui
