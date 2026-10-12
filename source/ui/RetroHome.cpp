@@ -8,7 +8,10 @@ constexpr int Columns = 6;
 // The retro home: RetroArch first while it is missing, then one shelf per
 // system with its best rated games and a 모두 보기 card at the end.
 void Application::retroHome() {
-  pageTitle(tr("레트로 게임"), "", 0);
+  // Every system's games together, beside the title.
+  int roms = 0;
+  for (const auto &shelf : retroShelves_) roms += shelf.system.romCount;
+  pageTitle(tr("레트로 게임"), std::to_string(roms), 0);
   // Y gets RetroArch, or checks it for new files once it is there.
   const std::string get = retroBusy_ == "pack"  ? tr("설치 취소")
                           : retroArchPresent() ? tr("RetroArch 업데이트")
