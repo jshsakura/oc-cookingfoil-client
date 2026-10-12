@@ -13,6 +13,7 @@ struct Game {
   std::string id, name, file, system, core, iconUrl, bundleUrl;
   std::string original; // the game's original title; patched versions share it
   std::string variant;  // the version or patch tag ("J-K v20230715 v1 font.galmuri"); empty for none
+  std::string region;   // kr jp us eu asia br world, or empty; the server marks it on the cover
   // Its HOME Menu shortcut: a small NSP that starts the game's core and ROM.
   std::string forwarderUrl, forwarderTitleId;
   uint64_t forwarderSize = 0;

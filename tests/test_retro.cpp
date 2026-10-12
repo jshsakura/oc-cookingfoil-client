@@ -17,6 +17,10 @@ int runRetroTests() {
     CHECK(systems[0].romCount == 181 && systems[0].coreName == "mGBA");
     CHECK(systemName(systems[0], "ko") == "게임보이 어드밴스");
     CHECK(systemName(systems[0], "ja") == "Game Boy Advance");
+    // A region the server names is kept, anything else dropped.
+    CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"kr"})").region == "kr");
+    CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"mars"})").region.empty());
+    CHECK(parseGameJson(serializeGame(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"eu"})"))).region == "eu");
     // A game's core on the card, by RetroArch's own file names.
     CHECK(corePath("fbneo") == "retroarch/cores/fbneo_libretro_libnx.nro");
     CHECK(corePath("").empty() && corePath("../x").empty() && corePath("a/b").empty());

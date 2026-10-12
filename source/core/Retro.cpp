@@ -62,6 +62,9 @@ Game parseGame(json_object *object, const std::string &base) {
   g.core = stringField(object, "core");
   g.original = stringField(object, "original");
   g.variant = stringField(object, "variant");
+  g.region = stringField(object, "region");
+  static const std::set<std::string> Regions{"kr", "jp", "us", "eu", "asia", "br", "world"};
+  if (!Regions.count(g.region)) g.region.clear();
   g.size = positive(object, "size");
   g.addedAt = integerField(object, "addedAt");
   g.rating = int(std::clamp<int64_t>(integerField(object, "rating"), 0, 100));
@@ -247,6 +250,7 @@ std::string serializeGame(const Game &game) {
   text("core", game.core);
   text("original", game.original);
   text("variant", game.variant);
+  text("region", game.region);
   text("iconUrl", game.iconUrl);
   text("bundleUrl", game.bundleUrl);
   text("forwarderUrl", game.forwarderUrl);

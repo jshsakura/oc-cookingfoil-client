@@ -500,7 +500,7 @@ void Application::retroAction(Action a) {
 }
 // What a game is: its file format, a bezel, its score; for the list's
 // labels and the info popup.
-std::vector<std::string> Application::retroLabels(const retro::Game &game) const {
+std::vector<std::string> Application::retroLabels(const retro::Game &game, bool detail) const {
   std::vector<std::string> out;
   if (const auto dot = game.file.rfind('.'); dot != std::string::npos) {
     auto format = game.file.substr(dot + 1);
@@ -508,8 +508,9 @@ std::vector<std::string> Application::retroLabels(const retro::Game &game) const
     out.push_back(format);
   }
   if (game.bezel) out.push_back(tr("베젤 포함"));
-  // Versions of one game share a name; the tag tells them apart.
-  if (!game.variant.empty()) {
+  // Versions of one game share a name; the tag tells them apart. With a
+  // region the server marks the cover itself, and the tag waits for the popup.
+  if (!game.variant.empty() && (detail || game.region.empty())) {
     auto tag = game.variant;
     if (tag.size() > 28) {
       size_t cut = 26;
@@ -540,7 +541,7 @@ void Application::retroConfirm() {
   if (!game.original.empty() && game.original != game.name)
     at += paint_.fonts.wrapped(game.original, textX, at, 17, Secondary, textW, 2) + 4;
   float px = textX;
-  for (const auto &label : retroLabels(game)) px += paint_.pill(label, px, at + 6) + 6;
+  for (const auto &label : retroLabels(game, true)) px += paint_.pill(label, px, at + 6) + 6;
   at += 44;
   std::string facts = formatBytes(game.size);
   if (game.ratingCount > 0) facts += " · " + trf("{0}명 평가", {std::to_string(game.ratingCount)});

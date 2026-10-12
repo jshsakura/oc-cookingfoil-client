@@ -329,7 +329,8 @@ private:
   bool runRetroJob(const std::string &busy, std::function<std::function<void()>()> job);
   bool retroInstalled(const retro::Game &game) const;
   void retroConfirm(); // the game's info, with one button to get it
-  std::vector<std::string> retroLabels(const retro::Game &game) const;
+  // detail: the get popup, which also names the version a flag stands for.
+  std::vector<std::string> retroLabels(const retro::Game &game, bool detail = false) const;
   bool retroAsking_ = false, retroArchAsking_ = false;
   void retroArchConfirm(); // Y with RetroArch already there
   // On the card from before the shop had its bezel: getting it again adds it.
