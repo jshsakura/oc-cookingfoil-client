@@ -69,8 +69,11 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
     if (!idAllowed(a.id) || a.name.empty() || a.hash.empty() || !fileNameAllowed(a.fileName) ||
         a.downloadUrl.empty())
       continue;
-    // Where it goes: the server's install_path, else switch/<stem>/<file>.
-    const auto installPath = stringField(o, "install_path");
+    // Where it goes: the server's install_path, else <install_dir>/<file>,
+    // else switch/<stem>/<file>.
+    auto installPath = stringField(o, "install_path");
+    const auto installDir = stringField(o, "install_dir");
+    if (installPath.empty() && !installDir.empty()) installPath = installDir + "/" + a.fileName;
     if (installPath.empty()) a.installPath = sdPath(a.fileName);
     else if (pathAllowed(installPath) && appFolder(installPath) == folderOf(installPath) &&
              installPath.size() > 4 && installPath.compare(installPath.size() - 4, 4, ".nro") == 0)

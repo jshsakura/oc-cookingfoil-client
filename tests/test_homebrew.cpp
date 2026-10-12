@@ -85,6 +85,16 @@ int runHomebrewTests() {
     CHECK(rejected("switch/ytb/data/a.bin", "switch/other/a.bin"));
     CHECK(rejected(R"("install_path":"switch/ytb/ytb-player.nro")", R"("install_path":"atmosphere/x.nro")"));
   }
+  // Only install_dir: the nro goes inside that folder; one outside switch/ is refused.
+  {
+    auto e = entry;
+    e.insert(e.size() - 1, R"(,"install_dir":"switch/ytb")");
+    const auto dir = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
+    CHECK(dir.size() == 1 && !dir.empty() && dir.front().installPath == "switch/ytb/ytb-player.nro");
+    auto bad = entry;
+    bad.insert(bad.size() - 1, R"(,"install_dir":"atmosphere")");
+    CHECK(parse(R"({"homebrew":[)" + bad + "]}", "https://shop.example").empty());
+  }
   // Without install_path the app goes to switch/<stem>/<file>.
   if (!apps.empty()) CHECK(apps.front().installPath == "switch/ytb-player/ytb-player.nro" && apps.front().files.empty());
   // The download's ETag: the file's sha256, quoted, maybe prefixed.
