@@ -38,6 +38,13 @@ std::string readLine(const std::string &path) {
   text = text.substr(0, text.find_first_of("\r\n"));
   return text;
 }
+// A commit into a console save; nothing when the destination is the SD card.
+Error commitNow(const CopyHooks &hooks, int64_t &pending, const std::string &path) {
+  if (!hooks.commit) return {};
+  if (!hooks.commit()) return {trf("세이브에 기록하지 못했습니다: {0}", {path})};
+  pending = 0;
+  return {};
+}
 Error copyFile(const std::string &from, const std::string &to, const CopyHooks &hooks,
                int64_t &pending, uint64_t &copied) {
   std::unique_ptr<FILE, int (*)(FILE *)> in(std::fopen(from.c_str(), "rb"), std::fclose);
@@ -55,7 +62,7 @@ Error copyFile(const std::string &from, const std::string &to, const CopyHooks &
     }
     // A console save holds only `journal` uncommitted bytes: close, commit
     // and reopen at the same place before going past it (JKSV's way).
-    if (hooks.commit && hooks.journal > 0 && pending + int64_t(got) >= hooks.journal) {
+    if (hooks.commit && commitDue(pending, int64_t(got), hooks.journal)) {
       if (std::fclose(out.release()) != 0 || !hooks.commit())
         return {trf("세이브에 기록하지 못했습니다: {0}", {to})};
       out.reset(std::fopen(to.c_str(), "rb+"));
@@ -71,13 +78,15 @@ Error copyFile(const std::string &from, const std::string &to, const CopyHooks &
     if (hooks.progress) hooks.progress(copied);
   }
   if (std::fclose(out.release()) != 0) return {trf("파일을 쓰지 못했습니다: {0}", {to})};
-  return {};
+  return commitNow(hooks, pending, to);
 }
 Error copyInto(const std::string &from, const std::string &to, const CopyHooks &hooks,
                int64_t &pending, uint64_t &copied) {
   if (!makeDirectories(to)) return {trf("폴더를 만들지 못했습니다: {0}", {to})};
+  if (auto error = commitNow(hooks, pending, to)) return error;
   if (!isDirectory(from)) return {trf("폴더를 읽지 못했습니다: {0}", {from})};
   for (const auto &name : entries(from)) {
+    if (hooks.commit && name == JksvMetaName) continue;
     const auto source = from + "/" + name, target = to + "/" + name;
     struct stat st {};
     if (stat(source.c_str(), &st) != 0) return {trf("파일을 읽지 못했습니다: {0}", {source})};
@@ -239,6 +248,42 @@ Parsed<Device> loadDevice(const std::string &root, std::time_t now, unsigned clo
   return result;
 }
 
+bool commitDue(int64_t pending, int64_t chunk, int64_t journal) {
+  return journal > 0 && pending + chunk >= journal;
+}
+SaveSizes creationSizes(int64_t size, int64_t sizeMax, int64_t journal, int64_t journalMax) {
+  SaveSizes sizes;
+  sizes.data = size > 0 ? size : std::max<int64_t>(sizeMax, 0);
+  sizes.journal = journal > 0 ? journal : journalMax > 0 ? journalMax : DefaultJournal;
+  return sizes;
+}
+std::optional<SaveSizes> parseJksvMeta(const std::string &bytes) {
+  // Packed little-endian: magic u32 at 0, then save_data_size and
+  // journal_size as s64 at 61 and 69, 86 bytes in all.
+  constexpr uint32_t Magic = 0x56534B4A;
+  constexpr size_t DataAt = 61, JournalAt = 69, Size = 86;
+  if (bytes.size() < Size) return std::nullopt;
+  const auto number = [&](size_t at, size_t width) {
+    uint64_t value = 0;
+    for (size_t i = 0; i < width; ++i) value |= uint64_t(uint8_t(bytes[at + i])) << (8 * i);
+    return value;
+  };
+  if (number(0, 4) != Magic) return std::nullopt;
+  SaveSizes sizes{int64_t(number(DataAt, 8)), int64_t(number(JournalAt, 8))};
+  if (sizes.data <= 0 || sizes.journal <= 0) return std::nullopt;
+  return sizes;
+}
+std::optional<SaveSizes> readJksvMeta(const std::string &backupPath) {
+  const auto path = backupPath + "/" + JksvMetaName;
+  return exists(path) ? parseJksvMeta(readFile(path)) : std::nullopt;
+}
+int64_t restoreBytes(const std::string &backupPath) {
+  struct stat st {};
+  const auto meta = backupPath + "/" + JksvMetaName;
+  const int64_t skipped = stat(meta.c_str(), &st) == 0 && S_ISREG(st.st_mode) ? int64_t(st.st_size) : 0;
+  return directorySize(backupPath) - skipped;
+}
+bool fitsSave(int64_t bytes, int64_t room) { return room <= 0 || bytes <= room; }
 int64_t directorySize(const std::string &path) {
   int64_t total = 0;
   for (const auto &name : entries(path)) {

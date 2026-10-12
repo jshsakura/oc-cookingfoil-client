@@ -154,6 +154,71 @@ int runSaveBackupTests() {
     CHECK(copyTree(root + "/from", root + "/to2", hooks));
     fsys::remove_all(root);
   }
+  // JKSV's commit points: before the journal would fill, after each file and
+  // after each folder made, and its meta file never goes into a save.
+  {
+    CHECK(!commitDue(0, 100, 0));
+    CHECK(!commitDue(4000, 95, 4096));
+    CHECK(commitDue(4000, 96, 4096));
+    CHECK(commitDue(0, 4096, 4096));
+    const auto root = scratch("commits");
+    write(root + "/from/a.bin", std::string(10000, 'a'));
+    write(root + "/from/sub/b.bin", std::string(100, 'b'));
+    write(root + "/from/" + JksvMetaName, std::string(86, 'm'));
+    int commits = 0;
+    CopyHooks hooks;
+    hooks.journal = 4096;
+    hooks.commit = [&] { ++commits; return true; };
+    CHECK(!copyTree(root + "/from", root + "/save", hooks));
+    // folder, a.bin over the journal, a.bin done, sub, sub/b.bin done, the end
+    CHECK(commits == 6);
+    CHECK(!fsys::exists(root + "/save/" + JksvMetaName));
+    CHECK(read(root + "/save/sub/b.bin") == std::string(100, 'b'));
+    // A backup on the SD card keeps every file, the meta too.
+    CHECK(!copyTree(root + "/from", root + "/copy", CopyHooks{}));
+    CHECK(fsys::exists(root + "/copy/" + JksvMetaName));
+    CHECK(restoreBytes(root + "/from") == 10100);
+    CHECK(directorySize(root + "/from") == 10186);
+    fsys::remove_all(root);
+  }
+  // A new save's sizes as JKSV picks them from the game's control data.
+  {
+    const auto plain = creationSizes(0x100000, 0x400000, 0x200000, 0x800000);
+    CHECK(plain.data == 0x100000 && plain.journal == 0x200000);
+    const auto fromMax = creationSizes(0, 0x400000, 0, 0x800000);
+    CHECK(fromMax.data == 0x400000 && fromMax.journal == 0x800000);
+    const auto noJournal = creationSizes(0x100000, 0, 0, 0);
+    CHECK(noJournal.data == 0x100000 && noJournal.journal == DefaultJournal);
+    CHECK(DefaultJournal == 0x1000000);
+    CHECK(creationSizes(0, 0, 0, 0).data == 0); // the game does not use it
+    CHECK(fitsSave(100, 100) && fitsSave(100, 0) && !fitsSave(101, 100));
+  }
+  // JKSV's .nx_save_meta.bin: magic "JKSV" and the sizes at fixed offsets.
+  {
+    std::string meta(86, '\0');
+    const auto put = [&](size_t at, uint64_t value, size_t width) {
+      for (size_t i = 0; i < width; ++i) meta[at + i] = char((value >> (8 * i)) & 0xFF);
+    };
+    put(0, 0x56534B4A, 4);
+    put(4, 1, 1);
+    put(5, Title, 8);
+    put(61, 0x2000000, 8);
+    put(69, 0x1000000, 8);
+    const auto sizes = parseJksvMeta(meta);
+    CHECK(sizes && sizes->data == 0x2000000 && sizes->journal == 0x1000000);
+    CHECK(!parseJksvMeta(meta.substr(0, 85)));
+    auto wrong = meta;
+    wrong[0] = 'X';
+    CHECK(!parseJksvMeta(wrong));
+    const auto valid = meta;
+    put(61, 0, 8);
+    CHECK(!parseJksvMeta(meta));
+    const auto root = scratch("jksvmeta");
+    CHECK(!readJksvMeta(root));
+    write(root + "/" + JksvMetaName, valid);
+    CHECK(readJksvMeta(root) && readJksvMeta(root)->data == 0x2000000);
+    fsys::remove_all(root);
+  }
   // Host flow: back up, change the save, restore, and the rollback copy.
   {
     const auto sd = scratch("flow");
@@ -182,6 +247,10 @@ int runSaveBackupTests() {
     int rollbacks = 0;
     for (const auto &b : list) rollbacks += b.meta.isAutoBackup;
     CHECK(rollbacks == 1);
+    write(made.value.path + "/" + JksvMetaName, std::string(86, 'm'));
+    CHECK(!foil::platform::restoreSave(job, made.value));
+    CHECK(!fsys::exists(live + "/" + JksvMetaName));
+    fsys::remove(made.value.path + "/" + JksvMetaName);
     // A seventh user backup sends the oldest user backup to the trash.
     for (int i = 0; i < 6; ++i) CHECK(!foil::platform::backupSave(job).error);
     int users = 0;

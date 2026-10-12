@@ -339,6 +339,8 @@ const Translation rows[] = {
     {"이 게임은 이 세이브를 쓰지 않습니다.", "This game does not use this kind of save.", "このゲームはこの種類のセーブを使いません。", "此游戏不使用这种存档。"},
     {"세이브를 새로 만들지 못했습니다.", "Could not create the save.", "セーブを作成できませんでした。", "未能创建存档。"},
     {"아직 세이브가 없어 백업할 것이 없습니다.", "There is no save yet, so nothing to back up.", "まだセーブがないため、バックアップするものがありません。", "尚无存档，没有可备份的内容。"},
+    {"백업이 세이브 용량보다 커서 복원하지 않았습니다.", "The backup is larger than the save can hold, so it was not restored.", "バックアップがセーブの容量より大きいため、復元しませんでした。", "备份大于存档容量，因此未恢复。"},
+    {"세이브 용량을 늘리지 못했습니다.", "Could not make the save larger.", "セーブの容量を増やせませんでした。", "未能扩大存档容量。"},
     {"새로 만든 세이브에 복원하지 못했습니다. {0}", "Could not restore into the new save. {0}", "新しく作ったセーブに復元できませんでした。{0}", "未能恢复到新建的存档。{0}"},
     {"아직 세이브가 없습니다. 백업을 골라 복원하면 새로 만듭니다.", "No save yet. Pick a backup to restore and one is created.", "まだセーブがありません。バックアップを選んで復元すると作成します。", "尚无存档。选择备份恢复时会新建存档。"},
     {"{0} · 아직 세이브가 없습니다", "{0} · No save yet", "{0} · まだセーブがありません", "{0} · 尚无存档"},

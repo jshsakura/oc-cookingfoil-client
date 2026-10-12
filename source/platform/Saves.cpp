@@ -1,8 +1,10 @@
 // Save mounting and journal handling follow oc-save-keeper (MIT),
-// include/fs/ScopedSaveMount.hpp, which follows JKSV.
+// include/fs/ScopedSaveMount.hpp, which follows JKSV; creating, sizing and
+// growing a save follow JKSV (fs/save_data_functions.cpp, fs/SaveMetaData.cpp).
 #include "platform/Saves.hpp"
 #include "core/I18n.hpp"
 #include "core/Log.hpp"
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <functional>
@@ -14,8 +16,6 @@
 #endif
 namespace foil::platform {
 namespace {
-// save-keeper's fallback when a game does not say.
-constexpr int64_t DefaultJournal = 0x1000000;
 #ifdef __SWITCH__
 constexpr const char *MountName = "cfsave";
 Error failure(const char *action, Result rc) {
@@ -23,72 +23,106 @@ Error failure(const char *action, Result rc) {
   std::snprintf(code, sizeof(code), "%08X", rc);
   return {trf("{0} 코드 {1}", {action, code})};
 }
-// The game's own journal size from its control data: a commit is due before
-// that many bytes are written.
-int64_t journalSize(const SaveEntry &save) {
-  if (R_FAILED(nsInitialize())) return DefaultJournal;
-  auto control = std::make_unique<NsApplicationControlData>();
-  u64 size = 0;
-  const auto rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, save.applicationId,
-                                              control.get(), sizeof(*control), &size);
-  nsExit();
-  if (R_FAILED(rc) || size < sizeof(NacpStruct)) return DefaultJournal;
-  const auto bytes = save.type == FsSaveDataType_Device ? control->nacp.device_save_data_journal_size
-                                                        : control->nacp.user_account_save_data_journal_size;
-  return bytes > 0 ? bytes : DefaultJournal;
-}
-// A save the game has not made yet for this account (or the shared one),
-// created the way JKSV does: sizes and owner from the game's control data.
-Error createSave(const SaveEntry &save) {
-  if (R_FAILED(nsInitialize())) return {tr("게임 정보를 읽지 못해 세이브를 만들지 못했습니다.")};
-  auto control = std::make_unique<NsApplicationControlData>();
-  u64 size = 0;
-  const auto rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, save.applicationId, control.get(),
-                                              sizeof(*control), &size);
-  nsExit();
-  if (R_FAILED(rc) || size < sizeof(NacpStruct)) return failure(tr("게임 정보를 읽지 못해 세이브를 만들지 못했습니다."), rc);
-  const auto &nacp = control->nacp;
-  const bool device = save.type == FsSaveDataType_Device;
-  const s64 bytes = s64(device ? nacp.device_save_data_size : nacp.user_account_save_data_size);
-  const s64 journal = s64(device ? nacp.device_save_data_journal_size : nacp.user_account_save_data_journal_size);
-  if (bytes <= 0) return {tr("이 게임은 이 세이브를 쓰지 않습니다.")};
+FsSaveDataAttribute attributeOf(const SaveEntry &save) {
   FsSaveDataAttribute attr{};
   attr.application_id = save.applicationId;
-  if (!device) {
+  if (save.type == FsSaveDataType_Account) {
     attr.uid.uid[0] = save.user[0];
     attr.uid.uid[1] = save.user[1];
   }
   attr.save_data_type = save.type;
   attr.save_data_rank = FsSaveDataRank_Primary;
   attr.save_data_index = 0;
+  return attr;
+}
+struct GameSave {
+  saves::SaveSizes sizes;
+  uint64_t owner = 0;
+};
+// The save's sizes and owner from the game's control data, as JKSV reads
+// them for a new save.
+Parsed<GameSave> gameSave(const SaveEntry &save) {
+  if (R_FAILED(nsInitialize())) return {{}, {tr("게임 정보를 읽지 못해 세이브를 만들지 못했습니다.")}};
+  auto control = std::make_unique<NsApplicationControlData>();
+  u64 size = 0;
+  const auto rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, save.applicationId, control.get(),
+                                              sizeof(*control), &size);
+  nsExit();
+  if (R_FAILED(rc) || size < sizeof(NacpStruct))
+    return {{}, failure(tr("게임 정보를 읽지 못해 세이브를 만들지 못했습니다."), rc)};
+  const auto &nacp = control->nacp;
+  GameSave game;
+  game.sizes = save.type == FsSaveDataType_Device
+                   ? saves::creationSizes(nacp.device_save_data_size, nacp.device_save_data_size_max,
+                                          nacp.device_save_data_journal_size, nacp.device_save_data_journal_size_max)
+                   : saves::creationSizes(nacp.user_account_save_data_size, nacp.user_account_save_data_size_max,
+                                          nacp.user_account_save_data_journal_size,
+                                          nacp.user_account_save_data_journal_size_max);
+  game.owner = nacp.save_data_owner_id ? nacp.save_data_owner_id : save.applicationId;
+  return {game, {}};
+}
+// A save the game has not made yet for this account (or the shared one),
+// created the way JKSV does. A JKSV backup's meta may ask for more room.
+Parsed<saves::SaveSizes> createSave(const SaveEntry &save, const std::optional<saves::SaveSizes> &wanted,
+                                    int64_t bytes) {
+  auto game = gameSave(save);
+  if (game.error) return {{}, game.error};
+  auto sizes = game.value.sizes;
+  if (sizes.data <= 0) return {{}, {tr("이 게임은 이 세이브를 쓰지 않습니다.")}};
+  if (wanted) {
+    sizes.data = std::max(sizes.data, wanted->data);
+    sizes.journal = std::max(sizes.journal, wanted->journal);
+  }
+  if (!saves::fitsSave(bytes, sizes.data)) return {{}, {tr("백업이 세이브 용량보다 커서 복원하지 않았습니다.")}};
+  const auto attr = attributeOf(save);
   FsSaveDataCreationInfo info{};
-  info.save_data_size = bytes;
-  info.journal_size = journal > 0 ? journal : DefaultJournal;
+  info.save_data_size = sizes.data;
+  info.journal_size = sizes.journal;
   info.available_size = 0x4000;
-  info.owner_id = nacp.save_data_owner_id ? nacp.save_data_owner_id : save.applicationId;
+  info.owner_id = game.value.owner;
   info.flags = 0;
   info.save_data_space_id = FsSaveDataSpaceId_User;
   FsSaveDataMetaInfo meta{};
   meta.size = 0x40060;
   meta.type = FsSaveDataMetaType_Thumbnail;
   const auto created = fsCreateSaveDataFileSystem(&attr, &info, &meta);
-  if (R_FAILED(created)) return failure(tr("세이브를 새로 만들지 못했습니다."), created);
-  return {};
+  if (R_FAILED(created)) return {{}, failure(tr("세이브를 새로 만들지 못했습니다."), created)};
+  return {sizes, {}};
+}
+// An existing save's own sizes (JKSV takes the journal from here, not from
+// the game), grown first when a JKSV backup's meta asks for more room.
+Parsed<saves::SaveSizes> existingSave(const SaveEntry &save, const std::optional<saves::SaveSizes> &wanted,
+                                      int64_t bytes) {
+  FsSaveDataExtraData extra{};
+  const auto rc = fsReadSaveDataFileSystemExtraDataBySaveDataSpaceId(&extra, sizeof(extra), FsSaveDataSpaceId_User,
+                                                                     save.saveId);
+  if (R_FAILED(rc)) {
+    // Size unknown: commit at the game's journal, as JKSV falls back to.
+    auto game = gameSave(save);
+    return {{0, game.error ? saves::DefaultJournal : game.value.sizes.journal}, {}};
+  }
+  saves::SaveSizes sizes{extra.data_size, extra.journal_size > 0 ? extra.journal_size : saves::DefaultJournal};
+  if (wanted && wanted->data > sizes.data) {
+    const auto grown = fsExtendSaveDataFileSystem(FsSaveDataSpaceId_User, save.saveId, wanted->data, wanted->journal);
+    if (R_FAILED(grown)) return {{}, failure(tr("세이브 용량을 늘리지 못했습니다."), grown)};
+    sizes = *wanted;
+  }
+  if (!saves::fitsSave(bytes, sizes.data)) return {{}, {tr("백업이 세이브 용량보다 커서 복원하지 않았습니다.")}};
+  return {sizes, {}};
+}
+// A save made for a restore that then failed goes again, so the game does
+// not open half a save.
+void deleteSave(const SaveEntry &save) {
+  const auto attr = attributeOf(save);
+  const auto rc = fsDeleteSaveDataFileSystemBySaveDataAttribute(FsSaveDataSpaceId_User, &attr);
+  if (R_FAILED(rc)) logLine("saves: could not remove the new save after a failed restore");
 }
 // Mounts one save as "cfsave:" for as long as it lives.
 class SaveMount {
 public:
   explicit SaveMount(const SaveEntry &save) {
     fsdevUnmountDevice(MountName); // a mount left over from a crash
-    FsSaveDataAttribute attr{};
-    attr.application_id = save.applicationId;
-    if (save.type == FsSaveDataType_Account) {
-      attr.uid.uid[0] = save.user[0];
-      attr.uid.uid[1] = save.user[1];
-    }
-    attr.save_data_type = save.type;
-    attr.save_data_rank = FsSaveDataRank_Primary;
-    attr.save_data_index = 0;
+    const auto attr = attributeOf(save);
     FsFileSystem fs{};
     rc_ = fsOpenSaveDataFileSystem(&fs, FsSaveDataSpaceId_User, &attr);
     if (R_FAILED(rc_)) return;
@@ -224,39 +258,56 @@ Error restoreSave(const SaveJob &job, const saves::LocalBackup &backup) {
   if (auto error = saves::restoreMismatch(backup, job.save.device())) return error;
   // An account without a save gets one first; there is nothing to fall
   // back on then. Otherwise the copy to fall back on comes first, and
-  // without it nothing is overwritten.
+  // without it nothing is overwritten. A backup the save cannot hold is
+  // turned down before either.
   Parsed<saves::LocalBackup> rollback;
-  if (job.save.missing) {
+  saves::CopyHooks hooks = progressOnly(job);
 #ifdef __SWITCH__
-    if (auto error = createSave(job.save)) return error;
+  const auto wanted = saves::readJksvMeta(backup.path);
+  const auto bytes = saves::restoreBytes(backup.path);
+  auto sizes = job.save.missing ? createSave(job.save, wanted, bytes) : existingSave(job.save, wanted, bytes);
+  if (sizes.error) return sizes.error;
+  hooks.journal = sizes.value.journal;
 #else
+  if (job.save.missing) {
     std::error_code ec;
     std::filesystem::create_directories(fakeSave(job), ec);
+  }
 #endif
-  } else {
+  if (!job.save.missing) {
     rollback = backupKeeping(job, true, backup.path);
     if (rollback.error) return {trf("복원 전에 지금 세이브를 백업하지 못해 복원하지 않았습니다. {0}", {rollback.error.message})};
   }
   if (job.copied) job.copied->store(0);
+  Error error;
+  {
 #ifdef __SWITCH__
-  SaveMount mount(job.save);
-  if (!mount.open()) return mountFailure(mount);
-  saves::CopyHooks hooks = progressOnly(job);
-  hooks.journal = journalSize(job.save);
-  hooks.commit = [&mount] { return mount.commit(); };
-  const auto target = mount.root();
+    SaveMount mount(job.save);
+    if (!mount.open()) {
+      if (job.save.missing) deleteSave(job.save);
+      return mountFailure(mount);
+    }
+    hooks.commit = [&mount] { return mount.commit(); };
+    const auto target = mount.root();
 #else
-  saves::CopyHooks hooks = progressOnly(job);
-  const auto target = fakeSave(job);
+    hooks.commit = [] { return true; }; // the fake save stands in for a console one
+    const auto target = fakeSave(job);
 #endif
-  auto error = copyIn(backup.path, target, hooks);
-  if (!error) return {};
-  if (job.save.missing) return {trf("새로 만든 세이브에 복원하지 못했습니다. {0}", {error.message})};
-  logLine("saves: restore failed, putting the rollback back: " + error.message);
-  if (auto again = copyIn(rollback.value.path, target, hooks)) {
-    logLine("saves: rollback failed: " + again.message);
-    return {trf("복원하지 못했고 원래 세이브도 되돌리지 못했습니다. {0} 백업에서 다시 복원합니다.", {rollback.value.name})};
+    error = copyIn(backup.path, target, hooks);
+    if (!error) return {};
+    if (!job.save.missing) {
+      logLine("saves: restore failed, putting the rollback back: " + error.message);
+      if (auto again = copyIn(rollback.value.path, target, hooks)) {
+        logLine("saves: rollback failed: " + again.message);
+        return {trf("복원하지 못했고 원래 세이브도 되돌리지 못했습니다. {0} 백업에서 다시 복원합니다.", {rollback.value.name})};
+      }
+      return {trf("복원하지 못해 원래 세이브로 되돌렸습니다. {0}", {error.message})};
+    }
   }
-  return {trf("복원하지 못해 원래 세이브로 되돌렸습니다. {0}", {error.message})};
+  // The save made for this restore goes again once it is unmounted.
+#ifdef __SWITCH__
+  deleteSave(job.save);
+#endif
+  return {trf("새로 만든 세이브에 복원하지 못했습니다. {0}", {error.message})};
 }
 } // namespace foil::platform
