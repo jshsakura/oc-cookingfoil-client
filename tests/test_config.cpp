@@ -28,6 +28,34 @@ int runConfigTests() {
     CHECK(foil::parseConfig("{} trailing").error);
     CHECK(!foil::parseConfig(R"({"servers":[{"url":"host","title":"원격 서버 日本 中文"}]})").error);
     CHECK(foil::parseConfig(std::string("{\"language\":\"") + char(0xc0) + char(0xaf) + "\"}").error);
+    {
+        // What the app writes reads back the same: every field, a title in
+        // three scripts, empty optional fields and a server switched off.
+        foil::Config config;
+        config.language = "ja";
+        config.installTarget = "nand";
+        config.servers.push_back({"원격 서버 日本 中文", "https://shop.example.com:8443/prefix", "user",
+                                  "p\"a\\ss/word", "id.access", "secret", true});
+        config.servers.push_back({"빈 칸", "http://192.168.0.2:9080", "", "", "", "", false});
+        const auto same = [](const foil::Config &a, const foil::Config &b) {
+            if (a.language != b.language || a.installTarget != b.installTarget || a.servers.size() != b.servers.size())
+                return false;
+            for (size_t i = 0; i < a.servers.size(); ++i) {
+                const auto &x = a.servers[i], &y = b.servers[i];
+                if (x.title != y.title || x.url != y.url || x.username != y.username || x.password != y.password ||
+                    x.cfClientId != y.cfClientId || x.cfClientSecret != y.cfClientSecret || x.enabled != y.enabled)
+                    return false;
+            }
+            return true;
+        };
+        const auto back = foil::parseConfig(foil::serializeConfig(config));
+        CHECK(!back.error);
+        CHECK(same(back.value, config));
+        CHECK(same(foil::parseConfig(foil::serializeConfig(foil::Config{})).value, foil::Config{}));
+        // An empty title reads back as the address's host.
+        config.servers[1].title.clear();
+        CHECK(foil::parseConfig(foil::serializeConfig(config)).value.servers[1].title == "192.168.0.2:9080");
+    }
     char temporary[] = "/tmp/cookingfoil-config-XXXXXX";
     const char* root = mkdtemp(temporary);
     CHECK(root);
@@ -42,6 +70,16 @@ int runConfigTests() {
         { std::ofstream f(path); f << "{\n broken"; }
         CHECK(foil::loadConfig(path).error.line == 2);
         CHECK(foil::readFile(path) == "{\n broken");
+        // saveConfig replaces the file with what parseConfig reads back.
+        foil::Config saved;
+        saved.language = "en";
+        saved.servers.push_back({"내 서버", "https://shop.example.com", "player", "pass word", "", "", true});
+        std::string error;
+        CHECK(foil::saveConfig(path, saved, error));
+        const auto loaded = foil::loadConfig(path);
+        CHECK(!loaded.error && loaded.value.servers.size() == 1);
+        CHECK(loaded.value.servers[0].title == "내 서버" && loaded.value.servers[0].password == "pass word");
+        CHECK(loaded.value.language == "en");
         std::filesystem::remove_all(root);
     }
     {
