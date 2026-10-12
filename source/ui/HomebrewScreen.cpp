@@ -1,7 +1,9 @@
 #include "ui/Application.hpp"
+#include "core/Forwarder.hpp"
 #include "core/Json.hpp"
 #include "core/Log.hpp"
 #include "net/HomebrewApi.hpp"
+#include "platform/Shortcut.hpp"
 #include <algorithm>
 #include <filesystem>
 namespace foil::ui {
@@ -45,6 +47,10 @@ void Application::pollHomebrew() {
     homebrewCard_ = std::move(homebrewCardFound_);
     homebrewCardFound_.clear();
     homebrewScanned_ = true;
+    // The shortcuts asked about: whichever the console no longer has goes.
+    for (const auto &nro : homebrewCard_) shortcuts_.erase(forwarder::titleId(forwarder::loaderPath(nro.path)));
+    for (const auto &app : homebrew_) shortcuts_.erase(homebrewServerShortcut(app));
+    shortcuts_.insert(homebrewShortcutsFound_.begin(), homebrewShortcutsFound_.end());
     matchHomebrewCard();
     if (screen_ == Screen::Homebrew && sidebar_ && autoSidebar_ && hasFocusable()) sidebar_ = autoSidebar_ = false;
   }
@@ -63,10 +69,22 @@ void Application::scanHomebrewCard() {
   if (homebrewCardWorker_.joinable() || sdRoot_.empty()) return;
   const auto sd = sdRoot_;
   const auto languages = homebrew::nacpLanguages(languageCode());
-  homebrewCardWorker_ = std::thread([this, sd, languages] {
+  // Which apps have a HOME Menu shortcut: the one made here for each file,
+  // and the server's for each listed app.
+  std::vector<uint64_t> ids;
+  for (const auto &app : homebrew_)
+    if (const auto id = homebrewServerShortcut(app)) ids.push_back(id);
+  homebrewCardWorker_ = std::thread([this, sd, languages, ids]() mutable {
     std::vector<homebrew::CardNro> found;
-    if (!guarded("homebrew card", [&] { found = homebrew::scanCard(sd, languages); })) found.clear();
+    std::set<uint64_t> shortcuts;
+    if (!guarded("homebrew card", [&] {
+          found = homebrew::scanCard(sd, languages);
+          for (const auto &nro : found) ids.push_back(forwarder::titleId(forwarder::loaderPath(nro.path)));
+          shortcuts = platform::presentShortcuts(ids);
+        }))
+      found.clear();
     homebrewCardFound_ = std::move(found);
+    homebrewShortcutsFound_ = std::move(shortcuts);
     homebrewCardDone_ = true;
   });
 }
@@ -192,7 +210,7 @@ bool Application::getHomebrew(const homebrew::App &app) {
             return;
           }
           settleHomebrew(app);
-          if (installShortcut(app.name, app.iconUrl, app.forwarderUrl, app.forwarderTitleId, app.forwarderSize)) return;
+          if (autoHomebrewShortcut(app)) return;
           message(trf("{0}을(를) 받았습니다. hbmenu에서 실행합니다.", {app.name}));
         };
       })) {
@@ -244,6 +262,8 @@ void Application::removeHomebrew(const homebrew::App &picked) {
   const bool onCard = std::any_of(homebrewCard_.begin(), homebrewCard_.end(),
                                   [&](const homebrew::CardNro &nro) { return nro.path == file; });
   if (!ledgered && !onCard) return;
+  // Its shortcut would only open an error once the file is gone.
+  const std::vector<uint64_t> shortcutIds{homebrewShortcutId(app), homebrewServerShortcut(app)};
   std::error_code ec;
   bool removed = true;
   if (ledgered) {
@@ -271,6 +291,7 @@ void Application::removeHomebrew(const homebrew::App &picked) {
     homebrewLedger_.erase(found);
     saveHomebrewLedger();
   }
+  removeShortcuts(shortcutIds, app.name);
   homebrewCard_.erase(std::remove_if(homebrewCard_.begin(), homebrewCard_.end(),
                                      [&](const homebrew::CardNro &nro) { return nro.path == file; }),
                       homebrewCard_.end());
@@ -280,6 +301,18 @@ void Application::removeHomebrew(const homebrew::App &picked) {
 void Application::homebrewAction(Action a) {
   const auto rows = homebrewRows();
   const auto *picked = homebrewPicked();
+  // Back to the app's card either way, its shortcut row showing the result.
+  if (shortcutRemoveAsk_) {
+    if (a == Action::Back) {
+      shortcutRemoveAsk_ = false;
+      homebrewAsk_ = true;
+    } else if (a == Action::Accept && settled()) {
+      shortcutRemoveAsk_ = false;
+      homebrewAsk_ = true;
+      if (picked) removeHomebrewShortcut(*picked);
+    }
+    return;
+  }
   if (homebrewRemoveAsk_) {
     if (a == Action::Back) homebrewRemoveAsk_ = false;
     else if (a == Action::Accept && settled()) {
@@ -293,19 +326,28 @@ void Application::homebrewAction(Action a) {
     return;
   }
   if (homebrewAsk_) {
-    // Up and down move between the app and its 패치 and 세이브 rows.
+    // Up and down move between the app, its 패치 and 세이브 rows and, for
+    // an app on the card, its HOME Menu shortcut row.
     const int extras = picked ? int(homebrewExtraKinds(*picked).size()) : 0;
-    homebrewAskRow_ = std::clamp(homebrewAskRow_, -1, extras - 1);
+    const bool shortcutRow = picked && homebrewShortcutRow(*picked);
+    const int rows = extras + (shortcutRow ? 1 : 0);
+    homebrewAskRow_ = std::clamp(homebrewAskRow_, -1, rows - 1);
+    const bool onShortcut = shortcutRow && homebrewAskRow_ == extras;
     const bool onCard = picked && homebrewStatus(*picked) != homebrew::Status::Available;
     if (a == Action::Back) homebrewAsk_ = false;
-    // Removal is X, never A, so a stray press keeps the app.
-    else if (a == Action::Search && onCard && homebrewAskRow_ < 0 && settled()) {
+    // Removal is X, never A, so a stray press keeps the app (or shortcut).
+    else if (a == Action::Search && onShortcut && homebrewHasShortcut(*picked) && settled()) {
+      homebrewAsk_ = false;
+      shortcutRemoveAsk_ = true;
+    } else if (a == Action::Search && onCard && homebrewAskRow_ < 0 && settled()) {
       homebrewAsk_ = false;
       homebrewRemoveAsk_ = true;
     } else if (a == Action::Up) homebrewAskRow_ = std::max(-1, homebrewAskRow_ - 1);
-    else if (a == Action::Down) homebrewAskRow_ = std::min(extras - 1, homebrewAskRow_ + 1);
+    else if (a == Action::Down) homebrewAskRow_ = std::min(rows - 1, homebrewAskRow_ + 1);
     else if (a == Action::Accept && settled() && picked) {
-      if (homebrewAskRow_ >= 0) {
+      if (onShortcut) {
+        makeHomebrewShortcut(*picked, false); // the card stays, its row now says 있음
+      } else if (homebrewAskRow_ >= 0) {
         homebrewExtras_ = homebrewExtraKinds(*picked)[homebrewAskRow_];
         homebrewExtraRow_ = 0;
       } else if (homebrewStatus(*picked) == homebrew::Status::Installed) {
@@ -432,21 +474,28 @@ void Application::homebrewAskDialog() {
   const auto status = homebrewStatus(app);
   const bool update = status == homebrew::Status::Update, installed = status == homebrew::Status::Installed;
   const auto extras = homebrewExtraKinds(app);
-  homebrewAskRow_ = std::clamp(homebrewAskRow_, -1, int(extras.size()) - 1);
+  const bool shortcutRow = homebrewShortcutRow(app);
+  const int rowCount = int(extras.size()) + (shortcutRow ? 1 : 0);
+  homebrewAskRow_ = std::clamp(homebrewAskRow_, -1, rowCount - 1);
+  const bool onShortcut = shortcutRow && homebrewAskRow_ == int(extras.size());
+  const bool hasShortcut = shortcutRow && homebrewHasShortcut(app);
   constexpr float Icon = 160, Width = 820, Row = 56, Gap = 10;
   const float textW = Width - 64 - Icon - 28;
   // Measured off screen first, so the card hugs the description.
   constexpr int Lines = 6;
   // A card file no listed app owns says so where a description would be.
-  const std::string description = app.cardOnly ? tr("서버 목록에 없는 앱이라 지우기만 할 수 있습니다.") : app.description;
+  const std::string description = app.cardOnly ? tr("서버 목록에 없는 앱이라 받거나 업데이트할 수 없습니다.") : app.description;
   const float described = description.empty() ? 0
                         : paint_.fonts.wrapped(description, -9999, -9999, 18, Ink, textW, Lines);
   const float top = 24 + std::max(Icon, 106 + described);
-  const float bodyH = top + (extras.empty() ? 0 : 16 + extras.size() * (Row + Gap) - Gap) + 24;
-  // A focused 패치 or 세이브 row opens its list; otherwise A acts on the app.
-  const auto accept = homebrewAskRow_ >= 0 ? tr("열기") : installed ? tr("확인") : update ? tr("업데이트|동작") : tr("받기");
-  // X removes an app on the card; A never does.
-  const auto remove = (installed || update) && homebrewAskRow_ < 0 ? tr("지우기") : "";
+  const float bodyH = top + (rowCount == 0 ? 0 : 16 + rowCount * (Row + Gap) - Gap) + 24;
+  // A focused 패치 or 세이브 row opens its list, the shortcut row makes the
+  // shortcut (again); otherwise A acts on the app.
+  const auto accept = onShortcut ? tr("바로가기 만들기")
+                    : homebrewAskRow_ >= 0 ? tr("열기") : installed ? tr("확인") : update ? tr("업데이트|동작") : tr("받기");
+  // X removes an app on the card, or on its row the shortcut; A never does.
+  const auto remove = onShortcut ? (hasShortcut ? tr("바로가기 지우기") : "")
+                    : (installed || update) && homebrewAskRow_ < 0 ? tr("지우기") : "";
   const auto body = modal(Width, bodyH, installed ? tr("설치된 앱") : update ? tr("업데이트할까요?") : tr("이 앱을 받을까요?"),
                           installed ? tr("닫기") : tr("취소"), "", accept, 22, remove);
   const float x = body.x + 32, y = body.y + 24, textX = x + Icon + 28;
@@ -484,6 +533,20 @@ void Application::homebrewAskDialog() {
       paint_.fonts.middle(state, x + rowW - 20 - paint_.fonts.measure(state, 17, true), rowY + Row / 2, 17, Good, true);
     }
   }
+  if (shortcutRow) {
+    const int i = int(extras.size());
+    hit(x, rowY, rowW, Row, [this, i] {
+      homebrewAskRow_ = i;
+      action(Action::Accept);
+    });
+    if (onShortcut && !homebrewExtras_) paint_.focusRow(x, rowY, rowW, Row, Ground, 12);
+    else paint_.rect(x, rowY, rowW, Row, Ground, 12);
+    paint_.icon(0, x + 20, rowY + 15, Ink, 26);
+    paint_.fonts.middle(tr("홈 메뉴 바로가기"), x + 62, rowY + Row / 2, 20, Ink, true);
+    const std::string state = hasShortcut ? tr("있음") : tr("없음");
+    paint_.fonts.middle(state, x + rowW - 20 - paint_.fonts.measure(state, 17, true), rowY + Row / 2, 17,
+                        hasShortcut ? Good : Secondary, true);
+  }
 }
 void Application::homebrewRemoveDialog() {
   const auto rows = homebrewRows();
@@ -492,10 +555,14 @@ void Application::homebrewRemoveDialog() {
     return;
   }
   const auto &app = homebrewAt(rows[std::clamp(selected_, 0, int(rows.size()) - 1)]);
-  const auto body = modal(700, 24 + 70 + 16, tr("홈브류를 지우시겠습니까?"), tr("취소"), "", tr("지우기"), 37);
+  const bool shortcut = homebrewHasShortcut(app);
+  const auto body = modal(700, 24 + 70 + (shortcut ? 30 : 0) + 16, tr("홈브류를 지우시겠습니까?"), tr("취소"), "",
+                          tr("지우기"), 37);
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(app.name, x, y, 21, Ink, true, body.w - 64);
   paint_.fonts.text(trf("SD 카드에서 {0}을(를) 지웁니다.", {homebrewFile(app)}), x, y + 38, 19, Secondary,
                     false, body.w - 64);
+  if (shortcut)
+    paint_.fonts.text(tr("홈 메뉴 바로가기도 함께 지웁니다."), x, y + 68, 19, Secondary, false, body.w - 64);
 }
 } // namespace foil::ui

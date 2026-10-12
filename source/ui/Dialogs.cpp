@@ -176,7 +176,7 @@ void Application::dialogs() {
       !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !confirmCleanup_ && !confirmResume_ &&
       !languagePopup_ && !cleanupBusy_ && !retroAsking_ && !retroArchAsking_ && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
-      !homebrewRemoveAsk_ && !homebrewAsk_)
+      !homebrewRemoveAsk_ && !homebrewAsk_ && !shortcutRemoveAsk_ && !selfShortcutAsk_)
     return;
   SDL_RenderSetClipRect(paint_.renderer, nullptr);
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 150});
@@ -185,13 +185,16 @@ void Application::dialogs() {
   const int which = confirmCancel_ * 1 + confirmCleanup_ * 2 + confirmPatchRemove_ * 4 + confirmInstall_ * 8 +
                     confirmResume_ * 16 + dropboxUnlinkAsk_ * 32 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + homebrewAsk_ * 256 +
                     (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + shopAppSaveAsk_ * 2048 +
-                    (serverForm_ && serverForm_->confirmDelete) * 4096;
+                    (serverForm_ && serverForm_->confirmDelete) * 4096 + shortcutRemoveAsk_ * 8192 +
+                    selfShortcutAsk_ * 16384;
   if (which != popupKind_) {
     popupKind_ = which;
     popupAt_ = SDL_GetTicks();
   }
   if (alert_.empty() && (appUpdateAsk_ || appUpdate_ == AppUpdate::Downloading)) {
     appUpdateDialog();
+  } else if (selfShortcutAsk_ && alert_.empty()) {
+    selfShortcutDialog();
   } else if (viewPopup_) {
     viewPopup();
   } else if (languagePopup_) {
@@ -215,6 +218,8 @@ void Application::dialogs() {
     cleanupDialog();
   } else if (confirmPatchRemove_ || managingPatch_ || pickingPatch_) {
     patchDialog();
+  } else if (shortcutRemoveAsk_ && alert_.empty()) {
+    shortcutRemoveDialog();
   } else if (homebrewRemoveAsk_ && alert_.empty()) {
     homebrewRemoveDialog();
   } else if (homebrewAsk_ && alert_.empty()) {

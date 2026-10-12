@@ -110,7 +110,11 @@ public:
   void enterText(const std::string &text);
   bool requestQuit();
   // Where this .nro runs from (argv[0]); 설정 > 앱 업데이트 replaces it.
-  void setSelfPath(std::string path) { selfPath_ = std::move(path); }
+  // Opened from the album without a shortcut, it offers to make one.
+  void setSelfPath(std::string path) {
+    selfPath_ = std::move(path);
+    considerSelfShortcut();
+  }
   // - on any screen: the shop, the console's games and free space again.
   void refreshAll();
   bool shouldQuit() const {
@@ -141,6 +145,16 @@ public:
     deviceFixture_ = true;
   }
   void previewFeatures(std::set<std::string> features) { features_ = std::move(features); }
+  bool askingSelfShortcut() const { return selfShortcutAsk_; }
+  bool askingShortcutRemoval() const { return shortcutRemoveAsk_; }
+  bool appPopupOpen() const { return homebrewAsk_; }
+  int appPopupRow() const { return homebrewAskRow_; }
+  bool hasShortcut(uint64_t id) const { return shortcuts_.count(id) > 0; }
+  // 홈브류 with its card scan finished (the worker joined).
+  bool homebrewCardScanned() {
+    poll();
+    return homebrewScanned_ && !homebrewCardWorker_.joinable();
+  }
   // 홈브류 without a server: the menu item and this list.
   void previewHomebrew(std::vector<homebrew::App> apps) {
     features_.insert("homebrew");
@@ -295,6 +309,40 @@ private:
   void homebrewAction(Action a);
   void homebrewRemoveDialog();
   void homebrewAskDialog(); // what the app is, before it comes down
+  // HOME Menu shortcuts (platform/Shortcut): the ids the console has, as the
+  // last card scan found them and as made or removed since.
+  std::set<uint64_t> shortcuts_;
+  std::set<uint64_t> homebrewShortcutsFound_; // the card worker's result
+  bool shortcutRemoveAsk_ = false; // X on the app popup's shortcut row, asked first
+  bool selfShortcutAsk_ = false;   // this app's own, offered once from the album
+  // The app popup's shortcut row: only for an app on the card, after its
+  // 패치 and 세이브 rows.
+  bool homebrewShortcutRow(const homebrew::App &app) const;
+  // The ids an app's shortcut can have: the one made here for its file, and
+  // the server's (0 when it has none).
+  uint64_t homebrewShortcutId(const homebrew::App &app) const;
+  uint64_t homebrewServerShortcut(const homebrew::App &app) const;
+  bool homebrewHasShortcut(const homebrew::App &app) const;
+  // Makes the app's shortcut from its file on the card; replaces the
+  // server's for it, if that one is installed. True when something was said.
+  bool makeHomebrewShortcut(const homebrew::App &app, bool justDownloaded);
+  void removeHomebrewShortcut(const homebrew::App &app);
+  void removeShortcuts(const std::vector<uint64_t> &ids, const std::string &name); // those the console has
+  // After a download, when 설정 asks for shortcuts: made here when the
+  // console can, else the server's.
+  bool autoHomebrewShortcut(const homebrew::App &app);
+  // The shortcut with the name and icon of the .nro at `file` (SD-root
+  // relative) that starts `launch` (empty: `file` itself) with `extra` after
+  // its path in argv. Says how it went; false on failure.
+  bool makeShortcutFromNro(const std::string &file, const std::string &launch, const std::string &name,
+                           const std::string &extra, const std::string &nameOverride,
+                           const std::string &authorOverride, bool justDownloaded);
+  void shortcutRemoveDialog();
+  void selfShortcutDialog();
+  void selfShortcutAction(Action a);
+  // At start in the album: offers this app's shortcut once (replaces the
+  // applet mode notice, which it repeats).
+  void considerSelfShortcut();
   void checkHomebrewCard();
   homebrew::Status homebrewStatus(const homebrew::App &app) const;
   std::vector<int> homebrewRows() const; // homebrewAt() indexes in this tab and search

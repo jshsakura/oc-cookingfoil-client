@@ -557,6 +557,7 @@ void Application::poll() {
     state_.skipFirmwareCheck = mine.skipFirmwareCheck;
     state_.reportErrors = mine.reportErrors;
     state_.makeShortcuts = mine.makeShortcuts;
+    state_.selfShortcutAsked = mine.selfShortcutAsked;
     state_.installTarget = mine.installTarget;
   }
   features_ = session_->features();
@@ -764,6 +765,10 @@ void Application::action(Action a) {
     }
     return;
   }
+  if (selfShortcutAsk_) {
+    selfShortcutAction(a);
+    return;
+  }
   if (serverForm_) {
     serverFormAction(a);
     return;
@@ -891,7 +896,7 @@ void Application::action(Action a) {
     }
     return;
   }
-  if (homebrewRemoveAsk_ || homebrewAsk_ ||
+  if (homebrewRemoveAsk_ || homebrewAsk_ || shortcutRemoveAsk_ ||
       (screen_ == Screen::Homebrew && (a == Action::Previous || a == Action::Next || a == Action::Search ||
                                        (!sidebar_ && a != Action::Back)))) {
     homebrewAction(a);

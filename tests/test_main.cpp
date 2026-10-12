@@ -23,6 +23,8 @@ int runHistoryTests();
 int runClientUpdateTests();
 int runHomebrewTests();
 int runHomebrewCardTests();
+int runForwarderTests();
+int runShortcutUiTests(SDL_Renderer *renderer);
 int runUiTests(SDL_Renderer *renderer);
 int main() {
   foil::ui::Runtime app;
@@ -51,8 +53,8 @@ int main() {
   const int failures = runConfigTests() + runNetworkTests() +
                        runSessionTests() + runPairingTests() + runCatalogTests() + runUpdatesTests() + runInstalledTests() +
                        runSelectionTests() + runInstallerTests() + runPatchTests() + runI18nTests() +
-                       runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runHistoryTests() + runClientUpdateTests() + runHomebrewTests() + runHomebrewCardTests() +
-                       runUiTests(app.renderer()) + runPairingUiTests(app.renderer());
+                       runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runHistoryTests() + runClientUpdateTests() + runHomebrewTests() + runHomebrewCardTests() + runForwarderTests() +
+                       runUiTests(app.renderer()) + runPairingUiTests(app.renderer()) + runShortcutUiTests(app.renderer());
   std::printf("Core tests: %d failures\n", failures);
   return (ok && failures == 0) ? 0 : 1;
 }
