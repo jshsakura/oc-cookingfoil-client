@@ -9,6 +9,8 @@ HOST_FLAGS += -I$(QR_ROOT)
 # count, so every build reads newer than the one before and 설정 > 앱
 # 업데이트 can tell them apart (the server reads it from the NACP).
 APP_BASE := $(shell sed -n 's/^APP_VERSION := //p' makefiles/switch.mk)
+# The commit count since the history was squashed; the minor version was
+# raised to 0.2 then, so new builds stay above the 0.1.x already out.
 APP_BUILD := $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
 APP_VERSION := $(basename $(APP_BASE)).$(APP_BUILD)
 HOST_FLAGS += -DCOOKINGFOIL_VERSION=\"$(APP_VERSION)\"
