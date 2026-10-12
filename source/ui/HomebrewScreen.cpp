@@ -296,16 +296,20 @@ void Application::homebrewAction(Action a) {
     // Up and down move between the app and its 패치 and 세이브 rows.
     const int extras = picked ? int(homebrewExtraKinds(*picked).size()) : 0;
     homebrewAskRow_ = std::clamp(homebrewAskRow_, -1, extras - 1);
+    const bool onCard = picked && homebrewStatus(*picked) != homebrew::Status::Available;
     if (a == Action::Back) homebrewAsk_ = false;
-    else if (a == Action::Up) homebrewAskRow_ = std::max(-1, homebrewAskRow_ - 1);
+    // Removal is X, never A, so a stray press keeps the app.
+    else if (a == Action::Search && onCard && homebrewAskRow_ < 0 && settled()) {
+      homebrewAsk_ = false;
+      homebrewRemoveAsk_ = true;
+    } else if (a == Action::Up) homebrewAskRow_ = std::max(-1, homebrewAskRow_ - 1);
     else if (a == Action::Down) homebrewAskRow_ = std::min(extras - 1, homebrewAskRow_ + 1);
     else if (a == Action::Accept && settled() && picked) {
       if (homebrewAskRow_ >= 0) {
         homebrewExtras_ = homebrewExtraKinds(*picked)[homebrewAskRow_];
         homebrewExtraRow_ = 0;
       } else if (homebrewStatus(*picked) == homebrew::Status::Installed) {
-        homebrewAsk_ = false;
-        homebrewRemoveAsk_ = true;
+        homebrewAsk_ = false; // nothing to get: A only closes
       } else {
         homebrewAsk_ = false;
         getHomebrew(*picked);
@@ -440,9 +444,11 @@ void Application::homebrewAskDialog() {
   const float top = 24 + std::max(Icon, 106 + described);
   const float bodyH = top + (extras.empty() ? 0 : 16 + extras.size() * (Row + Gap) - Gap) + 24;
   // A focused 패치 or 세이브 row opens its list; otherwise A acts on the app.
-  const auto accept = homebrewAskRow_ >= 0 ? tr("열기") : installed ? tr("지우기") : update ? tr("업데이트|동작") : tr("받기");
+  const auto accept = homebrewAskRow_ >= 0 ? tr("열기") : installed ? tr("확인") : update ? tr("업데이트|동작") : tr("받기");
+  // X removes an app on the card; A never does.
+  const auto remove = (installed || update) && homebrewAskRow_ < 0 ? tr("지우기") : "";
   const auto body = modal(Width, bodyH, installed ? tr("설치된 앱") : update ? tr("업데이트할까요?") : tr("이 앱을 받을까요?"),
-                          tr("취소"), "", accept, 22);
+                          installed ? tr("닫기") : tr("취소"), "", accept, 22, remove);
   const float x = body.x + 32, y = body.y + 24, textX = x + Icon + 28;
   cover(homebrewIcon(app), x, y, int(Icon), false, app.name, true);
   paint_.fonts.text(app.name, textX, y, 24, Ink, true, textW);
