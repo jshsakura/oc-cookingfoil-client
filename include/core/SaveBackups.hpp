@@ -26,6 +26,14 @@ struct LocalBackup {
   std::time_t timestamp = 0; // created_at, else the folder's mtime
   int64_t size = 0;
 };
+// Which save a backup holds: user_id "device" marks the shared save, as
+// save-keeper writes it. A backup without that tag (no .meta, or an older
+// one) holds an account's.
+bool deviceBackup(const LocalBackup &backup);
+// A shared save's files go only into the shared save, an account's only
+// into an account; otherwise the error says which kind they are for.
+Error kindMismatch(bool deviceSource, bool deviceTarget);
+Error restoreMismatch(const LocalBackup &backup, bool deviceTarget);
 // Newest first, as save-keeper sorts them; backups made in the same second
 // by their counted-up names.
 std::vector<LocalBackup> listBackups(const std::string &root, uint64_t titleId);

@@ -126,6 +126,11 @@ void Application::installedAction(Action a) {
     if (a == Action::Up) manageRow_ = std::max(1, manageRow_ - 1);
     if (a == Action::Down) manageRow_ = std::min(int(saves_.size()), manageRow_ + 1);
     if (a == Action::Accept && manageRow_ > 0 && manageRow_ <= int(saves_.size())) {
+      // A save the server marks shared goes only into the shared save, and so on.
+      if (auto error = shopsaves::targetMismatch(*applying_, saves_[manageRow_ - 1].device())) {
+        message(error.message);
+        return;
+      }
       applySave_ = manageRow_ - 1;
       applyAsking_ = true;
     }
@@ -238,7 +243,7 @@ void Application::management() {
   const auto body = modal(860, height, managedGame_->name, tr("뒤로"), "", "", savesOnly ? 36 : 6);
   const float x = body.x + 32, w = body.w - 64;
   float y = body.y + 20;
-  paint_.fonts.text(applying_ ? trf("{0} 적용 · 계정을 고릅니다", {applying_->name}) : managedGame_->titleId, x, y, 17,
+  paint_.fonts.text(applying_ ? trf("{0} 적용 · 넣을 세이브를 고릅니다", {applying_->name}) : managedGame_->titleId, x, y, 17,
                     applying_ ? Ink : Secondary, bool(applying_), w);
   y += 28;
   if (!savesOnly) {
@@ -274,7 +279,7 @@ void Application::management() {
     const int first = std::clamp(manageRow_ - shown, 0, std::max(0, int(saves_.size()) - shown));
     for (int i = first; i < int(saves_.size()) && i < first + shown; ++i, y += Row + Gap) {
       const auto &save = saves_[i];
-      const bool device = save.type == 3;
+      const bool device = save.device();
       hit(x, y, w, Row, [this, i] {
         manageRow_ = i + 1;
         installedAction(Action::Accept);
@@ -283,8 +288,10 @@ void Application::management() {
       else paint_.rect(x, y, w, Row, Ground, 12);
       paint_.icon(device ? 14 : 13, x + 20, y + Row / 2 - 13, Ink, 26);
       paint_.fonts.text(save.userName, x + 62, y + 9, 21, Ink, true, w - 220);
-      paint_.fonts.text(applying_ && save.missing ? tr("이 계정에 세이브를 새로 만들어 적용합니다.")
-                        : applying_             ? tr("이 계정에 적용합니다. 지금 세이브는 먼저 백업합니다.")
+      paint_.fonts.text(applying_ && device && save.missing ? tr("공용 세이브를 새로 만들어 적용합니다.")
+                        : applying_ && device             ? tr("공용 세이브에 적용합니다. 지금 세이브는 먼저 백업합니다.")
+                        : applying_ && save.missing       ? tr("이 계정에 세이브를 새로 만들어 적용합니다.")
+                        : applying_                       ? tr("이 계정에 적용합니다. 지금 세이브는 먼저 백업합니다.")
                         : save.missing          ? tr("아직 세이브가 없습니다. 백업을 복원하면 새로 만듭니다.")
                         : device                ? tr("모든 계정이 함께 쓰는 세이브를 백업·복원·삭제합니다.")
                                                 : tr("이 계정의 세이브를 백업·복원·삭제합니다."),
@@ -307,7 +314,7 @@ void Application::removalConfirm() {
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 150});
   blockTouch();
   const bool save = removal_->kind == RemovalKind::Save;
-  const auto warning = removal_->save.type == 3 ? std::string(tr("모든 계정이 함께 쓰는 공용 세이브를 삭제합니다. 되돌릴 수 없습니다."))
+  const auto warning = removal_->save.device() ? std::string(tr("모든 계정이 함께 쓰는 공용 세이브를 삭제합니다. 되돌릴 수 없습니다."))
                        : trf("{0} 계정의 세이브를 삭제합니다. 되돌릴 수 없습니다.", {removal_->save.userName});
   // While it runs there is nothing to press: no footer keys.
   const auto body = modal(700, 20 + 30 + 84 + 16, save ? tr("세이브를 삭제합니까?") : tr("게임을 삭제합니까?"),

@@ -336,7 +336,7 @@ void Application::screen(Screen screen) {
   if (screen == Screen::Settings && appUpdate_ == AppUpdate::Unknown && connected_)
     checkAppUpdate();
   // Dropbox's popups belong to the visit that opened them.
-  dropboxOpen_ = dropboxUnlinkAsk_ = false;
+  dropboxOpen_ = dropboxUnlinkAsk_ = dropboxChoosing_ = false;
   if (screen == Screen::Saves) {
     backupCounts_.clear();
     refreshInstalled();

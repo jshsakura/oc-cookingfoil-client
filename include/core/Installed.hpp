@@ -29,6 +29,9 @@ struct SaveEntry {
   // An account (or the shared save) the game has no save for yet; restoring
   // a backup or a server save creates it first.
   bool missing = false;
+  // type is the system's save data type: 1 an account's, 3 the shared save
+  // (user {0, 0}) every account plays on.
+  bool device() const { return type == 3; }
 };
 enum class RemovalKind { Game, Save };
 struct RemovalRequest {

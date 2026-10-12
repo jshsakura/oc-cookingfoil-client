@@ -164,6 +164,10 @@ public:
     }
   }
   bool dropboxPopupOpen() const { return dropboxOpen_ || dropboxUnlinkAsk_; }
+  bool dropboxChoosingUpload() const { return dropboxChoosing_; }
+  bool confirmingRestore() const { return saveConfirm_ == SaveConfirm::Restore; }
+  bool askingApply() const { return applyAsking_; }
+  void previewApplying(shopsaves::ShopSave save) { applying_ = std::move(save); }
   int savesTab() const { return savesTab_; }
   const std::string &headerFocus() const { return headerFocus_; }
   bool onMenu() const { return sidebar_; }
@@ -315,6 +319,8 @@ private:
   // oc-save-keeper's folders (SavesPanel.cpp).
   void openSave(int index);
   void savePanel();
+  // Whose save a backup holds, and where and why it was made, for its row.
+  std::string backupDetail(const saves::LocalBackup &backup) const;
   // 레트로 게임: a home of shelves, one per system, best rated first
   // (RetroHome.cpp); R or 모두 보기 opens a system's whole list, where L R
   // moves between systems and X searches (RetroScreen.cpp).
@@ -410,6 +416,8 @@ private:
   void listDropbox();
   void openDropboxGame();
   void dropboxTransfer();
+  void uploadDropbox(const saves::LocalBackup &backup);
+  void dropboxUploadList(); // the console's backups, one to pick for the upload
   bool dropboxFocusable() const;
   bool dropboxModal() const { return dropboxOpen_ || dropboxUnlinkAsk_; }
   // Runs `job` on the Dropbox worker; what it returns runs on the UI thread.
@@ -427,6 +435,8 @@ private:
   int dropboxRow_ = 0;              // -1 the account card, 0.. installed games
   bool dropboxOpen_ = false, dropboxUnlinkAsk_ = false;
   int dropboxPick_ = 0;             // in the game popup: 0 upload, 1.. Dropbox backups
+  bool dropboxChoosing_ = false;    // the upload row opened the console's backups
+  int dropboxUploadPick_ = 0;       // which of dropboxLocal_ goes up
   std::vector<saves::LocalBackup> dropboxLocal_; // the open game's backups on the console
   std::map<std::string, saves::BackupMeta> dropboxMetas_; // its Dropbox backups' .meta, by name
   std::string dropboxDevice_; // this console's save-keeper device id

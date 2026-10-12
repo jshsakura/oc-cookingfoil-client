@@ -1,7 +1,10 @@
 #include "Test.hpp"
 #include "core/Config.hpp"
 #include "core/Json.hpp"
+#include "core/SaveBackups.hpp"
+#include "core/ShopSaves.hpp"
 #include "ui/Application.hpp"
+#include <fstream>
 #include <filesystem>
 #include <unistd.h>
 int runUiTests(SDL_Renderer *renderer) {
@@ -261,6 +264,80 @@ int runUiTests(SDL_Renderer *renderer) {
     app.action(foil::ui::Action::Back);
     CHECK(!app.dropboxPopupOpen());
     CHECK(app.current() == foil::ui::Screen::Saves);
+  }
+  {
+    // One backup is still picked from a list, and a shared save's backup or
+    // server save goes only into the shared save.
+    char sdDir[] = "/tmp/cookingfoil-saves-XXXXXX";
+    const char *sd = mkdtemp(sdDir);
+    CHECK(sd != nullptr);
+    if (sd) {
+      app.usePatchFolder(sd);
+      const auto backup = foil::saves::keeperRoot(sd) + "/backups/" + foil::saves::titleHex(installed.applicationId) +
+                          "/20260312_090000";
+      CHECK(foil::makeDirectories(backup));
+      std::ofstream(backup + "/world.dat") << "day 1";
+      foil::saves::BackupMeta meta;
+      meta.titleId = installed.applicationId;
+      meta.backupName = meta.revisionId = "20260312_090000";
+      meta.userId = "device";
+      meta.createdAt = 1773306000;
+      CHECK(!foil::saves::writeMetaFile(backup + ".meta", meta));
+      // 드롭박스: the upload row opens the console's backups, even one.
+      app.previewDropbox(true, {});
+      CHECK(app.savesTab() == 2);
+      app.action(foil::ui::Action::Accept);
+      CHECK(app.dropboxPopupOpen());
+      app.action(foil::ui::Action::Accept);
+      CHECK(app.dropboxChoosingUpload());
+      app.render();
+      app.action(foil::ui::Action::Back);
+      CHECK(!app.dropboxChoosingUpload() && app.dropboxPopupOpen());
+      app.action(foil::ui::Action::Back);
+      CHECK(!app.dropboxPopupOpen());
+      // 내 기기: the shared save and an account's, each with its panel.
+      foil::SaveEntry shared;
+      shared.applicationId = installed.applicationId;
+      shared.saveId = 43;
+      shared.type = 3;
+      shared.userName = "공용 세이브";
+      app.previewInstalled({{true, {{installed.titleId, 0}}}, {installed}}, {shared, save});
+      app.action(foil::ui::Action::Next);
+      CHECK(app.savesTab() == 0);
+      app.action(foil::ui::Action::Accept);
+      CHECK(app.managingGame());
+      app.action(foil::ui::Action::Accept); // the shared save's panel
+      app.action(foil::ui::Action::Down);   // its one backup
+      app.action(foil::ui::Action::Accept);
+      CHECK(app.confirmingRestore());
+      app.render();
+      app.action(foil::ui::Action::Back);
+      app.action(foil::ui::Action::Back);
+      app.action(foil::ui::Action::Down);   // 사용자 1
+      app.action(foil::ui::Action::Accept);
+      app.action(foil::ui::Action::Down);
+      app.action(foil::ui::Action::Accept); // refused: it is the shared save's
+      CHECK(!app.confirmingRestore());
+      app.render();
+      app.action(foil::ui::Action::Back);
+      // A server save marked shared: the shared row asks, an account's refuses.
+      foil::shopsaves::ShopSave server;
+      server.id = "s";
+      server.titleId = installed.titleId;
+      server.name = "Server save";
+      server.saveType = "device";
+      app.previewApplying(server);
+      app.action(foil::ui::Action::Accept); // 사용자 1
+      CHECK(!app.askingApply());
+      app.action(foil::ui::Action::Up);
+      app.action(foil::ui::Action::Accept); // 공용 세이브
+      CHECK(app.askingApply());
+      app.render();
+      app.action(foil::ui::Action::Back);
+      app.action(foil::ui::Action::Back);
+      CHECK(!app.managingGame());
+      std::filesystem::remove_all(sd);
+    }
   }
   char directory[] = "/tmp/cookingfoil-reload-XXXXXX";
   const auto root = mkdtemp(directory);

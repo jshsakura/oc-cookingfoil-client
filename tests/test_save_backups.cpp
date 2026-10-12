@@ -278,6 +278,99 @@ int runSaveBackupTests() {
     CHECK(read(target + "/sm64.nro") == "app" && !fsys::exists(staging));
     fsys::remove_all(sd);
   }
+  // Which save a backup holds: user_id "device" is the shared save; a
+  // backup without the tag (no .meta, or an older one) is an account's.
+  {
+    LocalBackup bare, account, device;
+    account.hasMeta = device.hasMeta = true;
+    account.meta.userId = "00000000000011110000000000002222";
+    device.meta.userId = "device";
+    CHECK(!deviceBackup(bare) && !deviceBackup(account) && deviceBackup(device));
+    CHECK(!restoreMismatch(bare, false) && restoreMismatch(bare, true));
+    CHECK(!restoreMismatch(account, false) && restoreMismatch(account, true));
+    CHECK(!restoreMismatch(device, true) && restoreMismatch(device, false));
+    CHECK(kindMismatch(true, false).message != kindMismatch(false, true).message);
+    // A server save says which save it is for, or nothing and fits either.
+    const auto list = foil::shopsaves::parse(R"({"saves":[
+      {"id":"a","titleId":"0100ABCD00010000","url":"/a","saveType":"device"},
+      {"id":"b","titleId":"0100ABCD00010000","url":"/b","saveType":"account"},
+      {"id":"c","titleId":"0100ABCD00010000","url":"/c","saveType":"other"},
+      {"id":"d","titleId":"0100ABCD00010000","url":"/d"}]})", "https://shop.example");
+    CHECK(list.size() == 4);
+    if (list.size() == 4) {
+      CHECK(list[0].saveType == "device" && list[1].saveType == "account");
+      CHECK(list[2].saveType.empty() && list[3].saveType.empty());
+      CHECK(!foil::shopsaves::targetMismatch(list[0], true) && foil::shopsaves::targetMismatch(list[0], false));
+      CHECK(!foil::shopsaves::targetMismatch(list[1], false) && foil::shopsaves::targetMismatch(list[1], true));
+      CHECK(!foil::shopsaves::targetMismatch(list[3], true) && !foil::shopsaves::targetMismatch(list[3], false));
+    }
+  }
+  // The shared save: no account, user {0, 0}, its own fake-saves/<TID>/device
+  // folder. A server save into a shared save the game has not made yet
+  // creates it, and its backups are tagged "device".
+  {
+    const auto sd = scratch("device_save");
+    foil::platform::SaveJob shared;
+    shared.sd = sd;
+    shared.save.applicationId = Title;
+    shared.save.type = 3;
+    shared.save.user = {0, 0};
+    shared.save.userName = "Shared";
+    shared.save.missing = true;
+    shared.game.name = "Game";
+    CHECK(shared.save.device());
+    const auto live = sd + "/fake-saves/" + titleHex(Title) + "/device";
+    CHECK(foil::platform::backupSave(shared).error); // nothing to back up yet
+    auto server = foil::platform::importBackup(shared, [](const std::string &dir) {
+      write(dir + "/world.dat", "from server");
+      return foil::Error{};
+    }, "shop");
+    CHECK(!server.error);
+    CHECK(server.value.meta.userId == "device" && deviceBackup(server.value));
+    CHECK(!foil::platform::restoreSave(shared, server.value));
+    CHECK(read(live + "/world.dat") == "from server");
+    CHECK(listBackups(keeperRoot(sd), Title).size() == 1); // no rollback for a new save
+    // Now it exists: a backup of it is tagged too, and restoring one of
+    // several puts back that one, the current save kept as a rollback first.
+    shared.save.missing = false;
+    const auto first = foil::platform::backupSave(shared);
+    CHECK(!first.error && deviceBackup(first.value));
+    CHECK(first.value.path == keeperRoot(sd) + "/backups/" + titleHex(Title) + "/" + first.value.name);
+    write(live + "/world.dat", "day 2");
+    const auto second = foil::platform::backupSave(shared);
+    CHECK(!second.error && second.value.name != first.value.name);
+    write(live + "/world.dat", "day 3");
+    CHECK(!foil::platform::restoreSave(shared, server.value));
+    CHECK(read(live + "/world.dat") == "from server");
+    bool rolledBack = false;
+    for (const auto &b : listBackups(keeperRoot(sd), Title))
+      rolledBack |= b.meta.isAutoBackup && deviceBackup(b) && read(b.path + "/world.dat") == "day 3";
+    CHECK(rolledBack);
+    CHECK(!foil::platform::restoreSave(shared, second.value));
+    CHECK(read(live + "/world.dat") == "day 2");
+    // An account's backup never goes into the shared save, nor the other
+    // way; neither save is touched.
+    foil::platform::SaveJob player = shared;
+    player.save.type = 1;
+    player.save.user = {0x2222, 0x1111};
+    const auto mine = sd + "/fake-saves/" + titleHex(Title) + "/" + userIdOf(player.save.user);
+    write(mine + "/progress.dat", "mine");
+    const auto own = foil::platform::backupSave(player);
+    CHECK(!own.error && !deviceBackup(own.value));
+    const auto before = listBackups(keeperRoot(sd), Title).size();
+    CHECK(foil::platform::restoreSave(shared, own.value));
+    CHECK(read(live + "/world.dat") == "day 2");
+    CHECK(foil::platform::restoreSave(player, second.value));
+    CHECK(read(mine + "/progress.dat") == "mine");
+    CHECK(listBackups(keeperRoot(sd), Title).size() == before); // a refusal makes no rollback
+    // A backup without a .meta counts as an account's.
+    LocalBackup untagged = own.value;
+    untagged.hasMeta = false;
+    untagged.meta = {};
+    CHECK(foil::platform::restoreSave(shared, untagged));
+    CHECK(!foil::platform::restoreSave(player, untagged));
+    fsys::remove_all(sd);
+  }
   // Dropbox's zip, save-keeper's format: the files plus .dropkeep.meta, and
   // back into backups/<TID>/<name> marked "cloud".
   {
@@ -329,10 +422,23 @@ int runSaveBackupTests() {
     device.deviceId = "dev-OTHER-0001";
     CHECK(!exportArchive(backup, device, root + "/temp/dev2.zip"));
     CHECK(readMetaFile(backup.path + ".meta").value.deviceId == "dev-1A2B3C4D-0042");
+    // The shared save's tag goes up and comes back down with the backup.
+    keeperBackup(root, Title, "20260312_090000", 1773306000);
+    const auto sharedMeta = root + "/backups/" + titleHex(Title) + "/20260312_090000.meta";
+    auto tagged = readMetaFile(sharedMeta).value;
+    tagged.userId = "device";
+    CHECK(!writeMetaFile(sharedMeta, tagged));
+    LocalBackup sharedBackup;
+    for (const auto &b : listBackups(root, Title))
+      if (b.name == "20260312_090000") sharedBackup = b;
+    CHECK(deviceBackup(sharedBackup));
+    CHECK(!exportArchive(sharedBackup, {}, root + "/temp/shared.zip"));
+    auto down = importArchive(other, Title, root + "/temp/shared.zip", "ignored", 1773300002);
+    CHECK(!down.error && deviceBackup(down.value) && restoreMismatch(down.value, false));
     // Not a zip: nothing is left behind.
     write(root + "/temp/junk.zip", "<html>");
     CHECK(importArchive(other, Title, root + "/temp/junk.zip", "junk", 7).error);
-    CHECK(listBackups(other, Title).size() == 2);
+    CHECK(listBackups(other, Title).size() == 3);
     fsys::remove_all(other);
 #endif
     fsys::remove_all(root);
