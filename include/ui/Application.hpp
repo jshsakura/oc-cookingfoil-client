@@ -440,7 +440,7 @@ private:
   int patchPickRow_ = 0;
   std::string patchPickId_;
   std::vector<PatchRow> patchRows() const; // allPatchRows() under the current tab
-  PatchFilter patchFilter_ = PatchFilter::All;
+  PatchFilter patchFilter_ = PatchFilter::Stored; // 설치됨 first, as on 내 게임 and 홈브류
   void patchesScreen();
   void patchAction(Action action);
   void fetchPatches();
@@ -561,7 +561,7 @@ private:
   std::string configPath_, statePath_, fixture_, query_, notice_;
   std::vector<Group> groups_;
   Screen screen_ = Screen::Home, previous_ = Screen::Home;
-  bool sidebar_ = false, connected_ = false;
+  bool sidebar_ = true, connected_ = false; // the cursor starts on the menu, on 홈
   // The cursor went to the menu only because the screen had nothing yet.
   bool autoSidebar_ = false;
   int nav_ = 0, row_ = 1, selected_ = 0;
