@@ -3,6 +3,7 @@
 #include "core/Log.hpp"
 #include "core/I18n.hpp"
 #include <cmath>
+#include <vector>
 #include <curl/curl.h>
 #include <switch.h>
 static void openSearchKeyboard(foil::ui::Application &ui) {
@@ -17,6 +18,27 @@ static void openSearchKeyboard(foil::ui::Application &ui) {
   char text[512]{};
   if (R_SUCCEEDED(swkbdShow(&keyboard, text, sizeof(text))))
     ui.search(text);
+  swkbdClose(&keyboard);
+}
+// A field the app asked for (the server form); OK hands the text back,
+// cancel leaves the field as it was.
+static void openTextKeyboard(foil::ui::Application &ui, const foil::ui::Application::TextRequest &request) {
+  SwkbdConfig keyboard;
+  if (R_FAILED(swkbdCreate(&keyboard, 0)))
+    return;
+  if (request.password) {
+    // Typed hidden, on the Latin keyboard a password is made of.
+    swkbdConfigMakePresetPassword(&keyboard);
+  } else {
+    swkbdConfigMakePresetDefault(&keyboard);
+    swkbdConfigSetType(&keyboard, SwkbdType_All);
+  }
+  swkbdConfigSetGuideText(&keyboard, request.guide.c_str());
+  swkbdConfigSetInitialText(&keyboard, request.initial.c_str());
+  swkbdConfigSetStringLenMax(&keyboard, u32(request.maxLength));
+  std::vector<char> text(size_t(request.maxLength) * 4 + 1); // UTF-8, up to 4 bytes a character
+  if (R_SUCCEEDED(swkbdShow(&keyboard, text.data(), text.size())))
+    ui.enterText(text.data());
   swkbdClose(&keyboard);
 }
 int main(int argc, char **argv) {
@@ -138,6 +160,8 @@ int main(int argc, char **argv) {
              ui.current() == foil::ui::Screen::Library) ||
             ui.takeSearchRequest())
           openSearchKeyboard(ui);
+        if (const auto request = ui.takeTextRequest())
+          openTextKeyboard(ui, *request);
         ui.render();
         // One line a minute; logLine appends used/total memory, so a slow leak
         // shows up in log.txt before it becomes a crash.

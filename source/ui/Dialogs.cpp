@@ -170,7 +170,7 @@ void Application::viewPopup() {
            false);
 }
 void Application::dialogs() {
-  if (!confirmInstall_ && alert_.empty() && !serverHelp_ && !confirmCancel_ && !viewPopup_ &&
+  if (!confirmInstall_ && alert_.empty() && !serverForm_ && !confirmCancel_ && !viewPopup_ &&
       !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !confirmCleanup_ && !confirmResume_ &&
       !languagePopup_ && !cleanupBusy_ && !retroAsking_ && !retroArchAsking_ && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
@@ -182,7 +182,8 @@ void Application::dialogs() {
   // When the popup on top changed, for the double-press guard (settled()).
   const int which = confirmCancel_ * 1 + confirmCleanup_ * 2 + confirmPatchRemove_ * 4 + confirmInstall_ * 8 +
                     confirmResume_ * 16 + dropboxUnlinkAsk_ * 32 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + homebrewAsk_ * 256 +
-                    (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + shopAppSaveAsk_ * 2048;
+                    (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + shopAppSaveAsk_ * 2048 +
+                    (serverForm_ && serverForm_->confirmDelete) * 4096;
   if (which != popupKind_) {
     popupKind_ = which;
     popupAt_ = SDL_GetTicks();
@@ -227,6 +228,8 @@ void Application::dialogs() {
       blockTouch();
       homebrewSaveDialog();
     }
+  } else if (serverForm_ && alert_.empty()) {
+    serverFormDialog(); // a failed save's alert shows over it instead
   } else if (confirmInstall_ && selection_ && detailGroup_ < groups_.size()) {
     const auto &g = groups_[detailGroup_];
     const auto body = modal(700, 24 + 96 + 24, tr("이 게임을 설치하시겠습니까?"), tr("취소"), "", tr("설치"), 4);
@@ -242,13 +245,6 @@ void Application::dialogs() {
     const auto body = modal(700, 24 + 84 + 16, alertTitle_.empty() ? std::string(tr("설치할 수 없습니다")) : alertTitle_,
                             tr("닫기"), "", tr("확인"), 25);
     paint_.fonts.wrapped(alert_, body.x + 32, body.y + 24, 20, Ink, body.w - 64, 3);
-  } else if (serverHelp_) {
-    const auto body = modal(740, 178, tr("서버 추가"), tr("닫기"), "", tr("확인"), 21);
-    const float x = body.x + 32, width = body.w - 64;
-    paint_.fonts.wrapped(tr("서버 웹페이지의 설정에서 파일을 받아 SD 카드에 넣습니다. 기기 승인을 쓰는 서버는 서버 웹페이지에서 QR 코드를 찍어 승인합니다."),
-                         x, body.y + 22, 20, Ink, width, 3);
-    paint_.fonts.text("sdmc:/switch/cookingfoil/config.json", x, body.y + 104, 18, Secondary);
-    paint_.fonts.text(tr("파일을 저장한 뒤 - 버튼으로 새로고침합니다."), x, body.y + 136, 19, Ink);
   } else if (confirmCancel_ && cancelRetro_) {
     const bool pack = retroBusy_ == "pack";
     const auto body = modal(700, 24 + 30 + 16, pack ? tr("RetroArch 설치를 취소하시겠습니까?") : tr("다운로드를 취소하시겠습니까?"),

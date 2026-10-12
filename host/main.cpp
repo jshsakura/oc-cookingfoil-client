@@ -10,6 +10,7 @@
 #include <curl/curl.h>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 namespace {
 // Installed games and one save for the preview: every third catalog game.
 std::pair<foil::InstalledLibrary, foil::SaveEntry> fixtureInstalled(const std::string &fixture) {
@@ -293,12 +294,38 @@ int main(int argc, char **argv) {
     return 0;
   }
   bool running = true, typing = false;
+  // A field the app asked for (the server form): typed straight into it,
+  // Enter keeps it, Esc puts back what was there.
+  std::optional<foil::ui::Application::TextRequest> field;
+  std::string fieldText;
   while (running) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       using foil::ui::Action;
       if (event.type == SDL_QUIT && ui.requestQuit())
         running = false;
+      if (field) {
+        if (event.type == SDL_TEXTINPUT &&
+            int(foil::ui::utf8Characters(fieldText + event.text.text).size()) <= field->maxLength) {
+          fieldText += event.text.text;
+          ui.enterText(fieldText);
+        } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_BACKSPACE) {
+          auto chars = foil::ui::utf8Characters(fieldText);
+          if (!chars.empty())
+            chars.pop_back();
+          fieldText.clear();
+          for (const auto &c : chars)
+            fieldText += c;
+          ui.enterText(fieldText);
+        } else if (event.type == SDL_KEYDOWN &&
+                   (event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_ESCAPE)) {
+          if (event.key.keysym.sym == SDLK_ESCAPE)
+            ui.enterText(field->initial);
+          field.reset();
+          SDL_StopTextInput();
+        }
+        continue;
+      }
       if (event.type == SDL_TEXTINPUT && typing)
         ui.search(ui.query() + event.text.text);
       if (event.type == SDL_MOUSEBUTTONUP && !typing)
@@ -363,6 +390,12 @@ int main(int argc, char **argv) {
       SDL_StartTextInput();
       ui.search(ui.query());
     }
+    if (!typing && !field)
+      if (auto request = ui.takeTextRequest()) {
+        field = std::move(request);
+        fieldText = field->initial;
+        SDL_StartTextInput();
+      }
     ui.render();
     if (ui.shouldQuit())
       running = false;

@@ -99,7 +99,6 @@ const Translation rows[] = {
     {"등록된 서버가 없습니다.", "No servers added.", "登録されたサーバーはありません。", "没有已添加的服务器。"},
     {"켜 둔 서버가 없습니다.", "No servers are on.", "有効なサーバーはありません。", "没有已启用的服务器。"},
     {"설정에서 연결할 서버를 고릅니다.", "Choose a server in Settings.", "設定で接続するサーバーを選びます。", "请在设置中选择服务器。"},
-    {"서버 웹페이지의 설정에서 파일을 받아 SD 카드에 넣습니다.\n{0}\n파일을 넣은 뒤 - 버튼으로 새로고침합니다.", "Download the file from the server website's settings and copy it to the SD card.\n{0}\nThen press - to refresh.", "サーバーのウェブページの設定でファイルをダウンロードし、SDカードに入れます。\n{0}\nファイルを入れたら-ボタンを押して更新します。", "在服务器网页的设置中下载文件并放入 SD 卡。\n{0}\n放入后按 - 刷新。"},
     {"기기 승인을 기다립니다.", "Waiting for device approval.", "デバイスの承認を待っています。", "正在等待设备批准。"},
     {"인터넷에 연결되어 있지 않습니다.", "No internet connection.", "インターネットに接続していません。", "未连接到互联网。"},
     {"서버에 연결하지 못했습니다.", "Couldn't connect to the server.", "サーバーに接続できませんでした。", "无法连接到服务器。"},
