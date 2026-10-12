@@ -234,7 +234,9 @@ void Application::localizeNames() {
   }
 }
 void Application::setItems(std::vector<Item> items) {
+  const auto started = SDL_GetTicks();
   groups_ = groupCatalog(items);
+  updatesStale_ = true;
   // Groups copy each item into files (and the base into representative);
   // only the base, or the representative without one, needs its names.
   for (auto &g : groups_) {
@@ -253,6 +255,7 @@ void Application::setItems(std::vector<Item> items) {
   ++catalogVersion_;
   connected_ = true;
   selected_ = 0;
+  logLine("catalog grouped " + std::to_string(SDL_GetTicks() - started) + "ms, " + std::to_string(groups_.size()) + " games");
 }
 void Application::clearCatalog() {
   serverPatches_.clear();
@@ -307,7 +310,11 @@ void Application::screen(Screen screen) {
   nav_ = menuIndex(screen);
   selected_ = 0;
   row_ = 1;
-  if (screen == Screen::Installed || screen == Screen::Updates || screen == Screen::Patches)
+  // Read again on the way in only when the last read is a while old;
+  // passing through the menu does not reread the console every time.
+  constexpr uint32_t InstalledFreshMs = 30000;
+  if ((screen == Screen::Installed || screen == Screen::Updates || screen == Screen::Patches) &&
+      (!installed_.installed.complete || SDL_GetTicks() - installedAt_ > InstalledFreshMs))
     refreshInstalled();
   if (screen == Screen::Patches)
     fetchPatches();
@@ -1309,14 +1316,14 @@ void Application::shell() {
     // 내 게임 counts its updates, so they are not missed without a menu row.
     const bool updates = MenuScreens[i] == Screen::Installed, downloads = MenuScreens[i] == Screen::Downloads;
     // A newer CookingFoil on the server: the same badge on 설정, where it is.
-    if (open && MenuScreens[i] == Screen::Settings && appUpdate_ == AppUpdate::Available) {
+    if (open && MenuScreens[i] == Screen::Settings && updateNewer_) {
       paint_.rect(171, y + height / 2 - 14, 28, 28, Butter, 14);
       paint_.fonts.text("1", 185 - paint_.fonts.measure("1", 16, true) / 2, paint_.fonts.centerTop("1", 16, true, y + height / 2),
                         16, Ink, true);
     }
     if (open && (updates || downloads)) {
       const auto progress = installer_.progress();
-      const auto count = updates ? findUpdates(groups_, installed_.installed).size()
+      const auto count = updates ? pendingUpdates().size()
           : progress.waiting.size() + (installer_.running() ? 1 : 0) + (retroDownloading() ? 1 : 0);
       if (count) {
         paint_.rect(171, y + height / 2 - 14, 28, 28, Butter, 14);

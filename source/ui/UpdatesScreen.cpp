@@ -15,8 +15,15 @@ void Application::showMyGamesTab(int tab) {
   if (onTabs) headerFocus_ = "tab" + std::to_string(tab);
   else if (!sidebar_ && !hasFocusable()) headerFocus_ = "tab" + std::to_string(tab);
 }
+const std::vector<UpdateCandidate> &Application::pendingUpdates() const {
+  if (updatesStale_ && installed_.installed.complete) {
+    updates_ = findUpdates(groups_, installed_.installed);
+    updatesStale_ = false;
+  }
+  return updates_;
+}
 float Application::myGamesTabs(float right) {
-  const auto all = findUpdates(groups_, installed_.installed);
+  const auto &all = pendingUpdates();
   const auto count = [&](const char *type) {
     return int(std::count_if(all.begin(), all.end(), [&](const auto &row) { return row.item.type == type; }));
   };
@@ -30,7 +37,7 @@ float Application::myGamesButtonWidth(const std::string &label) {
   return paint_.fonts.measure(label, 18, true) + 106;
 }
 std::vector<UpdateCandidate> Application::updateRows() const {
-  auto rows = findUpdates(groups_, installed_.installed);
+  auto rows = pendingUpdates();
   const std::string type = updatesTab_ == 1 ? "update" : updatesTab_ == 2 ? "dlc" : "";
   rows.erase(std::remove_if(rows.begin(), rows.end(),
                             [&](const auto &row) {
@@ -72,7 +79,8 @@ void Application::updates() {
     notice(tr("서버에 연결되어 있지 않습니다."), tr("서버에 연결한 뒤 업데이트를 확인합니다."), 21);
     return;
   }
-  if (deviceBusy_) {
+  // Pulsing rows only for a first read; a reread keeps the rows on screen.
+  if (deviceBusy_ && !installed_.installed.complete) {
     // Same shape as the update rows, pulsing.
     for (int n = 0; n < 4; ++n) {
       const float y = 90 + n * 124;

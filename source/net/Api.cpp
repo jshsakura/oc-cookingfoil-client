@@ -673,7 +673,15 @@ bool Session::refresh(Error& error) {
         else if (response.status == 404) features_.clear();
     }
     const auto url = server_.url + "/api/shop/sections";
+    // How long the first screen waits, in the log: the list's download,
+    // then reading it.
+    const auto asked = std::chrono::steady_clock::now();
     auto response = get(url, authHeaders(server_, state_, url), etag_, cancel_);
+    const auto since = [](std::chrono::steady_clock::time_point from) {
+        return std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - from).count()) + "ms";
+    };
+    if (response.status == 200)
+        logLine("catalog download " + since(asked) + " " + std::to_string(response.body.size() >> 10) + "KB");
     if (!response.error.empty()) { error.message = response.error; return false; }
     unchanged_ = response.status == 304;
     if (unchanged_) return true;
@@ -690,6 +698,7 @@ bool Session::refresh(Error& error) {
     featured_ = parseFeatured(root.get());
     genres_ = parseNameTable(root.get(), "genres");
     scoreLabels_ = parseNameTable(root.get(), "score_labels");
+    logLine("catalog read " + since(asked) + " total, " + std::to_string(items_.size()) + " items");
     etag_ = response.etag;
     return true;
 }

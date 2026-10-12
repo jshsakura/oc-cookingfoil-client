@@ -8,7 +8,7 @@ void Application::refreshInstalled() {
   if (deviceBusy_ || deviceFixture_) return;
   if (installer_.running()) { message(tr("설치가 끝난 뒤 설치 목록을 새로고침합니다.")); return; }
   if (deviceWorker_.joinable()) deviceWorker_.join();
-  installed_.installed.complete = false;
+  // The list on screen stays until the new one arrives: no blank flash.
   deviceBusy_ = true;
   readingSaves_ = removalOperation_ = false;
   deviceError_ = {};
@@ -35,6 +35,8 @@ void Application::pollDevice() {
     return;
   }
   installed_ = std::move(incomingInstalled_);
+  installedAt_ = SDL_GetTicks();
+  updatesStale_ = true;
   installed_.games = sortInstalled(std::move(installed_.games), installedSort_);
   rebuildHome();
   if (screen_ == Screen::Installed)
@@ -161,7 +163,9 @@ void Application::installedAction(Action a) {
 }
 void Application::installedScreen() {
   const auto rows = gameRows(installedQuery_);
-  paint_.fonts.text(deviceBusy_ && !managedGame_ ? tr("설치 목록을 읽고 있습니다.") : tr("본체에 설치된 게임을 관리합니다."), 260, 88, 19, Secondary);
+  // A first read pulses; a reread keeps the list it already has.
+  const bool firstRead = deviceBusy_ && !installed_.installed.complete;
+  paint_.fonts.text(firstRead && !managedGame_ ? tr("설치 목록을 읽고 있습니다.") : tr("본체에 설치된 게임을 관리합니다."), 260, 88, 19, Secondary);
   // Search at the right end, the order (Y, as 모든 게임's filter) left of
   // it, then 내 게임's tabs; - reloads the list.
   const auto sort = installedSortLabel(installedSort_);
@@ -173,9 +177,9 @@ void Application::installedScreen() {
   paint_.icon(10, sortX + 60, 38, Ink, 20);
   paint_.fonts.middle(sort, sortX + 88, 48, 18, Ink, true, sortW - 106);
   const float tabsLeft = myGamesTabs(sortX - 16);
-  pageTitle(tr("내 게임"), !deviceBusy_ || managedGame_ ? std::to_string(rows.size()) : std::string(),
+  pageTitle(tr("내 게임"), !firstRead || managedGame_ ? std::to_string(rows.size()) : std::string(),
             tabsLeft);
-  if (deviceBusy_ && !managedGame_) {
+  if (firstRead && !managedGame_) {
     paint_.skeletonCards(260, 146, 12);
     return;
   }
@@ -193,7 +197,7 @@ void Application::installedScreen() {
   }
   // Games with a newer update on the server say so on their card.
   std::set<std::string> updatable;
-  for (const auto &row : findUpdates(groups_, installed_.installed))
+  for (const auto &row : pendingUpdates())
     if (row.item.type == "update") updatable.insert(row.baseId);
   const int first = std::max(0, selected_ / 6 - 1) * 6;
   paint_.scrollbar(1266, 146, 500, float(first / 6), 2.1f, float((rows.size() + 5) / 6));

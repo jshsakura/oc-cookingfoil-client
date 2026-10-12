@@ -650,6 +650,14 @@ private:
   net::PairingInfo pairingInfo_;
   uint32_t pairPollAt_ = 0, offlineCheckAt_ = 0;
   int retries_ = 0; // automatic reconnects since the last success or -
+  // Updates and DLC the console lacks, worked out once per catalog or
+  // installed list; the last answer stays while the list is read again, so
+  // the menu's count does not blink.
+  mutable std::vector<UpdateCandidate> updates_;
+  mutable bool updatesStale_ = true;
+  const std::vector<UpdateCandidate> &pendingUpdates() const;
+  uint32_t installedAt_ = 0; // when the installed list was last read
+  bool updateNewer_ = false; // a newer build was found; kept while checking again
   // Every automatic ask is bounded; - or Y starts them again.
   uint32_t pairSince_ = 0;    // when approval became pending; polling stops after a while
   int patchRetries_ = 0, retroRetries_ = 0;

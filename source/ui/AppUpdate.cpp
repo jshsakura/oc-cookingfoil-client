@@ -39,6 +39,7 @@ void Application::checkAppUpdate() {
         appRelease_ = *release;
         appUpdate_ = update::compareVersions(release->version, COOKINGFOIL_VERSION) > 0 ? AppUpdate::Available
                                                                                       : AppUpdate::Latest;
+        updateNewer_ = appUpdate_ == AppUpdate::Available;
       }
     };
     updateDone_ = true;
