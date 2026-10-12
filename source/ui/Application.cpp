@@ -270,6 +270,7 @@ std::string Application::installedIcon(const InstalledGame &game) {
   return group ? group->representative.icon : "";
 }
 void Application::clearCatalog() {
+  patchFromDetail_ = false; // the page it would go back to is gone
   serverPatches_.clear();
   patchesLoaded_ = false;
   patchError_ = {};
@@ -315,6 +316,9 @@ void Application::openMenuScreen(Screen target) {
 void Application::screen(Screen screen) {
   // A toast belongs to the screen that showed it.
   if (screen != screen_) notice_.clear();
+  // 패치 opened from a game's page shows that game alone until it is left.
+  patchOwner_.clear();
+  patchFromDetail_ = false;
   menuPending_ = false;
   headerFocus_.clear();
   header_.clear();
@@ -469,6 +473,7 @@ void Application::poll() {
   pollHomebrew();
   // No dimming or auto-sleep while something downloads.
   const bool downloading = installer_.running() || retroDownloading() || (patchWorker_.joinable() && !patchBusy_.empty()) ||
+                           !patchQueue_.empty() ||
                            appUpdate_ == AppUpdate::Downloading;
   if (downloading != awake_) {
     awake_ = downloading;
@@ -485,6 +490,16 @@ void Application::poll() {
                                                                        : history::Outcome::Failed;
     if (history::finish(history_, outcome, installer_.progress().error, int64_t(std::time(nullptr)))) saveHistory();
   }
+  // Patches picked with the game wait for its install: they start once it
+  // succeeds and are dropped when it does not.
+  if (patchQueueWaits_ && observedInstall_ == install::Status::Running && installStatus != install::Status::Running) {
+    patchQueueWaits_ = false;
+    if (installStatus != install::Status::Succeeded && !patchQueue_.empty()) {
+      patchQueue_.clear();
+      message(tr("게임을 설치하지 못해 함께 고른 패치를 받지 않았습니다."));
+    }
+  }
+  pumpPatchQueue();
   // Done or cancelled on purpose: nothing left to resume. A failure keeps it.
   if (observedInstall_ == install::Status::Running &&
       (installStatus == install::Status::Succeeded || installStatus == install::Status::Cancelled))
@@ -520,7 +535,10 @@ void Application::poll() {
                                                          SDL_GetTicks()};
       if (screen_ == Screen::Detail && detailGroup_ < groups_.size() &&
           groups_[detailGroup_].id == requestedId_)
+      {
         detail_ = std::move(incomingDetail_);
+        syncDetailPatches();
+      }
     } else
       message(incomingError_.message);
     detailRequest_ = false;
@@ -564,6 +582,7 @@ void Application::poll() {
   images_->updateState(state_);
   if (screen_ == Screen::Detail)
     screen_ = previous_;
+  patchFromDetail_ = false; // the catalog the page came from is read again
   // A 304 keeps the catalog already on screen.
   retries_ = 0;
   if (session_->unchanged() && !groups_.empty()) {
@@ -954,6 +973,10 @@ void Application::action(Action a) {
       screen_ = previous_;
       return;
     }
+    if (screen_ == Screen::Patches && patchFromDetail_) {
+      returnToDetail();
+      return;
+    }
     if (sidebar_) {
       screen(Screen::Home);
       return;
@@ -1061,13 +1084,44 @@ void Application::action(Action a) {
       screenshot_ = 0;
       return;
     }
-    const int last = int(selection_->parts().size());
-    // Left moves onto the description, where up and down scroll it; right
+    const int last = int(selection_->rows());
+    const bool hasLink =
+        detailGroup_ < groups_.size() && !patchesFor(detail_.patches, groups_[detailGroup_].id).empty();
+    // Y opens the game's patches on 패치 from anywhere on the page.
+    if (a == Action::Queue && hasLink) {
+      openGamePatches();
+      return;
+    }
+    // Left moves onto the left column: the patch link first when the game
+    // has patches, then the description, where up and down scroll it; right
     // comes back to what gets installed. The right stick is the same
     // scroll, so it moves the cursor onto the description too.
-    if ((a == Action::ScrollUp || a == Action::ScrollDown) && descriptionHeight_ > 0)
+    if ((a == Action::ScrollUp || a == Action::ScrollDown) && descriptionHeight_ > 0) {
       descriptionFocus_ = true;
+      patchLinkFocus_ = false;
+    }
+    if (patchLinkFocus_) {
+      if (a == Action::Accept) openGamePatches();
+      if (a == Action::Right) patchLinkFocus_ = false;
+      if (a == Action::Down && descriptionHeight_ > 0) {
+        patchLinkFocus_ = false;
+        descriptionFocus_ = true;
+      }
+      return;
+    }
+    const auto toLeftColumn = [&] {
+      if (hasLink) {
+        patchLinkFocus_ = true;
+        descriptionScroll_ = 0; // the link sits at the top of the column
+      } else
+        descriptionFocus_ = descriptionHeight_ > 0;
+    };
     if (descriptionFocus_) {
+      if (a == Action::Up && descriptionScroll_ == 0 && hasLink) {
+        descriptionFocus_ = false;
+        patchLinkFocus_ = true;
+        return;
+      }
       if (a == Action::Up || a == Action::ScrollUp)
         descriptionScroll_ = std::max(0, descriptionScroll_ - 1);
       if (a == Action::Down || a == Action::ScrollDown)
@@ -1089,11 +1143,11 @@ void Application::action(Action a) {
       else if (storageCursor_ == 1)
         storageCursor_ = 0;
       else
-        descriptionFocus_ = descriptionHeight_ > 0;
+        toLeftColumn();
       return;
     }
     if (a == Action::Left) {
-      descriptionFocus_ = descriptionHeight_ > 0;
+      toLeftColumn();
       return;
     }
     const int before = part_;
@@ -1483,13 +1537,17 @@ void Application::render() {
   else if (screen_ == Screen::Detail) {
     if (galleryOpen_) footer({{"L R", tr("이전·다음 사진")}, {"B", tr("닫기")}});
     else {
-      const int items = selection_ ? int(selection_->parts().size()) : 0;
+      const int items = selection_ ? int(selection_->rows()) : 0;
       const bool onButton = selection_ && part_ > items, onStorage = selection_ && part_ == items;
-      auto hints = descriptionFocus_
-          ? std::vector<std::pair<std::string, std::string>>{{"A", tr("설치 항목으로")}, {"B", tr("뒤로")}}
-          : std::vector<std::pair<std::string, std::string>>{{"A", onButton ? tr("설치") : onStorage ? tr("이 위치로 고르기") : tr("켜고 끄기")},
-            {"B", tr("뒤로")}};
+      using Hints = std::vector<std::pair<std::string, std::string>>;
+      auto hints = patchLinkFocus_     ? Hints{{"A", tr("패치 보기")}, {"B", tr("뒤로")}}
+                   : descriptionFocus_ ? Hints{{"A", tr("설치 항목으로")}, {"B", tr("뒤로")}}
+                                       : Hints{{"A", onButton ? tr("설치") : onStorage ? tr("이 위치로 고르기") : tr("켜고 끄기")},
+                                               {"B", tr("뒤로")}};
       if (!detail_.screenshots.empty()) hints.insert(hints.end() - 1, {"ZR", tr("사진")});
+      if (!patchLinkFocus_ && detailGroup_ < groups_.size() &&
+          !patchesFor(detail_.patches, groups_[detailGroup_].id).empty())
+        hints.insert(hints.end() - 1, {"Y", tr("패치|메뉴")});
       footer(hints);
     }
   }
@@ -1587,7 +1645,7 @@ void Application::render() {
 void Application::requestInstall() {
   if (!selection_ || detailGroup_ >= groups_.size())
     return;
-  if (selection_->files().empty()) {
+  if (!selection_->count()) {
     alert_ = tr("설치할 항목을 하나 이상 켭니다.");
     return;
   }
@@ -1652,10 +1710,16 @@ void Application::installSelected() {
   if (!selection_ || detailGroup_ >= groups_.size())
     return;
   const auto &g = groups_[detailGroup_];
-  if (auto error = startInstall(selection_->files(), g.representative.name, g.representative.icon, selection_->target)) {
-    alert_ = error.message;
-    return;
+  // Patches alone (every file off) start right away; with files they wait
+  // for the install and never hold it up.
+  const auto files = selection_->files();
+  if (!files.empty()) {
+    if (auto error = startInstall(files, g.representative.name, g.representative.icon, selection_->target)) {
+      alert_ = error.message;
+      return;
+    }
   }
+  queuePatches(selection_->patchesOn(), !files.empty());
   notice_.clear();
   downloadsTab_ = 0;
   screen_ = Screen::Downloads;

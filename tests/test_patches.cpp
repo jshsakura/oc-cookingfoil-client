@@ -91,8 +91,60 @@ bool stage(foil::PatchStore &store, const std::string &id, const std::vector<Ent
 }
 } // namespace
 
-int runPatchTests() {
+static int runPatchOwnerTests() {
   int failures = 0;
+  // An update's or DLC's ID leads back to its game; case does not matter.
+  CHECK(foil::baseTitleId("0100b00b51230000") == "0100B00B51230000");
+  CHECK(foil::baseTitleId("0100B00B51230800") == "0100B00B51230000");
+  CHECK(foil::baseTitleId("0100B00B51231001") == "0100B00B51230000");
+  CHECK(foil::baseTitleId("01007EF00011E800") == "01007EF00011E000");
+  CHECK(foil::baseTitleId("not-an-id") == "NOT-AN-ID");
+  foil::UserPatch game, otherGame, app;
+  game.id = "a";
+  game.titleId = "0100b00b51230000";
+  otherGame.id = "b";
+  otherGame.titleId = "0100B00B51240000";
+  app.id = "c";
+  app.homebrewApp = "Tool";
+  CHECK(foil::patchOwner(game) == "0100B00B51230000");
+  CHECK(foil::patchOwner(app) == "app:Tool");
+  CHECK(foil::patchBelongs(game, "0100B00B51230000"));
+  CHECK(foil::patchBelongs(game, "0100b00b51230800")); // from the update's page
+  CHECK(!foil::patchBelongs(otherGame, "0100B00B51230000"));
+  CHECK(foil::patchBelongs(app, "app:Tool"));
+  CHECK(!foil::patchBelongs(app, "app:tool2"));
+  CHECK(!foil::patchBelongs(game, ""));
+  const auto mine = foil::patchesFor({game, otherGame, app}, "0100B00B51230000");
+  CHECK(mine.size() == 1 && mine.front().id == "a");
+  // The version a patch is for, against the version being installed.
+  CHECK(foil::normalizeVersion("  v1.2.0 ") == "1.2.0");
+  CHECK(foil::normalizeVersion("V2") == "2");
+  CHECK(foil::normalizeVersion("   ").empty());
+  foil::UserPatch versioned;
+  CHECK(foil::patchFitsVersion(versioned, "1.2.0")); // none given: any version
+  versioned.gameVersion = "any";
+  CHECK(foil::patchFitsVersion(versioned, "1.2.0"));
+  versioned.gameVersion = "1.2.0";
+  CHECK(foil::patchFitsVersion(versioned, "1.2.0"));
+  CHECK(foil::patchFitsVersion(versioned, " v1.2.0"));
+  versioned.gameVersion = "v1.2.0 ";
+  CHECK(foil::patchFitsVersion(versioned, "1.2.0"));
+  CHECK(!foil::patchFitsVersion(versioned, "1.3.0"));
+  CHECK(foil::patchFitsVersion(versioned, "")); // version unknown: shown
+  // What a picked patch still needs from the store.
+  foil::PatchRecord record;
+  game.hash = "h1";
+  CHECK(foil::patchStep(game, nullptr) == foil::PatchStep::Get);
+  record.hash = "h1";
+  CHECK(foil::patchStep(game, &record) == foil::PatchStep::Enable);
+  record.on = true;
+  CHECK(foil::patchStep(game, &record) == foil::PatchStep::Skip);
+  record.hash = "h0";
+  CHECK(foil::patchStep(game, &record) == foil::PatchStep::Update);
+  return failures;
+}
+int runPatchTests() {
+  int failures = runPatchOwnerTests();
   // An app's patch reads as 홈브류 in the list, not as an unknown kind.
   CHECK(std::string(foil::patchKindLabel("homebrew")) != foil::patchKindLabel("something-else"));
   CHECK(foil::patchPathAllowed(Tid, Romfs));

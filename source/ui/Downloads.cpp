@@ -13,7 +13,8 @@ void Application::downloads() {
                                  formatBytes(p.total)});
   pageTitle(tr("다운로드"), downloadsTab_ == 0 ? queued : std::string());
   // Tabs with their counts: what runs now, what finished, what did not.
-  const int running = (installer_.running() ? int(p.waiting.size()) + 1 : 0) + (retroDownloading() ? 1 : 0);
+  const int running = (installer_.running() ? int(p.waiting.size()) + 1 : 0) + (retroDownloading() ? 1 : 0) +
+                      int(patchQueue_.size()) + (patchWorker_.joinable() && !patchBusy_.empty() ? 1 : 0);
   int done = 0, failed = 0;
   for (const auto &e : history_) {
     done += e.outcome == history::Outcome::Done;
@@ -30,8 +31,10 @@ void Application::downloads() {
   const auto target = p.target == "nand" ? tr("본체") : tr("SD 카드");
   if (p.status == install::Status::Idle) {
     // A retro game or RetroArch can run with no install beside it.
-    if (retroDownloading()) retroDownloadCard(82);
-    else notice(tr("다운로드 중인 파일이 없습니다."), tr("상세 화면에서 설치할 항목을 고른 뒤 A로 설치합니다."), 4);
+    float y = 82;
+    if (retroDownloading()) y += retroDownloadCard(y) + 30;
+    if (patchDownloading()) patchDownloadCard(y);
+    else if (!retroDownloading()) notice(tr("다운로드 중인 파일이 없습니다."), tr("상세 화면에서 설치할 항목을 고른 뒤 A로 설치합니다."), 4);
     return;
   }
   if (p.status == install::Status::Running)
@@ -116,6 +119,7 @@ void Application::downloads() {
     y += int(h) + 24;
   }
   if (retroDownloading()) y += int(retroDownloadCard(float(y))) + 30;
+  if (patchDownloading()) y += int(patchDownloadCard(float(y))) + 30;
   if (!p.waiting.empty()) {
     paint_.fonts.text(tr("대기 중"), 260, y, 26, Ink, true);
     y += 40;

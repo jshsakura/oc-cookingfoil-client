@@ -40,6 +40,8 @@ bool Application::patchFilterMatches(PatchFilter filter, const PatchRow &row) {
 std::vector<Application::PatchRow> Application::patchRows(std::vector<PatchRow> rows) const {
   rows.erase(std::remove_if(rows.begin(), rows.end(),
                             [this](const PatchRow &row) {
+                              // Opened from a game's page: that game alone.
+                              if (!patchOwner_.empty() && !patchBelongs(row.patch, patchOwner_)) return true;
                               return !patchFilterMatches(patchFilter_, row) ||
                                      !textMatches({row.game, row.patch.name, row.patch.titleId, row.patch.homebrewApp},
                                                   patchQuery_);
@@ -401,6 +403,72 @@ void Application::startPatchGet(const UserPatch &patch, bool fresh) {
                                                    : tr("패치를 받아 켰습니다. 앱을 다시 켜면 적용됩니다.");
               });
 }
+void Application::queuePatches(std::vector<UserPatch> patches, bool afterInstall) {
+  for (auto &patch : patches) {
+    // Picked again before it ran: once in the queue is enough.
+    const bool queued = std::any_of(patchQueue_.begin(), patchQueue_.end(),
+                                    [&](const UserPatch &p) { return p.id == patch.id; });
+    if (!queued && patchBusy_ != patch.id) patchQueue_.push_back(std::move(patch));
+  }
+  if (afterInstall && !patchQueue_.empty()) patchQueueWaits_ = true;
+  pumpPatchQueue();
+}
+// The next queued patch goes to the worker the 패치 screen uses, once it is
+// free and no alert (a failed patch's among them) waits to be read.
+void Application::pumpPatchQueue() {
+  if (!patchStore_ || !session_) {
+    patchQueue_.clear();
+    return;
+  }
+  while (!patchQueue_.empty() && !patchQueueWaits_ && !patchWorker_.joinable() && alert_.empty()) {
+    auto patch = patchQueue_.front();
+    patchQueue_.pop_front();
+    const auto found = patchRecords_.find(patch.id);
+    const auto step = patchStep(patch, found == patchRecords_.end() ? nullptr : &found->second);
+    if (step == PatchStep::Skip) continue; // already on the card and on
+    patchQueueNow_ = patch;
+    if (step == PatchStep::Enable) startPatchEnable(patch);
+    else startPatchGet(patch, step == PatchStep::Get);
+  }
+}
+// The patch the worker fetches or switches on, and the ones queued after it.
+float Application::patchDownloadCard(float y) {
+  constexpr float Height = 120;
+  const bool running = patchWorker_.joinable() && !patchBusy_.empty();
+  UserPatch patch = !patchQueue_.empty() ? patchQueue_.front() : UserPatch{};
+  if (running) {
+    const auto known = std::find_if(serverPatches_.begin(), serverPatches_.end(),
+                                    [&](const UserPatch &p) { return p.id == patchBusy_; });
+    patch = patchQueueNow_.id == patchBusy_ ? patchQueueNow_ : known != serverPatches_.end() ? *known : UserPatch{};
+    if (patch.name.empty()) patch.name = patchBusy_;
+  }
+  std::string icon;
+  if (const auto *group = findGroup(baseTitleId(patch.titleId))) icon = group->representative.icon;
+  else if (!patch.gameIcon.empty())
+    icon = patch.gameIcon[0] == '/' && session_ ? session_->server().url + patch.gameIcon : patch.gameIcon;
+  if (!installer_.running() && !retroDownloading()) paint_.ring(260, y, 992, Height, 18);
+  paint_.rect(260, y, 992, Height, Surface, 18);
+  if (icon.empty()) {
+    paint_.rect(284, y + 20, 80, 80, Ground, 14);
+    paint_.icon(32, 308, y + 44, Ink, 32);
+  } else
+    cover(icon, 284, y + 20, 80, false, patch.name);
+  paint_.fonts.text(patch.name, 386, y + 20, 22, Ink, true, 700);
+  const bool fetching = running && (patchBusyLabel_ == Getting || patchBusyLabel_ == Updating);
+  const uint64_t got = fetching ? patchReceived_.load() : 0, total = patch.size;
+  const double ratio = !running ? 0.0 : !fetching ? 1.0 : total ? std::min(1.0, double(got) / double(total)) : 0.0;
+  const auto percent = std::to_string(int(ratio * 100 + 0.5)) + "%";
+  paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 22, true), y + 20, 22, Ink, true);
+  paint_.rect(386, y + 60, 842, 10, Line, 5);
+  if (running) paint_.rect(386, y + 60, std::max(10.0, 842 * ratio), 10, Butter, 5);
+  std::string line = !running   ? std::string(tr("게임 설치가 끝나면 받습니다."))
+                     : fetching ? trf("{0} · SD 카드 · {1} / {2}", {tr("패치|항목"), formatBytes(got), formatBytes(total)})
+                                : std::string(tr(patchBusyLabel_.c_str()));
+  const size_t waiting = patchQueue_.size() - (running ? 0 : 1);
+  if (waiting) line += " · " + trf("패치 {0}개 대기", {std::to_string(waiting)});
+  paint_.fonts.text(line, 386, y + 82, 17, Secondary, false, 842);
+  return Height;
+}
 void Application::startPatchDisable(const UserPatch &patch) {
   runPatchJob(patch.id, Disabling, [id = patch.id, app = !patch.homebrewApp.empty()](
                                        net::Session &, PatchStore &store, Error &error, std::string &done) {
@@ -471,6 +539,8 @@ void Application::patchesScreen() {
       notice(tr("서버가 패치를 읽고 있습니다."), tr("잠시 뒤 자동으로 다시 불러옵니다."), 25);
     else if (patchError_)
       notice(tr("패치 목록을 불러오지 못했습니다."), patchError_.message, 25);
+    else if (!patchOwner_.empty() && patchFilter_ == PatchFilter::All)
+      notice(tr("이 게임의 패치가 목록에 없습니다."), tr("서버 목록을 새로고침하거나 B로 상세 화면에 돌아갑니다."), 32);
     else if (patchFilter_ != PatchFilter::All && !all.empty())
       notice(patchFilter_ == PatchFilter::Stored ? tr("설치한 패치가 없습니다.") : tr("업데이트할 패치가 없습니다."),
              tr("패치는 SD 카드의 atmosphere/contents/타이틀 ID 폴더에 설치되고, 게임을 다시 켜면 적용됩니다."), 32);

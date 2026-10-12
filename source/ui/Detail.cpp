@@ -30,34 +30,101 @@ std::string dateLabel(int date) {
   return text.size() == 8 ? text.substr(0, 4) + "." + text.substr(4, 2) + "." + text.substr(6, 2) : text;
 }
 } // namespace
-// Patches the game cannot run without, ahead of its description: what they
-// are and how big, as the server describes them.
+// The game's patches ahead of its description: the ones it cannot run
+// without, what they are and how big, then a link to all of them on 패치.
 int Application::requiredPatchesCard(int y) {
+  if (detailGroup_ >= groups_.size()) return y;
+  const auto mine = patchesFor(detail_.patches, groups_[detailGroup_].id);
+  if (mine.empty()) return y;
   std::vector<const UserPatch *> needed;
-  for (const auto &patch : detail_.patches)
+  for (const auto &patch : mine)
     if (patch.required) needed.push_back(&patch);
-  if (needed.empty()) return y;
-  constexpr float X = 40, W = 750, Inner = 64, InnerW = W - 48;
+  constexpr float X = 40, W = 750, Inner = X + 58, InnerW = W - 78, Link = 56;
   // Measured first (drawn off screen), so the card fits its text.
-  float height = 20 + 30;
-  for (const auto *patch : needed) {
-    height += 30;
-    if (!patch->description.empty())
-      height += paint_.fonts.wrapped(patch->description, Inner, -10000, 17, Secondary, InnerW, 6) + 8;
+  float height = 0;
+  if (!needed.empty()) {
+    height = 20 + 30;
+    for (const auto *patch : needed) {
+      height += 30;
+      if (!patch->description.empty())
+        height += paint_.fonts.wrapped(patch->description, Inner, -10000, 17, Secondary, InnerW, 6) + 8;
+    }
+    height += 4;
   }
-  height += 10;
-  paint_.rect(X, y, W, height, {255, 241, 204, 255}, 16);
-  paint_.icon(33, X + 20, y + 18, Pending, 24);
-  paint_.fonts.text(tr("함께 설치해야 하는 패치가 있습니다"), Inner, y + 18, 19, Ink, true, InnerW - 20);
-  float line = y + 20 + 30;
-  for (const auto *patch : needed) {
-    paint_.fonts.text(patch->name + (patch->size ? " · " + formatBytes(patch->size) : std::string()), Inner, line, 18,
-                      Ink, true, InnerW);
-    line += 30;
-    if (!patch->description.empty())
-      line += paint_.fonts.wrapped(patch->description, Inner, line, 17, Secondary, InnerW, 6) + 8;
+  height += Link;
+  {
+    // Only the part inside the scrolling band takes a tap, never the header.
+    constexpr float BandTop = 212, BandBottom = 660;
+    const float top = std::max(float(y), BandTop), bottom = std::min(y + height, BandBottom);
+    if (bottom > top) hit(X, top, W, bottom - top, [this] { openGamePatches(); });
   }
+  if (patchLinkFocus_) paint_.ring(X, y, W, height, 16);
+  paint_.rect(X, y, W, height, needed.empty() ? Surface : SDL_Color{255, 241, 204, 255}, 16);
+  float line = y;
+  if (!needed.empty()) {
+    paint_.icon(33, X + 20, y + 18, Pending, 24);
+    paint_.fonts.text(tr("함께 설치해야 하는 패치가 있습니다"), Inner, y + 18, 19, Ink, true, InnerW - 20);
+    line = y + 20 + 30;
+    for (const auto *patch : needed) {
+      paint_.fonts.text(patch->name + (patch->size ? " · " + formatBytes(patch->size) : std::string()), Inner, line, 18,
+                        Ink, true, InnerW);
+      line += 30;
+      if (!patch->description.empty())
+        line += paint_.fonts.wrapped(patch->description, Inner, line, 17, Secondary, InnerW, 6) + 8;
+    }
+    line += 4;
+    paint_.rect(X + 20, line, W - 40, 1, SDL_Color{232, 214, 168, 255});
+  }
+  // The link: how many patches, and Y (or a tap) to see them on 패치.
+  const float mid = line + Link / 2;
+  paint_.icon(32, X + 20, mid - 12, Ink, 24);
+  paint_.fonts.middle(trf("패치 {0}개", {std::to_string(mine.size())}), Inner, mid, 19, Ink, true);
+  const std::string all = tr("모두 보기");
+  paint_.keyLabel("Y", all, X + W - 20 - paint_.keyLabelWidth("Y", all, 17), mid, 17, Secondary);
   return int(y + height + 18);
+}
+void Application::syncDetailPatches() {
+  if (!selection_ || detailGroup_ >= groups_.size()) return;
+  const int before = int(selection_->rows());
+  selection_->setPatches(patchesFor(detail_.patches, groups_[detailGroup_].id));
+  // The cursor stays on the storage cards or the button below the rows.
+  if (part_ >= before) part_ += int(selection_->rows()) - before;
+}
+void Application::setDetail(net::Detail detail) {
+  detail_ = std::move(detail);
+  syncDetailPatches();
+}
+void Application::openGamePatches() {
+  if (detailGroup_ >= groups_.size() || patchesFor(detail_.patches, groups_[detailGroup_].id).empty()) return;
+  const auto owner = groups_[detailGroup_].id;
+  detailReturnSelected_ = selected_;
+  detailReturnRow_ = row_;
+  patchLinkFocus_ = descriptionFocus_ = false;
+  screen(Screen::Patches);
+  patchOwner_ = owner;
+  patchFromDetail_ = true;
+  patchQuery_.clear();
+  patchFilter_ = PatchFilter::All;
+  selected_ = 0;
+  sidebar_ = autoSidebar_ = false;
+}
+void Application::returnToDetail() {
+  patchOwner_.clear();
+  patchFromDetail_ = false;
+  managingPatch_ = pickingPatch_ = confirmPatchRemove_ = false;
+  headerFocus_.clear();
+  header_.clear();
+  headerHome_.clear();
+  notice_.clear();
+  sidebar_ = autoSidebar_ = false;
+  if (detailGroup_ >= groups_.size() || !selection_) {
+    screen(Screen::Home);
+    return;
+  }
+  screen_ = Screen::Detail;
+  selected_ = detailReturnSelected_;
+  row_ = detailReturnRow_;
+  nav_ = menuIndex(previous_);
 }
 void Application::openDetail(size_t group) {
   if (group >= groups_.size())
@@ -68,13 +135,13 @@ void Application::openDetail(size_t group) {
   detail_ = {};
   part_ = 0;
   descriptionScroll_ = 0;
-  descriptionFocus_ = false;
+  descriptionFocus_ = patchLinkFocus_ = false;
   galleryOpen_ = false;
   screenshot_ = 0;
   selection_ =
       std::make_unique<Selection>(groups_[group], installTarget());
   // Start on the install button; Up reaches the storage cards, then the items.
-  part_ = int(selection_->parts().size()) + 1;
+  part_ = int(selection_->rows()) + 1;
   fetchDetail();
 }
 void Application::fetchDetail() {
@@ -84,6 +151,7 @@ void Application::fetchDetail() {
       details_.find(session_->server().url + groups_[detailGroup_].id);
   if (found != details_.end() && SDL_GetTicks() - found->second.at < 60000) {
     detail_ = found->second.detail;
+    syncDetailPatches();
     return;
   }
   if (network_.joinable())
@@ -231,20 +299,24 @@ void Application::detail() {
   paint_.rect(818, 172, 430, 484, Surface, 20);
   paint_.fonts.text(tr("설치할 항목"), 840, 192, 22, Ink, true);
   const auto &parts = selection_->parts();
+  // Files, then the game's patches; the storage cards and the button follow.
+  const int rows = int(selection_->rows());
+  const bool panelFocus = !descriptionFocus_ && !patchLinkFocus_;
   // Rows have room above and below their two lines; everything is centered
   // in the row instead of hugging its top edge.
   constexpr float RowTop = 226, RowPitch = 56, RowHeight = 52;
-  const int first = std::max(0, std::min(part_, int(parts.size()) - 1) - 3);
-  for (int i = 0; i < 4 && first + i < int(parts.size()); ++i) {
+  const int first = std::max(0, std::min(part_, rows - 1) - 3);
+  for (int i = 0; i < 4 && first + i < rows; ++i) {
     const int n = first + i;
     const float y = RowTop + i * RowPitch, mid = y + RowHeight / 2;
-    const auto &f = parts[n];
-    const bool checked = selection_->enabled(n), locked = f.type == "base";
+    const auto *patch = selection_->patch(size_t(n));
+    const bool checked = selection_->enabled(n), locked = !patch && parts[n].type == "base";
     hit(840, y, 386, RowHeight, [this, n] {
       part_ = n;
+      descriptionFocus_ = patchLinkFocus_ = false;
       action(Action::Accept);
     });
-    if (part_ == n && !descriptionFocus_)
+    if (part_ == n && panelFocus)
       paint_.focusRow(840, y, 386, RowHeight, Ground, 12);
     const SDL_Color boxEdge = !locked && checked ? Ink : SDL_Color{138, 138, 147, 255};
     paint_.rect(852, mid - 14, 28, 28, boxEdge, 8);
@@ -252,24 +324,34 @@ void Application::detail() {
                 checked ? (locked ? SDL_Color{255, 224, 138, 255} : Butter) : Surface, 6);
     if (checked)
       paint_.icon(8, 856, mid - 10, locked ? Secondary : Ink, 20);
-    const auto label = f.type == "base"     ? std::string(tr("본편"))
-                       : f.type == "update" ? std::string(tr("업데이트|항목"))
-                                            : "DLC · " + f.name;
-    const auto sub = f.type == "base"     ? trf("{0} · 꼭 필요합니다", {versionLabel(f)})
-                     : f.type == "update" ? trf("{0} · 최신", {versionLabel(f)})
-                                          : std::string(tr("추가 콘텐츠"));
-    const auto size = formatBytes(f.size);
+    std::string label, sub;
+    uint64_t bytes = 0;
+    if (patch) {
+      // A patch: its name, then what it changes; one the game needs says so.
+      label = patch->name;
+      sub = patch->required ? tr("실행에 필요한 패치") : tr("패치|항목");
+      for (const auto &kind : patch->kinds) sub += std::string(" · ") + patchKindLabel(kind);
+      bytes = patch->size;
+    } else {
+      const auto &f = parts[n];
+      label = f.type == "base"     ? std::string(tr("본편"))
+              : f.type == "update" ? std::string(tr("업데이트|항목"))
+                                   : "DLC · " + f.name;
+      sub = f.type == "base"     ? trf("{0} · 꼭 필요합니다", {versionLabel(f)})
+            : f.type == "update" ? trf("{0} · 최신", {versionLabel(f)})
+                                 : std::string(tr("추가 콘텐츠"));
+      bytes = f.size;
+    }
+    const auto size = formatBytes(bytes);
     const float sizeWidth = paint_.fonts.measure(size, 18, true);
     paint_.fonts.middle(label, 894, mid - 10, 18, Ink, true, 300 - sizeWidth);
     paint_.fonts.middle(sub, 894, mid + 12, 15, Secondary, false, 300 - sizeWidth);
     paint_.fonts.middle(size, 1212 - sizeWidth, mid, 18, Ink, true);
   }
-  if (parts.size() > 4) {
-    paint_.fonts.text(
-        std::to_string(std::min<int>(int(parts.size()), part_ + 1)) + " / " +
-            std::to_string(parts.size()),
-        1148, 194, 15, Secondary);
-    paint_.scrollbar(1232, RowTop, 4 * RowPitch - 4, float(first), 4, float(parts.size()));
+  if (rows > 4) {
+    paint_.fonts.text(std::to_string(std::min(rows, part_ + 1)) + " / " + std::to_string(rows), 1148, 194, 15,
+                      Secondary);
+    paint_.scrollbar(1232, RowTop, 4 * RowPitch - 4, float(first), 4, float(rows));
   }
   paint_.rect(840, 454, 386, 1, Line);
   paint_.fonts.middle(tr("합계"), 852, 476, 18, Secondary);
@@ -289,13 +371,14 @@ void Application::detail() {
     const float x = 840 + n * (CardWidth + 8);
     const bool chosen = selection_->target == t.id;
     hit(x, CardTop, CardWidth, CardHeight, [this, n, id = std::string(t.id)] {
-      part_ = int(selection_->parts().size());
+      part_ = int(selection_->rows());
+      descriptionFocus_ = patchLinkFocus_ = false;
       storageCursor_ = n;
       selection_->target = id;
     });
     // The card under the cursor wears the focus border; the dark fill
     // marks the one chosen.
-    if (n == storageCursor_ && part_ == int(parts.size()) && !descriptionFocus_)
+    if (n == storageCursor_ && part_ == rows && panelFocus)
       paint_.outline(x, CardTop, CardWidth, CardHeight, 12);
     paint_.rect(x, CardTop, CardWidth, CardHeight, chosen ? Ink : Ground, 12);
     const auto color = chosen ? Surface : Ink;
@@ -311,10 +394,11 @@ void Application::detail() {
                         chosen ? SDL_Color{200, 200, 206, 255} : Secondary, false, CardWidth - TextLeft - 12);
   }
   hit(840, 568, 386, 60, [this] {
-    part_ = int(selection_->parts().size()) + 1;
+    part_ = int(selection_->rows()) + 1;
+    descriptionFocus_ = patchLinkFocus_ = false;
     action(Action::Accept);
   });
-  if (part_ == int(parts.size()) + 1 && !descriptionFocus_)
+  if (part_ == rows + 1 && panelFocus)
     paint_.ring(840, 568, 386, 60, 14);
   paint_.rect(840, 568, 386, 60, Butter, 14);
   const auto install = tr("설치하기");

@@ -470,6 +470,20 @@ const Translation rows[] = {
     {"켜져 있으면 먼저 끄고 SD 카드에서 지웁니다.", "If it is on, it is turned off and deleted from the SD card.",
      "オンの場合は先にオフにしてSDカードから削除します。", "如已开启，会先关闭再从 SD 卡删除。"},
     {"지우기", "Delete", "削除", "删除"},
+    {"실행에 필요한 패치", "Needed to run", "起動に必要なパッチ", "运行所需补丁"},
+    {"패치|항목", "Patch", "パッチ", "补丁"},
+    {"패치 보기", "View patches", "パッチを見る", "查看补丁"},
+    {"게임을 설치하지 못해 함께 고른 패치를 받지 않았습니다.",
+     "The game did not install, so the patches picked with it were not downloaded.",
+     "ゲームをインストールできなかったため、一緒に選んだパッチはダウンロードしませんでした。",
+     "游戏未能安装，因此没有下载一起选择的补丁。"},
+    {"이 게임의 패치가 목록에 없습니다.", "This game's patches are not in the list.",
+     "このゲームのパッチは一覧にありません。", "列表中没有此游戏的补丁。"},
+    {"서버 목록을 새로고침하거나 B로 상세 화면에 돌아갑니다.", "Refresh the list, or press B to go back to the game page.",
+     "一覧を更新するか、Bで詳細画面に戻ってください。", "请刷新列表，或按 B 返回详情页面。"},
+    {"게임 설치가 끝나면 받습니다.", "Downloads once the game is installed.",
+     "ゲームのインストールが終わるとダウンロードします。", "游戏安装完成后开始下载。"},
+    {"패치 {0}개 대기", "{0} patches waiting", "パッチ {0}件待機中", "{0} 个补丁等待中"},
 };
 const TranslationTable table(rows, sizeof rows / sizeof rows[0]);
 } // namespace

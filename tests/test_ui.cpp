@@ -105,6 +105,64 @@ int runUiTests(SDL_Renderer *renderer) {
   app.action(foil::ui::Action::Back);
   CHECK(!app.viewingScreenshots());
   CHECK(app.current() == foil::ui::Screen::Detail);
+  {
+    // The game's patches join the rows to install: the one it needs starts
+    // on, the other off; another game's patch stays out.
+    const auto id = app.detailId();
+    CHECK(!id.empty());
+    auto withPatches = detail;
+    foil::UserPatch optional, required, other;
+    optional.id = "font";
+    optional.titleId = id;
+    optional.name = "한글 글꼴";
+    optional.size = 1000;
+    optional.kinds = {"romfs"};
+    required.id = "boot";
+    required.titleId = id;
+    required.name = "실행 패치";
+    required.size = 300;
+    required.required = true;
+    other.id = "other";
+    other.titleId = "0100000000010000";
+    other.size = 7;
+    withPatches.patches = {optional, required, other};
+    const auto before = app.selectedBytes();
+    app.setDetail(withPatches);
+    CHECK(app.selectedBytes() == before + 300);
+    app.render();
+    // From the install button: the storage cards, the needed patch, then
+    // the optional one, which A switches on.
+    for (int n = 0; n < 12; ++n) app.action(foil::ui::Action::Down);
+    app.action(foil::ui::Action::Up);
+    app.action(foil::ui::Action::Up);
+    app.action(foil::ui::Action::Up);
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.selectedBytes() == before + 1300);
+    for (int n = 0; n < 3; ++n) app.action(foil::ui::Action::Down);
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.confirmingInstall());
+    app.render();
+    app.action(foil::ui::Action::Back);
+    CHECK(!app.confirmingInstall());
+    CHECK(app.queuedPatches() == 0);
+    // Y opens 패치 with this game alone; B comes back to the page.
+    app.action(foil::ui::Action::Queue);
+    CHECK(app.current() == foil::ui::Screen::Patches);
+    CHECK(app.patchOwnerFilter() == id);
+    app.render();
+    app.action(foil::ui::Action::Back);
+    CHECK(app.current() == foil::ui::Screen::Detail);
+    CHECK(app.patchOwnerFilter().empty());
+    CHECK(app.selectedBytes() == before + 1300);
+    // Left reaches the patch link, where A opens the same list.
+    app.render();
+    app.action(foil::ui::Action::Left);
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.current() == foil::ui::Screen::Patches);
+    app.action(foil::ui::Action::Back);
+    CHECK(app.current() == foil::ui::Screen::Detail);
+    app.action(foil::ui::Action::Right);
+  }
   app.action(foil::ui::Action::Back);
   CHECK(app.current() == foil::ui::Screen::Library);
   CHECK(app.query() == "버터");

@@ -6,6 +6,7 @@
 #include "core/I18n.hpp"
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <utility>
@@ -106,6 +107,45 @@ bool patchPathAllowed(const UserPatch &patch, const std::string &path) {
   if (!patch.homebrewApp.empty())
     return homebrew::insideApp(patch.homebrewApp, path);
   return patchPathAllowed(patch.titleId, path);
+}
+std::string baseTitleId(const std::string &titleId) {
+  auto id = upper(titleId);
+  if (id.size() != 16 || id.find_first_not_of("0123456789ABCDEF") != std::string::npos)
+    return id;
+  char text[17];
+  std::snprintf(text, sizeof(text), "%016llX",
+                static_cast<unsigned long long>(std::stoull(id, nullptr, 16) & ~0x1FFFULL));
+  return text;
+}
+std::string patchOwner(const UserPatch &patch) {
+  return homebrew::ownerKey(patch.titleId.empty() ? std::string() : baseTitleId(patch.titleId), patch.homebrewApp);
+}
+bool patchBelongs(const UserPatch &patch, const std::string &owner) {
+  if (owner.empty()) return false;
+  const auto key = owner.rfind("app:", 0) == 0 ? owner : baseTitleId(owner);
+  return patchOwner(patch) == key;
+}
+std::vector<UserPatch> patchesFor(const std::vector<UserPatch> &patches, const std::string &owner) {
+  std::vector<UserPatch> out;
+  for (const auto &patch : patches)
+    if (patchBelongs(patch, owner)) out.push_back(patch);
+  return out;
+}
+std::string normalizeVersion(const std::string &version) {
+  const auto first = version.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos) return "";
+  auto text = version.substr(first, version.find_last_not_of(" \t\r\n") - first + 1);
+  if (text[0] == 'v' || text[0] == 'V') text.erase(0, 1);
+  return text;
+}
+bool patchFitsVersion(const UserPatch &patch, const std::string &version) {
+  const auto wanted = normalizeVersion(patch.gameVersion), have = normalizeVersion(version);
+  return wanted.empty() || upper(wanted) == "ANY" || have.empty() || wanted == have;
+}
+PatchStep patchStep(const UserPatch &patch, const PatchRecord *record) {
+  if (!record) return PatchStep::Get;
+  if (!patch.hash.empty() && record->hash != patch.hash) return PatchStep::Update;
+  return record->on ? PatchStep::Skip : PatchStep::Enable;
 }
 bool isCheatPath(const std::string &path) {
   const auto parts = split(path);
