@@ -23,7 +23,7 @@ const char *filterLabel(Application::PatchFilter filter) {
 }
 // Busy labels stay Korean keys in patchBusyLabel_ and are translated only
 // when drawn, so the progress check compares keys, never screen text.
-constexpr const char *Removing = "지우는 중";     // i18n: keep
+constexpr const char *Removing = "삭제 중";     // i18n: keep
 constexpr const char *Updating = "업데이트 중";   // i18n: keep
 constexpr const char *Getting = "받는 중";        // i18n: keep
 constexpr const char *Disabling = "끄는 중";      // i18n: keep
@@ -242,8 +242,8 @@ std::vector<PatchChoice> patchChoices(const Application::PatchRow &row) {
                                                      : tr("게임을 다시 켜면 원래대로 돌아옵니다. 받은 파일은 남겨 둡니다.")});
   else
     out.push_back({PatchOp::Enable, tr("켜기"), app ? tr("앱을 다시 켜면 적용됩니다.") : tr("게임을 다시 켜면 적용됩니다.")});
-  out.push_back({PatchOp::Remove, tr("삭제"), row.record->on ? tr("패치를 끄고 SD 카드에서 지웁니다.")
-                                                            : tr("SD 카드에 받아 둔 파일을 지웁니다.")});
+  out.push_back({PatchOp::Remove, tr("삭제"), row.record->on ? tr("패치를 끄고 SD 카드에서 삭제합니다.")
+                                                            : tr("SD 카드에 받아 둔 파일을 삭제합니다.")});
   return out;
 }
 } // namespace
@@ -259,7 +259,7 @@ void Application::patchAction(Action a) {
       const auto &row = *picked;
       runPatchJob(row.patch.id, Removing, [id = row.patch.id](net::Session &, PatchStore &store, Error &error, std::string &done) {
         if (store.remove(id, error))
-          done = tr("패치를 지웠습니다.");
+          done = tr("패치를 삭제했습니다.");
       });
     }
     return;
@@ -701,11 +701,11 @@ void Application::patchDialog() {
     return;
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 150});
   blockTouch();
-  const auto body = modal(700, 24 + 70 + 16, tr("패치를 지우시겠습니까?"), tr("취소"), "", tr("지우기"), 37);
+  const auto body = modal(700, 24 + 70 + 16, tr("패치를 삭제하시겠습니까?"), tr("취소"), "", tr("삭제"), 37);
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(row.game + " · " + row.patch.name, x, y, 21, Ink, true, body.w - 64);
-  paint_.fonts.text(row.record && row.record->on ? tr("켜져 있으면 먼저 끄고 SD 카드에서 지웁니다.")
-                                                 : tr("SD 카드에 받아 둔 파일을 지웁니다."),
+  paint_.fonts.text(row.record && row.record->on ? tr("켜져 있으면 먼저 끄고 SD 카드에서 삭제합니다.")
+                                                 : tr("SD 카드에 받아 둔 파일을 삭제합니다."),
                     x, y + 38, 19, Secondary, false, body.w - 64);
 
 }

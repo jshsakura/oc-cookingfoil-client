@@ -317,7 +317,7 @@ void Application::removalConfirm() {
   const auto warning = removal_->save.device() ? std::string(tr("모든 계정이 함께 쓰는 공용 세이브를 삭제합니다. 되돌릴 수 없습니다."))
                        : trf("{0} 계정의 세이브를 삭제합니다. 되돌릴 수 없습니다.", {removal_->save.userName});
   // While it runs there is nothing to press: no footer keys.
-  const auto body = modal(700, 20 + 30 + 84 + 16, save ? tr("세이브를 삭제합니까?") : tr("게임을 삭제합니까?"),
+  const auto body = modal(700, 20 + 30 + 84 + 16, save ? tr("세이브를 삭제하시겠습니까?") : tr("게임을 삭제하시겠습니까?"),
                           deviceBusy_ ? "" : tr("취소"), "", deviceBusy_ ? "" : tr("삭제합니다"), 37);
   paint_.fonts.text(managedGame_->name, body.x + 32, body.y + 20, 21, Ink, true, body.w - 64);
   paint_.fonts.wrapped(deviceBusy_ ? std::string(tr("삭제 결과를 확인하고 있습니다."))

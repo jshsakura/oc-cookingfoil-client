@@ -256,7 +256,7 @@ void Application::dialogs() {
     const bool pack = retroBusy_ == "pack";
     const auto body = modal(700, 24 + 30 + 16, pack ? tr("RetroArch 설치를 취소하시겠습니까?") : tr("다운로드를 취소하시겠습니까?"),
                             tr("계속 받기"), "", pack ? tr("설치 취소") : tr("다운로드 취소"), 25);
-    paint_.fonts.text(pack ? tr("받은 파일은 남겨 두고 다음에 이어서 받습니다.") : tr("받던 게임 파일은 지웁니다."),
+    paint_.fonts.text(pack ? tr("받은 파일은 남겨 두고 다음에 이어서 받습니다.") : tr("받던 게임 파일은 삭제합니다."),
                       body.x + 32, body.y + 24, 19, Secondary, false, body.w - 64);
   } else if (confirmCancel_) {
     // B keeps installing; A cancels, once the popup has settled.

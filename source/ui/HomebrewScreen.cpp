@@ -276,7 +276,7 @@ void Application::removeHomebrew(const homebrew::App &picked) {
     if (!removed) logLine("homebrew remove: " + error);
   }
   if (!removed) {
-    alert_ = trf("파일을 지우지 못했습니다: {0}", {file});
+    alert_ = trf("파일을 삭제하지 못했습니다: {0}", {file});
     return;
   }
   if (ledgered) {
@@ -296,7 +296,7 @@ void Application::removeHomebrew(const homebrew::App &picked) {
                                      [&](const homebrew::CardNro &nro) { return nro.path == file; }),
                       homebrewCard_.end());
   matchHomebrewCard();
-  message(trf("{0}을(를) 지웠습니다.", {app.name}));
+  message(trf("{0}을(를) 삭제했습니다.", {app.name}));
 }
 void Application::homebrewAction(Action a) {
   const auto rows = homebrewRows();
@@ -518,7 +518,7 @@ void Application::homebrewAskDialog() {
     }
     if (extras[i] == 3) { // 지우기, in the colour removal uses everywhere
       paint_.icon(37, x + 20, rowY + 15, Bad, 26);
-      paint_.fonts.middle(tr("지우기"), x + 62, rowY + Row / 2, 20, Bad, true);
+      paint_.fonts.middle(tr("삭제"), x + 62, rowY + Row / 2, 20, Bad, true);
       continue;
     }
     const bool patches = extras[i] == 1;
@@ -544,13 +544,13 @@ void Application::homebrewRemoveDialog() {
   }
   const auto &app = homebrewAt(rows[std::clamp(selected_, 0, int(rows.size()) - 1)]);
   const bool shortcut = homebrewHasShortcut(app);
-  const auto body = modal(700, 24 + 70 + (shortcut ? 30 : 0) + 16, tr("홈브류를 지우시겠습니까?"), tr("취소"), "",
-                          tr("지우기"), 37);
+  const auto body = modal(700, 24 + 70 + (shortcut ? 30 : 0) + 16, tr("홈브류를 삭제하시겠습니까?"), tr("취소"), "",
+                          tr("삭제"), 37);
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(app.name, x, y, 21, Ink, true, body.w - 64);
-  paint_.fonts.text(trf("SD 카드에서 {0}을(를) 지웁니다.", {homebrewFile(app)}), x, y + 38, 19, Secondary,
+  paint_.fonts.text(trf("SD 카드에서 {0}을(를) 삭제합니다.", {homebrewFile(app)}), x, y + 38, 19, Secondary,
                     false, body.w - 64);
   if (shortcut)
-    paint_.fonts.text(tr("홈 메뉴 바로가기도 함께 지웁니다."), x, y + 68, 19, Secondary, false, body.w - 64);
+    paint_.fonts.text(tr("홈 메뉴 바로가기도 함께 삭제합니다."), x, y + 68, 19, Secondary, false, body.w - 64);
 }
 } // namespace foil::ui

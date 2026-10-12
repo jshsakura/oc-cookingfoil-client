@@ -466,7 +466,7 @@ void Application::dropboxDialog() {
     const auto body = modal(700, 20 + 30 + 84 + 16, tr("드롭박스 연결을 해제합니까?"), tr("취소"), "", tr("해제합니다"), 25);
     paint_.fonts.text(dropboxAccount_.empty() ? std::string(tr("드롭박스")) : dropboxAccount_, body.x + 32, body.y + 20, 21,
                       Ink, true, body.w - 64);
-    paint_.fonts.wrapped(tr("이 본체에서 드롭박스 연결 정보를 지웁니다. 드롭박스에 올린 백업은 그대로 남고, 다시 연결하면 또 보입니다."),
+    paint_.fonts.wrapped(tr("이 본체에서 드롭박스 연결 정보를 삭제합니다. 드롭박스에 올린 백업은 그대로 남고, 다시 연결하면 또 보입니다."),
                          body.x + 32, body.y + 56, 19, Secondary, body.w - 64, 3);
     return;
   }

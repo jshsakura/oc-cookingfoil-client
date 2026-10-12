@@ -1517,9 +1517,9 @@ void Application::render() {
     if (downloadsTab_ == 0 || sidebar_ || downloadsList().empty())
       footer({{"B", (installer_.running() || retroDownloading()) && downloadsTab_ == 0 ? tr("취소") : tr("뒤로")}});
     else if (downloadsTab_ == 2)
-      footer(Hints{{"A", tr("다시 시도")}, {"X", tr("목록에서 지우기")}, {"Y", tr("모두 지우기")}, {"B", tr("뒤로")}});
+      footer(Hints{{"A", tr("다시 시도")}, {"X", tr("목록에서 삭제")}, {"Y", tr("모두 삭제")}, {"B", tr("뒤로")}});
     else
-      footer(Hints{{"X", tr("목록에서 지우기")}, {"Y", tr("모두 지우기")}, {"B", tr("뒤로")}});
+      footer(Hints{{"X", tr("목록에서 삭제")}, {"Y", tr("모두 삭제")}, {"B", tr("뒤로")}});
   }
   else if (screen_ == Screen::Settings)
     footer({{"A", tr("선택")}, {"B", tr("뒤로")}}); // Y still rereads config.json; - shows as 새로고침
@@ -1759,7 +1759,7 @@ void Application::resumeDialog() {
   for (const auto &f : pending->files)
     bytes += f.size;
   // A picks it up, Y drops it, B asks again next launch.
-  const auto body = modal(700, 24 + 90 + 16, tr("끊긴 설치가 있습니다"), tr("닫기"), tr("지우기"), tr("이어서 받기"), 4);
+  const auto body = modal(700, 24 + 90 + 16, tr("끊긴 설치가 있습니다"), tr("닫기"), tr("삭제"), tr("이어서 받기"), 4);
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(pending->name, x, y, 22, Ink, true, body.w - 64);
   paint_.fonts.text(trf("{0}개 항목 · {1}", {std::to_string(pending->files.size()), formatBytes(bytes)}), x, y + 36, 18,
@@ -1801,7 +1801,7 @@ void Application::pollCleanup() {
     alertTitle_ = tr("남은 파일을 정리하지 못했습니다");
     alert_ = cleanupResult_.error.message;
   } else if (cleanupRemoving_) {
-    message(trf("남은 파일 {0}개 · {1}를 지웠습니다.", {count, formatBytes(report.bytes)}));
+    message(trf("남은 파일 {0}개 · {1}를 삭제했습니다.", {count, formatBytes(report.bytes)}));
     storageAt_ = 0; // free space changed
     refreshInstalled();
   } else if (report.files + report.placeholders == 0) {
@@ -1812,7 +1812,7 @@ void Application::pollCleanup() {
   }
 }
 void Application::cleanupProgressDialog() {
-  const auto body = modal(620, 150, cleanupRemoving_ ? tr("남은 파일을 지우고 있습니다") : tr("남은 파일을 찾고 있습니다"), "", "", "", 23);
+  const auto body = modal(620, 150, cleanupRemoving_ ? tr("남은 파일을 삭제하고 있습니다") : tr("남은 파일을 찾고 있습니다"), "", "", "", 23);
   const float x = body.x + 32, w = body.w - 64, y = body.y + 26;
   const int stage = cleanupProgress_.stage, done = cleanupProgress_.done, total = cleanupProgress_.total;
   const bool listed = cleanupProgress_.listed;
@@ -1856,11 +1856,11 @@ void Application::languageDialog() {
 }
 void Application::cleanupDialog() {
   const auto &report = cleanupResult_.value;
-  const auto body = modal(700, 24 + 90 + 16, tr("남은 파일을 지우시겠습니까?"), tr("취소"), "", tr("지우기"), 37);
+  const auto body = modal(700, 24 + 90 + 16, tr("남은 파일을 삭제하시겠습니까?"), tr("취소"), "", tr("삭제"), 37);
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(trf("{0}개 · {1}", {std::to_string(report.files + report.placeholders), formatBytes(report.bytes)}),
                     x, y, 22, Ink, true, body.w - 64);
-  paint_.fonts.wrapped(tr("어떤 게임도 쓰지 않는 파일과 끊긴 설치의 조각을 지웁니다. 설치된 게임과 세이브는 그대로입니다."),
+  paint_.fonts.wrapped(tr("어떤 게임도 쓰지 않는 파일과 끊긴 설치의 조각을 삭제합니다. 설치된 게임과 세이브는 그대로입니다."),
                        x, y + 38, 18, Secondary, body.w - 64, 2);
 
 }

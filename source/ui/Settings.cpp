@@ -126,7 +126,7 @@ void Application::settings() {
   // Leftover cleanup: content no installed game uses, found first and only
   // deleted after a confirmation.
   option(3, 14, tr("남은 파일 정리"),
-         !cleanupBusy_ ? tr("중단된 다운로드와 쓰지 않는 설치 파일을 찾아 지웁니다") : cleanupRemoving_ ? tr("지우는 중") : tr("찾는 중"), Secondary, false);
+         !cleanupBusy_ ? tr("중단된 다운로드와 쓰지 않는 설치 파일을 찾아 삭제합니다") : cleanupRemoving_ ? tr("삭제 중") : tr("찾는 중"), Secondary, false);
   // This build against the server's newest; A checks or updates.
   option(2, 3, tr("앱 업데이트"), appUpdateStatus(), appUpdate_ == AppUpdate::Available ? Ink : Secondary,
          appUpdate_ == AppUpdate::Available);

@@ -307,14 +307,14 @@ Error clearTree(const std::string &path) {
     if (isDirectory(full)) {
       if (auto error = removeTree(full)) return error;
     } else if (unlink(full.c_str()) != 0) {
-      return {trf("파일을 지우지 못했습니다: {0}", {full})};
+      return {trf("파일을 삭제하지 못했습니다: {0}", {full})};
     }
   }
   return {};
 }
 Error removeTree(const std::string &path) {
   if (auto error = clearTree(path)) return error;
-  if (rmdir(path.c_str()) != 0) return {trf("폴더를 지우지 못했습니다: {0}", {path})};
+  if (rmdir(path.c_str()) != 0) return {trf("폴더를 삭제하지 못했습니다: {0}", {path})};
   return {};
 }
 } // namespace foil::saves

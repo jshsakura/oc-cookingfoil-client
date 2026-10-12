@@ -90,14 +90,14 @@ void Application::removeShortcuts(const std::vector<uint64_t> &ids, const std::s
   for (const auto id : ids) {
     if (!id || !shortcuts_.count(id)) continue;
     if (const auto error = platform::removeShortcut(id)) {
-      alertTitle_ = tr("바로가기를 지우지 못했습니다");
+      alertTitle_ = tr("바로가기를 삭제하지 못했습니다");
       alert_ = error.message;
       return;
     }
     shortcuts_.erase(id);
     removed = true;
   }
-  if (removed) message(trf("홈 메뉴에서 {0} 바로가기를 지웠습니다.", {name}));
+  if (removed) message(trf("홈 메뉴에서 {0} 바로가기를 삭제했습니다.", {name}));
 }
 bool Application::autoHomebrewShortcut(const homebrew::App &app) {
   if (!state_.makeShortcuts) return false;
@@ -127,10 +127,10 @@ void Application::shortcutRemoveDialog() {
     shortcutRemoveAsk_ = false;
     return;
   }
-  const auto body = modal(700, 24 + 70 + 16, tr("바로가기를 지우시겠습니까?"), tr("취소"), "", tr("바로가기 지우기"), 37);
+  const auto body = modal(700, 24 + 70 + 16, tr("바로가기를 삭제하시겠습니까?"), tr("취소"), "", tr("바로가기 삭제"), 37);
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(app->name, x, y, 21, Ink, true, body.w - 64);
-  paint_.fonts.text(tr("홈 메뉴에서 바로가기만 지우고 앱 파일은 그대로 둡니다."), x, y + 38, 19, Secondary, false,
+  paint_.fonts.text(tr("홈 메뉴에서 바로가기만 삭제하고 앱 파일은 그대로 둡니다."), x, y + 38, 19, Secondary, false,
                     body.w - 64);
 }
 void Application::considerSelfShortcut() {

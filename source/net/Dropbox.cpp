@@ -157,7 +157,7 @@ Error Dropbox::finish(const Server &server, const State &state, const db::Bridge
 Error Dropbox::unlink() {
   credentials_ = {};
   if (std::remove(path_.c_str()) != 0 && std::filesystem::exists(path_))
-    return {tr("드롭박스 연결 정보를 지우지 못했습니다.")};
+    return {tr("드롭박스 연결 정보를 삭제하지 못했습니다.")};
   return {};
 }
 
