@@ -541,7 +541,7 @@ private:
     std::string error;
     bool confirmDelete = false;
   };
-  static constexpr int ServerFields = 4, ServerSaveRow = 4, ServerDeleteRow = 5;
+  static constexpr int ServerFields = 4;
   std::optional<ServerForm> serverForm_;
   std::optional<TextRequest> textRequest_;
   int textField_ = -1; // the form field the keyboard types into
@@ -672,10 +672,10 @@ private:
   bool searchRequested_ = false, confirmInstall_ = false;
   int dialogFocus_ = 0;
   void dialogHints(float right, float y, const std::string &close,
-                   const std::string &apply = "", const std::string &accept = "");
+                   const std::string &apply = "", const std::string &accept = "", const std::string &remove = "");
   SDL_FRect modal(float width, float bodyHeight, const std::string &title,
                   const std::string &close, const std::string &apply = "", const std::string &accept = "",
-                  int icon = -1);
+                  int icon = -1, const std::string &remove = "");
   std::string alert_, alertTitle_;
   bool refreshing_ = false; // - pressed: say so when the list is back
   std::unique_ptr<PatchStore> patchStore_;

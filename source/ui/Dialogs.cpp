@@ -3,9 +3,11 @@
 namespace foil::ui {
 // Key hints ending at `right`, like the screen footer; each one is tappable.
 void Application::dialogHints(float right, float y, const std::string &close,
-                              const std::string &apply, const std::string &accept) {
+                              const std::string &apply, const std::string &accept, const std::string &remove) {
   // `accept` names what A does when the popup is one decision (다운로드).
   std::vector<std::pair<std::string, std::string>> keys{{"A", accept.empty() ? std::string(tr("선택")) : accept}};
+  if (!remove.empty())
+    keys.push_back({"X", remove});
   if (!apply.empty())
     keys.push_back({"Y", apply});
   keys.push_back({"B", close});
@@ -16,7 +18,7 @@ void Application::dialogHints(float right, float y, const std::string &close,
   for (const auto &[key, label] : keys) {
     const float w = paint_.keyLabelWidth(key, label, 18);
     hit(x - 6, y - 22, w + 12, 44, [this, key = key] {
-      action(key == "A" ? Action::Accept : key == "Y" ? Action::Queue : Action::Back);
+      action(key == "A" ? Action::Accept : key == "Y" ? Action::Queue : key == "X" ? Action::Search : Action::Back);
     });
     const bool strong = key == "Y" || (key == "A" && !accept.empty());
     paint_.keyLabel(key, label, x, y, 18, strong ? Ink : Secondary, strong);
@@ -27,7 +29,7 @@ void Application::dialogHints(float right, float y, const std::string &close,
 // body by rules; the footer has its own tint. Returns the body rectangle.
 SDL_FRect Application::modal(float width, float bodyHeight, const std::string &title,
                              const std::string &close, const std::string &apply, const std::string &accept,
-                             int icon) {
+                             int icon, const std::string &remove) {
   constexpr float Header = 72, Footer = 60;
   const float height = Header + bodyHeight + Footer;
   const float left = (1280 - width) / 2, top = (720 - height) / 2;
@@ -42,7 +44,7 @@ SDL_FRect Application::modal(float width, float bodyHeight, const std::string &t
   paint_.rect(left, footerTop, width, 20, Ground);
   paint_.rect(left, footerTop, width, 1, Line);
   if (!close.empty()) // a progress modal has nothing to press
-    dialogHints(left + width - 32, footerTop + Footer / 2, close, apply, accept);
+    dialogHints(left + width - 32, footerTop + Footer / 2, close, apply, accept, remove);
   return {left, top + Header, width, bodyHeight};
 }
 // Tabs at the top right, all in view: L and R badges at the ends step

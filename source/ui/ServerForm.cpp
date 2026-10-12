@@ -42,7 +42,6 @@ void Application::openServerForm(int index) {
   if (index >= 0 && size_t(index) < config_.servers.size()) {
     form.index = index;
     form.server = config_.servers[index];
-    form.row = ServerSaveRow;
   }
   serverForm_ = form;
   textField_ = -1;
@@ -72,15 +71,11 @@ void Application::serverFormAction(Action a) {
   }
   const bool existing = form.index >= 0;
   switch (a) {
-  case Action::Up: form.row = form.row >= ServerSaveRow ? ServerFields - 1 : std::max(0, form.row - 1); break;
-  case Action::Down: if (form.row < ServerSaveRow) ++form.row; break;
-  case Action::Left: if (form.row == ServerDeleteRow) form.row = ServerSaveRow; break;
-  case Action::Right: if (form.row == ServerSaveRow && existing) form.row = ServerDeleteRow; break;
-  case Action::Accept:
-    if (form.row < ServerFields) askServerField(form.row);
-    else if (form.row == ServerSaveRow) saveServerForm();
-    else form.confirmDelete = true;
-    break;
+  case Action::Up: form.row = std::max(0, form.row - 1); break;
+  case Action::Down: form.row = std::min(ServerFields - 1, form.row + 1); break;
+  case Action::Accept: askServerField(form.row); break;
+  // X deletes a server already there.
+  case Action::Search: if (existing) form.confirmDelete = true; break;
   // Y saves from any row; in 설정 the console sends it as Reload.
   case Action::Queue:
   case Action::Reload: saveServerForm(); break;
@@ -111,7 +106,7 @@ void Application::saveServerForm() {
   auto next = config_;
   int index = form.index;
   if (index < 0) {
-    if (next.servers.size() >= 32) return fail(tr("서버는 32개까지 등록할 수 있습니다."), ServerSaveRow);
+    if (next.servers.size() >= 32) return fail(tr("서버는 32개까지 등록할 수 있습니다."), form.row);
     next.servers.push_back(server);
     index = int(next.servers.size()) - 1;
   } else if (size_t(index) < next.servers.size()) {
@@ -183,12 +178,11 @@ bool Application::writeServers(const Config &next, int prefer, const std::string
 void Application::serverFormDialog() {
   auto &form = *serverForm_;
   const bool existing = form.index >= 0;
-  constexpr float Width = 760, Row = 56, Gap = 8, Button = 52;
+  constexpr float Width = 760, Row = 56, Gap = 8;
   const float errorSpace = form.error.empty() ? 0 : 30;
-  const float bodyH = 20 + ServerFields * (Row + Gap) - Gap + 18 + Button + 16 + 26 + errorSpace + 18;
-  const auto accept = form.row < ServerFields ? tr("입력") : form.row == ServerSaveRow ? tr("저장") : tr("삭제");
-  const auto body = modal(Width, bodyH, existing ? tr("서버 편집") : tr("서버 추가"), tr("취소"),
-                          form.row == ServerSaveRow ? "" : tr("저장"), accept, 21);
+  const float bodyH = 20 + ServerFields * (Row + Gap) - Gap + 18 + 26 + errorSpace + 18;
+  const auto body = modal(Width, bodyH, existing ? tr("서버 편집") : tr("서버 추가"), tr("취소"), tr("저장"),
+                          tr("입력"), 21, existing ? tr("삭제") : "");
   const float x = body.x + 32, w = body.w - 64, valueX = x + 170, valueW = w - 190;
   const char *labels[ServerFields] = {tr("주소"), tr("아이디"), tr("비밀번호"), tr("이름")};
   for (int field = 0; field < ServerFields; ++field) {
@@ -216,21 +210,7 @@ void Application::serverFormDialog() {
       paint_.fonts.middle(value, valueX, mid, 20, Ink, field == 3, valueW);
     }
   }
-  // 저장, and 삭제 beside it for a server already there.
-  const float buttonY = body.y + 20 + ServerFields * (Row + Gap) - Gap + 18;
-  const auto button = [&](int row, const std::string &label, float left, float width, SDL_Color color) {
-    hit(left, buttonY, width, Button, [this, row] {
-      serverForm_->row = row;
-      action(Action::Accept);
-    });
-    if (form.row == row) paint_.focusRow(left, buttonY, width, Button, Ground, 12);
-    else paint_.rect(left, buttonY, width, Button, Ground, 12);
-    paint_.fonts.middle(label, left + (width - paint_.fonts.measure(label, 20, true)) / 2, buttonY + Button / 2, 20,
-                        color, true);
-  };
-  button(ServerSaveRow, tr("저장"), x, 200, Ink);
-  if (existing) button(ServerDeleteRow, tr("삭제"), x + 216, 160, Bad);
-  float lineY = buttonY + Button + 16;
+  float lineY = body.y + 20 + ServerFields * (Row + Gap) - Gap + 18;
   if (!form.error.empty()) {
     paint_.fonts.text(form.error, x, lineY, 18, Bad, true, w);
     lineY += errorSpace;

@@ -323,9 +323,8 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(request && request->password);
     form.enterText("secret word");
     form.render();
-    form.action(foil::ui::Action::Down); // 이름, left empty
-    form.action(foil::ui::Action::Down); // 저장
-    form.action(foil::ui::Action::Accept);
+    // 이름 stays empty; Y saves.
+    form.action(foil::ui::Action::Queue);
     CHECK(!form.serverFormOpen());
     auto saved = foil::loadConfig(configPath);
     CHECK(!saved.error && saved.value.servers.size() == 2);
@@ -337,12 +336,12 @@ int runUiTests(SDL_Renderer *renderer) {
     }
     CHECK(form.config().servers.size() == 2);
     CHECK(form.activeServer() == 1);
-    // A on the server opens it on 저장; Up to 이름, a new name, Y saves.
+    // A on the server opens it on 주소; Down to 이름, a new name, Y saves.
     SDL_Delay(300);
     form.render();
     form.action(foil::ui::Action::Accept);
     CHECK(form.serverFormOpen());
-    form.action(foil::ui::Action::Up);
+    for (int n = 0; n < 3; ++n) form.action(foil::ui::Action::Down);
     form.action(foil::ui::Action::Accept);
     request = form.takeTextRequest();
     CHECK(request && request->initial == "127.0.0.1:1");
@@ -352,12 +351,11 @@ int runUiTests(SDL_Renderer *renderer) {
     saved = foil::loadConfig(configPath);
     CHECK(saved.value.servers.size() == 2 && saved.value.servers[1].title == "새 서버" &&
           saved.value.servers[1].password == "secret word");
-    // 삭제 asks first, then leaves the other server alone.
+    // X deletes, asking first, then leaves the other server alone.
     SDL_Delay(300);
     form.render();
     form.action(foil::ui::Action::Accept);
-    form.action(foil::ui::Action::Right);
-    form.action(foil::ui::Action::Accept);
+    form.action(foil::ui::Action::Search);
     form.render();
     SDL_Delay(750);
     form.action(foil::ui::Action::Accept);
