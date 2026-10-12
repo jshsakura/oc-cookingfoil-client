@@ -1,4 +1,5 @@
 #include "platform/Storage.hpp"
+#include <filesystem>
 #ifdef __SWITCH__
 #include <switch.h>
 #endif
@@ -82,6 +83,30 @@ void keepAwake(bool on) {
 #else
   (void)on;
 #endif
+}
+bool replaceSelf(const std::string &part, const std::string &target, std::string &error) {
+  const std::string old = target + ".old";
+  std::error_code ec;
+#ifdef __SWITCH__
+  romfsExit(); // let go of the running file
+#endif
+  std::filesystem::remove(old, ec);
+  ec.clear();
+  std::filesystem::rename(target, old, ec);
+  const bool hadOld = !ec;
+  ec.clear();
+  std::filesystem::rename(part, target, ec);
+  if (ec) {
+    error = ec.message();
+    std::error_code ignored;
+    if (hadOld) std::filesystem::rename(old, target, ignored);
+  } else {
+    std::filesystem::remove(old, ec);
+  }
+#ifdef __SWITCH__
+  romfsInit(); // the new file now, or the old one put back
+#endif
+  return error.empty();
 }
 bool serviceApplet() {
 #ifdef __SWITCH__

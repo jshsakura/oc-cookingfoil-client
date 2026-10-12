@@ -28,7 +28,7 @@ std::optional<update::Release> latestClient(const Server &server, const State &s
 bool installClient(const Server &server, const State &state, const update::Release &release,
                    const std::string &target, std::atomic<uint64_t> &received, Error &error,
                    const std::atomic<bool> *cancel) {
-  const std::string part = target + ".new", old = target + ".old";
+  const std::string part = target + ".new";
   std::error_code ec;
   makeDirectories(std::filesystem::path(target).parent_path().string());
   std::unique_ptr<FILE, int (*)(FILE *)> out(std::fopen(part.c_str(), "wb"), std::fclose);
@@ -64,17 +64,8 @@ bool installClient(const Server &server, const State &state, const update::Relea
   if (writeFailed || !closed) return fail(tr("업데이트 파일을 쓰지 못했습니다."));
   if (bytes.size() != release.size || update::sha256Hex(bytes) != release.sha256)
     return fail(tr("받은 파일이 서버의 것과 다릅니다. 다시 시도합니다."));
-  // The running .nro is already in memory, so it can be moved aside.
-  std::filesystem::remove(old, ec);
-  std::filesystem::rename(target, old, ec);
-  const bool hadOld = !ec;
-  ec.clear();
-  std::filesystem::rename(part, target, ec);
-  if (ec) {
-    if (hadOld) std::filesystem::rename(old, target, ec);
-    return fail(tr("업데이트 파일을 바꾸지 못했습니다."));
-  }
-  std::filesystem::remove(old, ec);
+  // Checked and complete: platform::replaceSelf puts it in place on the
+  // main thread, where the app can let go of its own file.
   return true;
 }
 bool sendClientLog(const Server &server, const State &state, const std::string &log, const std::string &reason,

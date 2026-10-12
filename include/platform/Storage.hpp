@@ -13,8 +13,11 @@ std::optional<uint64_t> totalSpace(const std::string &target);
 std::string systemLanguage();
 // While on, the console does not dim the screen or fall asleep on its own
 // (used during downloads).
-// While downloading: no dimming or sleep.
 void keepAwake(bool on);
+// Puts the downloaded build `part` in place of `target`, the running app's
+// own file. The app's RomFS keeps that file open, so it is closed for the
+// swap and opened again after; `error` gets the system's reason on failure.
+bool replaceSelf(const std::string &part, const std::string &target, std::string &error);
 // Starts `nro` again once this app exits (the homebrew loader's next load);
 // false where that is not possible (off the console, or no loader).
 bool relaunch(const std::string &nro);
