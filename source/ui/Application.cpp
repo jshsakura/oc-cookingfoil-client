@@ -270,7 +270,6 @@ std::string Application::installedIcon(const InstalledGame &game) {
   return group ? group->representative.icon : "";
 }
 void Application::clearCatalog() {
-  patchFromDetail_ = false; // the page it would go back to is gone
   serverPatches_.clear();
   patchesLoaded_ = false;
   patchError_ = {};
@@ -316,9 +315,6 @@ void Application::openMenuScreen(Screen target) {
 void Application::screen(Screen screen) {
   // A toast belongs to the screen that showed it.
   if (screen != screen_) notice_.clear();
-  // 패치 opened from a game's page shows that game alone until it is left.
-  patchOwner_.clear();
-  patchFromDetail_ = false;
   menuPending_ = false;
   headerFocus_.clear();
   header_.clear();
@@ -582,7 +578,6 @@ void Application::poll() {
   images_->updateState(state_);
   if (screen_ == Screen::Detail)
     screen_ = previous_;
-  patchFromDetail_ = false; // the catalog the page came from is read again
   // A 304 keeps the catalog already on screen.
   retries_ = 0;
   if (session_->unchanged() && !groups_.empty()) {
@@ -973,10 +968,6 @@ void Application::action(Action a) {
       screen_ = previous_;
       return;
     }
-    if (screen_ == Screen::Patches && patchFromDetail_) {
-      returnToDetail();
-      return;
-    }
     if (sidebar_) {
       screen(Screen::Home);
       return;
@@ -1085,43 +1076,12 @@ void Application::action(Action a) {
       return;
     }
     const int last = int(selection_->rows());
-    const bool hasLink =
-        detailGroup_ < groups_.size() && !patchesFor(detail_.patches, groups_[detailGroup_].id).empty();
-    // Y opens the game's patches on 패치 from anywhere on the page.
-    if (a == Action::Queue && hasLink) {
-      openGamePatches();
-      return;
-    }
-    // Left moves onto the left column: the patch link first when the game
-    // has patches, then the description, where up and down scroll it; right
+    // Left moves onto the description, where up and down scroll it; right
     // comes back to what gets installed. The right stick is the same
     // scroll, so it moves the cursor onto the description too.
-    if ((a == Action::ScrollUp || a == Action::ScrollDown) && descriptionHeight_ > 0) {
-      descriptionFocus_ = true;
-      patchLinkFocus_ = false;
-    }
-    if (patchLinkFocus_) {
-      if (a == Action::Accept) openGamePatches();
-      if (a == Action::Right) patchLinkFocus_ = false;
-      if (a == Action::Down && descriptionHeight_ > 0) {
-        patchLinkFocus_ = false;
-        descriptionFocus_ = true;
-      }
-      return;
-    }
-    const auto toLeftColumn = [&] {
-      if (hasLink) {
-        patchLinkFocus_ = true;
-        descriptionScroll_ = 0; // the link sits at the top of the column
-      } else
-        descriptionFocus_ = descriptionHeight_ > 0;
-    };
+    if ((a == Action::ScrollUp || a == Action::ScrollDown) && descriptionHeight_ > 0) descriptionFocus_ = true;
+    const auto toLeftColumn = [&] { descriptionFocus_ = descriptionHeight_ > 0; };
     if (descriptionFocus_) {
-      if (a == Action::Up && descriptionScroll_ == 0 && hasLink) {
-        descriptionFocus_ = false;
-        patchLinkFocus_ = true;
-        return;
-      }
       if (a == Action::Up || a == Action::ScrollUp)
         descriptionScroll_ = std::max(0, descriptionScroll_ - 1);
       if (a == Action::Down || a == Action::ScrollDown)
@@ -1540,14 +1500,10 @@ void Application::render() {
       const int items = selection_ ? int(selection_->rows()) : 0;
       const bool onButton = selection_ && part_ > items, onStorage = selection_ && part_ == items;
       using Hints = std::vector<std::pair<std::string, std::string>>;
-      auto hints = patchLinkFocus_     ? Hints{{"A", tr("패치 보기")}, {"B", tr("뒤로")}}
-                   : descriptionFocus_ ? Hints{{"A", tr("설치 항목으로")}, {"B", tr("뒤로")}}
+      auto hints = descriptionFocus_ ? Hints{{"A", tr("설치 항목으로")}, {"B", tr("뒤로")}}
                                        : Hints{{"A", onButton ? tr("설치") : onStorage ? tr("이 위치로 고르기") : tr("켜고 끄기")},
                                                {"B", tr("뒤로")}};
       if (!detail_.screenshots.empty()) hints.insert(hints.end() - 1, {"ZR", tr("사진")});
-      if (!patchLinkFocus_ && detailGroup_ < groups_.size() &&
-          !patchesFor(detail_.patches, groups_[detailGroup_].id).empty())
-        hints.insert(hints.end() - 1, {"Y", tr("패치|메뉴")});
       footer(hints);
     }
   }

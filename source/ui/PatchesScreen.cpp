@@ -40,8 +40,6 @@ bool Application::patchFilterMatches(PatchFilter filter, const PatchRow &row) {
 std::vector<Application::PatchRow> Application::patchRows(std::vector<PatchRow> rows) const {
   rows.erase(std::remove_if(rows.begin(), rows.end(),
                             [this](const PatchRow &row) {
-                              // Opened from a game's page: that game alone.
-                              if (!patchOwner_.empty() && !patchBelongs(row.patch, patchOwner_)) return true;
                               return !patchFilterMatches(patchFilter_, row) ||
                                      !textMatches({row.game, row.patch.name, row.patch.titleId, row.patch.homebrewApp},
                                                   patchQuery_);
@@ -541,8 +539,6 @@ void Application::patchesScreen() {
       notice(tr("서버가 패치를 읽고 있습니다."), tr("잠시 뒤 자동으로 다시 불러옵니다."), 25);
     else if (patchError_)
       notice(tr("패치 목록을 불러오지 못했습니다."), patchError_.message, 25);
-    else if (!patchOwner_.empty() && patchFilter_ == PatchFilter::All)
-      notice(tr("이 게임의 패치가 목록에 없습니다."), tr("서버 목록을 새로고침하거나 B로 상세 화면에 돌아갑니다."), 32);
     else if (patchFilter_ != PatchFilter::All && !all.empty())
       notice(patchFilter_ == PatchFilter::Stored ? tr("설치한 패치가 없습니다.") : tr("업데이트할 패치가 없습니다."),
              tr("패치는 SD 카드의 atmosphere/contents/타이틀 ID 폴더에 설치되고, 게임을 다시 켜면 적용됩니다."), 32);

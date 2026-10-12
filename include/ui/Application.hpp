@@ -89,8 +89,6 @@ public:
   std::string detailId() const { return detailGroup_ < groups_.size() ? groups_[detailGroup_].id : ""; }
   // Patches picked with a game install that have not started yet.
   size_t queuedPatches() const { return patchQueue_.size(); }
-  // The game or app 패치 shows alone, opened from a detail page.
-  const std::string &patchOwnerFilter() const { return patchOwner_; }
   uint64_t selectedBytes() const {
     return selection_ ? selection_->total() : 0;
   }
@@ -476,13 +474,6 @@ private:
   int requiredPatchesCard(int y); // returns the y below it
   // The detail's patches for its game, as rows of the selection.
   void syncDetailPatches();
-  // 패치 on its 전체 tab with only the detail's game; B comes back here.
-  void openGamePatches();
-  void returnToDetail();
-  bool patchLinkFocus_ = false; // detail: the cursor is on the patch link
-  std::string patchOwner_;      // 패치 shows only this owner's patches
-  bool patchFromDetail_ = false;
-  int detailReturnSelected_ = 0, detailReturnRow_ = 1;
   // Patches picked with an install; they start once the install ends well.
   void queuePatches(std::vector<UserPatch> patches, bool afterInstall);
   void pumpPatchQueue();

@@ -145,23 +145,6 @@ int runUiTests(SDL_Renderer *renderer) {
     app.action(foil::ui::Action::Back);
     CHECK(!app.confirmingInstall());
     CHECK(app.queuedPatches() == 0);
-    // Y opens 패치 with this game alone; B comes back to the page.
-    app.action(foil::ui::Action::Queue);
-    CHECK(app.current() == foil::ui::Screen::Patches);
-    CHECK(app.patchOwnerFilter() == id);
-    app.render();
-    app.action(foil::ui::Action::Back);
-    CHECK(app.current() == foil::ui::Screen::Detail);
-    CHECK(app.patchOwnerFilter().empty());
-    CHECK(app.selectedBytes() == before + 1300);
-    // Left reaches the patch link, where A opens the same list.
-    app.render();
-    app.action(foil::ui::Action::Left);
-    app.action(foil::ui::Action::Accept);
-    CHECK(app.current() == foil::ui::Screen::Patches);
-    app.action(foil::ui::Action::Back);
-    CHECK(app.current() == foil::ui::Screen::Detail);
-    app.action(foil::ui::Action::Right);
   }
   app.action(foil::ui::Action::Back);
   CHECK(app.current() == foil::ui::Screen::Library);
