@@ -113,7 +113,9 @@ uint64_t currentApplication(Error &error) {
   u64 pid = 0, id = 0;
   rc = pmdmntGetApplicationProcessId(&pid);
   pmdmntExit();
-  if (R_FAILED(rc) || !pid) { error = failure(tr("실행 중인 게임을 확인하지 못했습니다."), rc); return 0; }
+  if (R_FAILED(rc)) { error = failure(tr("실행 중인 게임을 확인하지 못했습니다."), rc); return 0; }
+  // Opened from the album with no game in the background: nothing runs.
+  if (!pid) return 0;
   rc = pminfoInitialize();
   if (R_FAILED(rc)) { error = failure(tr("실행 중인 게임을 확인하지 못했습니다."), rc); return 0; }
   rc = pminfoGetProgramId(&id, pid);
@@ -335,7 +337,7 @@ Error removeInstalled(const RemovalRequest &request) {
   if (library.error) return library.error;
   auto saves = request.kind == RemovalKind::Save ? readSaves(request.applicationId) : Parsed<std::vector<SaveEntry>>{};
   if (saves.error) return saves.error;
-  error = validateRemoval(request, library.value, saves.value, running, applicationMode(), false);
+  error = validateRemoval(request, library.value, saves.value, running, false);
   if (error) return error;
   NsSession ns;
   if (R_FAILED(ns.rc)) return failure(tr("삭제 서비스를 열지 못했습니다."), ns.rc);

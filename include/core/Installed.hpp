@@ -57,6 +57,5 @@ struct CleanupReport {
 Error validateRemoval(const RemovalRequest &request,
                       const InstalledLibrary &library,
                       const std::vector<SaveEntry> &saves,
-                      uint64_t runningApplication, bool applicationMode,
-                      bool installing);
+                      uint64_t runningApplication, bool installing);
 } // namespace foil

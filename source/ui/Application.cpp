@@ -120,7 +120,7 @@ bool Application::open() {
   // before something big fails, and how to open it properly.
   if (!platform::applicationMode()) {
     alertTitle_ = tr("애플릿 모드로 실행했습니다");
-    alert_ = tr("앨범에서 열면 메모리가 적어 큰 게임 설치가 느리거나 실패할 수 있고, 게임 삭제는 할 수 없습니다. 게임을 R 버튼을 누른 채 실행하면 애플리케이션 모드로 열립니다.");
+    alert_ = tr("앨범에서 열면 메모리가 적어 큰 게임 설치가 느리거나 실패할 수 있습니다. 게임을 R 버튼을 누른 채 실행하면 애플리케이션 모드로 열립니다.");
   }
 #endif
   logLine("startup " + stepName + " " + std::to_string(SDL_GetTicks() - stepAt) + "ms");

@@ -22,14 +22,12 @@ std::vector<InstalledGame> sortInstalled(std::vector<InstalledGame> games,
 Error validateRemoval(const RemovalRequest &request,
                       const InstalledLibrary &library,
                       const std::vector<SaveEntry> &saves,
-                      uint64_t runningApplication, bool applicationMode,
-                      bool installing) {
-  if (!applicationMode)
-    return {tr("게임을 R 버튼을 누른 채 실행한 애플리케이션 모드에서 삭제합니다.")};
+                      uint64_t runningApplication, bool installing) {
   if (installing)
     return {tr("설치가 끝난 뒤 게임을 관리합니다.")};
-  if (!runningApplication || request.applicationId == runningApplication)
-    return {tr("현재 실행 중인 게임은 삭제할 수 없습니다. 다른 게임으로 앱을 실행합니다.")};
+  // 0 means no game runs (opened from the album); otherwise that game stays.
+  if (runningApplication && request.applicationId == runningApplication)
+    return {tr("실행 중인 게임은 삭제할 수 없습니다. 게임을 종료하거나 다른 게임으로 앱을 실행합니다.")};
   if (!library.installed.complete)
     return {tr("설치 목록을 새로고침한 뒤 삭제합니다.")};
   const auto found = std::find_if(library.games.begin(), library.games.end(),

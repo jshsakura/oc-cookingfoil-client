@@ -72,7 +72,7 @@ const Translation rows[] = {
     {"설치된 게임과 세이브는 건드리지 않습니다.", "Installed games and saves are left alone.", "インストール済みのゲームとセーブには触れません。", "已安装的游戏和存档不受影响。"},
     // Applet mode
     {"애플릿 모드로 실행했습니다", "Running in applet mode", "アプレットモードで起動しました", "以小程序模式运行"},
-    {"앨범에서 열면 메모리가 적어 큰 게임 설치가 느리거나 실패할 수 있고, 게임 삭제는 할 수 없습니다. 게임을 R 버튼을 누른 채 실행하면 애플리케이션 모드로 열립니다.", "Opened from the Album there is little memory, so big installs can be slow or fail, and games cannot be deleted. Launch a game while holding R to open in application mode.", "アルバムから開くとメモリが少なく、大きなゲームのインストールが遅くなったり失敗したりし、ゲームの削除もできません。Rボタンを押しながらゲームを起動するとアプリケーションモードで開きます。", "从相册打开时内存较少，大型游戏的安装可能很慢或失败，也无法删除游戏。按住 R 键启动游戏即可以应用程序模式打开。"},
+    {"앨범에서 열면 메모리가 적어 큰 게임 설치가 느리거나 실패할 수 있습니다. 게임을 R 버튼을 누른 채 실행하면 애플리케이션 모드로 열립니다.", "Opened from the Album there is little memory, so big installs can be slow or fail. Launch a game while holding R to open in application mode.", "アルバムから開くとメモリが少なく、大きなゲームのインストールが遅くなったり失敗したりすることがあります。Rボタンを押しながらゲームを起動するとアプリケーションモードで開きます。", "从相册打开时内存较少，大型游戏的安装可能很慢或失败。按住 R 键启动游戏即可以应用程序模式打开。"},
     {"애플릿 모드", "Applet mode", "アプレットモード", "小程序模式"},
     // Save backups
     {"세이브를 열지 못했습니다.", "Could not open the save.", "セーブを開けませんでした。", "无法打开存档。"},
@@ -98,8 +98,7 @@ const Translation rows[] = {
     {"펌웨어 검사 무시", "Ignore firmware check", "ファームウェアチェックを無視", "忽略固件检查"},
     {"{0} 이상 · 본체 {1}", "{0}+ · console {1}", "{0}以上 · 本体 {1}", "{0} 以上 · 主机 {1}"},
     {"본체 펌웨어 {0}에서는 실행되지 않습니다. {1} 이상이 필요합니다. 설정에서 펌웨어 검사 무시를 켜면 설치합니다.", "This needs firmware {1} or later; the console has {0}. Turn on Ignore firmware check in Settings to install it anyway.", "本体のファームウェア {0} では動作しません。{1} 以上が必要です。設定で「ファームウェアチェックを無視」をオンにするとインストールします。", "主机固件 {0} 无法运行，需要 {1} 或更高版本。在设置中开启「忽略固件检查」即可安装。"},
-    {"게임을 R 버튼을 누른 채 실행한 애플리케이션 모드에서 삭제합니다.", "Delete in application mode: launch a game while holding R.", "Rボタンを押しながらゲームを起動したアプリケーションモードで削除してください。", "请在按住 R 键启动游戏的应用程序模式下删除。"},
-    {"현재 실행 중인 게임은 삭제할 수 없습니다. 다른 게임으로 앱을 실행합니다.", "The running game cannot be deleted. Launch the app through another game.", "実行中のゲームは削除できません。別のゲームからアプリを起動してください。", "无法删除正在运行的游戏。请通过其他游戏启动本应用。"},
+    {"실행 중인 게임은 삭제할 수 없습니다. 게임을 종료하거나 다른 게임으로 앱을 실행합니다.", "The running game cannot be deleted. Close it or launch the app through another game.", "実行中のゲームは削除できません。ゲームを終了するか、別のゲームからアプリを起動してください。", "无法删除正在运行的游戏。请关闭该游戏或通过其他游戏启动本应用。"},
     {"설치 목록을 새로고침한 뒤 삭제합니다.", "Refresh the installed list, then delete.", "インストール一覧を更新してから削除してください。", "请刷新安装列表后再删除。"},
     {"설치된 본편을 찾지 못했습니다. 목록을 새로고침합니다.", "The installed base game was not found. Refresh the list.", "インストール済みの本編が見つかりません。一覧を更新してください。", "未找到已安装的本体游戏。请刷新列表。"},
     {"선택한 계정 또는 공용 게임 세이브만 삭제할 수 있습니다.", "Only a selected account's save or a shared game save can be deleted.", "選択したアカウントまたは共有のゲームセーブのみ削除できます。", "只能删除所选账户或共享的游戏存档。"},
