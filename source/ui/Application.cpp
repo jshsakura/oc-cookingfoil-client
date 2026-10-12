@@ -1543,7 +1543,7 @@ void Application::render() {
     if (dropboxSession_) footer({{"B", tr("취소")}});
     else if (sidebar_ || !dropboxFocusable()) footer({{"B", tr("뒤로")}});
     else if (!dropboxLinked_) footer(Hints{{"A", tr("연결하기")}, {"B", tr("뒤로")}});
-    else footer(Hints{{"A", tr("백업 관리")}, {"X", tr("연결 해제")}, {"B", tr("뒤로")}});
+    else footer(Hints{{"A", tr("백업 관리")}, {"Y", tr("연결 해제")}, {"B", savesQuery_.empty() ? tr("뒤로") : tr("검색 지우기")}});
   }
   else if (screen_ == Screen::Saves)
     footer(managedGame_ ? std::vector<std::pair<std::string, std::string>>{{"A", tr("선택")}, {"B", tr("뒤로")}}
