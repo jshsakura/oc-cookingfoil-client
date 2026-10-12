@@ -1,7 +1,10 @@
 #include "net/ShopSavesApi.hpp"
 #include "core/I18n.hpp"
+#include "core/Json.hpp"
 #include "core/Patches.hpp"
 #include "net/Api.hpp"
+#include "net/Ranged.hpp"
+#include <filesystem>
 namespace foil::net {
 Parsed<std::vector<shopsaves::ShopSave>> shopSaves(const Server &server, const State &state, ShopSavesReply &reply,
                                                     const std::atomic<bool> *cancel) {
@@ -20,23 +23,27 @@ Parsed<std::vector<shopsaves::ShopSave>> shopSaves(const Server &server, const S
 bool downloadShopSave(const Server &server, const State &state, const shopsaves::ShopSave &save,
                       const std::string &dir, std::atomic<uint64_t> &received, Error &error,
                       const std::atomic<bool> *cancel) {
-  // An app's save may only land below its switch/<app>/ folder.
-  TarWriter writer(dir, [&save](const std::string &path) {
+  // An app's save may only land below its switch/<app>/ folder. A drop
+  // resumes at the last whole file; a restart begins with an empty folder.
+  const auto allow = [&save](const std::string &path) {
     return save.homebrewApp.empty() ? shopsaves::pathAllowed(path) : shopsaves::homebrewPathAllowed(save, path);
-  });
-  const auto response = stream(save.url, authHeaders(server, state, save.url),
-                               [&](const char *data, size_t size) {
-                                 received += size;
-                                 return writer.feed(data, size);
+  };
+  const auto fetch = rangedTar(save.url, authHeaders(server, state, save.url), 0, "",
+                               [&](uint64_t at) {
+                                 std::error_code ec;
+                                 if (!at) {
+                                   std::filesystem::remove_all(dir, ec);
+                                   makeDirectories(dir);
+                                 }
+                                 return std::make_unique<TarWriter>(dir, allow);
                                },
-                               cancel);
-  if (!writer.error().empty()) { error.message = writer.error(); return false; }
-  if (!response.error.empty()) { error.message = response.error; return false; }
-  if (response.status != 200) {
-    error.message = trf("세이브를 받지 못했습니다. HTTP {0}", {std::to_string(response.status)});
+                               nullptr, received, cancel);
+  if (!fetch.tarError.empty()) { error.message = fetch.tarError; return false; }
+  if (!fetch.response.error.empty()) { error.message = fetch.response.error; return false; }
+  if (!rangedOk(fetch.response)) {
+    error.message = trf("세이브를 받지 못했습니다. HTTP {0}", {std::to_string(fetch.response.status)});
     return false;
   }
-  if (!writer.finish()) { error.message = writer.error(); return false; }
-  return true;
+  return fetch.complete;
 }
 } // namespace foil::net

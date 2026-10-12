@@ -1,5 +1,7 @@
 #include "platform/Storage.hpp"
+#include <cstdio>
 #include <filesystem>
+#include <string>
 #ifdef __SWITCH__
 #include <switch.h>
 #endif
@@ -48,6 +50,38 @@ std::optional<uint64_t> freeSpace(const std::string &target) {
 }
 std::optional<uint64_t> totalSpace(const std::string &target) {
   return space(target, true);
+}
+bool needsBigFile(uint64_t size) { return size > 0xFFFFFFFFull; }
+bool createBigFile(const std::string &path, std::string &error) {
+#ifdef __SWITCH__
+  constexpr const char *Device = "sdmc:";
+  if (path.rfind(Device, 0) != 0) {
+    error = "not on the SD card";
+    return false;
+  }
+  auto *filesystem = fsdevGetDeviceFileSystem("sdmc");
+  if (!filesystem) {
+    error = "no SD file system";
+    return false;
+  }
+  const auto inner = path.substr(std::char_traits<char>::length(Device));
+  if (inner.empty() || inner[0] != '/' || inner.size() >= FS_MAX_PATH) {
+    error = "bad path";
+    return false;
+  }
+  fsFsDeleteFile(filesystem, inner.c_str()); // an earlier file there, plain or split
+  const Result rc = fsFsCreateFile(filesystem, inner.c_str(), 0, FsCreateOption_BigFile);
+  if (R_FAILED(rc)) {
+    char code[16];
+    std::snprintf(code, sizeof code, "0x%x", unsigned(rc));
+    error = code;
+    return false;
+  }
+#else
+  (void)path;
+  (void)error;
+#endif
+  return true;
 }
 std::string systemLanguage() {
 #ifdef __SWITCH__

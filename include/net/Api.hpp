@@ -12,6 +12,8 @@ struct Response {
     long status = 0;
     std::string body, etag, error;
     int retryAfter = 0; // the Retry-After header in seconds; 0 when absent or a date
+    std::string contentRange; // a 206's Content-Range header
+    uint64_t contentLength = 0; // 0 when absent
 };
 std::vector<std::string> authHeaders(const Server& server, const State& state, const std::string& url);
 bool internetConnected();
@@ -23,6 +25,13 @@ Response get(const std::string& url, const std::vector<std::string>& headers = {
 // Streams a body to onData as it arrives, only for a 200 response. onData
 // returning false aborts. No overall timeout, only a stall timeout.
 Response stream(const std::string& url, const std::vector<std::string>& headers,
+                const std::function<bool(const char*, size_t)>& onData, const std::atomic<bool>* cancel = nullptr);
+// What a streamed reply's body is for, decided once its status and headers
+// are in: Take hands it to onData, Drop reads past it (an error page), Stop
+// ends the transfer with no error of its own.
+enum class Start { Take, Drop, Stop };
+Response stream(const std::string& url, const std::vector<std::string>& headers,
+                const std::function<Start(const Response&)>& start,
                 const std::function<bool(const char*, size_t)>& onData, const std::atomic<bool>* cancel = nullptr);
 // A POST carrying `body`, or with `uploadFile` that file's bytes. With
 // `saveTo` a 2xx body is written to that file (removed again on failure)

@@ -3,6 +3,7 @@
 #include "core/Json.hpp"
 #include "core/Patches.hpp"
 #include "net/Api.hpp"
+#include "net/Ranged.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
@@ -68,43 +69,40 @@ Parsed<retro::Pack> retroPack(const Server &server, const State &state, RetroRep
   if (reply.error) return {{}, reply.error};
   return {retro::parsePack(response.body, server.url), {}};
 }
-bool retroBundle(const Server &server, const State &state, const retro::Game &game, const std::string &sd,
-                 std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel) {
-  TarWriter writer(sd, [](const std::string &path) { return retro::bundlePathAllowed(path); });
-  const auto response = stream(game.bundleUrl, authHeaders(server, state, game.bundleUrl),
-                               [&](const char *data, size_t size) {
-                                 received += size;
-                                 return writer.feed(data, size);
+namespace {
+// A tar unpacked straight onto the card; a drop resumes at the last whole
+// file (what is already there is complete), a restart overwrites.
+bool fetchTar(const Server &server, const State &state, const std::string &url, const std::string &sd,
+              const std::function<bool(const std::string &)> &allow,
+              const std::function<bool(const std::string &)> &skip, bool game,
+              std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel) {
+  const auto fetch = rangedTar(url, authHeaders(server, state, url), 0, "",
+                               [&](uint64_t) {
+                                 auto writer = std::make_unique<TarWriter>(sd, allow);
+                                 if (skip) writer->skip(skip);
+                                 return writer;
                                },
-                               cancel);
-  if (!writer.error().empty()) { error.message = writer.error(); return false; }
-  if (!response.error.empty()) { error.message = response.error; return false; }
-  if (response.status != 200) {
-    error.message = trf("게임을 받지 못했습니다. HTTP {0}", {std::to_string(response.status)});
+                               nullptr, received, cancel);
+  if (!fetch.tarError.empty()) { error.message = fetch.tarError; return false; }
+  if (!fetch.response.error.empty()) { error.message = fetch.response.error; return false; }
+  if (!rangedOk(fetch.response)) {
+    const auto status = std::to_string(fetch.response.status);
+    error.message = game ? trf("게임을 받지 못했습니다. HTTP {0}", {status}) : trf("파일을 받지 못했습니다. HTTP {0}", {status});
     return false;
   }
-  if (!writer.finish()) { error.message = writer.error(); return false; }
-  return true;
+  return fetch.complete;
+}
+} // namespace
+bool retroBundle(const Server &server, const State &state, const retro::Game &game, const std::string &sd,
+                 std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel) {
+  return fetchTar(server, state, game.bundleUrl, sd, [](const std::string &path) { return retro::bundlePathAllowed(path); },
+                  nullptr, true, received, error, cancel);
 }
 bool retroPackBundle(const Server &server, const State &state, const retro::Pack &pack, const std::string &sd,
                      std::function<bool(const std::string &)> skip, std::atomic<uint64_t> &received, Error &error,
                      const std::atomic<bool> *cancel) {
-  TarWriter writer(sd, [](const std::string &path) { return retro::packPathAllowed(path); });
-  writer.skip(std::move(skip));
-  const auto response = stream(pack.bundleUrl, authHeaders(server, state, pack.bundleUrl),
-                               [&](const char *data, size_t size) {
-                                 received += size;
-                                 return writer.feed(data, size);
-                               },
-                               cancel);
-  if (!writer.error().empty()) { error.message = writer.error(); return false; }
-  if (!response.error.empty()) { error.message = response.error; return false; }
-  if (response.status != 200) {
-    error.message = trf("파일을 받지 못했습니다. HTTP {0}", {std::to_string(response.status)});
-    return false;
-  }
-  if (!writer.finish()) { error.message = writer.error(); return false; }
-  return true;
+  return fetchTar(server, state, pack.bundleUrl, sd, [](const std::string &path) { return retro::packPathAllowed(path); },
+                  skip, false, received, error, cancel);
 }
 bool retroFile(const Server &server, const State &state, const retro::PackFile &file, const std::string &sd,
                std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel, long *status) {
@@ -112,42 +110,31 @@ bool retroFile(const Server &server, const State &state, const retro::PackFile &
     error.message = trf("허용되지 않은 위치입니다: {0}", {file.path});
     return false;
   }
-  const std::filesystem::path target = sd + "/" + file.path, part = target.string() + ".part";
+  const std::filesystem::path target = sd + "/" + file.path;
+  const auto part = target.string() + ".part";
   std::error_code ec;
   makeDirectories(std::filesystem::path(target.parent_path()).string());
-  std::unique_ptr<FILE, int (*)(FILE *)> out(std::fopen(part.string().c_str(), "wb"), std::fclose);
-  writeBuffer(out.get());
-  if (!out) {
-    error.message = trf("파일을 만들지 못했습니다: {0}", {file.path});
-    return false;
-  }
-  uint64_t written = 0;
-  bool writeFailed = false;
-  const auto response = stream(file.url, authHeaders(server, state, file.url),
-                               [&](const char *data, size_t size) {
-                                 if (std::fwrite(data, 1, size, out.get()) != size) {
-                                   writeFailed = true;
-                                   return false;
-                                 }
-                                 written += size;
-                                 received += size;
-                                 return true;
-                               },
-                               cancel);
-  const bool closed = std::fclose(out.release()) == 0;
-  if (status) *status = response.status;
+  PartInfo wanted;
+  wanted.url = file.url;
+  wanted.tag = file.sha256;
+  wanted.size = file.size;
+  const auto got = fetchPart(file.url, authHeaders(server, state, file.url), part, wanted, false, received, cancel);
+  if (status) *status = got.response.status;
   const auto fail = [&](const std::string &message) {
-    std::filesystem::remove(part, ec);
+    if (!keepPart(got)) dropPart(part);
     error.message = message;
     return false;
   };
-  if (writeFailed || !closed) return fail(trf("파일을 쓰지 못했습니다: {0}", {file.path}));
-  if (!response.error.empty()) return fail(response.error);
-  if (response.status != 200) return fail(trf("파일을 받지 못했습니다. HTTP {0}", {std::to_string(response.status)}));
-  if (file.size && written != file.size) return fail(trf("받은 파일 크기가 다릅니다: {0}", {file.path}));
+  if (!got.failure.empty()) return fail(got.failure);
+  if (got.tooLong) return fail(trf("받은 파일 크기가 다릅니다: {0}", {file.path}));
+  if (!got.response.error.empty()) return fail(got.response.error);
+  if (!rangedOk(got.response))
+    return fail(trf("파일을 받지 못했습니다. HTTP {0}", {std::to_string(got.response.status)}));
+  if (file.size && got.size != file.size) return fail(trf("받은 파일 크기가 다릅니다: {0}", {file.path}));
   std::filesystem::remove(target, ec);
   std::filesystem::rename(part, target, ec);
   if (ec) return fail(trf("파일을 쓰지 못했습니다: {0}", {file.path}));
+  std::filesystem::remove(partInfoPath(part), ec);
   return true;
 }
 } // namespace foil::net

@@ -33,6 +33,7 @@ const Translation rows[] = {
     {"IPS 패치", "IPS patch", "IPSパッチ", "IPS 补丁"},
     {"기타", "Other", "その他", "其他"},
     {"파일을 만들지 못했습니다: {0}", "Could not create file: {0}", "ファイルを作成できませんでした: {0}", "无法创建文件：{0}"},
+    {"4GB가 넘는 파일을 SD 카드에 만들지 못했습니다: {0}", "Could not create a file over 4 GB on the SD card: {0}", "4GBを超えるファイルをSDカードに作成できませんでした: {0}", "无法在 SD 卡上创建超过 4GB 的文件：{0}"},
     {"패치 파일 형식이 아닙니다.", "Not a patch file.", "パッチファイルの形式ではありません。", "不是补丁文件格式。"},
     {"받은 패치 파일이 손상되었습니다.", "The downloaded patch file is damaged.", "ダウンロードしたパッチファイルが破損しています。", "下载的补丁文件已损坏。"},
     {"패치 파일의 항목 정보가 너무 깁니다.", "A patch file entry header is too long.", "パッチファイルの項目情報が長すぎます。", "补丁文件的条目信息过长。"},

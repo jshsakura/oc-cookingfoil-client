@@ -1,8 +1,8 @@
 #include "net/HomebrewApi.hpp"
 #include "core/I18n.hpp"
 #include "core/Json.hpp"
-#include "core/Sha256.hpp"
 #include "net/Api.hpp"
+#include "net/Ranged.hpp"
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -25,51 +25,38 @@ bool homebrewList(const Server &server, const State &state, std::string &etag, s
   return true;
 }
 namespace {
-// One file to sd/<path> through a .part file. `sha256` empty takes the
-// download's ETag as the checksum (the single .nro); `size` 0 skips that check.
+// One file to sd/<path> through a .part file, resumed when an earlier try
+// left one. `sha256` empty takes the download's ETag as the checksum (the
+// single .nro); `size` 0 skips that check.
 bool fetchFile(const Server &server, const State &state, const std::string &url, const std::string &sd,
                const std::string &path, std::string sha256, uint64_t size, std::atomic<uint64_t> &received,
                Error &error, const std::atomic<bool> *cancel) {
   const auto target = sd + "/" + path, part = target + ".part";
   std::error_code ec;
   makeDirectories(std::filesystem::path(target).parent_path().string());
-  std::unique_ptr<FILE, int (*)(FILE *)> out(std::fopen(part.c_str(), "wb"), std::fclose);
-  writeBuffer(out.get());
-  if (!out) {
-    error.message = trf("파일을 만들지 못했습니다: {0}", {path}) + " (" + std::strerror(errno) + ")";
-    return false;
-  }
-  Sha256 hash;
-  uint64_t written = 0;
-  bool writeFailed = false;
-  const auto response = stream(url, authHeaders(server, state, url),
-                               [&](const char *data, size_t chunk) {
-                                 if (std::fwrite(data, 1, chunk, out.get()) != chunk) {
-                                   writeFailed = true;
-                                   return false;
-                                 }
-                                 hash.update(data, chunk);
-                                 written += chunk;
-                                 received += chunk;
-                                 return true;
-                               },
-                               cancel);
-  const bool closed = std::fclose(out.release()) == 0;
+  PartInfo wanted;
+  wanted.url = url;
+  wanted.tag = sha256;
+  wanted.size = size;
+  const auto got = fetchPart(url, authHeaders(server, state, url), part, wanted, true, received, cancel);
   const auto fail = [&](const std::string &message) {
-    std::filesystem::remove(part, ec);
+    if (!keepPart(got)) dropPart(part);
     error.message = message;
     return false;
   };
-  if (!response.error.empty()) return fail(response.error);
-  if (response.status != 200) return fail(trf("파일을 받지 못했습니다. HTTP {0}", {std::to_string(response.status)}));
-  if (writeFailed || !closed) return fail(trf("파일을 쓰지 못했습니다: {0}", {path}));
-  if (sha256.empty()) sha256 = homebrew::etagSha256(response.etag); // without one the file is kept unchecked
-  if ((size && written != size) || (!sha256.empty() && hash.hex() != sha256))
+  if (got.tooLong) return fail(tr("받은 파일이 서버의 것과 다릅니다. 다시 시도합니다."));
+  if (!got.failure.empty()) return fail(got.failure);
+  if (!got.response.error.empty()) return fail(got.response.error);
+  if (!rangedOk(got.response))
+    return fail(trf("파일을 받지 못했습니다. HTTP {0}", {std::to_string(got.response.status)}));
+  if (sha256.empty()) sha256 = homebrew::etagSha256(got.response.etag); // without one the file is kept unchecked
+  if ((size && got.size != size) || (!sha256.empty() && got.sha256 != sha256))
     return fail(tr("받은 파일이 서버의 것과 다릅니다. 다시 시도합니다."));
   std::filesystem::remove(target, ec);
   ec.clear();
   std::filesystem::rename(part, target, ec);
   if (ec) return fail(trf("파일을 쓰지 못했습니다: {0}", {path}));
+  std::filesystem::remove(partInfoPath(part), ec);
   return true;
 }
 } // namespace

@@ -3,6 +3,7 @@
 #include "core/Json.hpp"
 #include "net/Api.hpp"
 #include "net/DropboxUtil.hpp"
+#include "net/Ranged.hpp"
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -28,54 +29,33 @@ std::optional<update::Release> latestClient(const Server &server, const State &s
 bool installClient(const Server &server, const State &state, const update::Release &release,
                    const std::string &target, std::atomic<uint64_t> &received, Error &error,
                    const std::atomic<bool> *cancel) {
+  // Into <target>.new, resumed when an earlier try of the same build left
+  // part of it there.
   const std::string part = target + ".new";
-  std::error_code ec;
   makeDirectories(std::filesystem::path(target).parent_path().string());
-  std::unique_ptr<FILE, int (*)(FILE *)> out(std::fopen(part.c_str(), "wb"), std::fclose);
-  writeBuffer(out.get());
-  if (!out) {
-    error.message = trf("파일을 만들지 못했습니다: {0}", {part}) + " (" + std::strerror(errno) + ")";
-    return false;
-  }
-  // Kept in memory as it arrives for the checksum; a build is a few MB.
-  std::string bytes;
-  bytes.reserve(size_t(release.size));
-  bool writeFailed = false, tooLong = false;
-  int writeErrno = 0;
-  const auto response = stream(release.url, authHeaders(server, state, release.url),
-                               [&](const char *data, size_t size) {
-                                 // Longer than the release said: the server has a
-                                 // newer build than the one asked about.
-                                 if (bytes.size() + size > release.size) {
-                                   tooLong = true;
-                                   return false;
-                                 }
-                                 if (std::fwrite(data, 1, size, out.get()) != size) {
-                                   writeErrno = errno;
-                                   writeFailed = true;
-                                   return false;
-                                 }
-                                 bytes.append(data, size);
-                                 received += size;
-                                 return true;
-                               },
-                               cancel);
-  const bool closed = std::fclose(out.release()) == 0;
+  PartInfo wanted;
+  wanted.url = release.url;
+  wanted.tag = release.sha256;
+  wanted.size = release.size;
+  const auto got = fetchPart(release.url, authHeaders(server, state, release.url), part, wanted, true, received, cancel);
   const auto fail = [&](const std::string &message) {
-    std::filesystem::remove(part, ec);
+    if (!keepPart(got)) dropPart(part);
     error.message = message;
     return false;
   };
-  // Our own stops first: they end the transfer, which curl reports as aborted.
-  if (tooLong) return fail(tr("서버의 업데이트가 바뀌었습니다. 다시 확인합니다."));
-  if (writeFailed || !closed)
-    return fail(tr("업데이트 파일을 쓰지 못했습니다.") + std::string(" (") + std::strerror(writeErrno ? writeErrno : errno) + ")");
-  if (!response.error.empty()) return fail(response.error);
-  if (response.status != 200) return fail(trf("업데이트를 받지 못했습니다. HTTP {0}", {std::to_string(response.status)}));
-  if (bytes.size() != release.size || update::sha256Hex(bytes) != release.sha256)
+  // Longer than the release said: the server has a newer build than the one
+  // asked about.
+  if (got.tooLong) return fail(tr("서버의 업데이트가 바뀌었습니다. 다시 확인합니다."));
+  if (!got.failure.empty()) return fail(got.failure);
+  if (!got.response.error.empty()) return fail(got.response.error);
+  if (!rangedOk(got.response))
+    return fail(trf("업데이트를 받지 못했습니다. HTTP {0}", {std::to_string(got.response.status)}));
+  if (got.size != release.size || got.sha256 != release.sha256)
     return fail(tr("받은 파일이 서버의 것과 다릅니다. 다시 시도합니다."));
   // Checked and complete: platform::replaceSelf puts it in place on the
   // main thread, where the app can let go of its own file.
+  std::error_code ec;
+  std::filesystem::remove(partInfoPath(part), ec);
   return true;
 }
 bool sendClientLog(const Server &server, const State &state, const std::string &log, const std::string &reason,
