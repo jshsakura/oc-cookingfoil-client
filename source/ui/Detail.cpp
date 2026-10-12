@@ -30,36 +30,17 @@ std::string dateLabel(int date) {
   return text.size() == 8 ? text.substr(0, 4) + "." + text.substr(4, 2) + "." + text.substr(6, 2) : text;
 }
 } // namespace
-// The patches a game cannot run without, ahead of its description: what
-// they are and how big.
+// Only that the game needs a patch to run, ahead of its description; what
+// it is shows in the install list, and the story belongs in the description.
 int Application::requiredPatchesCard(int y) {
   if (detailGroup_ >= groups_.size()) return y;
   const auto mine = patchesFor(detail_.patches, groups_[detailGroup_].id);
-  std::vector<const UserPatch *> needed;
-  for (const auto &patch : mine)
-    if (patch.required) needed.push_back(&patch);
-  if (needed.empty()) return y;
-  constexpr float X = 40, W = 750, Inner = X + 58, InnerW = W - 78;
-  // Measured first (drawn off screen), so the card fits its text.
-  float height = 20 + 30;
-  for (const auto *patch : needed) {
-    height += 30;
-    if (!patch->description.empty())
-      height += paint_.fonts.wrapped(patch->description, Inner, -10000, 17, Secondary, InnerW, 6) + 8;
-  }
-  height += 10;
-  paint_.rect(X, y, W, height, SDL_Color{255, 241, 204, 255}, 16);
-  paint_.icon(33, X + 20, y + 18, Pending, 24);
-  paint_.fonts.text(tr("함께 설치해야 하는 패치가 있습니다"), Inner, y + 18, 19, Ink, true, InnerW - 20);
-  float line = y + 20 + 30;
-  for (const auto *patch : needed) {
-    paint_.fonts.text(patch->name + (patch->size ? " · " + formatBytes(patch->size) : std::string()), Inner, line, 18,
-                      Ink, true, InnerW);
-    line += 30;
-    if (!patch->description.empty())
-      line += paint_.fonts.wrapped(patch->description, Inner, line, 17, Secondary, InnerW, 6) + 8;
-  }
-  return int(y + height + 18);
+  if (std::none_of(mine.begin(), mine.end(), [](const auto &patch) { return patch.required; })) return y;
+  constexpr float X = 40, W = 750, Height = 52;
+  paint_.rect(X, y, W, Height, SDL_Color{255, 241, 204, 255}, 14);
+  paint_.icon(33, X + 18, y + (Height - 24) / 2, Pending, 24);
+  paint_.fonts.middle(tr("함께 설치해야 하는 패치가 있습니다"), X + 54, y + Height / 2, 18, Ink, true, W - 72);
+  return int(y + Height + 16);
 }
 void Application::syncDetailPatches() {
   if (!selection_ || detailGroup_ >= groups_.size()) return;
