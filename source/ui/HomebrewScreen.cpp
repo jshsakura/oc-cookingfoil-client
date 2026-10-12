@@ -52,15 +52,19 @@ homebrew::Status Application::homebrewStatus(const homebrew::App &app) const {
 }
 std::vector<int> Application::homebrewRows() const {
   std::vector<int> rows;
+  const auto kind = homebrewTab_ == 1 ? homebrew::Kind::Port : homebrew::Kind::Tool;
   for (int i = 0; i < int(homebrew_.size()); ++i) {
     const auto &app = homebrew_[i];
-    const auto state = homebrewStatus(app);
-    if (homebrewTab_ == 0 && state == homebrew::Status::Available) continue;
-    if (homebrewTab_ == 2 && state != homebrew::Status::Update) continue;
+    if (app.kind != kind) continue;
     if (!textMatches({app.name, app.author, app.fileName}, homebrewQuery_)) continue;
     rows.push_back(i);
   }
   return rows;
+}
+// The app under the cursor, the one the popups act on.
+const homebrew::App *Application::homebrewPicked() const {
+  const auto rows = homebrewRows();
+  return rows.empty() ? nullptr : &homebrew_[rows[std::clamp(selected_, 0, int(rows.size()) - 1)]];
 }
 void Application::saveHomebrewLedger() {
   std::string error;
@@ -170,7 +174,7 @@ void Application::removeHomebrew(const homebrew::App &app) {
 }
 void Application::homebrewAction(Action a) {
   const auto rows = homebrewRows();
-  const auto *picked = rows.empty() ? nullptr : &homebrew_[rows[std::clamp(selected_, 0, int(rows.size()) - 1)]];
+  const auto *picked = homebrewPicked();
   if (homebrewRemoveAsk_) {
     if (a == Action::Back) homebrewRemoveAsk_ = false;
     else if (a == Action::Accept && settled()) {
@@ -179,16 +183,33 @@ void Application::homebrewAction(Action a) {
     }
     return;
   }
+  if (homebrewAsk_ && (homebrewExtras_ || homebrewSaveAsk_)) {
+    homebrewExtrasAction(a);
+    return;
+  }
   if (homebrewAsk_) {
+    // Up and down move between the app and its 패치 and 세이브 rows.
+    const int extras = picked ? int(homebrewExtraKinds(*picked).size()) : 0;
+    homebrewAskRow_ = std::clamp(homebrewAskRow_, -1, extras - 1);
     if (a == Action::Back) homebrewAsk_ = false;
-    else if (a == Action::Accept && settled()) {
-      homebrewAsk_ = false;
-      if (picked) getHomebrew(*picked);
+    else if (a == Action::Up) homebrewAskRow_ = std::max(-1, homebrewAskRow_ - 1);
+    else if (a == Action::Down) homebrewAskRow_ = std::min(extras - 1, homebrewAskRow_ + 1);
+    else if (a == Action::Accept && settled() && picked) {
+      if (homebrewAskRow_ >= 0) {
+        homebrewExtras_ = homebrewExtraKinds(*picked)[homebrewAskRow_];
+        homebrewExtraRow_ = 0;
+      } else if (homebrewStatus(*picked) == homebrew::Status::Installed) {
+        homebrewAsk_ = false;
+        homebrewRemoveAsk_ = true;
+      } else {
+        homebrewAsk_ = false;
+        getHomebrew(*picked);
+      }
     }
     return;
   }
   if (a == Action::Previous || a == Action::Next) {
-    homebrewTab_ = (homebrewTab_ + (a == Action::Next ? 1 : 2)) % 3;
+    homebrewTab_ = 1 - homebrewTab_;
     selected_ = 0;
     return;
   }
@@ -206,23 +227,32 @@ void Application::homebrewAction(Action a) {
   }
   if (a == Action::Right) selected_ = std::min(count - 1, selected_ + 1);
   selected_ = std::max(0, selected_);
+  // The app's popup first, whatever its state: its patches and saves are there.
   if (a == Action::Accept && picked) {
-    if (homebrewStatus(*picked) == homebrew::Status::Installed) homebrewRemoveAsk_ = true;
-    else homebrewAsk_ = true;
+    homebrewAsk_ = true;
+    homebrewAskRow_ = -1;
+    homebrewExtras_ = 0;
+    homebrewSaveAsk_ = false;
   }
 }
 void Application::homebrewScreen() {
   if (!homebrewLoaded_ && !homebrewWorker_.joinable() && connected_) loadHomebrew();
+  // An app's patches and saves come from 유저 패치's and 세이브's lists.
+  if (homebrewLoaded_ && connected_) {
+    if (!patchesLoaded_ && !patchFetching_ && !patchError_) fetchPatches();
+    if (!shopSavesLoaded_ && !shopSavesWorker_.joinable()) loadShopSaves();
+  }
   const auto rows = homebrewRows();
-  int updates = 0;
-  for (const auto &app : homebrew_) updates += homebrewStatus(app) == homebrew::Status::Update;
+  int updates[2] = {0, 0};
+  for (const auto &app : homebrew_)
+    updates[app.kind == homebrew::Kind::Port] += homebrewStatus(app) == homebrew::Status::Update;
   // As on 유저 패치: search at the right end, the tabs left of it.
   searchBar(homebrewQuery_);
-  // Only 업데이트 carries a count (a badge, when there is one).
-  const float tabsLeft = headerTabs({tr("설치됨|탭"), tr("전체"), tr("업데이트|탭")}, homebrewTab_, [this](int n) {
+  // Each tab counts the new versions in it (a badge, when there is one).
+  const float tabsLeft = headerTabs({tr("도구"), tr("포트")}, homebrewTab_, [this](int n) {
     homebrewTab_ = n;
     selected_ = 0;
-  }, SearchX - 16, 0, {0, 0, updates});
+  }, SearchX - 16, 0, {updates[0], updates[1]});
   pageTitle(tr("홈브류"), homebrewLoaded_ ? std::to_string(rows.size()) : std::string(), tabsLeft);
   if (!connected_) {
     notice(tr("서버에 연결되어 있지 않습니다."), tr("서버에 연결한 뒤 홈브류를 확인합니다."), 21);
@@ -239,12 +269,10 @@ void Application::homebrewScreen() {
   if (rows.empty()) {
     if (!homebrewQuery_.empty())
       notice(trf("'{0}'에 맞는 홈브류가 없습니다.", {homebrewQuery_}), tr("B로 검색어를 지웁니다."), 23);
-    else if (homebrewTab_ == 0)
-      notice(tr("받은 홈브류가 없습니다."), tr("R로 전체 목록을 열어 받을 앱을 고릅니다."), 22);
-    else if (homebrewTab_ == 2)
-      notice(tr("모두 최신입니다."), tr("받은 홈브류에 새 버전이 없습니다."), 24);
+    else if (homebrewTab_ == 1)
+      notice(tr("서버에 포트가 없습니다."), tr("서버에 포트를 올리면 여기에 보입니다."), 22);
     else
-      notice(tr("서버에 홈브류가 없습니다."), tr("서버에 앱을 올리면 여기에 보입니다."), 22);
+      notice(tr("서버에 도구가 없습니다."), tr("서버에 앱을 올리면 여기에 보입니다."), 22);
     return;
   }
   // A grid of icons like 내 게임: the state on the icon, the size under the name.
@@ -277,22 +305,30 @@ void Application::homebrewScreen() {
 // Before it comes down: the app's icon, name and facts, and its description
 // when the server has one (without, the card stays short).
 void Application::homebrewAskDialog() {
-  const auto rows = homebrewRows();
-  if (rows.empty()) {
+  const auto *picked = homebrewPicked();
+  if (!picked) {
     homebrewAsk_ = false;
+    homebrewExtras_ = 0;
+    homebrewSaveAsk_ = false;
     return;
   }
-  const auto &app = homebrew_[rows[std::clamp(selected_, 0, int(rows.size()) - 1)]];
-  const bool update = homebrewStatus(app) == homebrew::Status::Update;
-  constexpr float Icon = 160, Width = 820;
+  const auto &app = *picked;
+  const auto status = homebrewStatus(app);
+  const bool update = status == homebrew::Status::Update, installed = status == homebrew::Status::Installed;
+  const auto extras = homebrewExtraKinds(app);
+  homebrewAskRow_ = std::clamp(homebrewAskRow_, -1, int(extras.size()) - 1);
+  constexpr float Icon = 160, Width = 820, Row = 56, Gap = 10;
   const float textW = Width - 64 - Icon - 28;
   // Measured off screen first, so the card hugs the description.
   constexpr int Lines = 6;
   const float described = app.description.empty() ? 0
                         : paint_.fonts.wrapped(app.description, -9999, -9999, 18, Ink, textW, Lines);
-  const float bodyH = 24 + std::max(Icon, 106 + described) + 24;
-  const auto body = modal(Width, bodyH, update ? tr("새 버전을 받을까요?") : tr("이 앱을 받을까요?"), tr("취소"), "",
-                          update ? tr("업데이트|동작") : tr("받기"), 22);
+  const float top = 24 + std::max(Icon, 106 + described);
+  const float bodyH = top + (extras.empty() ? 0 : 16 + extras.size() * (Row + Gap) - Gap) + 24;
+  // A focused 패치 or 세이브 row opens its list; otherwise A acts on the app.
+  const auto accept = homebrewAskRow_ >= 0 ? tr("열기") : installed ? tr("지우기") : update ? tr("업데이트|동작") : tr("받기");
+  const auto body = modal(Width, bodyH, installed ? tr("설치된 앱") : update ? tr("새 버전을 받을까요?") : tr("이 앱을 받을까요?"),
+                          tr("취소"), "", accept, 22);
   const float x = body.x + 32, y = body.y + 24, textX = x + Icon + 28;
   cover(app.iconUrl, x, y, int(Icon), false, app.name, true);
   paint_.fonts.text(app.name, textX, y, 24, Ink, true, textW);
@@ -304,6 +340,30 @@ void Application::homebrewAskDialog() {
   if (app.releasedAt.size() >= 10) where = app.releasedAt.substr(0, 10) + " · " + where;
   paint_.fonts.text(where, textX, y + 68, 16, Secondary, false, textW);
   if (described) paint_.fonts.wrapped(app.description, textX, y + 106, 18, Ink, textW, Lines);
+  // One row each for the app's patches and saves, with how many there are.
+  float rowY = body.y + top + 16;
+  const float rowW = body.w - 64;
+  for (int i = 0; i < int(extras.size()); ++i, rowY += Row + Gap) {
+    hit(x, rowY, rowW, Row, [this, i] {
+      homebrewAskRow_ = i;
+      action(Action::Accept);
+    });
+    if (i == homebrewAskRow_ && !homebrewExtras_) paint_.focusRow(x, rowY, rowW, Row, Ground, 12);
+    else paint_.rect(x, rowY, rowW, Row, Ground, 12);
+    const bool patches = extras[i] == 1;
+    paint_.icon(patches ? 32 : 36, x + 20, rowY + 15, Ink, 26);
+    const float labelEnd = paint_.fonts.middle(patches ? tr("패치") : tr("세이브"), x + 62, rowY + Row / 2, 20, Ink, true);
+    int count = 0, on = 0;
+    if (patches)
+      for (const auto &row : homebrewPatchRows(app)) ++count, on += row.record && row.record->on;
+    else
+      count = int(homebrewSaveRows(app).size());
+    paint_.pill(std::to_string(count), labelEnd + 10, rowY + Row / 2 - 13);
+    if (on) {
+      const auto state = trf("켜짐 {0}개", {std::to_string(on)});
+      paint_.fonts.middle(state, x + rowW - 20 - paint_.fonts.measure(state, 17, true), rowY + Row / 2, 17, Good, true);
+    }
+  }
 }
 void Application::homebrewRemoveDialog() {
   const auto rows = homebrewRows();

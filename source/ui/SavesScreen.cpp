@@ -182,6 +182,13 @@ void Application::pollShopSaves() {
   shopSavesError_ = incomingShopSavesError_;
   shopSavesMissing_ = incomingShopSavesMissing_;
   shopSaves_ = std::move(incomingShopSaves_);
+  // An app's saves go to its app in 홈브류; this list keeps the games'.
+  homebrewSaves_.clear();
+  for (const auto &save : shopSaves_)
+    if (!save.homebrewApp.empty()) homebrewSaves_.push_back(save);
+  shopSaves_.erase(std::remove_if(shopSaves_.begin(), shopSaves_.end(),
+                                  [](const auto &save) { return save.titleId.empty(); }),
+                   shopSaves_.end());
   // Games on this console first, then by game.
   std::stable_sort(shopSaves_.begin(), shopSaves_.end(), [this](const auto &a, const auto &b) {
     const auto has = [this](const std::string &tid) {

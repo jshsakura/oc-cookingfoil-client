@@ -234,7 +234,19 @@ private:
   std::string homebrewEtag_, homebrewQuery_;
   Error homebrewError_;
   bool homebrewLoaded_ = false, homebrewRemoveAsk_ = false, homebrewAsk_ = false;
-  int homebrewTab_ = 1; // 0 설치됨, 1 전체, 2 업데이트
+  int homebrewTab_ = 0; // 0 도구, 1 포트
+  // The app popup's rows under its facts (-1 the app itself) and the
+  // patch (1) or save (2) picker opened from one; 0 when none is open.
+  int homebrewAskRow_ = -1, homebrewExtras_ = 0, homebrewExtraRow_ = 0;
+  bool homebrewSaveAsk_ = false; // applying one of the app's saves, asked first
+  const homebrew::App *homebrewPicked() const;
+  std::vector<int> homebrewExtraKinds(const homebrew::App &app) const;
+  std::vector<PatchRow> homebrewPatchRows(const homebrew::App &app) const;
+  std::vector<int> homebrewSaveRows(const homebrew::App &app) const; // indexes into homebrewSaves_
+  void homebrewExtrasAction(Action a);
+  void homebrewExtrasDialog();
+  void homebrewSaveDialog();
+  void applyHomebrewSave(const shopsaves::ShopSave &save);
   std::thread homebrewWorker_;
   std::atomic<bool> homebrewDone_{false};
   std::function<void()> homebrewFinish_;
@@ -350,6 +362,7 @@ private:
   static constexpr int SavesTabs = 3;
   int savesTab_ = 0; // 0 the console's games, 1 the server's saves, 2 Dropbox
   std::vector<shopsaves::ShopSave> shopSaves_, incomingShopSaves_;
+  std::vector<shopsaves::ShopSave> homebrewSaves_; // apps' saves, shown in 홈브류 only
   bool shopSavesLoaded_ = false, shopSavesMissing_ = false, incomingShopSavesMissing_ = false;
   Error shopSavesError_, incomingShopSavesError_;
   std::thread shopSavesWorker_;
@@ -432,8 +445,14 @@ private:
   void patchAction(Action action);
   void fetchPatches();
   void pollPatches();
+  // `failTitle` heads the alert when the job fails (patch failure when empty).
   bool runPatchJob(const std::string &id, const std::string &label,
-                   std::function<void(net::Session &, PatchStore &, Error &, std::string &)> job);
+                   std::function<void(net::Session &, PatchStore &, Error &, std::string &)> job,
+                   const std::string &failTitle = "");
+  // Shared by 유저 패치 and an app's patches in 홈브류.
+  void startPatchGet(const UserPatch &patch, bool fresh);
+  void startPatchEnable(const UserPatch &patch);
+  void startPatchDisable(const UserPatch &patch);
   void patchDialog();
   // 설정 > 남은 파일 정리: scan, confirm, then delete on a worker thread.
   void startCleanup(bool remove);
@@ -622,7 +641,7 @@ private:
   Parsed<CleanupReport> cleanupResult_;
   int patchMenuRow_ = 0;
   Error patchError_, incomingPatchError_;
-  std::string patchBusy_, patchBusyLabel_, patchMessage_;
+  std::string patchBusy_, patchBusyLabel_, patchMessage_, patchFailTitle_;
   std::thread patchWorker_;
   std::atomic<bool> patchDone_{false};
   std::atomic<uint64_t> patchReceived_{0};

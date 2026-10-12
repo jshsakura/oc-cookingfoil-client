@@ -180,7 +180,8 @@ void Application::dialogs() {
   blockTouch();
   // When the popup on top changed, for the double-press guard (settled()).
   const int which = confirmCancel_ * 1 + confirmCleanup_ * 2 + confirmPatchRemove_ * 4 + confirmInstall_ * 8 +
-                    confirmResume_ * 16 + dropboxUnlinkAsk_ * 32 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + homebrewAsk_ * 256;
+                    confirmResume_ * 16 + dropboxUnlinkAsk_ * 32 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + homebrewAsk_ * 256 +
+                    (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024;
   if (which != popupKind_) {
     popupKind_ = which;
     popupAt_ = SDL_GetTicks();
@@ -207,10 +208,21 @@ void Application::dialogs() {
     cleanupDialog();
   } else if (confirmPatchRemove_ || managingPatch_ || pickingPatch_) {
     patchDialog();
-  } else if (homebrewRemoveAsk_) {
+  } else if (homebrewRemoveAsk_ && alert_.empty()) {
     homebrewRemoveDialog();
-  } else if (homebrewAsk_) {
+  } else if (homebrewAsk_ && alert_.empty()) {
+    // An alert from an app's patch or save job shows over these instead.
     homebrewAskDialog();
+    if (homebrewAsk_ && homebrewExtras_) {
+      paint_.rect(0, 0, 1280, 720, {0, 0, 0, 120});
+      blockTouch();
+      homebrewExtrasDialog();
+    }
+    if (homebrewAsk_ && homebrewExtras_ && homebrewSaveAsk_) {
+      paint_.rect(0, 0, 1280, 720, {0, 0, 0, 120});
+      blockTouch();
+      homebrewSaveDialog();
+    }
   } else if (confirmInstall_ && selection_ && detailGroup_ < groups_.size()) {
     const auto &g = groups_[detailGroup_];
     const auto body = modal(700, 24 + 96 + 24, tr("이 게임을 설치하시겠습니까?"), tr("취소"), "", tr("설치"), 4);
