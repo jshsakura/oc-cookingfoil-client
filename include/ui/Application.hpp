@@ -529,6 +529,7 @@ private:
   void pollSaveJob();
   void detail();
   int requiredPatchesCard(int y); // returns the y below it
+  int notesCard(int y);           // the operator's notes; returns the y below it
   // The detail's patches for its game, as rows of the selection.
   void syncDetailPatches();
   // Patches picked with an install; they start once the install ends well.

@@ -598,6 +598,7 @@ Parsed<Detail> parseDetail(const std::string& json) {
     Parsed<Detail> result; auto root = parseJson(json, result.error); if (result.error) return result;
     auto& d = result.value;
     d.name = stringField(root.get(), "name"); d.publisher = stringField(root.get(), "publisher"); d.description = tidyDescription(stringField(root.get(), "description", stringField(root.get(), "intro")));
+    d.notes = tidyDescription(stringField(root.get(), "notes"));
     auto* labels = field(root.get(), "categoryLabels");
     if (json_object_is_type(labels, json_type_array)) for (size_t k = 0; k < json_object_array_length(labels); ++k) {
         auto* label = json_object_array_get_idx(labels, k);

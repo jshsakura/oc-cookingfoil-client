@@ -42,6 +42,19 @@ int Application::requiredPatchesCard(int y) {
   paint_.fonts.middle(tr("함께 설치해야 하는 패치가 있습니다"), X + 54, y + Height / 2, 18, Ink, true, W - 72);
   return int(y + Height + 16);
 }
+// The operator's notes (what else to install, how big, which build): a
+// card of their own under the patch notice, before the description.
+int Application::notesCard(int y) {
+  if (detail_.notes.empty()) return y;
+  constexpr float X = 40, W = 750, Inner = X + 54, InnerW = W - 74;
+  const float text = paint_.fonts.wrapped(detail_.notes, Inner, -10000, 18, Ink, InnerW, 12, false, 1.5f);
+  const float height = 18 + 28 + text + 18;
+  paint_.rect(X, y, W, height, Surface, 14);
+  paint_.icon(33, X + 18, y + 18, Ink, 24);
+  paint_.fonts.text(tr("추가 정보"), Inner, y + 18, 18, Ink, true, InnerW);
+  paint_.fonts.wrapped(detail_.notes, Inner, y + 18 + 28, 18, Ink, InnerW, 12, false, 1.5f);
+  return int(y + height + 16);
+}
 void Application::syncDetailPatches() {
   if (!selection_ || detailGroup_ >= groups_.size()) return;
   const int before = int(selection_->rows());
@@ -151,6 +164,7 @@ void Application::detail() {
   const int offset = descriptionScroll_ * ScrollStep;
   int y = BandTop + Pad - offset;
   y = requiredPatchesCard(y);
+  y = notesCard(y);
   if (!detail_.description.empty()) {
     y += paint_.fonts.wrapped(detail_.description, 40, y, 20, Ink, 750, 20, false, 1.6f) + 24;
   } else if (detailLoading_) {

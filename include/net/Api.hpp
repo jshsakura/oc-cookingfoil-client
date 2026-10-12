@@ -71,6 +71,7 @@ inline std::map<std::string, std::string> parseGenres(const std::string& json, c
 }
 struct Detail {
     std::string name, publisher, description, category, banner;
+    std::string notes; // the operator's own notes: what else to install, sizes, which build
     std::vector<std::string> categoryLabels; // genre names in the UI language
     int releaseDate = 0, players = 0;
     std::vector<std::string> screenshots;

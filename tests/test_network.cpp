@@ -76,6 +76,9 @@ int runNetworkTests() {
     CHECK(foil::net::parseSections("{bad").error);
     CHECK(foil::net::parseSections(R"({"sections":[{"items":[{"url":"javascript:bad"},{"url":"https://host/a","size":-1}]}]})").value.size() == 1);
     CHECK(foil::net::parseDetail(R"({"name":"게임","description":null,"screenshots":[]})").value.name == "게임");
+    // The operator's notes come apart from the description; null is none.
+    CHECK(foil::net::parseDetail(R"({"notes":"데이터 49GB 필요  \n"})").value.notes == "데이터 49GB 필요");
+    CHECK(foil::net::parseDetail(R"({"notes":null})").value.notes.empty());
     {
         const auto priced = foil::net::parseDetail(R"({"price":{"country":"KR","regular":"64,800원","discount":"45,360원"}})").value;
         CHECK(priced.priceRegular == "64,800원" && priced.priceDiscount == "45,360원" && priced.priceCountry == "KR");
