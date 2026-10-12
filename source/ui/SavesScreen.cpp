@@ -21,6 +21,15 @@ void Application::savesAction(Action a) {
     dropboxAction(a);
     return;
   }
+  if (shopAppSaveAsk_) {
+    if (a == Action::Back) shopAppSaveAsk_ = false;
+    else if (a == Action::Accept && settled()) {
+      shopAppSaveAsk_ = false;
+      if (patchWorker_.joinable()) message(tr("패치 작업이 끝난 뒤 다시 시도합니다."));
+      else if (!shopSaves_.empty()) applyHomebrewSave(shopSaves_[std::clamp(shopSavePick_, 0, int(shopSaves_.size()) - 1)]);
+    }
+    return;
+  }
   if (savePicking_) {
     const auto groups = shopSaveGroups();
     const int count = groups.empty() ? 0 : groups[std::clamp(shopSaveRow_, 0, int(groups.size()) - 1)].second;
@@ -181,36 +190,60 @@ void Application::pollShopSaves() {
   shopSavesError_ = incomingShopSavesError_;
   shopSavesMissing_ = incomingShopSavesMissing_;
   shopSaves_ = std::move(incomingShopSaves_);
-  // An app's saves go to its app in 홈브류; this list keeps the games'.
+  // An app's saves list here under the app, and in its popup in 홈브류.
   homebrewSaves_.clear();
   for (const auto &save : shopSaves_)
     if (!save.homebrewApp.empty()) homebrewSaves_.push_back(save);
   shopSaves_.erase(std::remove_if(shopSaves_.begin(), shopSaves_.end(),
-                                  [](const auto &save) { return save.titleId.empty(); }),
+                                  [](const auto &save) { return save.titleId.empty() && save.homebrewApp.empty(); }),
                    shopSaves_.end());
-  // Games on this console first, then by game.
+  sortShopSaves();
+}
+std::string Application::shopSaveTitle(const shopsaves::ShopSave &save) const {
+  return save.homebrewApp.empty() ? shopsaves::gameName(save, languageCode())
+                                  : homebrew::appTitle(homebrew_, save.homebrewApp);
+}
+std::string Application::shopSaveIcon(const shopsaves::ShopSave &save) const {
+  if (save.homebrewApp.empty()) return save.gameIcon;
+  const auto *app = homebrew::findApp(homebrew_, save.homebrewApp);
+  return app ? app->iconUrl : "";
+}
+bool Application::shopSaveTargetHere(const shopsaves::ShopSave &save) const {
+  if (!save.homebrewApp.empty()) {
+    const auto *app = homebrew::findApp(homebrew_, save.homebrewApp);
+    return !app || homebrewStatus(*app) != homebrew::Status::Available;
+  }
+  return std::any_of(installed_.games.begin(), installed_.games.end(),
+                     [&](const auto &g) { return g.titleId == save.titleId; });
+}
+void Application::sortShopSaves() {
+  // A popup holds a save by its place in the list: the order waits for it.
+  if (savePicking_ || saveNeedsGame_ || shopAppSaveAsk_) return;
+  // Games and apps on this console first, then by name.
   std::stable_sort(shopSaves_.begin(), shopSaves_.end(), [this](const auto &a, const auto &b) {
-    const auto has = [this](const std::string &tid) {
-      return std::any_of(installed_.games.begin(), installed_.games.end(), [&](const auto &g) { return g.titleId == tid; });
-    };
-    const bool ha = has(a.titleId), hb = has(b.titleId);
+    const bool ha = shopSaveTargetHere(a), hb = shopSaveTargetHere(b);
     if (ha != hb) return ha;
-    const auto na = shopsaves::gameName(a, languageCode()), nb = shopsaves::gameName(b, languageCode());
+    const auto na = shopSaveTitle(a), nb = shopSaveTitle(b);
     if (na != nb) return na < nb;
-    return a.titleId < b.titleId; // one game's saves side by side, for the groups
+    // One game's or app's saves side by side, for the groups.
+    return homebrew::ownerKey(a.titleId, a.homebrewApp) < homebrew::ownerKey(b.titleId, b.homebrewApp);
   });
   shopSaveRow_ = std::clamp(shopSaveRow_, 0, std::max(0, int(shopSaveGroups().size()) - 1));
 }
-// Runs of one game's saves in shopSaves_ (sorted so they sit together):
-// the list shows one row per game.
+// Runs of one game's or app's saves in shopSaves_ (sorted so they sit
+// together): the list shows one row per game or app.
 std::vector<std::pair<int, int>> Application::shopSaveGroups() const {
   std::vector<std::pair<int, int>> out;
+  const auto owner = [this](int i) { return homebrew::ownerKey(shopSaves_[i].titleId, shopSaves_[i].homebrewApp); };
   for (int i = 0; i < int(shopSaves_.size()); ++i)
-    if (!out.empty() && shopSaves_[out.back().first].titleId == shopSaves_[i].titleId) ++out.back().second;
+    if (!out.empty() && owner(out.back().first) == owner(i)) ++out.back().second;
     else out.push_back({i, 1});
-  // The search keeps a game when any of its saves matches.
+  // The search keeps a game or app when its name or any of its saves matches.
   out.erase(std::remove_if(out.begin(), out.end(),
                            [&](const std::pair<int, int> &group) {
+                             if (savesQuery_.empty()) return false;
+                             const auto &head = shopSaves_[group.first];
+                             if (textMatches({shopSaveTitle(head), head.homebrewApp}, savesQuery_)) return false;
                              for (int i = group.first; i < group.first + group.second; ++i)
                                if (textMatches({shopSaves_[i].name, shopSaves_[i].titleId}, savesQuery_)) return false;
                              return true;
@@ -236,9 +269,9 @@ void Application::chooseShopGame() {
   if (groups.empty() || deviceBusy_) return;
   const auto [start, count] = groups[std::clamp(shopSaveRow_, 0, int(groups.size()) - 1)];
   shopSavePick_ = start;
-  const bool installed = std::any_of(installed_.games.begin(), installed_.games.end(),
-                                     [&](const auto &g) { return g.titleId == shopSaves_[start].titleId; });
-  if (count == 1 || !installed) {
+  // A game not here asks for the game first; an app's saves always pick.
+  const bool app = !shopSaves_[start].homebrewApp.empty();
+  if (count == 1 || (!app && !shopSaveTargetHere(shopSaves_[start]))) {
     chooseShopSave();
     return;
   }
@@ -248,6 +281,13 @@ void Application::chooseShopGame() {
 void Application::chooseShopSave() {
   if (shopSaves_.empty() || deviceBusy_) return;
   const auto &save = shopSaves_[std::clamp(shopSavePick_, 0, int(shopSaves_.size()) - 1)];
+  // An app's save is files for its folder, put there through the patch
+  // worker as from 홈브류; it asks first.
+  if (!save.homebrewApp.empty()) {
+    if (patchWorker_.joinable()) message(tr("패치 작업이 끝난 뒤 다시 시도합니다."));
+    else shopAppSaveAsk_ = true;
+    return;
+  }
   const auto game = std::find_if(installed_.games.begin(), installed_.games.end(),
                                  [&](const auto &g) { return g.titleId == save.titleId; });
   if (game == installed_.games.end()) {
@@ -318,6 +358,7 @@ void Application::applyConfirm() {
 }
 void Application::shopSavesList() {
   if (!shopSavesLoaded_ && !shopSavesWorker_.joinable() && connected_) loadShopSaves();
+  needHomebrewList(); // apps' saves take the app's name and icon from it
   if (shopSaves_.empty()) {
     if (!connected_)
       notice(tr("서버에 연결되어 있지 않습니다."), tr("서버에 연결한 뒤 서버 세이브를 불러옵니다."), 21);
@@ -348,16 +389,22 @@ void Application::shopSavesList() {
     });
     if (inContent() && i == shopSaveRow_ && !managedGame_) paint_.ring(260, y, 992, RowHeight, 16);
     paint_.rect(260, y, 992, RowHeight, Surface, 16);
-    const auto game = shopsaves::gameName(save, languageCode());
-    cover(save.gameIcon, 278, y + 10, 64, false, game);
+    const bool app = !save.homebrewApp.empty();
+    const auto game = shopSaveTitle(save);
+    cover(shopSaveIcon(save), 278, y + 10, 64, false, game, app); // app icons as 홈브류 draws them
     paint_.fonts.text(game, 360, y + 12, 21, Ink, true, 640);
-    // Under the name: how many saves, or the one save's name.
+    // Under the name: 홈브류 for an app, how many saves, or the one save's name.
     float at = 360;
+    if (app) at += paint_.pill(tr("홈브류"), at, y + 46) + 6;
     if (saves > 1) at += paint_.pill(trf("세이브 {0}개", {std::to_string(saves)}), at, y + 46) + 6;
     else paint_.fonts.text(save.name, at, y + 48, 16, Secondary, false, 640);
-    const bool installed = std::any_of(installed_.games.begin(), installed_.games.end(),
-                                       [&](const auto &g) { return g.titleId == save.titleId; });
-    const std::string state = installed ? tr("적용할 수 있음") : tr("게임 미설치");
+    // An app's save goes through the patch worker; its row shows the work.
+    bool busy = false;
+    for (int n = start; n < start + saves; ++n) busy |= !patchBusy_.empty() && patchBusy_ == shopSaves_[n].id;
+    const bool here = shopSaveTargetHere(save);
+    const std::string state = busy ? tr(patchBusyLabel_.c_str())
+                              : here ? tr("적용할 수 있음")
+                              : app ? tr("앱 미설치") : tr("게임 미설치");
     // The same grey label as every list's state, at the right end.
     paint_.pill(state, 1230 - paint_.fonts.measure(state, 15, true) - 18, y + 14);
   }
@@ -371,7 +418,7 @@ void Application::savePickDialog() {
   constexpr float Row = 72, Gap = 8;
   const int rows = std::min(count, Shown);
   const auto &head = shopSaves_[start];
-  const auto body = modal(860, 24 + rows * (Row + Gap) + 16, shopsaves::gameName(head, languageCode()), tr("닫기"), "",
+  const auto body = modal(860, 24 + rows * (Row + Gap) + 16, shopSaveTitle(head), tr("닫기"), "",
                           tr("적용하기"), 36);
   const float x = body.x + 32, w = body.w - 64;
   savePickRow_ = std::clamp(savePickRow_, 0, count - 1);
@@ -396,7 +443,7 @@ void Application::savePickDialog() {
       std::strftime(day, sizeof(day), "%Y-%m-%d", &local);
       meta = day;
     }
-    if (!save.gameVersion.empty()) meta += (meta.empty() ? "" : " · ") + trf("게임 {0}용", {save.gameVersion});
+    if (!save.gameVersion.empty() && save.homebrewApp.empty()) meta += (meta.empty() ? "" : " · ") + trf("게임 {0}용", {save.gameVersion});
     if (!save.description.empty()) meta += (meta.empty() ? "" : " · ") + save.description;
     paint_.fonts.text(meta, x + 20, y + 40, 16, Secondary, false, w - 160);
     const auto size = formatBytes(save.size);

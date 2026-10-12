@@ -42,7 +42,8 @@ std::vector<Application::PatchRow> Application::patchRows() const {
   rows.erase(std::remove_if(rows.begin(), rows.end(),
                             [this](const PatchRow &row) {
                               return !patchFilterMatches(patchFilter_, row) ||
-                                     !textMatches({row.game, row.patch.name, row.patch.titleId}, patchQuery_);
+                                     !textMatches({row.game, row.patch.name, row.patch.titleId, row.patch.homebrewApp},
+                                                  patchQuery_);
                             }),
              rows.end());
   return rows;
@@ -50,6 +51,19 @@ std::vector<Application::PatchRow> Application::patchRows() const {
 std::vector<Application::PatchRow> Application::allPatchRows() const {
   std::vector<PatchRow> rows;
   auto describe = [&](PatchRow &row) {
+    const auto record = patchRecords_.find(row.patch.id);
+    if (record != patchRecords_.end())
+      row.record = record->second;
+    // An app's patch goes under the app as 홈브류 lists it: its name and
+    // icon, or its folder when the list does not have it.
+    if (!row.patch.homebrewApp.empty()) {
+      const auto *app = homebrew::findApp(homebrew_, row.patch.homebrewApp);
+      row.game = homebrew::appTitle(homebrew_, row.patch.homebrewApp);
+      row.icon = app ? app->iconUrl : "";
+      // An app the list does not know cannot be told missing, so no warning.
+      row.installed = !app || homebrewStatus(*app) != homebrew::Status::Available;
+      return;
+    }
     const auto group = std::find_if(groups_.begin(), groups_.end(),
                                     [&](const Group &g) { return g.id == row.patch.titleId; });
     if (group != groups_.end()) {
@@ -79,27 +93,21 @@ std::vector<Application::PatchRow> Application::allPatchRows() const {
       row.icon = row.patch.gameIcon[0] == '/' && session_ ? session_->server().url + row.patch.gameIcon : row.patch.gameIcon;
     if (row.game.empty())
       row.game = row.patch.titleId;
-    const auto record = patchRecords_.find(row.patch.id);
-    if (record != patchRecords_.end())
-      row.record = record->second;
   };
-  // An app's patches show under its app in 홈브류, not here.
+  // Apps' patches list here too, each under its app, as well as in 홈브류.
   for (const auto &patch : serverPatches_) {
-    if (!patch.homebrewApp.empty())
-      continue;
     PatchRow row{patch, std::nullopt, true, "", "", "", false};
     describe(row);
     rows.push_back(std::move(row));
   }
   // Patches kept on the card but gone from the server can still be removed.
   for (const auto &[id, record] : patchRecords_) {
-    if (!record.homebrewApp.empty() ||
-        std::any_of(serverPatches_.begin(), serverPatches_.end(),
-                    [&](const UserPatch &p) { return p.id == id; }))
+    if (std::any_of(serverPatches_.begin(), serverPatches_.end(), [&](const UserPatch &p) { return p.id == id; }))
       continue;
     PatchRow row;
     row.patch.id = id;
     row.patch.titleId = record.titleId;
+    row.patch.homebrewApp = record.homebrewApp;
     row.patch.name = record.name;
     row.patch.version = record.version;
     row.patch.size = record.bytes;
@@ -125,10 +133,12 @@ std::vector<Application::PatchGame> Application::patchGames(const std::vector<Pa
   std::map<std::string, size_t> at;
   for (int i = 0; i < int(rows.size()); ++i) {
     const auto &row = rows[i];
-    auto found = at.find(row.patch.titleId);
+    // A game by its Title ID, an app by its folder.
+    const auto key = homebrew::ownerKey(row.patch.titleId, row.patch.homebrewApp);
+    auto found = at.find(key);
     if (found == at.end()) {
-      found = at.emplace(row.patch.titleId, games.size()).first;
-      games.push_back({row.patch.titleId, row.game, row.icon, row.installed, {}});
+      found = at.emplace(key, games.size()).first;
+      games.push_back({key, row.game, row.icon, row.installed, {}, !row.patch.homebrewApp.empty()});
     }
     games[found->second].rows.push_back(i);
   }
@@ -218,9 +228,10 @@ int patchOpIcon(PatchOp op) {
 // What the management popup offers for a row, most likely first.
 std::vector<PatchChoice> patchChoices(const Application::PatchRow &row) {
   std::vector<PatchChoice> out;
+  const bool app = !row.patch.homebrewApp.empty();
   // A patch is no use without its game: when the shop has it, getting the
-  // game comes first.
-  if (!row.installed && row.shopGroup >= 0)
+  // game comes first. An app comes from 홈브류 instead.
+  if (!app && !row.installed && row.shopGroup >= 0)
     out.push_back({PatchOp::Game, tr("게임 받으러 가기"), tr("서버에서 이 게임을 설치합니다. 패치는 게임이 있어야 적용됩니다.")});
   if (!row.record) {
     if (row.onServer)
@@ -230,9 +241,10 @@ std::vector<PatchChoice> patchChoices(const Application::PatchRow &row) {
   if (updateAvailable(row))
     out.push_back({PatchOp::Update, tr("새 버전으로 바꾸기"), tr("켜져 있던 패치는 바꾼 뒤 다시 켭니다.")});
   if (row.record->on)
-    out.push_back({PatchOp::Disable, tr("끄기"), tr("게임을 다시 켜면 원래대로 돌아옵니다. 받은 파일은 남겨 둡니다.")});
+    out.push_back({PatchOp::Disable, tr("끄기"), app ? tr("앱을 다시 켜면 원래대로 돌아옵니다. 받은 파일은 남겨 둡니다.")
+                                                     : tr("게임을 다시 켜면 원래대로 돌아옵니다. 받은 파일은 남겨 둡니다.")});
   else
-    out.push_back({PatchOp::Enable, tr("켜기"), tr("게임을 다시 켜면 적용됩니다.")});
+    out.push_back({PatchOp::Enable, tr("켜기"), app ? tr("앱을 다시 켜면 적용됩니다.") : tr("게임을 다시 켜면 적용됩니다.")});
   out.push_back({PatchOp::Remove, tr("삭제"), row.record->on ? tr("패치를 끄고 SD 카드에서 지웁니다.")
                                                             : tr("SD 카드에 받아 둔 파일을 지웁니다.")});
   return out;
@@ -429,6 +441,7 @@ void Application::patchesScreen() {
   }
   if (!patchesLoaded_ && !patchFetching_ && !patchError_ && connected_)
     fetchPatches();
+  needHomebrewList(); // apps' patches take the app's name and icon from it
   const auto rows = patchRows();
   const auto all = allPatchRows();
   int on = 0;
@@ -486,7 +499,7 @@ void Application::patchesScreen() {
     if (inContent() && i == selected_ && !pickingPatch_)
       paint_.ring(260, y, 992, RowHeight, 18);
     paint_.rect(260, y, 992, RowHeight, Surface, 18);
-    cover(game.icon, 282, y + 14, 80, false, game.game);
+    cover(game.icon, 282, y + 14, 80, false, game.game, game.app); // app icons as 홈브류 draws them
     paint_.fonts.text(game.game, 382, y + 14, 22, Ink, true, 560);
     // A single patch is named; several are counted.
     const auto &lead = rows[game.rows.front()];
@@ -518,9 +531,11 @@ void Application::patchesScreen() {
     for (const auto &kind : kinds)
       at += paint_.pill(patchKindLabel(kind), at, y + 74) + 6;
     std::string warning;
-    if (!game.installed)
+    if (!game.installed && game.app)
+      warning = tr("앱 미설치 · 홈브류에 있음");
+    else if (!game.installed)
       warning = lead.shopGroup >= 0 ? tr("게임 미설치 · 서버에 있음") : tr("게임 미설치");
-    else if (mismatch && game.rows.size() == 1)
+    else if (mismatch && game.rows.size() == 1 && !game.app)
       warning = trf("게임 {0} 전용", {lead.patch.gameVersion});
     if (gone)
       warning = tr("서버에서 사라짐");
@@ -639,7 +654,7 @@ void Application::patchMenu(const PatchRow &row) {
   const float x = body.x + 32, w = body.w - 64, textX = x + Icon + 20, textW = w - Icon - 20;
   float y = body.y + 24;
   // The game's icon beside the patch: its name, then what kind and how big.
-  cover(row.icon, x, y, int(Icon), false, row.game);
+  cover(row.icon, x, y, int(Icon), false, row.game, !row.patch.homebrewApp.empty());
   const auto size = formatBytes(row.record ? row.record->bytes : row.patch.size);
   const float sizeW = paint_.fonts.measure(size, 18, true);
   paint_.fonts.text(row.patch.name, textX, y + 4, 22, Ink, true, textW - sizeW - 16);

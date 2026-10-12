@@ -47,6 +47,9 @@ std::vector<Application::PatchRow> Application::homebrewPatchRows(const homebrew
   }
   return rows;
 }
+void Application::needHomebrewList() {
+  if (!homebrewLoaded_ && !homebrewWorker_.joinable() && connected_ && features_.count("homebrew")) loadHomebrew();
+}
 std::vector<int> Application::homebrewSaveRows(const homebrew::App &app) const {
   std::vector<int> rows;
   for (int i = 0; i < int(homebrewSaves_.size()) && !app.app.empty(); ++i)
@@ -176,7 +179,10 @@ void Application::homebrewSaveDialog() {
     homebrewSaveAsk_ = false;
     return;
   }
-  const auto &save = homebrewSaves_[rows[std::clamp(homebrewExtraRow_, 0, int(rows.size()) - 1)]];
+  appSaveConfirm(homebrewSaves_[rows[std::clamp(homebrewExtraRow_, 0, int(rows.size()) - 1)]]);
+}
+// The same question from 세이브 > 공유 and from the app's popup.
+void Application::appSaveConfirm(const shopsaves::ShopSave &save) {
   const auto body = modal(700, 20 + 30 + 84 + 16, tr("이 세이브를 적용합니까?"), tr("취소"), "", tr("적용합니다"), 36);
   paint_.fonts.text(save.name, body.x + 32, body.y + 20, 21, Ink, true, body.w - 64);
   paint_.fonts.wrapped(trf("{0} 폴더에 세이브 파일을 넣습니다. 같은 이름의 파일은 먼저 {1} 폴더로 옮겨 둡니다.",
