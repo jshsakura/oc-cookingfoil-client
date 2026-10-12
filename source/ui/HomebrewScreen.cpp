@@ -52,10 +52,11 @@ homebrew::Status Application::homebrewStatus(const homebrew::App &app) const {
 }
 std::vector<int> Application::homebrewRows() const {
   std::vector<int> rows;
-  const auto kind = homebrewTab_ == 1 ? homebrew::Kind::Port : homebrew::Kind::Tool;
+  // 설치됨: every app on the card, tools and ports alike; then each kind.
+  const auto kind = homebrewTab_ == 2 ? homebrew::Kind::Port : homebrew::Kind::Tool;
   for (int i = 0; i < int(homebrew_.size()); ++i) {
     const auto &app = homebrew_[i];
-    if (app.kind != kind) continue;
+    if (homebrewTab_ == 0 ? homebrewStatus(app) == homebrew::Status::Available : app.kind != kind) continue;
     if (!textMatches({app.name, app.author, app.fileName}, homebrewQuery_)) continue;
     rows.push_back(i);
   }
@@ -209,7 +210,7 @@ void Application::homebrewAction(Action a) {
     return;
   }
   if (a == Action::Previous || a == Action::Next) {
-    homebrewTab_ = 1 - homebrewTab_;
+    homebrewTab_ = (homebrewTab_ + (a == Action::Next ? 1 : 2)) % 3;
     selected_ = 0;
     return;
   }
@@ -243,16 +244,19 @@ void Application::homebrewScreen() {
     if (!shopSavesLoaded_ && !shopSavesWorker_.joinable()) loadShopSaves();
   }
   const auto rows = homebrewRows();
-  int updates[2] = {0, 0};
-  for (const auto &app : homebrew_)
-    updates[app.kind == homebrew::Kind::Port] += homebrewStatus(app) == homebrew::Status::Update;
+  int updates[3] = {0, 0, 0}; // 설치됨, 도구, 포트
+  for (const auto &app : homebrew_) {
+    const bool update = homebrewStatus(app) == homebrew::Status::Update;
+    updates[0] += update;
+    updates[app.kind == homebrew::Kind::Port ? 2 : 1] += update;
+  }
   // As on 유저 패치: search at the right end, the tabs left of it.
   searchBar(homebrewQuery_);
   // Each tab counts the new versions in it (a badge, when there is one).
-  const float tabsLeft = headerTabs({tr("도구"), tr("포트")}, homebrewTab_, [this](int n) {
+  const float tabsLeft = headerTabs({tr("설치됨|탭"), tr("도구"), tr("포트")}, homebrewTab_, [this](int n) {
     homebrewTab_ = n;
     selected_ = 0;
-  }, SearchX - 16, 0, {updates[0], updates[1]});
+  }, SearchX - 16, 0, {updates[0], updates[1], updates[2]});
   pageTitle(tr("홈브류"), homebrewLoaded_ ? std::to_string(rows.size()) : std::string(), tabsLeft);
   if (!connected_) {
     notice(tr("서버에 연결되어 있지 않습니다."), tr("서버에 연결한 뒤 홈브류를 확인합니다."), 21);
@@ -269,7 +273,9 @@ void Application::homebrewScreen() {
   if (rows.empty()) {
     if (!homebrewQuery_.empty())
       notice(trf("'{0}'에 맞는 홈브류가 없습니다.", {homebrewQuery_}), tr("B로 검색어를 지웁니다."), 23);
-    else if (homebrewTab_ == 1)
+    else if (homebrewTab_ == 0)
+      notice(tr("설치한 홈브류가 없습니다."), tr("도구나 포트 탭에서 받으면 여기에 보입니다."), 22);
+    else if (homebrewTab_ == 2)
       notice(tr("서버에 포트가 없습니다."), tr("서버에 포트를 올리면 여기에 보입니다."), 22);
     else
       notice(tr("서버에 도구가 없습니다."), tr("서버에 앱을 올리면 여기에 보입니다."), 22);

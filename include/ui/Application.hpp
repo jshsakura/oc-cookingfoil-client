@@ -234,7 +234,7 @@ private:
   std::string homebrewEtag_, homebrewQuery_;
   Error homebrewError_;
   bool homebrewLoaded_ = false, homebrewRemoveAsk_ = false, homebrewAsk_ = false;
-  int homebrewTab_ = 0; // 0 도구, 1 포트
+  int homebrewTab_ = 0; // 0 설치됨, 1 도구, 2 포트
   // The app popup's rows under its facts (-1 the app itself) and the
   // patch (1) or save (2) picker opened from one; 0 when none is open.
   int homebrewAskRow_ = -1, homebrewExtras_ = 0, homebrewExtraRow_ = 0;
