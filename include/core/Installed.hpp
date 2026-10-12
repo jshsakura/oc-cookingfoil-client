@@ -45,7 +45,8 @@ std::optional<std::vector<std::string>> orphanContents(const std::vector<std::st
                                                        const std::vector<std::string> &referenced);
 // What a running cleanup is doing, read by the UI while it works.
 struct CleanupProgress {
-  std::atomic<int> stage{0};          // 0 starting, 1 SD card, 2 console
+  std::atomic<int> stage{0};          // 0 starting, 1 SD card, 2 console, 3 finished
+  std::atomic<bool> listed{false};    // this storage's leftovers are known
   std::atomic<int> done{0}, total{0}; // files handled in this storage
   std::atomic<uint64_t> bytes{0};     // found (scan) or freed (delete) so far
 };

@@ -1752,7 +1752,9 @@ void Application::startCleanup(bool remove) {
   cleanupBusy_ = true;
   cleanupRemoving_ = remove;
   cleanupProgress_.stage = cleanupProgress_.done = cleanupProgress_.total = 0;
+  cleanupProgress_.listed = false;
   cleanupProgress_.bytes = 0;
+  cleanupShown_ = 0;
   if (cleanupWorker_.joinable())
     cleanupWorker_.join();
   cleanupWorker_ = std::thread([this, remove] {
@@ -1786,21 +1788,24 @@ void Application::cleanupProgressDialog() {
   const auto body = modal(620, 150, cleanupRemoving_ ? tr("남은 파일을 지우고 있습니다") : tr("남은 파일을 찾고 있습니다"), "", "", "", 23);
   const float x = body.x + 32, w = body.w - 64, y = body.y + 26;
   const int stage = cleanupProgress_.stage, done = cleanupProgress_.done, total = cleanupProgress_.total;
-  const std::string where = stage == 2 ? tr("본체") : stage == 1 ? tr("SD 카드") : tr("설치 기록");
-  const std::string step = total ? trf("{0} · {1}/{2}개", {where, std::to_string(done), std::to_string(total)})
-                                 : trf("{0} 확인 중", {where});
+  const bool listed = cleanupProgress_.listed;
+  const std::string where = stage == 2 ? tr("본체") : tr("SD 카드");
+  const std::string step = stage >= 3      ? std::string(tr("마무리하고 있습니다"))
+                           : listed && total ? trf("{0} · {1}/{2}개", {where, std::to_string(done), std::to_string(total)})
+                                             : trf("{0} 확인 중", {where});
   paint_.fonts.text(step, x, y, 20, Ink, true, w);
   const auto bytes = formatBytes(cleanupProgress_.bytes);
   paint_.fonts.text(bytes, x + w - paint_.fonts.measure(bytes, 20, true), y, 20, Ink, true);
-  // Two storages, each half the bar; a storage still being read pulses.
-  const float half = w / 2, base = stage == 2 ? half : 0;
-  const float part = total ? half * float(done) / float(total) : 0;
-  paint_.rect(x, y + 48, w, 10, Line, 5);
-  paint_.rect(x, y + 48, std::max(10.f, base + part), 10, Butter, 5);
-  if (!total) {
-    const float t = float(SDL_GetTicks() % 1200) / 1200.f;
-    paint_.rect(x + base + (half - 60) * t, y + 48, 60, 10, Pending, 5);
+  // One bar that only fills: each storage is half, reading its records the
+  // first fifth of that half and its leftovers the rest.
+  float target = 1;
+  if (stage < 3) {
+    const float within = !listed ? 0.2f : total ? 0.2f + 0.8f * float(done) / float(total) : 1.f;
+    target = (std::max(stage, 1) - 1 + within) / 2;
   }
+  cleanupShown_ = std::max(cleanupShown_, cleanupShown_ + (target - cleanupShown_) * 0.2f);
+  paint_.rect(x, y + 48, w, 10, Line, 5);
+  paint_.rect(x, y + 48, std::max(10.f, w * cleanupShown_), 10, Butter, 5);
   paint_.fonts.text(cleanupRemoving_ ? tr("끝날 때까지 본체를 끄지 않습니다.") : tr("설치된 게임과 세이브는 건드리지 않습니다."),
                     x, y + 76, 17, Secondary, false, w);
 }

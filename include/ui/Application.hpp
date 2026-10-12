@@ -481,6 +481,7 @@ private:
   void cleanupDialog();
   void cleanupProgressDialog(); // while a scan or delete runs
   CleanupProgress cleanupProgress_;
+  float cleanupShown_ = 0; // the bar's drawn fill, eased toward the real one
   // 설정 > 앱 업데이트: the server's newest build, checked when 설정 opens;
   // A gets it, swaps the .nro and starts the app again.
   enum class AppUpdate { Unknown, Checking, Latest, Available, Missing, Failed, Downloading };

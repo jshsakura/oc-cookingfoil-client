@@ -400,6 +400,7 @@ Parsed<CleanupReport> cleanOrphans(bool remove, CleanupProgress *progress) {
     if (progress) {
       progress->stage = id == NcmStorageId_SdCard ? 1 : 2;
       progress->done = progress->total = 0;
+      progress->listed = false;
     }
     Storage storage;
     Database db;
@@ -426,7 +427,10 @@ Parsed<CleanupReport> cleanOrphans(bool remove, CleanupProgress *progress) {
     const auto orphans = orphanContents(stored, used.value);
     if (!orphans)
       return {{}, {tr("설치 기록을 읽지 못해 정리를 멈췄습니다.")}};
-    if (progress) progress->total = int(orphans->size());
+    if (progress) {
+      progress->total = int(orphans->size());
+      progress->listed = true;
+    }
     for (const auto &orphan : *orphans) {
       if (progress) ++progress->done;
       NcmContentId content{};
@@ -442,15 +446,21 @@ Parsed<CleanupReport> cleanOrphans(bool remove, CleanupProgress *progress) {
     NcmPlaceHolderId holders[64];
     s32 holderCount = 0;
     if (R_SUCCEEDED(ncmContentStorageListPlaceHolder(&storage.cs, holders, 64, &holderCount)) && holderCount > 0) {
+      uint64_t held = 0;
       for (s32 i = 0; i < holderCount; ++i) {
         s64 size = 0;
         if (R_SUCCEEDED(ncmContentStorageGetSizeFromPlaceHolderId(&storage.cs, &size, &holders[i])))
-          result.value.bytes += uint64_t(std::max<s64>(0, size));
+          held += uint64_t(std::max<s64>(0, size));
       }
-      if (!remove || R_SUCCEEDED(ncmContentStorageCleanupAllPlaceHolder(&storage.cs)))
+      // Counted only when they are really gone (or, in a scan, found).
+      if (!remove || R_SUCCEEDED(ncmContentStorageCleanupAllPlaceHolder(&storage.cs))) {
         result.value.placeholders += holderCount;
+        result.value.bytes += held;
+        if (progress) progress->bytes = result.value.bytes;
+      }
     }
   }
+  if (progress) progress->stage = 3;
   return result;
 #else
   (void)remove;

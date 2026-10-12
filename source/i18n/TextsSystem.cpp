@@ -66,7 +66,7 @@ const Translation rows[] = {
     // Leftover cleanup progress
     {"남은 파일을 지우고 있습니다", "Deleting leftover files", "不要ファイルを削除しています", "正在删除残留文件"},
     {"남은 파일을 찾고 있습니다", "Looking for leftover files", "不要ファイルを探しています", "正在查找残留文件"},
-    {"설치 기록", "Install records", "インストール記録", "安装记录"},
+    {"마무리하고 있습니다", "Finishing up", "仕上げています", "正在收尾"},
     {"{0} · {1}/{2}개", "{0} · {1}/{2}", "{0} · {1}/{2}件", "{0} · {1}/{2} 个"},
     {"{0} 확인 중", "Checking {0}", "{0}を確認中", "正在检查{0}"},
     {"설치된 게임과 세이브는 건드리지 않습니다.", "Installed games and saves are left alone.", "インストール済みのゲームとセーブには触れません。", "已安装的游戏和存档不受影响。"},
