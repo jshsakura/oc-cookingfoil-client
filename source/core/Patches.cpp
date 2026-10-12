@@ -139,6 +139,7 @@ bool TarWriter::openFile(const std::string &path) {
   std::error_code ec;
   makeDirectories(std::filesystem::path(full.parent_path()).string());
   file_ = std::fopen(full.string().c_str(), "wb");
+  writeBuffer(file_);
   if (!file_) {
     // The system's reason goes on screen too: on the console log.txt is out
     // of reach while the app runs.

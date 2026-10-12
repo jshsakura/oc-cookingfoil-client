@@ -1,6 +1,7 @@
 #pragma once
 #include "core/Types.hpp"
 #include <json-c/json.h>
+#include <cstdio>
 #include <memory>
 namespace foil {
 struct JsonDelete { void operator()(json_object* p) const { if (p) json_object_put(p); } };
@@ -17,4 +18,7 @@ bool atomicWrite(const std::string& path, const std::string& contents, std::stri
 // mkdir -p that stops at a device root ("sdmc:"): std::filesystem::create_directories
 // takes "sdmc:" for a folder on the console and fails before making any.
 bool makeDirectories(const std::string& path);
+// A file being written gets a large buffer: the SD card is slow with the C
+// library's small default, which turns a download into 1KB writes.
+void writeBuffer(std::FILE* file);
 }

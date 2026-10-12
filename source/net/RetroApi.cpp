@@ -116,6 +116,7 @@ bool retroFile(const Server &server, const State &state, const retro::PackFile &
   std::error_code ec;
   makeDirectories(std::filesystem::path(target.parent_path()).string());
   std::unique_ptr<FILE, int (*)(FILE *)> out(std::fopen(part.string().c_str(), "wb"), std::fclose);
+  writeBuffer(out.get());
   if (!out) {
     error.message = trf("파일을 만들지 못했습니다: {0}", {file.path});
     return false;

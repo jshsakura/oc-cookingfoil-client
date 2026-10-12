@@ -32,6 +32,7 @@ bool installClient(const Server &server, const State &state, const update::Relea
   std::error_code ec;
   makeDirectories(std::filesystem::path(target).parent_path().string());
   std::unique_ptr<FILE, int (*)(FILE *)> out(std::fopen(part.c_str(), "wb"), std::fclose);
+  writeBuffer(out.get());
   if (!out) {
     error.message = trf("파일을 만들지 못했습니다: {0}", {part}) + " (" + std::strerror(errno) + ")";
     return false;

@@ -196,6 +196,7 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "CookingFoil/" COOKINGFOIL_VERSION);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 512L * 1024); // fewer, larger writes on the way to the card
     // Large patches take minutes; only a stalled transfer gives up.
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
@@ -259,6 +260,7 @@ Response post(const std::string& url, const std::vector<std::string>& headers, c
     }
     if (!options.saveTo.empty()) {
         out.reset(std::fopen(options.saveTo.c_str(), "wb"));
+        writeBuffer(out.get());
         if (!out) { result.error = trf("파일을 만들지 못했습니다: {0}", {options.saveTo}); return result; }
     }
     auto* curl = curl_easy_init();

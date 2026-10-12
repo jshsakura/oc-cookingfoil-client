@@ -43,6 +43,7 @@ Error copyFile(const std::string &from, const std::string &to, const CopyHooks &
   std::unique_ptr<FILE, int (*)(FILE *)> in(std::fopen(from.c_str(), "rb"), std::fclose);
   if (!in) return {trf("파일을 읽지 못했습니다: {0}", {from})};
   std::unique_ptr<FILE, int (*)(FILE *)> out(std::fopen(to.c_str(), "wb"), std::fclose);
+  writeBuffer(out.get());
   if (!out) return {trf("파일을 만들지 못했습니다: {0}", {to})};
   std::vector<char> buffer(CopyBuffer);
   long written = 0;

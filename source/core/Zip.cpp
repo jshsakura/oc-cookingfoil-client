@@ -182,6 +182,7 @@ bool ZipArchive::extractFile(const std::string &archivePath, const std::string &
     return fail("cannot open entry " + archivePath);
   makeParent(destPath);
   std::FILE *out = std::fopen(destPath.c_str(), "wb");
+  writeBuffer(out);
   if (!out) {
     unzCloseCurrentFile(unz_);
     return fail("cannot create " + destPath);

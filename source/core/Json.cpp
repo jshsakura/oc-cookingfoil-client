@@ -131,4 +131,7 @@ std::string urlField(json_object* obj, const char* key, const std::string& base)
     if (value.rfind("/", 0) == 0 && value.rfind("//", 0) != 0 && !base.empty()) return base + value;
     return "";
 }
+void writeBuffer(std::FILE* file) {
+    if (file) std::setvbuf(file, nullptr, _IOFBF, 1 << 20);
+}
 }
