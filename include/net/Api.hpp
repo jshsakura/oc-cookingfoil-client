@@ -8,7 +8,11 @@
 #include <functional>
 struct json_object;
 namespace foil::net {
-struct Response { long status = 0; std::string body, etag, error; };
+struct Response {
+    long status = 0;
+    std::string body, etag, error;
+    int retryAfter = 0; // the Retry-After header in seconds; 0 when absent or a date
+};
 std::vector<std::string> authHeaders(const Server& server, const State& state, const std::string& url);
 bool internetConnected();
 // The console's link: -1 offline, else signal bars 0-3 (wired reads as 3).

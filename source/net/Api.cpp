@@ -10,6 +10,7 @@
 #include <cctype>
 #include <limits>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <memory>
 #include <set>
@@ -43,6 +44,9 @@ size_t writeHeader(char* data, size_t size, size_t count, void* context) {
         if (key == "etag") {
             auto value = line.substr(colon + 1); const auto begin = value.find_first_not_of(" \t\r\n");
             static_cast<Response*>(context)->etag = begin == std::string::npos ? "" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
+        } else if (key == "retry-after") {
+            const auto seconds = std::strtol(line.c_str() + colon + 1, nullptr, 10);
+            static_cast<Response*>(context)->retryAfter = int(std::clamp<long>(seconds, 0, 3600));
         }
     }
     return bytes;
@@ -723,7 +727,8 @@ Parsed<std::vector<UserPatch>> Session::patches() {
     const auto body = parseJson(response.body, ignored);
     auto* scanning = body ? field(body.get(), "scanning") : nullptr;
     if (scanning && json_object_get_boolean(scanning)) {
-        patchesRetryAfter_ = int(std::clamp<int64_t>(integerField(body.get(), "retryAfter", 10), 5, 300));
+        // The wait comes in the Retry-After header.
+        patchesRetryAfter_ = std::clamp(response.retryAfter ? response.retryAfter : 30, 5, 300);
         return result;
     }
     patchesEtag_ = response.etag;

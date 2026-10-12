@@ -81,8 +81,8 @@ int runSessionTests() {
                     const auto got = recv(client, buffer, sizeof(buffer), 0); if (got <= 0) break; request.append(buffer, got);
                 }
                 asked.push_back(request);
-                const std::string body = i == 0 ? R"({"patches":[],"scanning":true,"retryAfter":7})" : R"({"patches":[]})";
-                const auto reply = "HTTP/1.1 200 OK\r\nConnection: close\r\nETag: \"p" + std::to_string(i) +
+                const std::string body = i == 0 ? R"({"patches":[],"scanning":true})" : R"({"patches":[]})";
+                const auto reply = std::string("HTTP/1.1 200 OK\r\nConnection: close\r\n") + (i == 0 ? "Retry-After: 7\r\n" : "") + "ETag: \"p" + std::to_string(i) +
                                    "\"\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body;
                 send(client, reply.data(), reply.size(), MSG_NOSIGNAL); close(client);
             }
