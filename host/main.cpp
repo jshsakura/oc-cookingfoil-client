@@ -270,10 +270,21 @@ int main(int argc, char **argv) {
       ui.previewDropbox(false, {}, "https://www.dropbox.com/oauth2/authorize?client_id=preview&state=preview");
       ui.render();
       if (!app.screenshot(shot + "/08-dropbox-sign-in.png")) return 1;
-      ui.previewDropbox(true, {{save.applicationId, {{"20260311_090000", 1773219600, 1234567}, {"20260301_120000", 1772366400, 1200000}}}});
+      // Dropbox also holds a shop game that is not installed (the second;
+      // every third is installed) and one the shop does not know.
+      const auto shopGames = foil::groupCatalog(foil::net::parseSections(foil::readFile(fixture + "/sections.json")).value);
+      foil::net::DropboxRevisions remote = {
+          {save.applicationId, {{"20260311_090000", 1773219600, 1234567}, {"20260301_120000", 1772366400, 1200000}}},
+          {0x0100000000009000ULL, {{"20260302_080000", 1772438400, 900000}}}};
+      if (shopGames.size() > 1)
+        remote[std::stoull(shopGames[1].id, nullptr, 16)] = {{"20260310_210000", 1773176400, 2400000}};
+      ui.previewDropbox(true, std::move(remote));
       ui.render();
       if (!app.screenshot(shot + "/08-dropbox-linked.png")) return 1;
       ui.action(foil::ui::Action::Accept); ui.render();
+      if (!app.screenshot(shot + "/08-dropbox-not-installed.png")) return 1;
+      ui.action(foil::ui::Action::Back);
+      ui.action(foil::ui::Action::Down); ui.action(foil::ui::Action::Accept); ui.render();
       if (!app.screenshot(shot + "/08-dropbox-game.png")) return 1;
       ui.action(foil::ui::Action::Back);
     }

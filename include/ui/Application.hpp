@@ -5,6 +5,7 @@
 #include "install/Installer.hpp"
 #include "net/Api.hpp"
 #include "net/Dropbox.hpp"
+#include "ui/DropboxRows.hpp"
 #include "ui/Images.hpp"
 #include "ui/Painter.hpp"
 #include "ui/Qr.hpp"
@@ -176,6 +177,9 @@ public:
   }
   bool dropboxPopupOpen() const { return dropboxOpen_ || dropboxUnlinkAsk_; }
   bool dropboxChoosingUpload() const { return dropboxChoosing_; }
+  std::string dropboxAcceptLabel() const { return dropboxPopupAccept(); }
+  std::vector<DropboxRow> dropboxListed() const { return dropboxGameRows(); }
+  uint64_t dropboxFocused() const { return dropboxCursor_; }
   bool confirmingRestore() const { return saveConfirm_ == SaveConfirm::Restore; }
   bool askingApply() const { return applyAsking_; }
   void previewApplying(shopsaves::ShopSave save) { applying_ = std::move(save); }
@@ -433,7 +437,9 @@ private:
   // for the phone), then each game's backups go up to Dropbox or come down
   // into the console's backups, in oc-save-keeper's layout (DropboxScreen.cpp).
   void dropboxTab();
-  std::vector<int> dropboxGameRows() const;
+  std::vector<DropboxRow> dropboxGameRows() const; // the search's games, in order
+  int dropboxFocus(const std::vector<DropboxRow> &rows) const; // the cursor's place in `rows`
+  const std::vector<net::dropbox::Revision> &dropboxRevisions(uint64_t id) const;
   void dropboxAction(Action action);
   void dropboxDialog(); // a game's backups, or the unlink question
   void dropboxEnter();  // the tab opened: read dropbox.json, list once
@@ -444,6 +450,8 @@ private:
   void dropboxTransfer();
   void uploadDropbox(const saves::LocalBackup &backup);
   void dropboxUploadList(); // the console's backups, one to pick for the upload
+  // What A does on the open game's highlighted row: 올리기, 받기 or nothing.
+  std::string dropboxPopupAccept() const;
   bool dropboxFocusable() const;
   bool dropboxModal() const { return dropboxOpen_ || dropboxUnlinkAsk_; }
   // Runs `job` on the Dropbox worker; what it returns runs on the UI thread.
@@ -458,9 +466,10 @@ private:
   std::thread dropboxWorker_;
   std::atomic<bool> dropboxDone_{false};
   std::function<void()> dropboxFinish_;
-  int dropboxRow_ = 0;              // -1 the account card, 0.. installed games
+  uint64_t dropboxCursor_ = 0;      // the focused game's application id (0: the first)
+  DropboxRow dropboxGame_;          // the game whose popup is open
   bool dropboxOpen_ = false, dropboxUnlinkAsk_ = false;
-  int dropboxPick_ = 0;             // in the game popup: 0 upload, 1.. Dropbox backups
+  int dropboxPick_ = 0;             // in the game popup: 0 upload (installed only), then Dropbox backups
   bool dropboxChoosing_ = false;    // the upload row opened the console's backups
   int dropboxUploadPick_ = 0;       // which of dropboxLocal_ goes up
   std::vector<saves::LocalBackup> dropboxLocal_; // the open game's backups on the console
