@@ -94,7 +94,7 @@ bool Application::contentAtTop() const {
   case Screen::Retro:
     return retroView_ == RetroView::Home ? retroRow_ <= 0 : selected_ <= 0;
   case Screen::Saves:
-    return savesTab_ == 0 ? selected_ <= 0 : savesTab_ == 1 ? shopSaveRow_ <= 0 : dropboxRow_ <= 0;
+    return savesTab_ == 0 ? selected_ <= 0 : savesTab_ == 1 ? shopSaveRow_ <= 0 : dropboxFocus(dropboxGameRows()) <= 0;
   default:
     return false;
   }

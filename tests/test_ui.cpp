@@ -4,6 +4,7 @@
 #include "core/SaveBackups.hpp"
 #include "core/ShopSaves.hpp"
 #include "ui/Application.hpp"
+#include <algorithm>
 #include <fstream>
 #include <filesystem>
 #include <unistd.h>
@@ -305,6 +306,38 @@ int runUiTests(SDL_Renderer *renderer) {
     app.action(foil::ui::Action::Back);
     CHECK(!app.dropboxPopupOpen());
     CHECK(app.current() == foil::ui::Screen::Saves);
+    // A game backed up on Dropbox but not installed is listed too; its popup
+    // only takes backups down (no upload row, and restoring is 내 기기's).
+    const uint64_t elsewhere = 0x0100000000009000ULL;
+    app.previewDropbox(true, {{installed.applicationId, {{"20260311_090000", 1773219600, 1234}}},
+                              {elsewhere, {{"20260313_090000", 1773392400, 4321}}}});
+    app.render();
+    const auto listed = app.dropboxListed();
+    CHECK(listed.size() == 2);
+    const auto found = std::find_if(listed.begin(), listed.end(), [&](const auto &r) { return r.applicationId == elsewhere; });
+    CHECK(found != listed.end() && !found->installed && found->remote == 1);
+    // Both have Dropbox backups, so by name: the title id shown for the one
+    // the shop does not know comes first, and the cursor stayed on the other.
+    CHECK(!listed.empty() && listed.front().applicationId == elsewhere);
+    CHECK(app.dropboxFocused() == installed.applicationId);
+    app.action(foil::ui::Action::Up);
+    CHECK(app.dropboxFocused() == elsewhere);
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.dropboxPopupOpen());
+    app.render();
+    CHECK(app.dropboxAcceptLabel() == foil::tr("받기"));
+    app.action(foil::ui::Action::Up);
+    CHECK(app.dropboxAcceptLabel() == foil::tr("받기"));
+    CHECK(!app.dropboxChoosingUpload());
+    app.action(foil::ui::Action::Back);
+    CHECK(!app.dropboxPopupOpen());
+    // The installed game keeps its upload row first.
+    app.action(foil::ui::Action::Down);
+    CHECK(app.dropboxFocused() == installed.applicationId);
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.dropboxAcceptLabel() == foil::tr("올리기"));
+    app.action(foil::ui::Action::Back);
+    CHECK(!app.dropboxPopupOpen());
   }
   {
     // One backup is still picked from a list, and a shared save's backup or

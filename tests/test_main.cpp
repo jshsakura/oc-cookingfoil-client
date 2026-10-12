@@ -17,6 +17,7 @@ int runI18nTests();
 int runSaveMetaTests();
 int runZipTests();
 int runDropboxUtilTests();
+int runDropboxRowsTests();
 int runSaveBackupTests();
 int runRetroTests();
 int runHistoryTests();
@@ -54,7 +55,7 @@ int main() {
   const int failures = runConfigTests() + runNetworkTests() +
                        runSessionTests() + runPairingTests() + runCatalogTests() + runUpdatesTests() + runInstalledTests() +
                        runSelectionTests() + runInstallerTests() + runPatchTests() + runI18nTests() +
-                       runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runHistoryTests() + runClientUpdateTests() + runHomebrewTests() + runHomebrewCardTests() + runResumeTests() + runForwarderTests() +
+                       runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runHistoryTests() + runClientUpdateTests() + runHomebrewTests() + runHomebrewCardTests() + runDropboxRowsTests() + runResumeTests() + runForwarderTests() +
                        runUiTests(app.renderer()) + runPairingUiTests(app.renderer()) + runShortcutUiTests(app.renderer());
   std::printf("Core tests: %d failures\n", failures);
   return (ok && failures == 0) ? 0 : 1;
