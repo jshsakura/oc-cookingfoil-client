@@ -609,6 +609,8 @@ private:
   // groups_ by id, rebuilt with it: a title ID finds its game without a scan.
   std::unordered_map<std::string, size_t> groupIndex_;
   const Group *findGroup(const std::string &id) const;
+  // An installed game's cover: the console's own icon, else the shop's.
+  std::string installedIcon(const InstalledGame &game);
   Screen screen_ = Screen::Home, previous_ = Screen::Home;
   bool sidebar_ = true, connected_ = false; // the cursor starts on the menu, on 홈
   // The cursor went to the menu only because the screen had nothing yet.

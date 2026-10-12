@@ -265,6 +265,15 @@ const Group *Application::findGroup(const std::string &id) const {
   const auto found = groupIndex_.find(id);
   return found == groupIndex_.end() ? nullptr : &groups_[found->second];
 }
+std::string Application::installedIcon(const InstalledGame &game) {
+  if (!game.iconBytes.empty()) {
+    auto key = "installed:" + game.titleId;
+    images_->provide(key, game.iconBytes);
+    return key;
+  }
+  const auto *group = findGroup(game.titleId);
+  return group ? group->representative.icon : "";
+}
 void Application::clearCatalog() {
   serverPatches_.clear();
   patchesLoaded_ = false;

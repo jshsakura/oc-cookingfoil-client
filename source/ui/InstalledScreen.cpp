@@ -205,12 +205,7 @@ void Application::installedScreen() {
   for (int n = 0; n < 18 && first + n < int(rows.size()); ++n) {
     const auto &g = installed_.games[rows[first + n]];
     const int x = 260 + n % 6 * 170, y = 146 + n / 6 * 240;
-    std::string icon = "installed:" + g.titleId;
-    if (!g.iconBytes.empty()) images_->provide(icon, g.iconBytes);
-    else {
-      const auto *match = findGroup(g.titleId);
-      icon = match ? match->representative.icon : "";
-    }
+    const auto icon = installedIcon(g);
     hit(x, y, 150, 220, [this, index = first + n] {
       sidebar_ = false;
       selected_ = index;

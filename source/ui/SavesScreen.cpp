@@ -147,12 +147,7 @@ void Application::savesScreen() {
     });
     if (inContent() && i == selected_ && !managedGame_) paint_.ring(260, y, 992, RowHeight, 16);
     paint_.rect(260, y, 992, RowHeight, Surface, 16);
-    std::string icon = "installed:" + g.titleId;
-    if (!g.iconBytes.empty()) images_->provide(icon, g.iconBytes);
-    else {
-      const auto *match = findGroup(g.titleId);
-      icon = match ? match->representative.icon : "";
-    }
+    const auto icon = installedIcon(g);
     cover(icon, 278, y + 10, 64, false, g.name);
     paint_.fonts.text(g.name, 360, y + 12, 21, Ink, true, 640);
     paint_.fonts.text(g.titleId, 360, y + 46, 16, Secondary);
