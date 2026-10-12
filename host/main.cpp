@@ -37,7 +37,7 @@ std::pair<foil::InstalledLibrary, foil::SaveEntry> fixtureInstalled(const std::s
 }
 } // namespace
 int main(int argc, char **argv) {
-  std::string shot, fixture, url, configPath, statePath = "out/state.json", language;
+  std::string shot, fixture, url, configPath, statePath = "out/state.json", language, self;
   int servePort = 0;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -60,6 +60,8 @@ int main(int argc, char **argv) {
       statePath = value;
     else if (arg == "--lang")
       language = value; // ko, en, ja or zh
+    else if (arg == "--self")
+      self = value; // as argv[0] on the console: sdmc:/switch/cookingfoil/cookingfoil.nro
     else {
       std::cerr << "Unknown option: " << arg << '\n';
       return 2;
@@ -153,6 +155,10 @@ int main(int argc, char **argv) {
   // 홈브류 from the fixture's list, beside what the fake SD card holds.
   if (servePort && !fixture.empty() && std::filesystem::exists(fixture + "/homebrew.json"))
     ui.previewHomebrew(foil::homebrew::parse(foil::readFile(fixture + "/homebrew.json"), "http://fixture"));
+  // The app's own path as the console passes it: from the album with no
+  // shortcut, the offer to make one (the fake SD card needs the .nro).
+  if (!self.empty())
+    ui.setSelfPath(self);
   ui.render();
   if (servePort)
     return foil::host::serveWeb(ui, app, servePort);
