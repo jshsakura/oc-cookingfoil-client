@@ -7,6 +7,11 @@
 #include <string>
 #include <vector>
 namespace foil::homebrew {
+// One file of a folder install, saved at sdmc:/<path>.
+struct File {
+  std::string path, sha256, url; // sha256: 64 lowercase hex digits
+  uint64_t size = 0;
+};
 struct App {
   std::string id, name, version, author, description, hash, fileName, iconUrl, downloadUrl, source, releasedAt,
       repoUrl;
@@ -14,6 +19,11 @@ struct App {
   // The HOME Menu shortcut the server built for it; empty when there is none.
   std::string forwarderUrl, forwarderTitleId;
   uint64_t forwarderSize = 0;
+  // Where the .nro goes from the SD card root (switch/<app>/<file>.nro), and
+  // for a folder install every file of it, the .nro included; empty files
+  // means the .nro alone from downloadUrl.
+  std::string installPath;
+  std::vector<File> files;
 };
 // GET /api/homebrew's list; entries missing what is needed, or with a file
 // name that could leave its folder, are left out.
@@ -28,7 +38,8 @@ std::string sdPath(const std::string &fileName);
 std::string etagSha256(const std::string &etag);
 // What this console holds, kept in sdmc:/switch/cookingfoil/homebrew.json.
 struct Record {
-  std::string hash, version, file; // file: from the SD card root
+  std::string hash, version, file; // file: the .nro, from the SD card root
+  std::vector<std::string> files;  // a folder install's other files, for removal
 };
 using Ledger = std::map<std::string, Record>; // by app id
 Ledger parseLedger(const std::string &json);

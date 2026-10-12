@@ -58,6 +58,35 @@ int runHomebrewTests() {
           again.front().hash == apps.front().hash && again.front().size == apps.front().size);
   }
   CHECK(sdPath("ytb-player.nro") == "switch/ytb-player/ytb-player.nro");
+  // Folder installs: the server's install_path and files, each checked to
+  // stay inside the app's folder.
+  {
+    const std::string sha(64, 'c');
+    auto e = entry;
+    e.insert(e.size() - 1, R"(,"install_path":"switch/ytb/ytb-player.nro","install_dir":"switch/ytb","files":[)"
+                           R"({"path":"switch/ytb/ytb-player.nro","size":10,"sha256":")" + sha + R"(","url":"/f/1"},)"
+                           R"({"path":"switch/ytb/data/a.bin","size":5,"sha256":")" + sha + R"(","url":"/f/2"}])");
+    const auto folder = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
+    CHECK(folder.size() == 1);
+    if (!folder.empty()) {
+      CHECK(folder.front().installPath == "switch/ytb/ytb-player.nro");
+      CHECK(folder.front().files.size() == 2 && folder.front().files[1].url == "https://shop.example/f/2" &&
+            folder.front().files[1].size == 5 && folder.front().files[1].sha256 == sha);
+      const auto again = parse(R"({"homebrew":[)" + serialize(folder.front()) + "]}", "");
+      CHECK(again.size() == 1 && again.front().files.size() == 2 && again.front().installPath == "switch/ytb/ytb-player.nro");
+    }
+    const auto rejected = [&](const std::string &from, const std::string &to) {
+      auto bad = e;
+      bad.replace(bad.find(from), from.size(), to);
+      return parse(R"({"homebrew":[)" + bad + "]}", "https://shop.example").empty();
+    };
+    CHECK(rejected("switch/ytb/data/a.bin", "switch/ytb/../../a.bin"));
+    CHECK(rejected("switch/ytb/data/a.bin", "/switch/ytb/a.bin"));
+    CHECK(rejected("switch/ytb/data/a.bin", "switch/other/a.bin"));
+    CHECK(rejected(R"("install_path":"switch/ytb/ytb-player.nro")", R"("install_path":"atmosphere/x.nro")"));
+  }
+  // Without install_path the app goes to switch/<stem>/<file>.
+  if (!apps.empty()) CHECK(apps.front().installPath == "switch/ytb-player/ytb-player.nro" && apps.front().files.empty());
   // The download's ETag: the file's sha256, quoted, maybe prefixed.
   const std::string sha(64, 'a');
   CHECK(etagSha256("\"sha256:" + std::string(64, 'A') + "\"") == sha);
@@ -70,10 +99,15 @@ int runHomebrewTests() {
   hasher.update("bc", 2);
   CHECK(hasher.hex() == foil::update::sha256Hex("abc"));
   // The ledger round trips; states follow the hash and the file.
-  Ledger ledger{{"gh-9c9ef5794087", {"sha256:fb7d", "1.1.0", "switch/ytb-player/ytb-player.nro"}}};
+  Ledger ledger{{"gh-9c9ef5794087", {"sha256:fb7d", "1.1.0", "switch/ytb-player/ytb-player.nro", {}}}};
   const auto read = parseLedger(serializeLedger(ledger));
   CHECK(read.size() == 1 && read.at("gh-9c9ef5794087").file == "switch/ytb-player/ytb-player.nro");
   CHECK(parseLedger("garbage").empty());
+  {
+    Ledger folder{{"gh-1", {"h", "1", "switch/ytb/ytb.nro", {"switch/ytb/data/a.bin", "../escape"}}}};
+    const auto back = parseLedger(serializeLedger(folder));
+    CHECK(back.at("gh-1").files == std::vector<std::string>{"switch/ytb/data/a.bin"});
+  }
   if (!apps.empty()) {
     const auto there = [](const std::string &) { return true; };
     const auto gone = [](const std::string &) { return false; };
@@ -83,6 +117,9 @@ int runHomebrewTests() {
     auto newer = apps.front();
     newer.hash = "sha256:0000";
     CHECK(status(newer, ledger, there) == Status::Update);
+    auto moved = apps.front();
+    moved.installPath = "switch/ytb/ytb-player.nro";
+    CHECK(status(moved, ledger, there) == Status::Update);
   }
   return failures;
 }

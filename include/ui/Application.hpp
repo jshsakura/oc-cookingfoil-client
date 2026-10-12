@@ -250,6 +250,8 @@ private:
   std::vector<int> homebrewRows() const; // homebrew_ indexes in this tab and search
   bool getHomebrew(const homebrew::App &app);
   void removeHomebrew(const homebrew::App &app);
+  void settleHomebrew(const homebrew::App &app);
+  void removeEmptyFolders(const std::string &path); // from the SD card root
   void saveHomebrewLedger();
   void home();
   void library();

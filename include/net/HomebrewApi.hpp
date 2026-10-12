@@ -7,8 +7,9 @@ namespace foil::net {
 // and leaves `apps` alone; `etag` takes the new one.
 bool homebrewList(const Server &server, const State &state, std::string &etag, std::vector<homebrew::App> &apps,
                   bool &unchanged, Error &error, const std::atomic<bool> *cancel);
-// Saves the app at sd/<homebrew::sdPath>, through a .part file that replaces
-// it only once complete and matching the download's ETag.
+// Saves the app at sd/<app.installPath> (a folder install: each of its files
+// at sd/<path>), each through a .part file that replaces the old one only
+// once complete and matching its checksum.
 bool homebrewDownload(const Server &server, const State &state, const homebrew::App &app, const std::string &sd,
                       std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel);
 } // namespace foil::net

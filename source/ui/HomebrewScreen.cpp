@@ -73,15 +73,17 @@ bool Application::getHomebrew(const homebrew::App &app) {
     message(tr("지금 받는 것이 끝난 뒤 다시 시도합니다."));
     return false;
   }
-  if (app.size && sdFree_ && *sdFree_ < app.size + (8u << 20)) {
+  uint64_t bytes = app.files.empty() ? app.size : 0;
+  for (const auto &file : app.files) bytes += file.size;
+  if (bytes && sdFree_ && *sdFree_ < bytes + (8u << 20)) {
     alertTitle_ = tr("홈브류를 받을 수 없습니다");
-    alert_ = trf("SD 카드 공간이 부족합니다. {0}가 필요합니다.", {formatBytes(app.size)});
+    alert_ = trf("SD 카드 공간이 부족합니다. {0}가 필요합니다.", {formatBytes(bytes)});
     return false;
   }
   const auto server = session_ ? session_->server() : Server{};
   const auto state = state_;
   const auto sd = sdRoot_;
-  retroBytes_ = app.size;
+  retroBytes_ = bytes;
   retroCancel_ = false;
   if (!runRetroJob("homebrew:" + app.id, [this, server, state, sd, app]() -> std::function<void()> {
         Error error;
@@ -91,7 +93,7 @@ bool Application::getHomebrew(const homebrew::App &app) {
         return [this, ok, error, app, cancelled, received] {
           storageAt_ = 0;
           finishRetroEntry("homebrew", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
-                           ok || cancelled ? "" : error.message, ok ? (app.size ? app.size : received) : received);
+                           ok || cancelled ? "" : error.message, received);
           if (cancelled && !ok) {
             message(trf("{0} 다운로드를 취소했습니다.", {app.name}));
             return;
@@ -101,10 +103,7 @@ bool Application::getHomebrew(const homebrew::App &app) {
             alert_ = error.message;
             return;
           }
-          const auto file = homebrew::sdPath(app.fileName);
-          homebrewLedger_[app.id] = {app.hash, app.version, file};
-          homebrewOnCard_[file] = true;
-          saveHomebrewLedger();
+          settleHomebrew(app);
           if (installShortcut(app.name, app.iconUrl, app.forwarderUrl, app.forwarderTitleId, app.forwarderSize)) return;
           message(trf("{0}을(를) 받았습니다. hbmenu에서 실행합니다.", {app.name}));
         };
@@ -115,8 +114,40 @@ bool Application::getHomebrew(const homebrew::App &app) {
   startRetroEntry("homebrew", app.name, app.iconUrl, app.downloadUrl, app.size, homebrew::serialize(app));
   return true;
 }
-// The app's file, its folder when nothing else is left there, and its
-// ledger entry; files the ledger does not list stay.
+// After a download: the ledger points at the new place, and an older copy
+// elsewhere goes (the one a previous build kept, or one straight under
+// switch/), so no duplicate stays. Files a folder install no longer lists
+// stay put: they may be the app's settings or saves.
+void Application::settleHomebrew(const homebrew::App &app) {
+  std::error_code ec;
+  const auto previous = homebrewLedger_.find(app.id);
+  std::vector<std::string> stale{"switch/" + app.fileName};
+  if (previous != homebrewLedger_.end()) stale.push_back(previous->second.file);
+  for (const auto &old : stale)
+    if (old != app.installPath && fileExists(sdRoot_ + "/" + old)) {
+      std::filesystem::remove(sdRoot_ + "/" + old, ec);
+      removeEmptyFolders(old);
+      homebrewOnCard_.erase(old);
+    }
+  homebrew::Record record{app.hash, app.version, app.installPath, {}};
+  for (const auto &file : app.files)
+    if (file.path != app.installPath) record.files.push_back(file.path);
+  homebrewLedger_[app.id] = record;
+  homebrewOnCard_[app.installPath] = true;
+  saveHomebrewLedger();
+}
+// Empty folders left behind, up to (not including) switch/.
+void Application::removeEmptyFolders(const std::string &path) {
+  std::error_code ec;
+  for (auto folder = std::filesystem::path(path).parent_path(); folder.has_parent_path() && folder != "switch";
+       folder = folder.parent_path()) {
+    const auto full = sdRoot_ + "/" + folder.string();
+    if (!std::filesystem::is_empty(full, ec) || ec) break;
+    std::filesystem::remove(full, ec);
+  }
+}
+// The app's files (a folder install's too), the folders they leave empty,
+// and its ledger entry; files the ledger does not list stay.
 void Application::removeHomebrew(const homebrew::App &app) {
   const auto found = homebrewLedger_.find(app.id);
   if (found == homebrewLedger_.end()) return;
@@ -127,8 +158,11 @@ void Application::removeHomebrew(const homebrew::App &app) {
     alert_ = trf("파일을 지우지 못했습니다: {0}", {found->second.file});
     return;
   }
-  const auto folder = std::filesystem::path(path).parent_path();
-  if (std::filesystem::is_empty(folder, ec) && !ec) std::filesystem::remove(folder, ec);
+  for (const auto &file : found->second.files) {
+    std::filesystem::remove(sdRoot_ + "/" + file, ec);
+    removeEmptyFolders(file);
+  }
+  removeEmptyFolders(found->second.file);
   homebrewOnCard_.erase(found->second.file);
   homebrewLedger_.erase(found);
   saveHomebrewLedger();
@@ -266,7 +300,7 @@ void Application::homebrewAskDialog() {
   if (!app.author.empty()) facts += (facts.empty() ? "" : " · ") + app.author;
   if (app.size) facts += (facts.empty() ? "" : " · ") + formatBytes(app.size);
   paint_.fonts.text(facts, textX, y + 38, 18, Ink, true, textW);
-  std::string where = homebrew::sdPath(app.fileName);
+  std::string where = app.installPath;
   if (app.releasedAt.size() >= 10) where = app.releasedAt.substr(0, 10) + " · " + where;
   paint_.fonts.text(where, textX, y + 68, 16, Secondary, false, textW);
   if (described) paint_.fonts.wrapped(app.description, textX, y + 106, 18, Ink, textW, Lines);
@@ -281,7 +315,7 @@ void Application::homebrewRemoveDialog() {
   const auto body = modal(700, 24 + 70 + 16, tr("홈브류를 지우시겠습니까?"), tr("취소"), "", tr("지우기"), 37);
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(app.name, x, y, 21, Ink, true, body.w - 64);
-  paint_.fonts.text(trf("SD 카드에서 {0}을(를) 지웁니다.", {homebrew::sdPath(app.fileName)}), x, y + 38, 19, Secondary,
+  paint_.fonts.text(trf("SD 카드에서 {0}을(를) 지웁니다.", {app.installPath}), x, y + 38, 19, Secondary,
                     false, body.w - 64);
 }
 } // namespace foil::ui
