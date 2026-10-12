@@ -214,7 +214,7 @@ std::vector<PatchChoice> patchChoices(const Application::PatchRow &row) {
     out.push_back({PatchOp::Game, tr("게임 받으러 가기"), tr("서버에서 이 게임을 설치합니다. 패치는 게임이 있어야 적용됩니다.")});
   if (!row.record) {
     if (row.onServer)
-      out.push_back({PatchOp::Get, tr("받고 켜기"), tr("SD 카드에 받아 바로 켭니다. 다른 패치와 겹치면 꺼 둡니다.")});
+      out.push_back({PatchOp::Get, tr("다운로드 및 적용"), tr("SD 카드에 받아 바로 적용합니다. 겹치는 다른 패치는 꺼 둡니다.")});
     return out;
   }
   if (updateAvailable(row))
