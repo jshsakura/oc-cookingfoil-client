@@ -32,9 +32,14 @@ float Application::myGamesTabs(float right) {
                     260 + paint_.fonts.measure(tr("내 게임"), 30, true) + 24, {0, count("update"), count("dlc")});
 }
 // The Y button between 내 게임's tabs and search (the order on 설치됨,
-// 모두 업데이트 on the others), as wide as its label.
-float Application::myGamesButtonWidth(const std::string &label) {
-  return paint_.fonts.measure(label, 18, true) + 106;
+// 모두 업데이트 or 모두 설치 on the others).
+float Application::myGamesButtonWidth(const std::string &) {
+  // One width on all three tabs, the longest label's, so switching tabs
+  // never moves the tabs or the title.
+  float widest = std::max(paint_.fonts.measure(tr("모두 업데이트"), 18, true), paint_.fonts.measure(tr("모두 설치"), 18, true));
+  for (int n = 0; n < InstalledSortCount; ++n)
+    widest = std::max(widest, paint_.fonts.measure(installedSortLabel(InstalledSort(n)), 18, true));
+  return widest + 106;
 }
 std::vector<UpdateCandidate> Application::updateRows() const {
   auto rows = pendingUpdates();
@@ -121,9 +126,12 @@ void Application::updates() {
     const auto local = std::find_if(installed_.games.begin(), installed_.games.end(), [&](const auto &g) { return g.titleId == row.baseId; });
     if (row.item.type == "update" && local != installed_.games.end() && !local->displayVersion.empty())
       installed = local->displayVersion;
-    const auto server = row.item.type == "dlc" && !row.installedVersion ? row.item.name : versionLabel(row.item);
-    paint_.fonts.text(installed + " → " + server, 382, y + 65, 19, Secondary, false, 600);
-    paint_.pill(row.item.type == "update" ? tr("업데이트|항목") : row.installedVersion ? tr("DLC 업데이트") : tr("새 DLC"), 998, y + 22);
+    // An update says which version it brings; a DLC says what it is.
+    const auto detail = row.item.type == "dlc" ? row.item.name : installed + " → " + versionLabel(row.item);
+    paint_.fonts.text(detail, 382, y + 65, 19, Secondary, false, 600);
+    // Its kind, at the right end above the size.
+    const std::string kind = row.item.type == "update" ? tr("업데이트|항목") : row.installedVersion ? tr("DLC 업데이트") : tr("새 DLC");
+    paint_.pill(kind, 1230 - (paint_.fonts.measure(kind, 15, true) + 18), y + 22);
     const auto size = formatBytes(row.item.size);
     paint_.fonts.text(size, 1230 - paint_.fonts.measure(size, 19, true), y + 65, 19, Ink, true);
   }
