@@ -1,6 +1,9 @@
 #include "core/ShopSaves.hpp"
+#include "core/Homebrew.hpp"
+#include "core/I18n.hpp"
 #include "core/Json.hpp"
 #include <algorithm>
+#include <filesystem>
 namespace foil::shopsaves {
 namespace {
 std::string url(json_object *object, const char *key, const std::string &base) {
@@ -26,7 +29,16 @@ std::vector<ShopSave> parse(const std::string &json, const std::string &base) {
     s.titleId = stringField(object, "titleId");
     std::transform(s.titleId.begin(), s.titleId.end(), s.titleId.begin(), ::toupper);
     s.url = url(object, "url", base);
-    if (s.id.empty() || s.id.size() > 64 || !hexId(s.titleId) || s.url.empty() ||
+    // No Title ID: an app's save, for its own switch/<app> folder only.
+    if (!field(object, "titleId")) {
+      s.homebrewApp = stringField(object, "homebrew");
+      s.installRoot = stringField(object, "installRoot");
+      while (!s.installRoot.empty() && s.installRoot.back() == '/') s.installRoot.pop_back();
+      if (!homebrew::appFolderAllowed(s.homebrewApp) || s.installRoot != "switch/" + s.homebrewApp) continue;
+    } else if (!hexId(s.titleId)) {
+      continue;
+    }
+    if (s.id.empty() || s.id.size() > 64 || s.url.empty() ||
         s.id.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos)
       continue;
     s.name = stringField(object, "name", s.id);
@@ -69,6 +81,34 @@ bool pathAllowed(const std::string &path) {
     if (slash == std::string::npos) return true;
     start = slash + 1;
   }
+}
+bool homebrewPathAllowed(const ShopSave &save, const std::string &path) {
+  return !save.homebrewApp.empty() && save.installRoot == "switch/" + save.homebrewApp && pathAllowed(path) &&
+         homebrew::insideApp(save.homebrewApp, save.installRoot + "/" + path);
+}
+bool placeFiles(const std::string &from, const std::string &to, const std::string &keep, std::string &error) {
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  std::vector<std::string> files;
+  for (auto it = fs::recursive_directory_iterator(from, ec); !ec && it != fs::recursive_directory_iterator();
+       it.increment(ec))
+    if (it->is_regular_file(ec)) files.push_back(it->path().string().substr(from.size() + 1));
+  if (ec) {
+    error = tr("받은 세이브 파일을 읽지 못했습니다.");
+    return false;
+  }
+  const auto move = [&](const std::string &a, const std::string &b, const std::string &rel) {
+    makeDirectories(fs::path(b).parent_path().string());
+    fs::rename(a, b, ec);
+    if (ec) error = trf("파일을 쓰지 못했습니다: {0}", {rel});
+    return !ec;
+  };
+  for (const auto &rel : files) {
+    if (fs::exists(to + "/" + rel, ec) && !move(to + "/" + rel, keep + "/" + rel, rel)) return false;
+    if (!move(from + "/" + rel, to + "/" + rel, rel)) return false;
+  }
+  fs::remove_all(from, ec);
+  return true;
 }
 std::string gameName(const ShopSave &save, const std::string &languageCode) {
   static const char *codes[] = {"ko", "en", "ja", "zh"};

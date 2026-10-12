@@ -225,6 +225,91 @@ int runPatchTests() {
       CHECK(list[2].gameName.empty() && list[2].gameNames.empty());
     }
   }
+  // An app's patch: no Title ID, its app's folder instead. Entries that name
+  // neither, or an app folder that is not one safe name, are left out.
+  {
+    const auto list = foil::net::parsePatches(std::string(R"({"patches":[
+      {"id":"hb-1","title_id":null,"homebrew":"sm64","kinds":["homebrew"],"name":"HD 텍스처","size":10},
+      {"id":"hb-2","title_id":null,"homebrew":"../atmosphere","kinds":["homebrew"]},
+      {"id":"hb-3","title_id":null,"homebrew":"a/b"},
+      {"id":"hb-4","title_id":null},
+      {"id":"g-1","title_id":"01001730144DA000","homebrew":"sm64","name":"게임 패치"}]})"));
+    CHECK(list.size() == 2);
+    if (list.size() == 2) {
+      CHECK(list[0].id == "hb-1" && list[0].titleId.empty() && list[0].homebrewApp == "sm64");
+      CHECK(list[0].kinds.size() == 1 && list[0].kinds[0] == "homebrew" && list[0].name == "HD 텍스처");
+      // A game patch stays a game patch.
+      CHECK(list[1].titleId == "01001730144DA000" && list[1].homebrewApp.empty());
+    }
+  }
+  {
+    foil::UserPatch app;
+    app.id = "hb-1";
+    app.homebrewApp = "sm64";
+    CHECK(foil::patchPathAllowed(app, "switch/sm64/mods/hd.bin"));
+    CHECK(!foil::patchPathAllowed(app, "switch/other/hd.bin"));
+    CHECK(!foil::patchPathAllowed(app, "switch/sm64/../other/hd.bin"));
+    CHECK(!foil::patchPathAllowed(app, Romfs));
+    CHECK(!foil::patchPathAllowed(app, "atmosphere/exefs_patches/res/ABCD.ips"));
+    const auto game = patch("g");
+    CHECK(foil::patchPathAllowed(game, Romfs) && !foil::patchPathAllowed(game, "switch/sm64/a"));
+
+    const auto hbRoot = fs::temp_directory_path() / ("cf-hbpatches-" + std::to_string(getpid()));
+    fs::remove_all(hbRoot);
+    const auto hbSd = (hbRoot / "sd").string(), hbStore = (hbRoot / "sd/switch/cookingfoil/patches").string();
+    const std::string Mod = "switch/sm64/mods/hd.bin", Config = "switch/sm64/config.ini";
+    // The tar may only write inside the app's folder.
+    const auto unpackApp = [&](const std::string &dir, const std::string &archive) {
+      foil::TarWriter writer(dir, [&](const std::string &path) { return foil::patchPathAllowed(app, path); });
+      return writer.feed(archive.data(), archive.size()) && writer.finish();
+    };
+    CHECK(!unpackApp((hbRoot / "x").string(), tar({{"switch/other/a.bin", "x"}})));
+    CHECK(!fs::exists(hbRoot / "x/switch/other"));
+    CHECK(!unpackApp((hbRoot / "x").string(), tar({{Romfs, "x"}})));
+
+    write(hbSd + "/switch/sm64/sm64.nro", "app");
+    write(hbSd + "/" + Config, "mine");
+    foil::PatchStore store(hbSd, hbStore);
+    foil::Error error;
+    CHECK(store.load(error));
+    // A staging folder holding a file outside the folder is refused at commit.
+    write(store.staging("bad") + "/switch/other/a.bin", "x");
+    auto bad = app;
+    bad.id = "bad";
+    CHECK(!store.commit(bad, error) && !store.find("bad"));
+    error = {};
+    fs::remove_all(store.staging("bad"));
+
+    const auto archive = tar({{Mod, "hd"}, {Config, "patched"}});
+    CHECK(unpackApp(store.staging("hb-1"), archive) && store.commit(app, error));
+    CHECK(store.find("hb-1") && store.find("hb-1")->homebrewApp == "sm64");
+    // The app's own files are set aside, not a conflict, and come back on disable.
+    CHECK(store.conflicts("hb-1").empty());
+    CHECK(store.enable("hb-1", error));
+    CHECK(foil::readFile(hbSd + "/" + Mod) == "hd" && foil::readFile(hbSd + "/" + Config) == "patched");
+    foil::PatchStore reopened(hbSd, hbStore);
+    CHECK(reopened.load(error) && reopened.find("hb-1")->on && reopened.find("hb-1")->homebrewApp == "sm64");
+    CHECK(foil::readFile(hbSd + "/" + Config) == "patched"); // load leaves a set-aside file of an enabled patch
+    CHECK(reopened.disable("hb-1", error));
+    CHECK(!fs::exists(hbSd + "/" + Mod) && foil::readFile(hbSd + "/" + Config) == "mine");
+    CHECK(fs::exists(hbSd + "/switch/sm64/sm64.nro") && !fs::exists(hbStore + "/_base/" + Config));
+    // Power loss mid-disable: the patch file is back in the store, the
+    // app's own file still set aside; load puts it back.
+    CHECK(reopened.enable("hb-1", error));
+    {
+      const auto ledger = hbStore + "/ledger.json";
+      foil::Error parse;
+      auto json = foil::parseJson(foil::readFile(ledger), parse);
+      json_object_object_add(foil::field(foil::field(json.get(), "patches"), "hb-1"), "pending",
+                             json_object_new_string("disable"));
+      write(ledger, json_object_to_json_string(json.get()));
+      fs::rename(hbSd + "/" + Config, hbStore + "/hb-1/" + Config);
+      foil::PatchStore again(hbSd, hbStore);
+      CHECK(again.load(error) && !again.find("hb-1")->on);
+      CHECK(foil::readFile(hbSd + "/" + Config) == "mine" && !fs::exists(hbSd + "/" + Mod));
+    }
+    fs::remove_all(hbRoot);
+  }
   {
     // A skipped entry is read past: nothing written, the next one still lands.
     const auto dir = root / "skip";

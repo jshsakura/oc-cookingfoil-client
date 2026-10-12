@@ -9,7 +9,9 @@ namespace foil {
 // out from the SD card root, e.g. atmosphere/contents/<TID>/romfs/...
 struct UserPatch {
   std::string id, titleId, name, version, gameVersion, author, description, hash;
-  std::vector<std::string> kinds; // romfs, exefs, cheats, exefs_patches, fpslocker
+  std::vector<std::string> kinds; // romfs, exefs, cheats, exefs_patches, fpslocker, homebrew
+  // An app's patch has no Title ID: every file goes below switch/<app>/.
+  std::string homebrewApp;
   uint64_t size = 0;
   int files = 0;
   int64_t updatedAt = 0;
@@ -21,6 +23,8 @@ struct UserPatch {
 // Whether a patch for titleId may write this SD-root relative path. Only the
 // game's own contents folder, exefs patches and FPSLocker patches qualify.
 bool patchPathAllowed(const std::string &titleId, const std::string &path);
+// The same for any patch: an app's patch may write only below switch/<app>/.
+bool patchPathAllowed(const UserPatch &patch, const std::string &path);
 // Cheat files hold one build's cheats; enabled patches share one file.
 bool isCheatPath(const std::string &path);
 const char *patchKindLabel(const std::string &kind);
@@ -57,6 +61,9 @@ private:
 
 struct PatchRecord {
   std::string id, titleId, name, version, hash;
+  // An app's patch: files the app already had at its paths are set aside
+  // while it is on, not a conflict, and come back when it goes off.
+  std::string homebrewApp;
   bool on = false;
   // Set while files move, so an interrupted enable or disable can finish.
   std::string pending; // "", "enable" or "disable"
@@ -99,6 +106,8 @@ private:
   bool finishEnable(PatchRecord &record, Error &error);
   bool finishDisable(PatchRecord &record, Error &error);
   bool rebuildCheat(const std::string &path, Error &error);
+  // An app's file in _base an app patch that is on (or moving) set aside.
+  bool setAside(const std::string &path) const;
   std::string sdRoot_, storeRoot_;
   std::map<std::string, PatchRecord> records_;
   std::set<std::string> cheatPaths_; // cheat files we currently write

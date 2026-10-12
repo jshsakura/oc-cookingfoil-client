@@ -242,6 +242,42 @@ int runSaveBackupTests() {
     CHECK(listBackups(keeperRoot(sd), Title).size() == 2);
     fsys::remove_all(sd);
   }
+  // An app's save: no Title ID, files for switch/<app>/ on the SD card.
+  {
+    const auto list = foil::shopsaves::parse(R"({"saves":[
+      {"id":"hb-sm64-1","titleId":null,"homebrew":"sm64","installRoot":"switch/sm64","name":"전 스테이지","url":"/api/saves/hb-sm64-1/download"},
+      {"id":"hb-2","titleId":null,"homebrew":"sm64","installRoot":"switch/other","url":"/x"},
+      {"id":"hb-3","titleId":null,"homebrew":"../x","installRoot":"switch/../x","url":"/x"},
+      {"id":"hb-4","titleId":null,"homebrew":"sm64","url":"/x"},
+      {"id":"hb-5","titleId":null,"url":"/x"}]})", "https://shop.example");
+    CHECK(list.size() == 1);
+    if (!list.empty()) {
+      CHECK(list[0].titleId.empty() && list[0].homebrewApp == "sm64" && list[0].installRoot == "switch/sm64");
+      CHECK(foil::shopsaves::homebrewPathAllowed(list[0], "sm64_save_file.bin"));
+      CHECK(foil::shopsaves::homebrewPathAllowed(list[0], "saves/slot1.sav"));
+      CHECK(!foil::shopsaves::homebrewPathAllowed(list[0], "../other/a"));
+      CHECK(!foil::shopsaves::homebrewPathAllowed(list[0], "a/../../b"));
+      CHECK(!foil::shopsaves::homebrewPathAllowed(list[0], "/abs"));
+      CHECK(!foil::shopsaves::homebrewPathAllowed(list[0], ""));
+    }
+    // A game save is never treated as an app's.
+    foil::shopsaves::ShopSave game;
+    game.titleId = "0100152000022000";
+    CHECK(!foil::shopsaves::homebrewPathAllowed(game, "save.bin"));
+    // Unpacked files go into place; files they replace are kept aside first.
+    const auto sd = scratch("hbsave");
+    const auto staging = sd + "/staging", target = sd + "/switch/sm64", kept = sd + "/kept";
+    write(staging + "/save.bin", "unlocked");
+    write(staging + "/saves/slot1.sav", "slot");
+    write(target + "/save.bin", "mine");
+    write(target + "/sm64.nro", "app");
+    std::string error;
+    CHECK(foil::shopsaves::placeFiles(staging, target, kept, error));
+    CHECK(read(target + "/save.bin") == "unlocked" && read(target + "/saves/slot1.sav") == "slot");
+    CHECK(read(kept + "/save.bin") == "mine" && !fsys::exists(kept + "/saves/slot1.sav"));
+    CHECK(read(target + "/sm64.nro") == "app" && !fsys::exists(staging));
+    fsys::remove_all(sd);
+  }
   // Dropbox's zip, save-keeper's format: the files plus .dropkeep.meta, and
   // back into backups/<TID>/<name> marked "cloud".
   {
