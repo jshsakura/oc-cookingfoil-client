@@ -443,7 +443,8 @@ void Application::poll() {
   pollHomebrew();
   ensureOwnShortcut();
   // No dimming or auto-sleep while something downloads.
-  const bool downloading = installer_.running() || retroDownloading() || (patchWorker_.joinable() && !patchBusy_.empty());
+  const bool downloading = installer_.running() || retroDownloading() || (patchWorker_.joinable() && !patchBusy_.empty()) ||
+                           appUpdate_ == AppUpdate::Downloading;
   if (downloading != awake_) {
     awake_ = downloading;
     platform::keepAwake(awake_);

@@ -20,7 +20,16 @@ static void openSearchKeyboard(foil::ui::Application &ui) {
   swkbdClose(&keyboard);
 }
 int main(int argc, char **argv) {
-  if (R_FAILED(socketInitializeDefault()))
+  // Larger TCP receive buffers than the default keep a fast link full: a
+  // download is one long stream. If the system cannot spare the memory,
+  // the defaults still work.
+  SocketInitConfig sockets = *socketGetDefaultInitConfig();
+  sockets.tcp_tx_buf_size = 0x20000;
+  sockets.tcp_rx_buf_size = 0x100000;
+  sockets.tcp_tx_buf_max_size = 0x100000;
+  sockets.tcp_rx_buf_max_size = 0x400000;
+  sockets.sb_efficiency = 4;
+  if (R_FAILED(socketInitialize(&sockets)) && R_FAILED(socketInitializeDefault()))
     return 1;
   const bool nifm = R_SUCCEEDED(nifmInitialize(NifmServiceType_User));
   if (R_FAILED(romfsInit())) {

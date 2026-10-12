@@ -79,6 +79,10 @@ void keepAwake(bool on) {
   // Media playback state turns off auto-dimming and auto-sleep in both
   // applet and application mode, and is cleared when the app exits.
   appletSetMediaPlaybackState(on);
+  // The CPU at its boost clock while data comes in: TLS and writing to the
+  // card are CPU-bound. The firmware drops the GPU to its floor meanwhile,
+  // which a 2D screen does not miss. Back to normal when the transfer ends.
+  appletSetCpuBoostMode(on ? ApmCpuBoostMode_FastLoad : ApmCpuBoostMode_Normal);
 #else
   (void)on;
 #endif
