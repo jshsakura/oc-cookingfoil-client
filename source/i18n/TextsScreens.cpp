@@ -163,6 +163,7 @@ const Translation rows[] = {
     {"일본판", "Japan", "日本版", "日版"},
     {"북미판", "US", "北米版", "美版"},
     {"유럽판", "Europe", "欧州版", "欧版"},
+    {"본체 시계가 {0}(으)로 맞지 않아 보안 연결을 만들 수 없습니다. 설정에서 날짜와 시간을 맞춘 뒤 다시 시도합니다.", "The console's clock reads {0}, so a secure connection cannot be made. Set the date and time in System Settings, then try again.", "本体の時計が{0}になっているため、安全な接続を作れません。設定で日付と時刻を合わせてから再度お試しください。", "主机时钟为 {0}，无法建立安全连接。请在设置中校准日期和时间后重试。"},
     {"전체 다시 받기", "Get all again", "すべて入手し直す", "全部重新获取"},
     {"{0} 코어가 없어 게임을 받은 뒤 함께 받습니다.", "The {0} core is missing, so it comes down right after the game.", "{0} コアがないため、ゲームの後に一緒に入手します。", "缺少 {0} 核心，将在游戏下载后一并获取。"},
     {"{0}명 평가", "{0} ratings", "{0}人が評価", "{0} 人评分"},

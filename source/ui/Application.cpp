@@ -470,17 +470,16 @@ void Application::poll() {
       pairPollAt_ = 0;
       refresh();
     }
-    // Not connected: try the server again every few seconds. The console's
-    // own online check only picks the wording; it can say offline on a
-    // network that works (DNS that blocks the vendor's test servers), so it
-    // never stops a retry.
-    // A name that did not resolve or a server that did not answer is
-    // usually the network still coming up (just woken, Wi-Fi joining):
-    // those errors were never retried before, and the app stayed stuck.
-    constexpr uint32_t retryMs = 5000;
-    if (!network_.joinable() && !connected_ && session_ && error_ && !pairingPending_ &&
-        SDL_GetTicks() - offlineCheckAt_ >= retryMs) {
+    // Not connected: a few more tries, then it waits for - (새로고침).
+    // Any error counts (a name that did not resolve is often the network
+    // still joining); the console's own online check never stops a try,
+    // since it can read offline on a network that works.
+    constexpr uint32_t RetryMs = 5000;
+    constexpr int MaxRetries = 3;
+    if (!network_.joinable() && !connected_ && session_ && error_ && !pairingPending_ && retries_ < MaxRetries &&
+        SDL_GetTicks() - offlineCheckAt_ >= RetryMs) {
       offlineCheckAt_ = SDL_GetTicks();
+      ++retries_;
       refresh();
     }
     return;
@@ -536,6 +535,7 @@ void Application::poll() {
   if (screen_ == Screen::Detail)
     screen_ = previous_;
   // A 304 keeps the catalog already on screen.
+  retries_ = 0;
   if (session_->unchanged() && !groups_.empty()) {
     connected_ = true;
     error_ = {};
@@ -910,6 +910,7 @@ void Application::action(Action a) {
     return;
   }
   if (a == Action::Reload) {
+    retries_ = 0; // a refresh by hand earns the automatic tries again
     reload();
     return;
   }

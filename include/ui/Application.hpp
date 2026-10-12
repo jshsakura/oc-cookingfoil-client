@@ -630,6 +630,7 @@ private:
   bool pairingPending_ = false;
   net::PairingInfo pairingInfo_;
   uint32_t pairPollAt_ = 0, offlineCheckAt_ = 0;
+  int retries_ = 0; // automatic reconnects since the last success or -
   InstalledLibrary installed_, incomingInstalled_;
   std::vector<SaveEntry> saves_, incomingSaves_;
   Error deviceError_, incomingDeviceError_;

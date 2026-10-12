@@ -9,6 +9,7 @@
 #include <cctype>
 #include <limits>
 #include <cstdio>
+#include <ctime>
 #include <memory>
 #include <set>
 #include <chrono>
@@ -114,12 +115,53 @@ std::string connectionError(int code, const std::string& url) {
     case CURLE_OPERATION_TIMEDOUT:
         return trf("{0}에서 응답이 없습니다. 잠시 뒤 다시 시도합니다.", {host});
     case CURLE_PEER_FAILED_VERIFICATION:
-    case CURLE_SSL_CONNECT_ERROR:
+    case CURLE_SSL_CONNECT_ERROR: {
+        // Certificates are checked against the console's clock; one left far
+        // in the past (no time sync) fails every secure connection.
+        const auto now = std::time(nullptr);
+        std::tm local{};
+        localtime_r(&now, &local);
+        if (local.tm_year + 1900 < 2026) {
+            char date[16];
+            std::strftime(date, sizeof date, "%Y-%m-%d", &local);
+            return trf("본체 시계가 {0}(으)로 맞지 않아 보안 연결을 만들 수 없습니다. 설정에서 날짜와 시간을 맞춘 뒤 다시 시도합니다.", {date});
+        }
         return trf("{0}와 보안 연결을 만들지 못했습니다. 본체 시계와 서버 인증서를 확인합니다.", {host});
+    }
     default:
         return curl_easy_strerror(static_cast<CURLcode>(code));
     }
 }
+namespace {
+// When the console's resolver cannot find the server, the lookup goes to DNS
+// over HTTPS at a fixed address and stays there for the rest of the run:
+// some networks answer other apps but time this one out, and a name that
+// never resolves left the app stuck on its error screen.
+std::atomic<bool> viaDoh{false};
+constexpr const char* DohUrl = "https://1.1.1.1/dns-query";
+void lookups(CURL* curl) {
+    if (viaDoh) curl_easy_setopt(curl, CURLOPT_DOH_URL, DohUrl);
+}
+// One transfer; a failed lookup is logged with what the console said and
+// tried once more through DNS over HTTPS when `retry` allows it.
+CURLcode perform(CURL* curl, const std::string& url, bool retry) {
+    const auto started = std::chrono::steady_clock::now();
+    auto code = curl_easy_perform(curl);
+    if (code != CURLE_COULDNT_RESOLVE_HOST || !retry || viaDoh) return code;
+    const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+    logLine("lookup failed for " + url.substr(0, url.find('/', url.find("//") + 2)) + " after " + std::to_string(waited) +
+            "ms, console online=" + (internetConnected() ? "yes" : "no") + "; trying DNS over HTTPS");
+    curl_easy_setopt(curl, CURLOPT_DOH_URL, DohUrl);
+    code = curl_easy_perform(curl);
+    if (code == CURLE_OK) {
+        viaDoh = true;
+        logLine("DNS over HTTPS works; used from now on");
+    } else {
+        logLine("DNS over HTTPS failed too: curl=" + std::to_string(int(code)));
+    }
+    return code;
+}
+} // namespace
 Response get(const std::string& url, const std::vector<std::string>& headers, const std::string& etag, const std::atomic<bool>* cancel) {
     Response result;
     if (!isHttp(url)) { result.error = tr("HTTP/HTTPS 주소를 확인해 주세요."); return result; }
@@ -138,7 +180,6 @@ Response get(const std::string& url, const std::vector<std::string>& headers, co
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-    // The console has no IPv6 route; AAAA answers only slow down or fail the lookup.
     if (cancel) {
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
         curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel);
@@ -151,12 +192,8 @@ Response get(const std::string& url, const std::vector<std::string>& headers, co
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &result);
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, writeHeader);
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &result);
-    constexpr int ResolveRetryMs = 1500;
-    auto code = curl_easy_perform(curl);
-    if (code == CURLE_COULDNT_RESOLVE_HOST && result.body.empty() && !(cancel && cancel->load())) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(ResolveRetryMs));
-        code = curl_easy_perform(curl);
-    }
+    lookups(curl);
+    const auto code = perform(curl, url, !(cancel && cancel->load()));
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
     if (code != CURLE_OK && result.error.empty()) result.error = connectionError(code, url);
     if (code != CURLE_OK || result.status >= 400)
@@ -212,7 +249,8 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
     // The ETag comes along (a homebrew download carries its SHA-256 there).
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, writeHeader);
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &result);
-    const auto code = curl_easy_perform(curl);
+    lookups(curl);
+    const auto code = perform(curl, url, !(cancel && cancel->load()));
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
     // A body shorter than Content-Length (the file shrank on the server)
     // ends in CURLE_PARTIAL_FILE and counts as a failure.
@@ -295,7 +333,8 @@ Response post(const std::string& url, const std::vector<std::string>& headers, c
     }
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, postBody);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &context);
-    const auto code = curl_easy_perform(curl);
+    lookups(curl);
+    const auto code = perform(curl, url, false);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
     if (context.failedWrite && result.error.empty()) result.error = trf("파일을 쓰지 못했습니다: {0}", {options.saveTo});
     if (code != CURLE_OK && result.error.empty()) result.error = connectionError(code, url);
