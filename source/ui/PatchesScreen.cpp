@@ -172,7 +172,9 @@ void Application::pollPatches() {
   if (patchFetching_) {
     patchFetching_ = false;
     patchError_ = incomingPatchError_;
-    patchRetryAt_ = patchError_ && incomingPatchRetry_ ? std::max<uint32_t>(1, SDL_GetTicks() + incomingPatchRetry_ * 1000u) : 0;
+    // A busy server (503) or one still scanning (a partial list) says when
+    // to ask again.
+    patchRetryAt_ = incomingPatchRetry_ ? std::max<uint32_t>(1, SDL_GetTicks() + incomingPatchRetry_ * 1000u) : 0;
     if (!patchError_) {
       serverPatches_ = std::move(incomingPatches_);
       patchesLoaded_ = true;

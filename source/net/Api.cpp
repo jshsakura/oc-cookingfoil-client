@@ -709,8 +709,17 @@ Parsed<std::vector<UserPatch>> Session::patches() {
     }
     if (!response.error.empty() || response.status != 200) { result.error.message = tr("패치 목록을 불러오지 못했습니다."); return result; }
     patches_ = parsePatches(response.body);
-    patchesEtag_ = response.etag;
     result.value = patches_;
+    // Still scanning: the list so far, and when to ask for the rest. Its
+    // ETag is not kept, so that ask gets the fuller list.
+    Error ignored;
+    const auto body = parseJson(response.body, ignored);
+    auto* scanning = body ? field(body.get(), "scanning") : nullptr;
+    if (scanning && json_object_get_boolean(scanning)) {
+        patchesRetryAfter_ = int(std::clamp<int64_t>(integerField(body.get(), "retryAfter", 10), 5, 300));
+        return result;
+    }
+    patchesEtag_ = response.etag;
     return result;
 }
 bool Session::downloadPatch(const UserPatch& patch, const std::string& dir, std::atomic<uint64_t>& received, Error& error) {
