@@ -96,7 +96,7 @@ void Application::savesScreen() {
   // Search at the right end, as on every list; the tabs left of it.
   const float searchX = SearchX;
   searchBar(savesQuery_, searchX);
-  const float tabsLeft = headerTabs({tr("내 기기"), tr("공유"), tr("드롭박스")}, savesTab_, [this](int n) {
+  const float tabsLeft = headerTabs({tr("내 기기"), tr("서버|세이브"), tr("드롭박스")}, savesTab_, [this](int n) {
     savesTab_ = n;
     if (n == 1 && !shopSavesLoaded_) loadShopSaves();
     if (n == 2) dropboxEnter();
@@ -384,11 +384,6 @@ void Application::shopSavesList() {
     const auto game = shopSaveTitle(save);
     cover(shopSaveIcon(save), 278, y + 10, 64, false, game, app); // app icons as 홈브류 draws them
     paint_.fonts.text(game, 360, y + 12, 21, Ink, true, 640);
-    // Under the name: 홈브류 for an app, how many saves, or the one save's name.
-    float at = 360;
-    if (app) at += paint_.pill(tr("홈브류"), at, y + 46) + 6;
-    if (saves > 1) at += paint_.pill(trf("세이브 {0}개", {std::to_string(saves)}), at, y + 46) + 6;
-    else paint_.fonts.text(save.name, at, y + 48, 16, Secondary, false, 640);
     // An app's save goes through the patch worker; its row shows the work.
     bool busy = false;
     for (int n = start; n < start + saves; ++n) busy |= !patchBusy_.empty() && patchBusy_ == shopSaves_[n].id;
@@ -396,6 +391,20 @@ void Application::shopSavesList() {
     const std::string state = busy ? tr(patchBusyLabel_.c_str())
                               : here ? tr("적용할 수 있음")
                               : app ? tr("앱 미설치") : tr("게임 미설치");
+    // Under the name: 홈브류 for an app, how many saves, then what they are:
+    // the one save's name and description, or every save's name.
+    float at = 360;
+    if (app) at += paint_.pill(tr("홈브류"), at, y + 46) + 6;
+    if (saves > 1) at += paint_.pill(trf("세이브 {0}개", {std::to_string(saves)}), at, y + 46) + 6;
+    std::string what;
+    if (saves > 1) {
+      for (int n = start; n < start + saves; ++n) what += (what.empty() ? "" : " · ") + shopSaves_[n].name;
+    } else {
+      what = save.name;
+      const auto line = save.description.substr(0, save.description.find('\n'));
+      if (!line.empty() && line != save.name) what += " · " + line;
+    }
+    paint_.fonts.text(what, at, y + 48, 16, Secondary, false, 1180 - at - paint_.fonts.measure(state, 15, true));
     // The same grey label as every list's state, at the right end.
     paint_.pill(state, 1230 - paint_.fonts.measure(state, 15, true) - 18, y + 14);
   }

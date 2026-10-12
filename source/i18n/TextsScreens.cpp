@@ -193,7 +193,7 @@ const Translation rows[] = {
     {"RetroArch를 설치하고 있습니다 · {0} / {1}", "Installing RetroArch · {0} / {1}", "RetroArchをインストールしています · {0} / {1}", "正在安装 RetroArch · {0} / {1}"},
     {"세이브 {0}개", "{0} saves", "セーブ{0}件", "{0} 个存档"},
     {"내 기기", "This console", "この本体", "本机"},
-    {"공유", "Shared", "共有", "共享"},
+    {"서버|세이브", "Server", "サーバー", "服务器"},
     {"설치한 패치가 없습니다.", "No patches installed.", "インストールしたパッチはありません。", "没有已安装的补丁。"},
     {"외 {0}개", "and {0} more", "他{0}件", "另外 {0} 个"},
     {"{0}을(를) 받았습니다. 지금 설치가 끝난 뒤 다시 받으면 홈 메뉴 바로가기를 만듭니다.", "Got {0}. Once the current install ends, get it again to make its HOME Menu shortcut.", "{0}を入手しました。今のインストールが終わってからもう一度入手するとHOMEメニューのショートカットを作ります。", "已获取 {0}。当前安装结束后再次获取即可创建 HOME 菜单快捷方式。"},
