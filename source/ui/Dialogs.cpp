@@ -100,7 +100,8 @@ float Application::pageTitle(const std::string &title, const std::string &meta, 
   // The count in a grey label beside the title, as 레트로 게임 shows its
   // system's; left out when the header has no room for it.
   const float room = metaRight > 0 ? metaRight - 16 - (x + 14) : 560.f;
-  if (!meta.empty() && paint_.fonts.measure(meta, 15, true) + 18 <= room)
+  // Nothing to count draws no label: an empty list shows its notice instead.
+  if (!meta.empty() && meta != "0" && paint_.fonts.measure(meta, 15, true) + 18 <= room)
     x += 14 + paint_.pill(meta, x + 14, HeaderCenter - 13);
   return x;
 }
