@@ -150,8 +150,8 @@ void Application::savesScreen() {
     std::string icon = "installed:" + g.titleId;
     if (!g.iconBytes.empty()) images_->provide(icon, g.iconBytes);
     else {
-      const auto match = std::find_if(groups_.begin(), groups_.end(), [&](const auto &group) { return group.id == g.titleId; });
-      icon = match == groups_.end() ? "" : match->representative.icon;
+      const auto *match = findGroup(g.titleId);
+      icon = match ? match->representative.icon : "";
     }
     cover(icon, 278, y + 10, 64, false, g.name);
     paint_.fonts.text(g.name, 360, y + 12, 21, Ink, true, 640);
@@ -292,8 +292,8 @@ void Application::chooseShopSave() {
                                  [&](const auto &g) { return g.titleId == save.titleId; });
   if (game == installed_.games.end()) {
     // Asks first, as 유저 패치 does: the game comes from the shop when it has it.
-    const auto group = std::find_if(groups_.begin(), groups_.end(), [&](const Group &g) { return g.id == save.titleId; });
-    saveGameGroup_ = group != groups_.end() ? int(group - groups_.begin()) : -1;
+    const auto *group = findGroup(save.titleId);
+    saveGameGroup_ = group ? int(group - groups_.data()) : -1;
     saveNeedsGame_ = true;
     return;
   }

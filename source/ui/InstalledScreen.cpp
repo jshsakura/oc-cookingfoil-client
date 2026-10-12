@@ -207,8 +207,8 @@ void Application::installedScreen() {
     std::string icon = "installed:" + g.titleId;
     if (!g.iconBytes.empty()) images_->provide(icon, g.iconBytes);
     else {
-      const auto match = std::find_if(groups_.begin(), groups_.end(), [&](const auto &group) { return group.id == g.titleId; });
-      icon = match == groups_.end() ? "" : match->representative.icon;
+      const auto *match = findGroup(g.titleId);
+      icon = match ? match->representative.icon : "";
     }
     hit(x, y, 150, 220, [this, index = first + n] {
       sidebar_ = false;

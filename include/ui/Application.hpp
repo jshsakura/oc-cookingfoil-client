@@ -19,6 +19,7 @@
 #include <functional>
 #include <memory>
 #include <set>
+#include <unordered_map>
 #include "core/Homebrew.hpp"
 #include <utility>
 namespace foil::ui {
@@ -604,6 +605,9 @@ private:
   Error error_;
   std::string configPath_, statePath_, fixture_, query_, notice_;
   std::vector<Group> groups_;
+  // groups_ by id, rebuilt with it: a title ID finds its game without a scan.
+  std::unordered_map<std::string, size_t> groupIndex_;
+  const Group *findGroup(const std::string &id) const;
   Screen screen_ = Screen::Home, previous_ = Screen::Home;
   bool sidebar_ = true, connected_ = false; // the cursor starts on the menu, on 홈
   // The cursor went to the menu only because the screen had nothing yet.

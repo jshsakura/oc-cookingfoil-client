@@ -236,6 +236,10 @@ void Application::localizeNames() {
 void Application::setItems(std::vector<Item> items) {
   const auto started = SDL_GetTicks();
   groups_ = groupCatalog(items);
+  groupIndex_.clear();
+  groupIndex_.reserve(groups_.size());
+  for (size_t i = 0; i < groups_.size(); ++i)
+    groupIndex_.emplace(groups_[i].id, i);
   updatesStale_ = true;
   // Groups copy each item into files (and the base into representative);
   // only the base, or the representative without one, needs its names.
@@ -257,11 +261,16 @@ void Application::setItems(std::vector<Item> items) {
   selected_ = 0;
   logLine("catalog grouped " + std::to_string(SDL_GetTicks() - started) + "ms, " + std::to_string(groups_.size()) + " games");
 }
+const Group *Application::findGroup(const std::string &id) const {
+  const auto found = groupIndex_.find(id);
+  return found == groupIndex_.end() ? nullptr : &groups_[found->second];
+}
 void Application::clearCatalog() {
   serverPatches_.clear();
   patchesLoaded_ = false;
   patchError_ = {};
   groups_.clear();
+  groupIndex_.clear();
   themes_.clear();
   chips_.clear();
   activeChips_.clear();
@@ -586,20 +595,21 @@ std::vector<size_t> Application::libraryList() const {
 void Application::rebuildHome() {
   installedMask_.assign(groups_.size(), false);
   if (installed_.installed.complete)
-    for (size_t i = 0; i < groups_.size(); ++i)
-      installedMask_[i] = std::any_of(installed_.installed.titles.begin(),
-                                      installed_.installed.titles.end(),
-                                      [&](const auto &t) { return t.titleId == groups_[i].id; });
+    for (const auto &t : installed_.installed.titles)
+      if (const auto found = groupIndex_.find(t.titleId); found != groupIndex_.end())
+        installedMask_[found->second] = true;
   // Admin picks (feature: featured) lead the home, mapped onto loaded groups.
   std::vector<HomeTheme> pinned;
   heroBanner_.clear();
   for (const auto &shelf : featured_) {
     HomeTheme row{{shelf.title, SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}, {}};
-    for (const auto &id : shelf.titleIds)
-      for (size_t i = 0; i < groups_.size(); ++i)
-        if (groups_[i].id == id && groups_[i].base && !installedMask_[i] &&
-            row.items.size() < HomeRowLimit)
-          row.items.push_back(i);
+    for (const auto &id : shelf.titleIds) {
+      const auto found = groupIndex_.find(id);
+      if (found == groupIndex_.end()) continue;
+      const size_t i = found->second;
+      if (groups_[i].base && !installedMask_[i] && row.items.size() < HomeRowLimit)
+        row.items.push_back(i);
+    }
     if (row.items.empty())
       continue;
     if (pinned.empty() && session_)

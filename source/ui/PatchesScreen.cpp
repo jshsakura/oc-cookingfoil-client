@@ -64,12 +64,10 @@ std::vector<Application::PatchRow> Application::allPatchRows() const {
       row.installed = !app || homebrewStatus(*app) != homebrew::Status::Available;
       return;
     }
-    const auto group = std::find_if(groups_.begin(), groups_.end(),
-                                    [&](const Group &g) { return g.id == row.patch.titleId; });
-    if (group != groups_.end()) {
+    if (const auto *group = findGroup(row.patch.titleId)) {
       row.game = group->representative.name;
       row.icon = group->representative.icon;
-      row.shopGroup = int(group - groups_.begin());
+      row.shopGroup = int(group - groups_.data());
     }
     const auto local = std::find_if(installed_.games.begin(), installed_.games.end(),
                                     [&](const InstalledGame &g) { return g.titleId == row.patch.titleId; });
