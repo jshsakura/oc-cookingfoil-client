@@ -32,6 +32,7 @@ void Application::loadHomebrew() {
       if (!unchanged) {
         homebrew_ = std::move(apps);
         sortShopSaves(); // apps' saves in 공유 now sort by the app's name
+        matchHomebrewCard();
       }
       if (screen_ == Screen::Homebrew && sidebar_ && autoSidebar_ && hasFocusable()) sidebar_ = autoSidebar_ = false;
     };
@@ -39,6 +40,14 @@ void Application::loadHomebrew() {
   });
 }
 void Application::pollHomebrew() {
+  if (homebrewCardDone_.exchange(false)) {
+    homebrewCardWorker_.join();
+    homebrewCard_ = std::move(homebrewCardFound_);
+    homebrewCardFound_.clear();
+    homebrewScanned_ = true;
+    matchHomebrewCard();
+    if (screen_ == Screen::Homebrew && sidebar_ && autoSidebar_ && hasFocusable()) sidebar_ = autoSidebar_ = false;
+  }
   if (!homebrewDone_.exchange(false)) return;
   homebrewWorker_.join();
   if (homebrewFinish_) std::exchange(homebrewFinish_, nullptr)();
@@ -46,16 +55,82 @@ void Application::pollHomebrew() {
 void Application::checkHomebrewCard() {
   homebrewOnCard_.clear();
   for (const auto &[id, record] : homebrewLedger_) homebrewOnCard_[record.file] = fileExists(sdRoot_ + "/" + record.file);
+  scanHomebrewCard();
+}
+// Every .nro under switch/, read off the main thread: apps other tools or
+// the player put there count as installed too.
+void Application::scanHomebrewCard() {
+  if (homebrewCardWorker_.joinable() || sdRoot_.empty()) return;
+  const auto sd = sdRoot_;
+  const auto languages = homebrew::nacpLanguages(languageCode());
+  homebrewCardWorker_ = std::thread([this, sd, languages] {
+    std::vector<homebrew::CardNro> found;
+    if (!guarded("homebrew card", [&] { found = homebrew::scanCard(sd, languages); })) found.clear();
+    homebrewCardFound_ = std::move(found);
+    homebrewCardDone_ = true;
+  });
+}
+// Which card file each listed app owns (the one at its install path
+// first), and the files no listed app owns, as rows of their own.
+void Application::matchHomebrewCard() {
+  homebrewCardOf_.clear();
+  homebrewLocal_.clear();
+  for (size_t i = 0; i < homebrewCard_.size(); ++i) {
+    const auto &nro = homebrewCard_[i];
+    if (const auto *app = homebrew::matchCard(homebrew_, nro.path)) {
+      const auto [at, fresh] = homebrewCardOf_.emplace(app->id, i);
+      if (!fresh && nro.path == app->installPath) at->second = i;
+      continue;
+    }
+    homebrew::App local;
+    local.cardOnly = true;
+    local.id = "card:" + nro.path;
+    local.fileName = nro.path.substr(nro.path.rfind('/') + 1);
+    local.name = nro.name.empty() ? local.fileName.substr(0, local.fileName.size() - 4) : nro.name;
+    local.author = nro.author;
+    local.version = nro.version;
+    local.installPath = nro.path;
+    local.size = nro.size;
+    homebrewLocal_.push_back(std::move(local));
+  }
+}
+const homebrew::App &Application::homebrewAt(int index) const {
+  return index < int(homebrew_.size()) ? homebrew_[index] : homebrewLocal_[index - homebrew_.size()];
+}
+// The server's icon, else the one in the app's file on the card.
+std::string Application::homebrewIcon(const homebrew::App &app) {
+  if (!app.cardOnly && !app.iconUrl.empty()) return app.iconUrl;
+  const auto file = homebrewFile(app);
+  const auto nro = std::find_if(homebrewCard_.begin(), homebrewCard_.end(),
+                                [&](const homebrew::CardNro &entry) { return entry.path == file; });
+  if (nro == homebrewCard_.end() || nro->icon.empty()) return app.iconUrl;
+  const auto key = "card:" + nro->path;
+  images_->provide(key, nro->icon);
+  return key;
 }
 homebrew::Status Application::homebrewStatus(const homebrew::App &app) const {
+  if (app.cardOnly) return homebrew::Status::Installed;
+  const auto card = homebrewCardOf_.find(app.id);
   return homebrew::status(app, homebrewLedger_, [this](const std::string &file) {
     const auto found = homebrewOnCard_.find(file);
     return found != homebrewOnCard_.end() && found->second;
-  });
+  }, card == homebrewCardOf_.end() ? nullptr : &homebrewCard_[card->second].version);
+}
+// The app's file on the card: the ledger's while it is there, else the one
+// the card scan matched, else where it would go.
+std::string Application::homebrewFile(const homebrew::App &app) const {
+  const auto found = homebrewLedger_.find(app.id);
+  if (found != homebrewLedger_.end()) {
+    const auto there = homebrewOnCard_.find(found->second.file);
+    if (there != homebrewOnCard_.end() && there->second) return found->second.file;
+  }
+  const auto card = homebrewCardOf_.find(app.id);
+  return card == homebrewCardOf_.end() ? app.installPath : homebrewCard_[card->second].path;
 }
 std::vector<int> Application::homebrewRows() const {
   std::vector<int> rows;
-  // 설치됨: every app on the card, tools and ports alike; then each kind.
+  // 설치됨: every app on the card, tools and ports alike, then the card's
+  // files no listed app owns; the other tabs, each kind of the list.
   const auto kind = homebrewTab_ == 2 ? homebrew::Kind::Port : homebrew::Kind::Tool;
   for (int i = 0; i < int(homebrew_.size()); ++i) {
     const auto &app = homebrew_[i];
@@ -63,12 +138,16 @@ std::vector<int> Application::homebrewRows() const {
     if (!textMatches({app.name, app.author, app.fileName}, homebrewQuery_)) continue;
     rows.push_back(i);
   }
+  for (int i = 0; homebrewTab_ == 0 && i < int(homebrewLocal_.size()); ++i) {
+    const auto &app = homebrewLocal_[i];
+    if (textMatches({app.name, app.author, app.fileName}, homebrewQuery_)) rows.push_back(int(homebrew_.size()) + i);
+  }
   return rows;
 }
 // The app under the cursor, the one the popups act on.
 const homebrew::App *Application::homebrewPicked() const {
   const auto rows = homebrewRows();
-  return rows.empty() ? nullptr : &homebrew_[rows[std::clamp(selected_, 0, int(rows.size()) - 1)]];
+  return rows.empty() ? nullptr : &homebrewAt(rows[std::clamp(selected_, 0, int(rows.size()) - 1)]);
 }
 void Application::saveHomebrewLedger() {
   std::string error;
@@ -77,6 +156,7 @@ void Application::saveHomebrewLedger() {
 }
 // Through the retro worker, so 다운로드 shows it running and keeps how it ended.
 bool Application::getHomebrew(const homebrew::App &app) {
+  if (app.cardOnly) return false; // nothing on the server to get
   if (retroWorker_.joinable()) {
     message(tr("지금 받는 것이 끝난 뒤 다시 시도합니다."));
     return false;
@@ -131,11 +211,19 @@ void Application::settleHomebrew(const homebrew::App &app) {
   const auto previous = homebrewLedger_.find(app.id);
   std::vector<std::string> stale{"switch/" + app.fileName};
   if (previous != homebrewLedger_.end()) stale.push_back(previous->second.file);
+  // A copy the card scan found goes too when it has the same file name; a
+  // differently named file in the app's folder may be something else.
+  const auto card = homebrewCardOf_.find(app.id);
+  const auto cardPath = card == homebrewCardOf_.end() ? std::string() : homebrewCard_[card->second].path;
+  if (!cardPath.empty() && cardPath.substr(cardPath.rfind('/') + 1) == app.fileName) stale.push_back(cardPath);
   for (const auto &old : stale)
     if (old != app.installPath && fileExists(sdRoot_ + "/" + old)) {
       std::filesystem::remove(sdRoot_ + "/" + old, ec);
-      removeEmptyFolders(old);
+      homebrew::removeEmptyFolders(sdRoot_, old);
       homebrewOnCard_.erase(old);
+      homebrewCard_.erase(std::remove_if(homebrewCard_.begin(), homebrewCard_.end(),
+                                         [&](const homebrew::CardNro &nro) { return nro.path == old; }),
+                          homebrewCard_.end());
     }
   homebrew::Record record{app.hash, app.version, app.installPath, {}};
   for (const auto &file : app.files)
@@ -143,37 +231,50 @@ void Application::settleHomebrew(const homebrew::App &app) {
   homebrewLedger_[app.id] = record;
   homebrewOnCard_[app.installPath] = true;
   saveHomebrewLedger();
-}
-// Empty folders left behind, up to (not including) switch/.
-void Application::removeEmptyFolders(const std::string &path) {
-  std::error_code ec;
-  for (auto folder = std::filesystem::path(path).parent_path(); folder.has_parent_path() && folder != "switch";
-       folder = folder.parent_path()) {
-    const auto full = sdRoot_ + "/" + folder.string();
-    if (!std::filesystem::is_empty(full, ec) || ec) break;
-    std::filesystem::remove(full, ec);
-  }
+  matchHomebrewCard();
 }
 // The app's files (a folder install's too), the folders they leave empty,
-// and its ledger entry; files the ledger does not list stay.
-void Application::removeHomebrew(const homebrew::App &app) {
+// and its ledger entry; files the ledger does not list stay. An app with no
+// ledger entry loses the one file the card scan found, nothing else.
+void Application::removeHomebrew(const homebrew::App &picked) {
+  const auto app = picked; // a card row goes away with its file
+  const auto file = homebrewFile(app);
   const auto found = homebrewLedger_.find(app.id);
-  if (found == homebrewLedger_.end()) return;
-  const auto path = sdRoot_ + "/" + found->second.file;
+  const bool ledgered = found != homebrewLedger_.end() && found->second.file == file;
+  const bool onCard = std::any_of(homebrewCard_.begin(), homebrewCard_.end(),
+                                  [&](const homebrew::CardNro &nro) { return nro.path == file; });
+  if (!ledgered && !onCard) return;
   std::error_code ec;
-  std::filesystem::remove(path, ec);
-  if (ec && fileExists(path)) {
-    alert_ = trf("파일을 지우지 못했습니다: {0}", {found->second.file});
+  bool removed = true;
+  if (ledgered) {
+    const auto path = sdRoot_ + "/" + file;
+    std::filesystem::remove(path, ec);
+    removed = !ec || !fileExists(path);
+  } else {
+    std::string error;
+    removed = homebrew::removeCardFile(sdRoot_, file, error);
+    if (!removed) logLine("homebrew remove: " + error);
+  }
+  if (!removed) {
+    alert_ = trf("파일을 지우지 못했습니다: {0}", {file});
     return;
   }
-  for (const auto &file : found->second.files) {
-    std::filesystem::remove(sdRoot_ + "/" + file, ec);
-    removeEmptyFolders(file);
+  if (ledgered) {
+    for (const auto &extra : found->second.files) {
+      std::filesystem::remove(sdRoot_ + "/" + extra, ec);
+      homebrew::removeEmptyFolders(sdRoot_, extra);
+    }
+    homebrew::removeEmptyFolders(sdRoot_, file);
   }
-  removeEmptyFolders(found->second.file);
-  homebrewOnCard_.erase(found->second.file);
-  homebrewLedger_.erase(found);
-  saveHomebrewLedger();
+  if (found != homebrewLedger_.end()) {
+    homebrewOnCard_.erase(found->second.file);
+    homebrewLedger_.erase(found);
+    saveHomebrewLedger();
+  }
+  homebrewCard_.erase(std::remove_if(homebrewCard_.begin(), homebrewCard_.end(),
+                                     [&](const homebrew::CardNro &nro) { return nro.path == file; }),
+                      homebrewCard_.end());
+  matchHomebrewCard();
   message(trf("{0}을(를) 지웠습니다.", {app.name}));
 }
 void Application::homebrewAction(Action a) {
@@ -276,6 +377,8 @@ void Application::homebrewScreen() {
   if (rows.empty()) {
     if (!homebrewQuery_.empty())
       notice(trf("'{0}'에 맞는 홈브류가 없습니다.", {homebrewQuery_}), tr("B로 검색어를 지웁니다."), 23);
+    else if (homebrewTab_ == 0 && !homebrewScanned_)
+      paint_.skeletonCards(260, 104, 6);
     else if (homebrewTab_ == 0)
       notice(tr("설치한 홈브류가 없습니다."), tr("도구나 포트 탭에서 받으면 여기에 보입니다."), 22);
     else if (homebrewTab_ == 2)
@@ -290,14 +393,14 @@ void Application::homebrewScreen() {
   paint_.scrollbar(1266, 104, 500, float(first / 6), 2.1f, float((rows.size() + 5) / 6));
   for (int n = 0; n < 18 && first + n < int(rows.size()); ++n) {
     const int i = first + n;
-    const auto &app = homebrew_[rows[i]];
+    const auto &app = homebrewAt(rows[i]);
     const float x = 260 + n % 6 * 170, y = 104 + n / 6 * 240;
     hit(x, y, 150, 220, [this, i] {
       if (inContent() && selected_ == i) action(Action::Accept);
       sidebar_ = false;
       selected_ = i;
     });
-    cover(app.iconUrl, x, y, 150, inContent() && selected_ == i, app.name, true);
+    cover(homebrewIcon(app), x, y, 150, inContent() && selected_ == i, app.name, true);
     const auto state = homebrewStatus(app);
     const bool busy = retroBusy_ == "homebrew:" + app.id;
     if (busy || state != homebrew::Status::Available)
@@ -330,8 +433,10 @@ void Application::homebrewAskDialog() {
   const float textW = Width - 64 - Icon - 28;
   // Measured off screen first, so the card hugs the description.
   constexpr int Lines = 6;
-  const float described = app.description.empty() ? 0
-                        : paint_.fonts.wrapped(app.description, -9999, -9999, 18, Ink, textW, Lines);
+  // A card file no listed app owns says so where a description would be.
+  const std::string description = app.cardOnly ? tr("서버 목록에 없는 앱이라 지우기만 할 수 있습니다.") : app.description;
+  const float described = description.empty() ? 0
+                        : paint_.fonts.wrapped(description, -9999, -9999, 18, Ink, textW, Lines);
   const float top = 24 + std::max(Icon, 106 + described);
   const float bodyH = top + (extras.empty() ? 0 : 16 + extras.size() * (Row + Gap) - Gap) + 24;
   // A focused 패치 or 세이브 row opens its list; otherwise A acts on the app.
@@ -339,16 +444,16 @@ void Application::homebrewAskDialog() {
   const auto body = modal(Width, bodyH, installed ? tr("설치된 앱") : update ? tr("업데이트할까요?") : tr("이 앱을 받을까요?"),
                           tr("취소"), "", accept, 22);
   const float x = body.x + 32, y = body.y + 24, textX = x + Icon + 28;
-  cover(app.iconUrl, x, y, int(Icon), false, app.name, true);
+  cover(homebrewIcon(app), x, y, int(Icon), false, app.name, true);
   paint_.fonts.text(app.name, textX, y, 24, Ink, true, textW);
   std::string facts = app.version.empty() ? "" : "v" + app.version;
   if (!app.author.empty()) facts += (facts.empty() ? "" : " · ") + app.author;
   if (app.size) facts += (facts.empty() ? "" : " · ") + formatBytes(app.size);
   paint_.fonts.text(facts, textX, y + 38, 18, Ink, true, textW);
-  std::string where = app.installPath;
+  std::string where = homebrewFile(app);
   if (app.releasedAt.size() >= 10) where = app.releasedAt.substr(0, 10) + " · " + where;
   paint_.fonts.text(where, textX, y + 68, 16, Secondary, false, textW);
-  if (described) paint_.fonts.wrapped(app.description, textX, y + 106, 18, Ink, textW, Lines);
+  if (described) paint_.fonts.wrapped(description, textX, y + 106, 18, app.cardOnly ? Secondary : Ink, textW, Lines);
   // One row each for the app's patches and saves, with how many there are.
   float rowY = body.y + top + 16;
   const float rowW = body.w - 64;
@@ -380,11 +485,11 @@ void Application::homebrewRemoveDialog() {
     homebrewRemoveAsk_ = false;
     return;
   }
-  const auto &app = homebrew_[rows[std::clamp(selected_, 0, int(rows.size()) - 1)]];
+  const auto &app = homebrewAt(rows[std::clamp(selected_, 0, int(rows.size()) - 1)]);
   const auto body = modal(700, 24 + 70 + 16, tr("홈브류를 지우시겠습니까?"), tr("취소"), "", tr("지우기"), 37);
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(app.name, x, y, 21, Ink, true, body.w - 64);
-  paint_.fonts.text(trf("SD 카드에서 {0}을(를) 지웁니다.", {app.installPath}), x, y + 38, 19, Secondary,
+  paint_.fonts.text(trf("SD 카드에서 {0}을(를) 지웁니다.", {homebrewFile(app)}), x, y + 38, 19, Secondary,
                     false, body.w - 64);
 }
 } // namespace foil::ui

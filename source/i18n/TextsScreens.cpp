@@ -388,6 +388,7 @@ const Translation rows[] = {
     {"받은 세이브 파일을 읽지 못했습니다.", "Could not read the downloaded save files.", "ダウンロードしたセーブファイルを読み込めませんでした。", "无法读取下载的存档文件。"},
     {"홈브류를 지우시겠습니까?", "Remove this app?", "このアプリを削除しますか?", "要删除此应用吗?"},
     {"SD 카드에서 {0}을(를) 지웁니다.", "Removes {0} from the SD card.", "SD カードから {0} を削除します。", "将从 SD 卡删除 {0}。"},
+    {"서버 목록에 없는 앱이라 지우기만 할 수 있습니다.", "This app isn't on the server's list, so you can only remove it.", "サーバーの一覧にないアプリのため、削除のみできます。", "此应用不在服务器列表中，只能删除。"},
     {"업데이트|탭", "Updates", "更新", "更新"},
     {"DLC {0}개", "DLC {0}", "DLC {0}件", "DLC {0} 个"},
     {"지원 언어", "Languages", "対応言語", "支持语言"},

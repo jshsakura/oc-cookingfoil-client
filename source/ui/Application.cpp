@@ -57,6 +57,8 @@ Application::~Application() {
     logWorker_.join();
   if (homebrewWorker_.joinable())
     homebrewWorker_.join();
+  if (homebrewCardWorker_.joinable())
+    homebrewCardWorker_.join();
   if (shopSavesWorker_.joinable())
     shopSavesWorker_.join();
   if (dropboxWorker_.joinable())
@@ -1519,7 +1521,7 @@ void Application::render() {
     if (rows.empty() || sidebar_)
       footer({{"B", tr("뒤로")}});
     else {
-      const auto state = homebrewStatus(homebrew_[rows[std::clamp(selected_, 0, int(rows.size()) - 1)]]);
+      const auto state = homebrewStatus(homebrewAt(rows[std::clamp(selected_, 0, int(rows.size()) - 1)]));
       footer({{"A", state == homebrew::Status::Installed ? tr("상세 정보")
                     : state == homebrew::Status::Update  ? tr("업데이트|동작")
                                                          : tr("받기")},

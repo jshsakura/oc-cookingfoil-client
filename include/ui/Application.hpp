@@ -20,7 +20,7 @@
 #include <memory>
 #include <set>
 #include <unordered_map>
-#include "core/Homebrew.hpp"
+#include "core/HomebrewCard.hpp"
 #include <utility>
 namespace foil::ui {
 // Description scroll unit for d-pad and right stick, in pixels.
@@ -141,6 +141,12 @@ public:
     deviceFixture_ = true;
   }
   void previewFeatures(std::set<std::string> features) { features_ = std::move(features); }
+  // 홈브류 without a server: the menu item and this list.
+  void previewHomebrew(std::vector<homebrew::App> apps) {
+    features_.insert("homebrew");
+    homebrew_ = std::move(apps);
+    homebrewLoaded_ = true;
+  }
   void previewInstalled(InstalledLibrary library, std::vector<SaveEntry> saves = {}) {
     installed_ = std::move(library);
     installed_.games = sortInstalled(std::move(installed_.games), installedSort_);
@@ -242,6 +248,22 @@ private:
   std::vector<homebrew::App> homebrew_;
   homebrew::Ledger homebrewLedger_;
   std::map<std::string, bool> homebrewOnCard_; // ledger file -> on the SD card
+  // The .nro files under switch/ as the last card scan found them, which
+  // of them each listed app owns (app id -> homebrewCard_ index), and the
+  // ones no listed app owns as rows of their own (after homebrew_ in the
+  // row indexes).
+  std::vector<homebrew::CardNro> homebrewCard_;
+  std::map<std::string, size_t> homebrewCardOf_;
+  std::vector<homebrew::App> homebrewLocal_;
+  bool homebrewScanned_ = false;
+  std::thread homebrewCardWorker_;
+  std::atomic<bool> homebrewCardDone_{false};
+  std::vector<homebrew::CardNro> homebrewCardFound_; // the worker's result, taken on the main thread
+  void scanHomebrewCard();
+  void matchHomebrewCard();
+  const homebrew::App &homebrewAt(int index) const; // a homebrewRows() index
+  std::string homebrewIcon(const homebrew::App &app); // the URL or the card icon's key
+  std::string homebrewFile(const homebrew::App &app) const; // its file on the card, from the SD root
   std::string homebrewEtag_, homebrewQuery_;
   Error homebrewError_;
   bool homebrewLoaded_ = false, homebrewRemoveAsk_ = false, homebrewAsk_ = false;
@@ -275,11 +297,10 @@ private:
   void homebrewAskDialog(); // what the app is, before it comes down
   void checkHomebrewCard();
   homebrew::Status homebrewStatus(const homebrew::App &app) const;
-  std::vector<int> homebrewRows() const; // homebrew_ indexes in this tab and search
+  std::vector<int> homebrewRows() const; // homebrewAt() indexes in this tab and search
   bool getHomebrew(const homebrew::App &app);
   void removeHomebrew(const homebrew::App &app);
   void settleHomebrew(const homebrew::App &app);
-  void removeEmptyFolders(const std::string &path); // from the SD card root
   void saveHomebrewLedger();
   void home();
   void library();
