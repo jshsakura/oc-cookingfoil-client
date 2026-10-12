@@ -1,6 +1,7 @@
 #include "platform/Installed.hpp"
 #include "platform/Storage.hpp"
 #include "core/I18n.hpp"
+#include "core/SaveBackups.hpp"
 #include "core/Json.hpp"
 #include <algorithm>
 #include <cstdio>
@@ -312,7 +313,11 @@ Parsed<std::vector<SaveEntry>> readSaves(uint64_t applicationId) {
     save.missing = true;
     result.push_back(std::move(save));
   };
-  if (control && accounts && nacp.user_account_save_data_size > 0) {
+  // A size of 0 with a maximum still counts, as JKSV creates it (creationSizes).
+  const bool accountSave = saves::creationSizes(nacp.user_account_save_data_size, nacp.user_account_save_data_size_max,
+                                                0, 0).data > 0;
+  const bool deviceSave = saves::creationSizes(nacp.device_save_data_size, nacp.device_save_data_size_max, 0, 0).data > 0;
+  if (control && accounts && accountSave) {
     AccountUid uids[ACC_USER_LIST_SIZE]{};
     s32 total = 0;
     if (R_SUCCEEDED(accountListAllUsers(uids, ACC_USER_LIST_SIZE, &total)))
@@ -320,7 +325,7 @@ Parsed<std::vector<SaveEntry>> readSaves(uint64_t applicationId) {
         if (accountUidIsValid(&uids[i]) && !has(FsSaveDataType_Account, {uids[i].uid[0], uids[i].uid[1]}))
           missing(FsSaveDataType_Account, {uids[i].uid[0], uids[i].uid[1]}, nameOf(uids[i]));
   }
-  if (control && nacp.device_save_data_size > 0 && !has(FsSaveDataType_Device, {0, 0}))
+  if (control && deviceSave && !has(FsSaveDataType_Device, {0, 0}))
     missing(FsSaveDataType_Device, {0, 0}, tr("공용 세이브"));
   return {std::move(result), {}};
 #else
