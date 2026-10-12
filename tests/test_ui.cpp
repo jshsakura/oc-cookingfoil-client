@@ -306,8 +306,8 @@ int runUiTests(SDL_Renderer *renderer) {
     form.action(foil::ui::Action::Accept);
     auto request = form.takeTextRequest();
     CHECK(request && request->initial.empty() && !request->password);
-    // An address without http:// or https:// is refused.
-    form.enterText("127.0.0.1:1");
+    // Another scheme is refused; a bare address would get https://.
+    form.enterText("ftp://127.0.0.1:1");
     form.action(foil::ui::Action::Reload);
     CHECK(form.serverFormOpen());
     CHECK(foil::readFile(configPath) == before);

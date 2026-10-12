@@ -97,9 +97,11 @@ void Application::saveServerForm() {
   };
   const auto url = trimmed(server.url);
   if (url.empty()) return fail(tr("주소를 입력해 주세요."), 0);
-  if (!startsWith(url, "http://") && !startsWith(url, "https://"))
+  // A bare address like example.com gets https://, as most servers use it.
+  const bool scheme = startsWith(url, "http://") || startsWith(url, "https://");
+  if (!scheme && url.find("://") != std::string::npos)
     return fail(tr("주소는 http:// 또는 https://로 시작해야 합니다."), 0);
-  server.url = normalizeUrl(url); // trailing slashes go here
+  server.url = normalizeUrl(scheme ? url : "https://" + url); // trailing slashes go here
   if (server.url.empty()) return fail(tr("주소를 확인해 주세요."), 0);
   for (int field = 1; field < ServerFields; ++field)
     if (fieldOf(server, field).find_first_of("\r\n") != std::string::npos)
@@ -202,7 +204,7 @@ void Application::serverFormDialog() {
     if (value.empty()) {
       // What an empty field means: 주소 is needed, 이름 falls back to the host.
       const auto host = field == 3 ? hostOf(normalizeUrl(trimmed(form.server.url))) : "";
-      const std::string hint = field == 0 ? tr("http:// 또는 https://로 시작합니다")
+      const std::string hint = field == 0 ? tr("예: example.com 또는 http://192.168.0.2:8000")
                              : !host.empty() ? host
                                              : tr("비워 둘 수 있습니다");
       paint_.fonts.middle(hint, valueX, mid, 19, Secondary, false, valueW);
