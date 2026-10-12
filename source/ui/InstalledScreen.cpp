@@ -1,5 +1,4 @@
 #include "ui/Application.hpp"
-#include <set>
 #include "platform/Installed.hpp"
 #include "core/Log.hpp"
 #include <algorithm>
@@ -196,9 +195,11 @@ void Application::installedScreen() {
     return;
   }
   // Games with a newer update on the server say so on their card.
-  std::set<std::string> updatable;
-  for (const auto &row : pendingUpdates())
-    if (row.item.type == "update") updatable.insert(row.baseId);
+  const auto &pending = pendingUpdates();
+  const auto updatable = [&](const std::string &titleId) {
+    return std::any_of(pending.begin(), pending.end(),
+                       [&](const auto &row) { return row.baseId == titleId && row.item.type == "update"; });
+  };
   const int first = std::max(0, selected_ / 6 - 1) * 6;
   paint_.scrollbar(1266, 146, 500, float(first / 6), 2.1f, float((rows.size() + 5) / 6));
   for (int n = 0; n < 18 && first + n < int(rows.size()); ++n) {
@@ -217,7 +218,7 @@ void Application::installedScreen() {
     });
     cover(icon, x, y, 150, inContent() && selected_ == first + n && !managedGame_, g.name);
     paint_.fonts.text(g.name, x, y + 158, 18, Ink, false, 150);
-    if (updatable.count(g.titleId)) paint_.pill(tr("업데이트|항목"), x + 8, y + 8);
+    if (updatable(g.titleId)) paint_.pill(tr("업데이트|항목"), x + 8, y + 8);
     const float pill = paint_.pill(g.storage.size() > 1 ? tr("SD · 본체") : g.storage.empty() ? tr("설치됨") : g.storage.front(), x, y + 194);
     if (g.bytes)
       paint_.fonts.text(formatBytes(g.bytes), x + pill + 8, y + 196, 15, Secondary, false, 142 - pill);

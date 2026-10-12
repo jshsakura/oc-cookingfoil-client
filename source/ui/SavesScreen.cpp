@@ -234,10 +234,12 @@ void Application::sortShopSaves() {
 // together): the list shows one row per game or app.
 std::vector<std::pair<int, int>> Application::shopSaveGroups() const {
   std::vector<std::pair<int, int>> out;
-  const auto owner = [this](int i) { return homebrew::ownerKey(shopSaves_[i].titleId, shopSaves_[i].homebrewApp); };
-  for (int i = 0; i < int(shopSaves_.size()); ++i)
-    if (!out.empty() && owner(out.back().first) == owner(i)) ++out.back().second;
-    else out.push_back({i, 1});
+  std::string last; // the running group's owner
+  for (int i = 0; i < int(shopSaves_.size()); ++i) {
+    auto owner = homebrew::ownerKey(shopSaves_[i].titleId, shopSaves_[i].homebrewApp);
+    if (!out.empty() && owner == last) ++out.back().second;
+    else out.push_back({i, 1}), last = std::move(owner);
+  }
   // The search keeps a game or app when its name or any of its saves matches.
   out.erase(std::remove_if(out.begin(), out.end(),
                            [&](const std::pair<int, int> &group) {
