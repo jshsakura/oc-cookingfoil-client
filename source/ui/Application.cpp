@@ -203,6 +203,8 @@ void Application::setSession(std::unique_ptr<net::Session> session) {
   scoreLabels_ = session_->scoreLabels();
   qr_.encode(pairingInfo_.url);
   pairPollAt_ = pairingPending_ ? SDL_GetTicks() : 0;
+  if (!pairingPending_) pairSince_ = 0;
+  else if (!pairSince_) pairSince_ = SDL_GetTicks();
   images_ = std::make_unique<Images>(paint_.renderer);
   images_->source(
       session_->server(), state_,
@@ -465,7 +467,9 @@ void Application::poll() {
     forgetInstall();
   observedInstall_ = installStatus;
   if (!done_.exchange(false)) {
-    if (!network_.joinable() && pairingPending_ &&
+    // Waiting for approval: asked every 5 seconds for 5 minutes, then - asks again.
+    constexpr uint32_t PairWaitMs = 5 * 60 * 1000;
+    if (!network_.joinable() && pairingPending_ && SDL_GetTicks() - pairSince_ < PairWaitMs &&
         SDL_GetTicks() - pairPollAt_ >= 5000) {
       pairPollAt_ = 0;
       refresh();
@@ -505,6 +509,8 @@ void Application::poll() {
   pairingInfo_ = session_->pairingInfo();
   qr_.encode(pairingInfo_.url);
   pairPollAt_ = pairingPending_ ? SDL_GetTicks() : 0;
+  if (!pairingPending_) pairSince_ = 0;
+  else if (!pairSince_) pairSince_ = SDL_GetTicks();
   if (incomingError_) {
     error_ = incomingError_;
     refreshing_ = false;
@@ -910,7 +916,8 @@ void Application::action(Action a) {
     return;
   }
   if (a == Action::Reload) {
-    retries_ = 0; // a refresh by hand earns the automatic tries again
+    retries_ = patchRetries_ = retroRetries_ = 0; // a refresh by hand earns the automatic tries again
+    pairSince_ = 0;
     reload();
     return;
   }

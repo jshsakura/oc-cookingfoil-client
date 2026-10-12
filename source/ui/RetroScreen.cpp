@@ -108,7 +108,9 @@ void Application::loadRetroHome() {
       retroLoaded_ = true;
       retroMissing_ = reply.missing;
       retroError_ = reply.error;
-      retroRetryAt_ = reply.retryAfter ? SDL_GetTicks() + reply.retryAfter * 1000u : 0;
+      // A busy server's "ask again later", three times at most.
+      retroRetries_ = reply.retryAfter ? retroRetries_ + 1 : 0;
+      retroRetryAt_ = reply.retryAfter && retroRetries_ <= 3 ? SDL_GetTicks() + reply.retryAfter * 1000u : 0;
       retroHomeMissing_ = noHome;
       retroShelves_ = std::move(shelves);
       for (auto &[path, there] : onCard) retroOnCard_[path] = there;

@@ -88,7 +88,15 @@ void Application::installAppUpdate() {
   });
 }
 void Application::sendLog(const std::string &reason) {
-  if (logWorker_.joinable() || !session_ || !connected_) return;
+  // One upload a minute and five a launch: a repeating error must not
+  // flood the server.
+  constexpr int MaxLogs = 5;
+  constexpr uint32_t LogGapMs = 60 * 1000;
+  if (logWorker_.joinable() || !session_ || !connected_ || logsSent_ >= MaxLogs ||
+      (logSentAt_ && SDL_GetTicks() - logSentAt_ < LogGapMs))
+    return;
+  ++logsSent_;
+  logSentAt_ = SDL_GetTicks();
   constexpr size_t MaxLog = 60 * 1024;
   auto log = logTail(MaxLog);
   if (log.empty()) return;

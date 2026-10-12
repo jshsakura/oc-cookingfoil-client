@@ -12,7 +12,7 @@ namespace {
 constexpr int MaxImageSide = 1280;
 constexpr int Workers = 4;
 constexpr size_t MaxQueuedJobs = 64;
-constexpr int MaxBackoffSteps = 3; // retry waits double up to 8x RetryAfterMs
+constexpr int MaxAttempts = 3; // then it stays blank until the list is refreshed
 constexpr uint32_t RetryAfterMs = 10000;
 // Large art is kept at screen size; a 4K banner would otherwise hold 64MB.
 SDL_Surface *shrink(SDL_Surface *surface) {
@@ -109,9 +109,9 @@ void Images::request(const std::string &url) {
       }
       return;
     }
-    // Failed: tried again later, waiting longer each time (10s up to 80s),
-    // so a server that was away (restarting) fills the pictures in once back.
-    if (!e.failed || SDL_GetTicks() - e.failedAt < RetryAfterMs << std::clamp(e.attempts - 1, 0, MaxBackoffSteps))
+    // Failed: a few more tries, each waiting longer (10s, 20s), then none.
+    if (!e.failed || e.attempts >= MaxAttempts ||
+        SDL_GetTicks() - e.failedAt < RetryAfterMs << std::clamp(e.attempts - 1, 0, MaxAttempts))
       return;
     e.failed = e.finished = false;
   } else

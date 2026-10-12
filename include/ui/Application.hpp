@@ -631,6 +631,11 @@ private:
   net::PairingInfo pairingInfo_;
   uint32_t pairPollAt_ = 0, offlineCheckAt_ = 0;
   int retries_ = 0; // automatic reconnects since the last success or -
+  // Every automatic ask is bounded; - or Y starts them again.
+  uint32_t pairSince_ = 0;    // when approval became pending; polling stops after a while
+  int patchRetries_ = 0, retroRetries_ = 0;
+  int logsSent_ = 0;
+  uint32_t logSentAt_ = 0;
   InstalledLibrary installed_, incomingInstalled_;
   std::vector<SaveEntry> saves_, incomingSaves_;
   Error deviceError_, incomingDeviceError_;
