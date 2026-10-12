@@ -53,10 +53,11 @@ void Application::ensureOwnShortcut() {
     return;
   ownShortcutChecked_ = true;
   const auto &titles = installed_.installed.titles;
-  const bool there = std::any_of(titles.begin(), titles.end(), [this](const InstalledTitle &t) {
+  // Missing, or older than the one the server built for this release.
+  const auto found = std::find_if(titles.begin(), titles.end(), [this](const InstalledTitle &t) {
     return strcasecmp(t.titleId.c_str(), appRelease_.forwarderTitleId.c_str()) == 0;
   });
-  if (!there)
+  if (found == titles.end() || found->version < appRelease_.forwarderVersion)
     installShortcut("CookingFoil", "", appRelease_.forwarderUrl, appRelease_.forwarderTitleId, appRelease_.forwarderSize,
                     false);
 #endif

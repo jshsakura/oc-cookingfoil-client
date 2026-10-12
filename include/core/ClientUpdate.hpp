@@ -11,6 +11,9 @@ struct Release {
   // This app's HOME Menu shortcut; empty when the server builds none.
   std::string forwarderUrl, forwarderTitleId;
   uint64_t forwarderSize = 0;
+  // The shortcut's title version; one installed below it is replaced. 0: the
+  // server does not say, and a shortcut already there stays.
+  uint32_t forwarderVersion = 0;
 };
 // Compares dotted numbers ("0.1.10" > "0.1.9"); anything after '-' or '+'
 // is ignored. Negative, zero or positive like strcmp.

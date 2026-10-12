@@ -51,6 +51,7 @@ std::optional<Release> parseRelease(const std::string &json, const std::string &
   r.forwarderUrl = urlField(root.get(), "forwarder_url", base);
   r.forwarderTitleId = stringField(root.get(), "forwarder_title_id");
   r.forwarderSize = uint64_t(std::max<int64_t>(0, integerField(root.get(), "forwarder_size")));
+  r.forwarderVersion = uint32_t(std::clamp<int64_t>(integerField(root.get(), "forwarder_version"), 0, UINT32_MAX));
   if (r.forwarderTitleId.size() != 16 || r.forwarderTitleId.find_first_not_of("0123456789ABCDEFabcdef") != std::string::npos)
     r.forwarderUrl.clear(), r.forwarderTitleId.clear();
   return r;
