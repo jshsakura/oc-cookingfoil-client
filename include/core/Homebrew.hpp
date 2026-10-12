@@ -12,7 +12,12 @@ struct File {
   std::string path, sha256, url; // sha256: 64 lowercase hex digits
   uint64_t size = 0;
 };
+// 도구 or 포트, the 홈브류 tab an app shows under.
+enum class Kind { Tool, Port };
 struct App {
+  Kind kind = Kind::Tool;
+  // The app's folder under switch/; its patches and saves name it.
+  std::string app;
   std::string id, name, version, author, description, hash, fileName, iconUrl, downloadUrl, source, releasedAt,
       repoUrl;
   uint64_t size = 0; // 0 when the server does not know it yet
@@ -31,6 +36,12 @@ std::vector<App> parse(const std::string &json, const std::string &base);
 // One app in the list's shape, URLs absolute; parse() reads it back
 // (kept with a 다운로드 entry so a failed one can start again).
 std::string serialize(const App &app);
+// An app folder name: one path part of letters, digits, ". _ -" and spaces,
+// no "..", not starting with a space or dot nor ending with one.
+bool appFolderAllowed(const std::string &app);
+// Whether an SD-root relative path lies below switch/<app>/, every part of
+// it a plain name.
+bool insideApp(const std::string &app, const std::string &path);
 // Where an app goes, from the SD card root: switch/<stem>/<file name>.
 std::string sdPath(const std::string &fileName);
 // The download's ETag as 64 lowercase hex digits, or "" when it is not a

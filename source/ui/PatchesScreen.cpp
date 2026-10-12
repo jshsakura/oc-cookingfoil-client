@@ -83,14 +83,18 @@ std::vector<Application::PatchRow> Application::allPatchRows() const {
     if (record != patchRecords_.end())
       row.record = record->second;
   };
+  // An app's patches show under its app in 홈브류, not here.
   for (const auto &patch : serverPatches_) {
+    if (!patch.homebrewApp.empty())
+      continue;
     PatchRow row{patch, std::nullopt, true, "", "", "", false};
     describe(row);
     rows.push_back(std::move(row));
   }
   // Patches kept on the card but gone from the server can still be removed.
   for (const auto &[id, record] : patchRecords_) {
-    if (std::any_of(serverPatches_.begin(), serverPatches_.end(),
+    if (!record.homebrewApp.empty() ||
+        std::any_of(serverPatches_.begin(), serverPatches_.end(),
                     [&](const UserPatch &p) { return p.id == id; }))
       continue;
     PatchRow row;
@@ -147,11 +151,12 @@ void Application::fetchPatches() {
 // One job at a time: the worker owns the store until it reports back.
 bool Application::runPatchJob(
     const std::string &id, const std::string &label,
-    std::function<void(net::Session &, PatchStore &, Error &, std::string &)> job) {
+    std::function<void(net::Session &, PatchStore &, Error &, std::string &)> job, const std::string &failTitle) {
   if (patchWorker_.joinable() || !patchStore_ || !session_)
     return false;
   patchBusy_ = id;
   patchBusyLabel_ = label;
+  patchFailTitle_ = failTitle;
   patchReceived_ = 0;
   incomingPatchError_ = {};
   patchMessage_.clear();
@@ -187,7 +192,7 @@ void Application::pollPatches() {
       message(trf("{0} Y로 다시 시도합니다.", {patchError_.message}));
     }
   } else if (incomingPatchError_) {
-    alertTitle_ = tr("패치를 처리하지 못했습니다");
+    alertTitle_ = patchFailTitle_.empty() ? std::string(tr("패치를 처리하지 못했습니다")) : patchFailTitle_;
     alert_ = incomingPatchError_.message;
   } else if (!patchMessage_.empty())
     message(patchMessage_);
@@ -345,46 +350,59 @@ void Application::runPatchOp(int opIndex) {
   }
   managingPatch_ = false;
   if (op == PatchOp::Get || op == PatchOp::Update) {
-    // Room for the unpacked files plus a little for folders.
-    if (sdFree_ && *sdFree_ < row.patch.size + row.patch.size / 10 + (1 << 20)) {
-      alertTitle_ = tr("패치를 받을 수 없습니다");
-      alert_ = trf("SD 카드 공간이 부족합니다. {0}가 필요합니다.", {formatBytes(row.patch.size)});
-      return;
-    }
-    runPatchJob(row.patch.id, op == PatchOp::Update ? Updating : Getting,
-                [patch = row.patch, fresh = op == PatchOp::Get, received = &patchReceived_](
-                    net::Session &session, PatchStore &store, Error &error, std::string &done) {
-                  std::error_code ec;
+    startPatchGet(row.patch, op == PatchOp::Get);
+    return;
+  }
+  if (op == PatchOp::Disable)
+    startPatchDisable(row.patch);
+  else
+    startPatchEnable(row.patch);
+}
+// Fetches, stores and (when fresh and nothing clashes) turns on a patch.
+// An app's patch says so in its messages: the app, not a game, restarts.
+void Application::startPatchGet(const UserPatch &patch, bool fresh) {
+  // Room for the unpacked files plus a little for folders.
+  if (sdFree_ && *sdFree_ < patch.size + patch.size / 10 + (1 << 20)) {
+    alertTitle_ = tr("패치를 받을 수 없습니다");
+    alert_ = trf("SD 카드 공간이 부족합니다. {0}가 필요합니다.", {formatBytes(patch.size)});
+    return;
+  }
+  runPatchJob(patch.id, fresh ? Getting : Updating,
+              [patch, fresh, received = &patchReceived_](net::Session &session, PatchStore &store, Error &error,
+                                                         std::string &done) {
+                std::error_code ec;
+                std::filesystem::remove_all(store.staging(patch.id), ec);
+                if (!session.downloadPatch(patch, store.staging(patch.id), *received, error) ||
+                    !store.commit(patch, error)) {
                   std::filesystem::remove_all(store.staging(patch.id), ec);
-                  if (!session.downloadPatch(patch, store.staging(patch.id), *received, error) ||
-                      !store.commit(patch, error)) {
-                    std::filesystem::remove_all(store.staging(patch.id), ec);
-                    return;
-                  }
-                  if (!fresh) {
-                    done = tr("패치를 새 버전으로 바꿨습니다.");
-                    return;
-                  }
-                  // A fresh patch turns on right away unless it would replace
-                  // someone else's files; then it waits, switched off.
-                  if (!store.conflicts(patch.id).empty()) {
-                    done = tr("패치를 받았습니다. 다른 패치와 겹쳐서 꺼 두었습니다.");
-                    return;
-                  }
-                  if (store.enable(patch.id, error))
-                    done = tr("패치를 받아 켰습니다. 게임을 다시 켜면 적용됩니다.");
-                });
-    return;
-  }
-  if (op == PatchOp::Disable) {
-    runPatchJob(row.patch.id, Disabling, [id = row.patch.id](net::Session &, PatchStore &store, Error &error, std::string &done) {
-      if (store.disable(id, error))
-        done = tr("패치를 껐습니다. 게임을 다시 켜면 원래대로 돌아옵니다.");
-    });
-    return;
-  }
+                  return;
+                }
+                if (!fresh) {
+                  done = tr("패치를 새 버전으로 바꿨습니다.");
+                  return;
+                }
+                // A fresh patch turns on right away unless it would replace
+                // someone else's files; then it waits, switched off.
+                if (!store.conflicts(patch.id).empty()) {
+                  done = tr("패치를 받았습니다. 다른 패치와 겹쳐서 꺼 두었습니다.");
+                  return;
+                }
+                if (store.enable(patch.id, error))
+                  done = patch.homebrewApp.empty() ? tr("패치를 받아 켰습니다. 게임을 다시 켜면 적용됩니다.")
+                                                   : tr("패치를 받아 켰습니다. 앱을 다시 켜면 적용됩니다.");
+              });
+}
+void Application::startPatchDisable(const UserPatch &patch) {
+  runPatchJob(patch.id, Disabling, [id = patch.id, app = !patch.homebrewApp.empty()](
+                                       net::Session &, PatchStore &store, Error &error, std::string &done) {
+    if (store.disable(id, error))
+      done = app ? tr("패치를 껐습니다. 앱을 다시 켜면 원래대로 돌아옵니다.")
+                 : tr("패치를 껐습니다. 게임을 다시 켜면 원래대로 돌아옵니다.");
+  });
+}
+void Application::startPatchEnable(const UserPatch &patch) {
   if (patchStore_) {
-    const auto clash = patchStore_->conflicts(row.patch.id);
+    const auto clash = patchStore_->conflicts(patch.id);
     if (!clash.empty()) {
       const auto owner = clash.front().owner;
       const auto found = patchRecords_.find(owner);
@@ -396,9 +414,10 @@ void Application::runPatchOp(int opIndex) {
       return;
     }
   }
-  runPatchJob(row.patch.id, Enabling, [id = row.patch.id](net::Session &, PatchStore &store, Error &error, std::string &done) {
+  runPatchJob(patch.id, Enabling, [id = patch.id, app = !patch.homebrewApp.empty()](
+                                      net::Session &, PatchStore &store, Error &error, std::string &done) {
     if (store.enable(id, error))
-      done = tr("패치를 켰습니다. 게임을 다시 켜면 적용됩니다.");
+      done = app ? tr("패치를 켰습니다. 앱을 다시 켜면 적용됩니다.") : tr("패치를 켰습니다. 게임을 다시 켜면 적용됩니다.");
   });
 }
 void Application::patchesScreen() {

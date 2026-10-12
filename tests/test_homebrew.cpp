@@ -97,6 +97,48 @@ int runHomebrewTests() {
   }
   // Without install_path the app goes to switch/<stem>/<file>.
   if (!apps.empty()) CHECK(apps.front().installPath == "switch/ytb-player/ytb-player.nro" && apps.front().files.empty());
+  // kind splits tools from ports (tool when missing or unknown); app is the
+  // folder under switch/, else the install folder's name.
+  {
+    const auto one = [&](const std::string &extra) {
+      auto e = entry;
+      e.insert(e.size() - 1, extra);
+      const auto list = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
+      return list.empty() ? App{} : list.front();
+    };
+    CHECK(one("").kind == Kind::Tool && one("").app == "ytb-player");
+    CHECK(one(R"(,"kind":"port","app":"sm64")").kind == Kind::Port);
+    CHECK(one(R"(,"kind":"port","app":"sm64")").app == "sm64");
+    CHECK(one(R"(,"kind":"tool")").kind == Kind::Tool);
+    CHECK(one(R"(,"kind":"game")").kind == Kind::Tool);
+    CHECK(one(R"(,"kind":7)").kind == Kind::Tool);
+    CHECK(one(R"(,"app":"../x")").app == "ytb-player");
+    CHECK(one(R"(,"app":"a/b")").app == "ytb-player");
+    CHECK(one(R"(,"install_dir":"switch/ytb")").app == "ytb");
+    const auto port = one(R"(,"kind":"port","app":"Port 64")");
+    const auto back = parse(R"({"homebrew":[)" + serialize(port) + "]}", "");
+    CHECK(back.size() == 1 && back.front().kind == Kind::Port && back.front().app == "Port 64");
+  }
+  CHECK(appFolderAllowed("sm64") && appFolderAllowed("Port 64") && appFolderAllowed("a.b_c-d"));
+  CHECK(!appFolderAllowed("") && !appFolderAllowed(".") && !appFolderAllowed(".."));
+  CHECK(!appFolderAllowed("a..b") && !appFolderAllowed("a/b") && !appFolderAllowed("a\\b"));
+  CHECK(!appFolderAllowed("a:b") && !appFolderAllowed(" a") && !appFolderAllowed("a ") && !appFolderAllowed("a."));
+  CHECK(!appFolderAllowed(std::string(65, 'a')));
+  // A path counts as the app's only below switch/<app>/, every part safe.
+  CHECK(insideApp("sm64", "switch/sm64/mods/a.bin"));
+  CHECK(insideApp("sm64", "switch/sm64/save.dat"));
+  CHECK(!insideApp("sm64", "switch/sm64"));
+  CHECK(!insideApp("sm64", "switch/sm64/"));
+  CHECK(!insideApp("sm64", "switch/sm64/../other/a"));
+  CHECK(!insideApp("sm64", "switch/sm64/./a"));
+  CHECK(!insideApp("sm64", "switch/sm64//a"));
+  CHECK(!insideApp("sm64", "switch/sm64x/a"));
+  CHECK(!insideApp("sm64", "switch/other/a"));
+  CHECK(!insideApp("sm64", "/switch/sm64/a"));
+  CHECK(!insideApp("sm64", "switch/sm64/a\\..\\b"));
+  CHECK(!insideApp("sm64", "switch/sm64/c:a"));
+  CHECK(!insideApp("sm64", "atmosphere/contents/a"));
+  CHECK(!insideApp("..", "switch/../a"));
   // The download's ETag: the file's sha256, quoted, maybe prefixed.
   const std::string sha(64, 'a');
   CHECK(etagSha256("\"sha256:" + std::string(64, 'A') + "\"") == sha);

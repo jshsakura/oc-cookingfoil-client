@@ -1498,13 +1498,14 @@ void Application::render() {
                ? std::vector<std::pair<std::string, std::string>>{{"B", tr("뒤로")}}
                : std::vector<std::pair<std::string, std::string>>{{"A", tr("패치 관리")}, {"B", tr("뒤로")}});
   else if (screen_ == Screen::Homebrew) {
-    // A does what the row's state allows: get it, update it or remove it.
+    // A opens the app's popup: what it gets or updates, or for an installed
+    // app its facts, patches and saves with 지우기.
     const auto rows = homebrewRows();
     if (rows.empty() || sidebar_)
       footer({{"B", tr("뒤로")}});
     else {
       const auto state = homebrewStatus(homebrew_[rows[std::clamp(selected_, 0, int(rows.size()) - 1)]]);
-      footer({{"A", state == homebrew::Status::Installed ? tr("지우기")
+      footer({{"A", state == homebrew::Status::Installed ? tr("상세 정보")
                     : state == homebrew::Status::Update  ? tr("업데이트|동작")
                                                          : tr("받기")},
               {"B", tr("뒤로")}});

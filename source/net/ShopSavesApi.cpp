@@ -20,7 +20,10 @@ Parsed<std::vector<shopsaves::ShopSave>> shopSaves(const Server &server, const S
 bool downloadShopSave(const Server &server, const State &state, const shopsaves::ShopSave &save,
                       const std::string &dir, std::atomic<uint64_t> &received, Error &error,
                       const std::atomic<bool> *cancel) {
-  TarWriter writer(dir, [](const std::string &path) { return shopsaves::pathAllowed(path); });
+  // An app's save may only land below its switch/<app>/ folder.
+  TarWriter writer(dir, [&save](const std::string &path) {
+    return save.homebrewApp.empty() ? shopsaves::pathAllowed(path) : shopsaves::homebrewPathAllowed(save, path);
+  });
   const auto response = stream(save.url, authHeaders(server, state, save.url),
                                [&](const char *data, size_t size) {
                                  received += size;

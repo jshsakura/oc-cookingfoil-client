@@ -4,6 +4,7 @@
 #include "core/I18n.hpp"
 #include "core/Config.hpp"
 #include "core/Log.hpp"
+#include "core/Homebrew.hpp"
 #include <curl/curl.h>
 #include <algorithm>
 #include <cctype>
@@ -334,7 +335,13 @@ std::vector<UserPatch> parsePatches(json_object* array) {
         UserPatch p;
         p.id = stringField(object, "id");
         p.titleId = titleId(object, "title_id");
-        if (p.titleId.empty() || p.id.empty() || p.id.size() > 64 ||
+        // No Title ID: an app's patch, its files below switch/<app>/.
+        if (p.titleId.empty()) {
+            if (field(object, "title_id")) continue; // a broken Title ID, not a null one
+            p.homebrewApp = stringField(object, "homebrew");
+            if (!homebrew::appFolderAllowed(p.homebrewApp)) continue;
+        }
+        if (p.id.empty() || p.id.size() > 64 ||
             p.id.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos)
             continue;
         p.name = stringField(object, "name", p.id);
@@ -723,7 +730,7 @@ Parsed<std::vector<UserPatch>> Session::patches() {
     return result;
 }
 bool Session::downloadPatch(const UserPatch& patch, const std::string& dir, std::atomic<uint64_t>& received, Error& error) {
-    TarWriter writer(dir, patch.titleId);
+    TarWriter writer(dir, [&patch](const std::string& path) { return patchPathAllowed(patch, path); });
     const auto url = server_.url + "/api/patches/" + patch.id + "/download";
     const auto response = stream(url, authHeaders(server_, state_, url), [&](const char* data, size_t size) {
         received += size;

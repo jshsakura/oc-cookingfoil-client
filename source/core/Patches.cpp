@@ -1,6 +1,7 @@
 #include <cerrno>
 #include "core/Log.hpp"
 #include "core/Patches.hpp"
+#include "core/Homebrew.hpp"
 #include "core/Json.hpp"
 #include "core/I18n.hpp"
 #include <algorithm>
@@ -43,6 +44,10 @@ bool keepFolder(const std::string &rel) {
   for (const auto *k : keep)
     if (upper(rel) == upper(k))
       return true;
+  // switch/ and an app's own folder stay too.
+  const auto parts = split(rel);
+  if (same(parts[0], "switch") && parts.size() <= 2)
+    return true;
   return rel.empty() || rel == ".";
 }
 uint64_t octal(const char *field, size_t size) {
@@ -96,6 +101,11 @@ bool patchPathAllowed(const std::string &titleId, const std::string &path) {
       same(parts[2], "FPSLocker") && same(parts[3], "patches"))
     return upper(parts[4]) == tid;
   return false;
+}
+bool patchPathAllowed(const UserPatch &patch, const std::string &path) {
+  if (!patch.homebrewApp.empty())
+    return homebrew::insideApp(patch.homebrewApp, path);
+  return patchPathAllowed(patch.titleId, path);
 }
 bool isCheatPath(const std::string &path) {
   const auto parts = split(path);
@@ -304,6 +314,8 @@ bool PatchStore::save(Error &error) {
   for (const auto &[id, r] : records_) {
     auto *p = json_object_new_object();
     json_object_object_add(p, "titleId", json_object_new_string(r.titleId.c_str()));
+    if (!r.homebrewApp.empty())
+      json_object_object_add(p, "homebrew", json_object_new_string(r.homebrewApp.c_str()));
     json_object_object_add(p, "name", json_object_new_string(r.name.c_str()));
     json_object_object_add(p, "version", json_object_new_string(r.version.c_str()));
     json_object_object_add(p, "hash", json_object_new_string(r.hash.c_str()));
@@ -359,6 +371,9 @@ bool PatchStore::load(Error &error) {
         PatchRecord r;
         r.id = id;
         r.titleId = stringField(p, "titleId");
+        r.homebrewApp = stringField(p, "homebrew");
+        if (!r.homebrewApp.empty() && !homebrew::appFolderAllowed(r.homebrewApp))
+          continue;
         r.name = stringField(p, "name");
         r.version = stringField(p, "version");
         r.hash = stringField(p, "hash");
@@ -372,7 +387,8 @@ bool PatchStore::load(Error &error) {
       }
     }
   }
-  // A cheat file we set aside but never recorded goes back where it was.
+  // A cheat file we set aside but never recorded goes back where it was;
+  // an app's file set aside for a patch that is on, or half way, stays.
   const auto baseRoot = storeRoot_ + "/_base";
   if (fs::is_directory(baseRoot, ec)) {
     std::vector<std::string> orphans;
@@ -380,7 +396,7 @@ bool PatchStore::load(Error &error) {
          !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
       if (it->is_regular_file(ec)) {
         const auto rel = it->path().string().substr(baseRoot.size() + 1);
-        if (!cheatPaths_.count(rel))
+        if (!cheatPaths_.count(rel) && !setAside(rel))
           orphans.push_back(rel);
       }
     for (const auto &rel : orphans) {
@@ -407,6 +423,13 @@ bool PatchStore::load(Error &error) {
         fs::remove_all(entry.path(), ec);
     }
   return true;
+}
+bool PatchStore::setAside(const std::string &path) const {
+  for (const auto &[id, r] : records_)
+    if (!r.homebrewApp.empty() && (r.on || !r.pending.empty()) &&
+        std::find(r.files.begin(), r.files.end(), path) != r.files.end())
+      return true;
+  return false;
 }
 bool PatchStore::rebuildCheat(const std::string &path, Error &error) {
   std::vector<const PatchRecord *> owners;
@@ -463,16 +486,25 @@ std::vector<PatchConflict> PatchStore::conflicts(const std::string &id) const {
     for (const auto &[otherId, other] : records_)
       if (other.on && std::find(other.files.begin(), other.files.end(), file) != other.files.end())
         owner = otherId;
+    // An app's own file is set aside on enable, so only another patch clashes.
+    if (owner.empty() && !record->homebrewApp.empty())
+      continue;
     out.push_back({file, owner});
   }
   return out;
 }
 bool PatchStore::finishEnable(PatchRecord &record, Error &error) {
   std::error_code ec;
-  for (const auto &file : record.files)
-    if (fs::exists(stored(record.id, file), ec) && !fs::exists(sd(file), ec) &&
-        !move(stored(record.id, file), sd(file), error))
+  for (const auto &file : record.files) {
+    if (!fs::exists(stored(record.id, file), ec))
+      continue;
+    // An app patch sets the app's own file aside first.
+    if (!record.homebrewApp.empty() && fs::exists(sd(file), ec) && !fs::exists(base(file), ec) &&
+        !move(sd(file), base(file), error))
       return false;
+    if (!fs::exists(sd(file), ec) && !move(stored(record.id, file), sd(file), error))
+      return false;
+  }
   record.on = true;
   record.order = ++order_;
   record.pending.clear();
@@ -491,6 +523,11 @@ bool PatchStore::finishDisable(PatchRecord &record, Error &error) {
         return false;
       prune(sd(file));
     }
+  // What an app patch set aside goes back.
+  for (const auto &file : record.files)
+    if (!record.homebrewApp.empty() && fs::exists(base(file), ec) && !fs::exists(sd(file), ec) &&
+        !move(base(file), sd(file), error))
+      return false;
   record.on = false;
   record.pending.clear();
   if (!save(error))
@@ -531,13 +568,15 @@ bool PatchStore::remove(const std::string &id, Error &error) {
   return save(error);
 }
 bool PatchStore::commit(const UserPatch &patch, Error &error) {
-  if (!validId(patch.id) || patch.titleId.size() != 16) {
+  const bool app = !patch.homebrewApp.empty();
+  if (!validId(patch.id) || (app ? !homebrew::appFolderAllowed(patch.homebrewApp) : patch.titleId.size() != 16)) {
     error.message = tr("패치 정보가 잘못되었습니다.");
     return false;
   }
   PatchRecord record;
   record.id = patch.id;
   record.titleId = patch.titleId;
+  record.homebrewApp = patch.homebrewApp;
   record.name = patch.name;
   record.version = patch.version;
   record.hash = patch.hash;
@@ -548,7 +587,7 @@ bool PatchStore::commit(const UserPatch &patch, Error &error) {
     if (!it->is_regular_file(ec))
       continue;
     const auto rel = it->path().string().substr(from.size() + 1);
-    if (!patchPathAllowed(patch.titleId, rel)) {
+    if (!patchPathAllowed(patch, rel)) {
       error.message = trf("패치가 허용되지 않은 위치에 쓰려고 합니다: {0}", {rel});
       return false;
     }

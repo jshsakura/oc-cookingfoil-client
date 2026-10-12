@@ -97,6 +97,9 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
       }
     }
     if (!filesOk) continue;
+    a.kind = stringField(o, "kind") == "port" ? Kind::Port : Kind::Tool;
+    a.app = stringField(o, "app");
+    if (!appFolderAllowed(a.app)) a.app = appFolder(a.installPath).substr(7);
     out.push_back(std::move(a));
   }
   return out;
@@ -115,6 +118,8 @@ std::string serialize(const App &a) {
   add("forwarder_title_id", a.forwarderTitleId);
   json_object_object_add(o.get(), "forwarder_size", json_object_new_int64(int64_t(a.forwarderSize)));
   add("install_path", a.installPath);
+  add("kind", a.kind == Kind::Port ? "port" : "tool");
+  add("app", a.app);
   if (!a.files.empty()) {
     auto *files = json_object_new_array();
     for (const auto &f : a.files) {
@@ -128,6 +133,19 @@ std::string serialize(const App &a) {
     json_object_object_add(o.get(), "files", files);
   }
   return json_object_to_json_string_ext(o.get(), JSON_C_TO_STRING_PLAIN | JSON_C_TO_STRING_NOSLASHESCAPE);
+}
+bool appFolderAllowed(const std::string &app) {
+  if (app.empty() || app.size() > 64 || app.find("..") != std::string::npos) return false;
+  const auto edge = [](char c) { return c == ' ' || c == '.'; };
+  if (edge(app.front()) || edge(app.back())) return false;
+  return std::all_of(app.begin(), app.end(), [](unsigned char c) {
+    return std::isalnum(c) || c == ' ' || c == '-' || c == '_' || c == '.';
+  });
+}
+bool insideApp(const std::string &app, const std::string &path) {
+  const auto folder = "switch/" + app + "/";
+  return appFolderAllowed(app) && path.size() > folder.size() && path.compare(0, folder.size(), folder) == 0 &&
+         path.find(':') == std::string::npos && pathAllowed(path);
 }
 std::string sdPath(const std::string &fileName) {
   return "switch/" + fileName.substr(0, fileName.size() - 4) + "/" + fileName;

@@ -10,12 +10,21 @@ struct ShopSave {
   int64_t updatedAt = 0;
   std::string gameName, gameIcon;
   std::vector<std::string> gameNames; // ko, en, ja, zh; any may be empty
+  // An app's save has no Title ID: its files go as files into installRoot
+  // (switch/<app>) on the SD card, not into system save data.
+  std::string homebrewApp, installRoot;
 };
-// `base` resolves "/api/..." URLs; entries without an id, Title ID or URL
-// are dropped.
+// `base` resolves "/api/..." URLs; entries without an id, Title ID (or an
+// app with its switch/<app> root) or URL are dropped.
 std::vector<ShopSave> parse(const std::string &json, const std::string &base);
 // Inside a save folder: relative, no "..", no drive or device names.
 bool pathAllowed(const std::string &path);
+// A path of an app's save, relative to its installRoot, that stays below
+// switch/<app>/.
+bool homebrewPathAllowed(const ShopSave &save, const std::string &path);
+// Moves every file under `from` to the same place under `to`, a file
+// already there moved to the same place under `keep` first; `from` goes.
+bool placeFiles(const std::string &from, const std::string &to, const std::string &keep, std::string &error);
 // The name shown for the save's game in the interface language.
 std::string gameName(const ShopSave &save, const std::string &languageCode);
 } // namespace foil::shopsaves
