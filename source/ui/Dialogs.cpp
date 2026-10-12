@@ -238,7 +238,7 @@ void Application::dialogs() {
     const float x = body.x + 32, y = body.y + 24;
     cover(g.representative.icon, x, y, 96, false, g.representative.name);
     paint_.fonts.text(g.representative.name, x + 116, y + 4, 22, Ink, true, body.w - 180);
-    paint_.fonts.text(trf("{0}개 항목 · {1}", {std::to_string(selection_->files().size()),
+    paint_.fonts.text(trf("{0}개 항목 · {1}", {std::to_string(selection_->count()),
                                               formatBytes(selection_->total())}),
                       x + 116, y + 42, 19, Secondary);
     paint_.fonts.text(selection_->target == "nand" ? tr("본체에 설치합니다.") : tr("SD 카드에 설치합니다."),
