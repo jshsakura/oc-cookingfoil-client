@@ -444,7 +444,7 @@ void Application::patchesScreen() {
                    patchFilter_ = PatchFilter(n);
                    selected_ = 0;
                  }, searchX - 16);
-  pageTitle(tr("유저 패치"), on ? trf("{0} · 켜짐 {1}", {std::to_string(all.size()), std::to_string(on)}) : std::to_string(all.size()), tabsLeft);
+  pageTitle(tr("패치|메뉴"), on ? trf("{0} · 켜짐 {1}", {std::to_string(all.size()), std::to_string(on)}) : std::to_string(all.size()), tabsLeft);
   if (rows.empty() && !patchQuery_.empty() && !all.empty()) {
     notice(trf("'{0}'에 맞는 패치가 없습니다.", {patchQuery_}), tr("B로 검색어를 지웁니다."), 23);
     return;

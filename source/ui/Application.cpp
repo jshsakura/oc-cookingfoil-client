@@ -15,7 +15,7 @@ const char *screenLabel(Screen screen) {
   case Screen::Library: return tr("모든 게임");
   case Screen::Installed:
   case Screen::Updates: return tr("내 게임");
-  case Screen::Patches: return tr("유저 패치");
+  case Screen::Patches: return tr("패치|메뉴");
   case Screen::Homebrew: return tr("홈브류");
   case Screen::Retro: return tr("레트로 게임");
   case Screen::Saves: return tr("세이브");

@@ -445,7 +445,7 @@ const Translation rows[] = {
     {"패치를 켰습니다. 게임을 다시 켜면 적용됩니다.", "Patch on. Applies when the game restarts.",
      "パッチをオンにしました。ゲームを再起動すると適用されます。", "补丁已开启。重启游戏后生效。"},
     // Patches: list screen
-    {"유저 패치", "User patches", "ユーザーパッチ", "用户补丁"},
+    {"패치|메뉴", "Mods", "パッチ", "补丁"},
     {"{0}개 · 켜짐 {1}개", "{0} total · {1} on", "{0}件 · オン {1}件", "共 {0} 个 · 已开启 {1} 个"},
     {"{0} · 켜짐 {1}", "{0} · {1} on", "{0} · オン {1}", "{0} · 已开启 {1}"},
     {"서버에 연결한 뒤 패치 목록을 불러옵니다.", "Connect to a server to load the patch list.",
