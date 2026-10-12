@@ -1,4 +1,5 @@
 #include "core/Homebrew.hpp"
+#include "core/HomebrewCard.hpp"
 #include "core/Json.hpp"
 #include <algorithm>
 #include <cctype>
@@ -196,9 +197,11 @@ std::string serializeLedger(const Ledger &ledger) {
   }
   return json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_NOSLASHESCAPE);
 }
-Status status(const App &app, const Ledger &ledger, const std::function<bool(const std::string &)> &exists) {
+Status status(const App &app, const Ledger &ledger, const std::function<bool(const std::string &)> &exists,
+              const std::string *cardVersion) {
   const auto found = ledger.find(app.id);
-  if (found == ledger.end() || !exists(found->second.file)) return Status::Available;
+  if (found == ledger.end() || !exists(found->second.file))
+    return cardVersion ? cardStatus(app.version, *cardVersion) : Status::Available;
   // Same build in another place (the server moved it) also reads as an update.
   return found->second.hash == app.hash && found->second.file == app.installPath ? Status::Installed : Status::Update;
 }
