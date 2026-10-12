@@ -247,6 +247,12 @@ private:
   void homebrewExtrasDialog();
   void homebrewSaveDialog();
   void applyHomebrewSave(const shopsaves::ShopSave &save);
+  // 패치 and 세이브 > 공유 name apps' patches and saves from 홈브류's list:
+  // asks for it once when the server has 홈브류 and it is not here yet.
+  void needHomebrewList();
+  // The popup before an app's save from 공유 goes into switch/<app>/.
+  bool shopAppSaveAsk_ = false;
+  void appSaveConfirm(const shopsaves::ShopSave &save);
   std::thread homebrewWorker_;
   std::atomic<bool> homebrewDone_{false};
   std::function<void()> homebrewFinish_;
@@ -362,7 +368,13 @@ private:
   static constexpr int SavesTabs = 3;
   int savesTab_ = 0; // 0 the console's games, 1 the server's saves, 2 Dropbox
   std::vector<shopsaves::ShopSave> shopSaves_, incomingShopSaves_;
-  std::vector<shopsaves::ShopSave> homebrewSaves_; // apps' saves, shown in 홈브류 only
+  std::vector<shopsaves::ShopSave> homebrewSaves_; // apps' saves, for the app's popup in 홈브류
+  // A server save's game or app: the name and icon 공유 shows, and whether
+  // it is on this console (an app 홈브류 does not list counts as here).
+  std::string shopSaveTitle(const shopsaves::ShopSave &save) const;
+  std::string shopSaveIcon(const shopsaves::ShopSave &save) const;
+  bool shopSaveTargetHere(const shopsaves::ShopSave &save) const;
+  void sortShopSaves(); // games and apps here first, then by name, each one's saves together
   bool shopSavesLoaded_ = false, shopSavesMissing_ = false, incomingShopSavesMissing_ = false;
   Error shopSavesError_, incomingShopSavesError_;
   std::thread shopSavesWorker_;
@@ -428,9 +440,10 @@ private:
   // the rows' order. The list shows games; a game with several patches
   // opens a picker.
   struct PatchGame {
-    std::string titleId, game, icon;
+    std::string titleId, game, icon; // titleId: homebrew::ownerKey, "app:<folder>" for an app
     bool installed = false;
     std::vector<int> rows;
+    bool app = false; // an app's patches (switch/<app>/), not a game's
   };
   static std::vector<PatchGame> patchGames(const std::vector<PatchRow> &rows);
   // The patch the popups act on, by id so a list that changes under it

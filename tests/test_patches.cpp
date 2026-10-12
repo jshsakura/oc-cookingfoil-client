@@ -93,6 +93,8 @@ bool stage(foil::PatchStore &store, const std::string &id, const std::vector<Ent
 
 int runPatchTests() {
   int failures = 0;
+  // An app's patch reads as 홈브류 in the list, not as an unknown kind.
+  CHECK(std::string(foil::patchKindLabel("homebrew")) != foil::patchKindLabel("something-else"));
   CHECK(foil::patchPathAllowed(Tid, Romfs));
   CHECK(foil::patchPathAllowed(Tid, "atmosphere/contents/0100f2c0115b6000/exefs/main.npdm"));
   CHECK(foil::patchPathAllowed(Tid, "atmosphere/exefs_patches/res/ABCD.ips"));

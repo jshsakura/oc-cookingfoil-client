@@ -42,6 +42,15 @@ bool appFolderAllowed(const std::string &app);
 // Whether an SD-root relative path lies below switch/<app>/, every part of
 // it a plain name.
 bool insideApp(const std::string &app, const std::string &path);
+// The listed app whose folder (App::app) is `folder`, or nullptr; patches
+// and saves name an app by its folder.
+const App *findApp(const std::vector<App> &apps, const std::string &folder);
+// The name shown for an app's patches and saves: the list's name, else the
+// folder itself.
+std::string appTitle(const std::vector<App> &apps, const std::string &folder);
+// One key per game or app, so lists of patches and saves group by it: the
+// Title ID, or "app:<folder>" for an app's (which has no Title ID).
+std::string ownerKey(const std::string &titleId, const std::string &folder);
 // Where an app goes, from the SD card root: switch/<stem>/<file name>.
 std::string sdPath(const std::string &fileName);
 // The download's ETag as 64 lowercase hex digits, or "" when it is not a

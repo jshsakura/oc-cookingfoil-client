@@ -173,5 +173,24 @@ int runHomebrewTests() {
     moved.installPath = "switch/ytb/ytb-player.nro";
     CHECK(status(moved, ledger, there) == Status::Update);
   }
+  {
+    // Patches and saves name an app by its folder; the list gives its name.
+    std::vector<App> listed(2);
+    listed[0].app = "ytb";
+    listed[0].name = "YTB Player";
+    listed[1].app = "nameless";
+    CHECK(findApp(listed, "ytb") == &listed[0]);
+    CHECK(findApp(listed, "YTB Player") == nullptr);
+    CHECK(findApp(listed, "") == nullptr);
+    CHECK(findApp({}, "ytb") == nullptr);
+    CHECK(appTitle(listed, "ytb") == "YTB Player");
+    CHECK(appTitle(listed, "nameless") == "nameless");
+    CHECK(appTitle(listed, "gone") == "gone");
+    // A game groups by Title ID, an app by its folder, never with each other.
+    CHECK(ownerKey("0100ABCDEF012000", "") == "0100ABCDEF012000");
+    CHECK(ownerKey("", "ytb") == "app:ytb");
+    CHECK(ownerKey("", "ytb") != ownerKey("ytb", ""));
+    CHECK(ownerKey("0100ABCDEF012000", "ytb") == "0100ABCDEF012000");
+  }
   return failures;
 }

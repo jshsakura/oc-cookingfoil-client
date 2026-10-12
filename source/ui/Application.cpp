@@ -843,7 +843,7 @@ void Application::action(Action a) {
     installedAction(a);
     return;
   }
-  if (screen_ == Screen::Saves && (managedGame_ || saveNeedsGame_ || savePicking_ ||
+  if (screen_ == Screen::Saves && (managedGame_ || saveNeedsGame_ || savePicking_ || shopAppSaveAsk_ ||
                                    (savesTab_ == 2 && (dropboxModal() || dropboxSession_)) || (!sidebar_ && a != Action::Back) || a == Action::Queue ||
                                    a == Action::Previous || a == Action::Next)) {
     savesAction(a);

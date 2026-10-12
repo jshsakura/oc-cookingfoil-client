@@ -124,6 +124,8 @@ const char *patchKindLabel(const std::string &kind) {
     return tr("IPS 패치");
   if (kind == "fpslocker")
     return "FPSLocker";
+  if (kind == "homebrew")
+    return tr("홈브류");
   return tr("기타");
 }
 

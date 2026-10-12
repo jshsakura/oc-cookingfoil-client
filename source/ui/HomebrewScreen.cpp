@@ -29,7 +29,10 @@ void Application::loadHomebrew() {
       homebrewError_ = error;
       if (error) return;
       homebrewEtag_ = etag;
-      if (!unchanged) homebrew_ = std::move(apps);
+      if (!unchanged) {
+        homebrew_ = std::move(apps);
+        sortShopSaves(); // apps' saves in 공유 now sort by the app's name
+      }
       if (screen_ == Screen::Homebrew && sidebar_ && autoSidebar_ && hasFocusable()) sidebar_ = autoSidebar_ = false;
     };
     homebrewDone_ = true;

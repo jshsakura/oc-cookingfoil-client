@@ -202,4 +202,16 @@ Status status(const App &app, const Ledger &ledger, const std::function<bool(con
   // Same build in another place (the server moved it) also reads as an update.
   return found->second.hash == app.hash && found->second.file == app.installPath ? Status::Installed : Status::Update;
 }
+const App *findApp(const std::vector<App> &apps, const std::string &folder) {
+  if (folder.empty()) return nullptr;
+  const auto found = std::find_if(apps.begin(), apps.end(), [&](const App &app) { return app.app == folder; });
+  return found == apps.end() ? nullptr : &*found;
+}
+std::string appTitle(const std::vector<App> &apps, const std::string &folder) {
+  const auto *app = findApp(apps, folder);
+  return app && !app->name.empty() ? app->name : folder;
+}
+std::string ownerKey(const std::string &titleId, const std::string &folder) {
+  return titleId.empty() && !folder.empty() ? "app:" + folder : titleId;
+}
 } // namespace foil::homebrew
