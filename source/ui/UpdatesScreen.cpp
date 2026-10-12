@@ -54,7 +54,8 @@ void Application::updates() {
   const bool canUpdate = installed_.installed.complete && !deviceBusy_ && !rows.empty();
   // As on 설치됨: search at the right end, 모두 업데이트 (Y) in the order's
   // place, then the tabs.
-  const float searchX = SearchX, w = myGamesButtonWidth(tr("모두 업데이트")), buttonX = searchX - 16 - w;
+  const auto yLabel = updatesTab_ == 2 ? tr("모두 설치") : tr("모두 업데이트");
+  const float searchX = SearchX, w = myGamesButtonWidth(yLabel), buttonX = searchX - 16 - w;
   searchBar(updatesQuery_, searchX);
   // Always there, dimmed with nothing to update, so the tabs never move.
   if (canUpdate) headerItem("all", buttonX, 24, w, 48, [this] { action(Action::Queue); });
@@ -62,7 +63,7 @@ void Application::updates() {
   paint_.key("Y", buttonX + 18, 48);
   const auto ink = canUpdate ? Ink : SDL_Color{184, 182, 176, 255};
   paint_.icon(3, buttonX + 60, 38, ink, 20);
-  paint_.fonts.middle(tr("모두 업데이트"), buttonX + 88, 48, 18, ink, true, w - 106);
+  paint_.fonts.middle(yLabel, buttonX + 88, 48, 18, ink, true, w - 106);
   const float tabsLeft = myGamesTabs(buttonX - 16);
   pageTitle(tr("내 게임"),
             bytes ? std::to_string(rows.size()) + " · " + formatBytes(bytes) : std::to_string(rows.size()),
@@ -127,7 +128,7 @@ void Application::installUpdates(bool all) {
   const auto &selected = rows[std::clamp(selected_, 0, int(rows.size()) - 1)];
   std::vector<Item> files;
   for (const auto &row : rows) if (all || row.baseId == selected.baseId) files.push_back(row.item);
-  const auto name = all ? std::string(tr("모두 업데이트")) : selected.item.name;
+  const auto name = all ? std::string(updatesTab_ == 2 ? tr("모두 설치") : tr("모두 업데이트")) : selected.item.name;
   if (const auto result = startInstall(files, name, selected.item.icon, installTarget())) {
     message(result.message);
     return;

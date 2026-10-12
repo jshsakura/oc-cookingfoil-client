@@ -356,6 +356,7 @@ private:
   bool savePicking_ = false; // the picker for a game with several server saves
   int savePickRow_ = 0, shopSavePick_ = 0; // picker row; the save chosen (index into shopSaves_)
   std::vector<std::pair<int, int>> shopSaveGroups() const;
+  int shopSaveChoices() const;
   void chooseShopGame();
   void savePickDialog();
   bool saveNeedsGame_ = false; // a server save picked whose game is not installed

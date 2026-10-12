@@ -218,6 +218,12 @@ std::vector<int> Application::gameRows(const std::string &query) const {
     if (textMatches({installed_.games[i].name, installed_.games[i].titleId}, query)) out.push_back(i);
   return out;
 }
+// How many server saves the game under the cursor has (the footer says
+// 세이브 고르기 when there is more than one).
+int Application::shopSaveChoices() const {
+  const auto groups = shopSaveGroups();
+  return groups.empty() ? 0 : groups[std::clamp(shopSaveRow_, 0, int(groups.size()) - 1)].second;
+}
 // A on a game's row: one save goes straight on, several open a picker.
 void Application::chooseShopGame() {
   const auto groups = shopSaveGroups();

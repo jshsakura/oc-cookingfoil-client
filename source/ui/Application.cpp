@@ -1518,13 +1518,15 @@ void Application::render() {
     footer(managedGame_ ? std::vector<std::pair<std::string, std::string>>{{"A", tr("선택")}, {"B", tr("뒤로")}}
            : sidebar_ || savesTab_ == 2 || (savesTab_ == 1 ? shopSaves_.empty() : installed_.games.empty())
                ? std::vector<std::pair<std::string, std::string>>{{"B", tr("뒤로")}}
-               : std::vector<std::pair<std::string, std::string>>{{"A", savesTab_ == 1 ? tr("적용하기") : tr("세이브 관리")},
+               : std::vector<std::pair<std::string, std::string>>{{"A", savesTab_ != 1 ? tr("세이브 관리")
+                                                                                     : shopSaveChoices() > 1 ? tr("세이브 고르기")
+                                                                                                             : tr("적용하기")},
                                                                   {"B", tr("뒤로")}});
   else if (screen_ == Screen::Updates) {
     // Only offer what can happen now.
     // Y is the header button; the footer keeps A and B.
-    if (!findUpdates(groups_, installed_.installed).empty())
-      footer({{"A", tr("이 게임만 업데이트")}, {"B", tr("뒤로")}});
+    if (!updateRows().empty())
+      footer({{"A", updatesTab_ == 2 ? tr("이 DLC만 설치") : tr("이 게임만 업데이트")}, {"B", tr("뒤로")}});
     else
       footer({{"B", tr("뒤로")}});
   }
