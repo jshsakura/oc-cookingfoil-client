@@ -29,6 +29,24 @@ bool patchPathAllowed(const UserPatch &patch, const std::string &path);
 // Cheat files hold one build's cheats; enabled patches share one file.
 bool isCheatPath(const std::string &path);
 const char *patchKindLabel(const std::string &kind);
+// A game's base Title ID, upper case, from the ID of the game or of its
+// update or DLC (the low 13 bits hold those). Text that is not a Title ID
+// comes back upper-cased as it is.
+std::string baseTitleId(const std::string &titleId);
+// What a patch belongs to: its game's base Title ID, or "app:<folder>" for an
+// app's patch (homebrew::ownerKey).
+std::string patchOwner(const UserPatch &patch);
+// Whether the patch belongs to `owner`: a game's Title ID in any case (an
+// update's or DLC's too) or "app:<folder>".
+bool patchBelongs(const UserPatch &patch, const std::string &owner);
+std::vector<UserPatch> patchesFor(const std::vector<UserPatch> &patches, const std::string &owner);
+// A version as written by hand, for comparing: no surrounding space and no
+// leading "v" ("  v1.2.0 " -> "1.2.0").
+std::string normalizeVersion(const std::string &version);
+// Whether the patch suits the game version being installed: a patch for any
+// version (no game_version, or "any") always does, and so does every patch
+// when that version is unknown.
+bool patchFitsVersion(const UserPatch &patch, const std::string &version);
 
 // Unpacks a ustar stream under root as it arrives. Paths outside
 // patchPathAllowed, links and special files abort the whole archive.
@@ -73,6 +91,10 @@ struct PatchRecord {
   uint64_t bytes = 0;
   int64_t order = 0; // enable order; cheats merge in this order
 };
+// What a patch picked with a game install still needs, given what the SD
+// store holds of it: fetch it, fetch its newer build, switch it on, or nothing.
+enum class PatchStep { Get, Update, Enable, Skip };
+PatchStep patchStep(const UserPatch &patch, const PatchRecord *record);
 struct PatchConflict {
   std::string path, owner; // owner is a patch id, empty for the user's own file
 };
