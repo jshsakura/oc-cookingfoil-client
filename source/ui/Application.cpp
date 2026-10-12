@@ -673,15 +673,24 @@ void Application::openTheme(size_t row) {
   screen(Screen::Library);
   query_.clear();
   // Land on the chip that shows the same games, sorted the theme's way.
-  const auto match = std::find_if(chips_.begin(), chips_.end(), [&](const Theme &c) {
+  const auto same = [&](const Theme &c) {
     return c.filter == theme.filter && c.category == theme.category &&
            c.minPlayers == theme.minPlayers && c.maxPlayers == theme.maxPlayers &&
            c.maxSize == theme.maxSize && c.minSize == theme.minSize &&
-           c.notInstalled == theme.notInstalled;
+           c.notInstalled == theme.notInstalled && c.onSale == theme.onSale &&
+           c.minScore == theme.minScore && c.withoutCategory == theme.withoutCategory;
+  };
+  auto match = std::find_if(chips_.begin() + 1, chips_.end(), [&](const Theme &c) {
+    return same(c) && (c.title == theme.title || !(theme.filter == Filter::All && theme.category.empty()));
   });
+  // A row with no chip of its own (신작, 인기, 명작...): a chip with its name,
+  // so 모든 게임 says which view it is.
+  if (match == chips_.end()) {
+    chips_.push_back(theme);
+    match = chips_.end() - 1;
+  }
   activeChips_.clear();
-  if (match != chips_.end() && match != chips_.begin())
-    activeChips_.push_back(int(match - chips_.begin()));
+  activeChips_.push_back(int(match - chips_.begin()));
   librarySort_ = theme.sort;
   sidebar_ = !hasFocusable();
 }
