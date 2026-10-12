@@ -1,7 +1,9 @@
 #pragma once
 #include "core/Types.hpp"
 #include <map>
+#include <initializer_list>
 #include <optional>
+#include <string_view>
 namespace foil {
 struct Group {
   std::string id;
@@ -55,7 +57,7 @@ std::vector<size_t> browseCatalog(const std::vector<Group> &groups,
 using InstalledMask = std::vector<bool>;
 // Whether any of `texts` holds `query` (ASCII letters ignore case); an
 // empty query matches everything. 세이브 and 유저 패치's search.
-bool textMatches(const std::vector<std::string> &texts, const std::string &query);
+bool textMatches(std::initializer_list<std::string_view> texts, const std::string &query);
 std::vector<size_t> browseFiltered(const std::vector<Group> &groups, const std::string &query,
                                    const std::vector<Theme> &filters, SortMode sort,
                                    const InstalledMask &installed = {});

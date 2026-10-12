@@ -125,11 +125,11 @@ bool passes(const Group &g, const Theme &t) {
   return t.category.empty() || std::find(genres.begin(), genres.end(), t.category) != genres.end();
 }
 } // namespace
-bool textMatches(const std::vector<std::string> &texts, const std::string &query) {
+bool textMatches(std::initializer_list<std::string_view> texts, const std::string &query) {
   if (query.empty()) return true;
   const auto needle = lower(query);
   return std::any_of(texts.begin(), texts.end(),
-                     [&](const std::string &text) { return lower(text).find(needle) != std::string::npos; });
+                     [&](std::string_view text) { return lower(std::string(text)).find(needle) != std::string::npos; });
 }
 std::vector<size_t> browseFiltered(const std::vector<Group> &groups, const std::string &query,
                                    const std::vector<Theme> &filters, SortMode sort,
