@@ -40,11 +40,18 @@ bool installClient(const Server &server, const State &state, const update::Relea
   // Kept in memory as it arrives for the checksum; a build is a few MB.
   std::string bytes;
   bytes.reserve(size_t(release.size));
-  bool writeFailed = false;
+  bool writeFailed = false, tooLong = false;
+  int writeErrno = 0;
   const auto response = stream(release.url, authHeaders(server, state, release.url),
                                [&](const char *data, size_t size) {
-                                 if (bytes.size() + size > release.size ||
-                                     std::fwrite(data, 1, size, out.get()) != size) {
+                                 // Longer than the release said: the server has a
+                                 // newer build than the one asked about.
+                                 if (bytes.size() + size > release.size) {
+                                   tooLong = true;
+                                   return false;
+                                 }
+                                 if (std::fwrite(data, 1, size, out.get()) != size) {
+                                   writeErrno = errno;
                                    writeFailed = true;
                                    return false;
                                  }
@@ -59,9 +66,12 @@ bool installClient(const Server &server, const State &state, const update::Relea
     error.message = message;
     return false;
   };
+  // Our own stops first: they end the transfer, which curl reports as aborted.
+  if (tooLong) return fail(tr("서버의 업데이트가 바뀌었습니다. 다시 확인합니다."));
+  if (writeFailed || !closed)
+    return fail(tr("업데이트 파일을 쓰지 못했습니다.") + std::string(" (") + std::strerror(writeErrno ? writeErrno : errno) + ")");
   if (!response.error.empty()) return fail(response.error);
   if (response.status != 200) return fail(trf("업데이트를 받지 못했습니다. HTTP {0}", {std::to_string(response.status)}));
-  if (writeFailed || !closed) return fail(tr("업데이트 파일을 쓰지 못했습니다."));
   if (bytes.size() != release.size || update::sha256Hex(bytes) != release.sha256)
     return fail(tr("받은 파일이 서버의 것과 다릅니다. 다시 시도합니다."));
   // Checked and complete: platform::replaceSelf puts it in place on the

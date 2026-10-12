@@ -172,6 +172,7 @@ const Translation rows[] = {
     {"업데이트할 패치가 없습니다.", "No patches to update.", "アップデートするパッチはありません。", "没有需要更新的补丁。"},
     {"v{0}을(를) 설치했습니다. 앱을 다시 실행하면 업데이트가 적용됩니다.", "v{0} installed. It takes effect when you start the app again.", "v{0}をインストールしました。アプリを再起動するとアップデートが適用されます。", "已安装 v{0}。重新启动应用后更新生效。"},
     {"v{0} 업데이트가 있습니다", "v{0} update available", "v{0} のアップデートがあります", "有 v{0} 更新"},
+    {"서버의 업데이트가 바뀌었습니다. 다시 확인합니다.", "The update on the server changed. Checking again.", "サーバーのアップデートが変わりました。もう一度確認します。", "服务器上的更新已变化，正在重新检查。"},
     {"전체 다시 받기", "Get all again", "すべて入手し直す", "全部重新获取"},
     {"{0} 코어가 없어 게임을 받은 뒤 함께 받습니다.", "The {0} core is missing, so it comes down right after the game.", "{0} コアがないため、ゲームの後に一緒に入手します。", "缺少 {0} 核心，将在游戏下载后一并获取。"},
     {"{0}명 평가", "{0} ratings", "{0}人が評価", "{0} 人评分"},

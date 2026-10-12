@@ -57,12 +57,17 @@ void Application::installAppUpdate() {
   updateCancel_ = false;
   const auto server = session_->server();
   const auto state = state_;
-  const auto release = appRelease_;
   const auto target = nroPath(selfPath_, sdRoot_);
-  updateWorker_ = std::thread([this, server, state, release, target] {
+  updateWorker_ = std::thread([this, server, state, release = appRelease_, target]() mutable {
     Error error;
     bool ok = false;
-    guarded("update", [&] { ok = net::installClient(server, state, release, target, updateReceived_, error, &updateCancel_); });
+    guarded("update", [&] {
+      // Asked again right before the download: the build on the server may
+      // have changed since the app last looked.
+      net::ClientUpdateReply reply;
+      if (auto fresh = net::latestClient(server, state, reply, &updateCancel_)) release = *fresh;
+      ok = net::installClient(server, state, release, target, updateReceived_, error, &updateCancel_);
+    });
     logLine(ok ? "update: " + release.version + " -> " + target : "update failed: " + error.message);
     const bool cancelled = updateCancel_;
     updateFinish_ = [this, ok, error, cancelled, target, release] {
