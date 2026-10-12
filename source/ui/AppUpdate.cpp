@@ -93,7 +93,7 @@ void Application::installAppUpdate() {
         return;
       }
       alertTitle_ = tr("업데이트했습니다");
-      alert_ = trf("v{0}을(를) 설치했습니다. 앱을 다시 실행하면 새 버전으로 열립니다.", {release.version});
+      alert_ = trf("v{0}을(를) 설치했습니다. 앱을 다시 실행하면 업데이트가 적용됩니다.", {release.version});
     };
     updateDone_ = true;
   });
@@ -148,7 +148,7 @@ std::string Application::appUpdateStatus() const {
   switch (appUpdate_) {
   case AppUpdate::Checking: return trf("{0} · 확인하고 있습니다", {current});
   case AppUpdate::Latest: return trf("{0} · 최신 버전입니다", {current});
-  case AppUpdate::Available: return trf("새 버전 v{0}이(가) 있습니다", {appRelease_.version});
+  case AppUpdate::Available: return trf("v{0} 업데이트가 있습니다", {appRelease_.version});
   case AppUpdate::Missing: return trf("{0} · 서버에 업데이트가 없습니다", {current});
   case AppUpdate::Failed: return current + " · " + appUpdateError_;
   case AppUpdate::Downloading:

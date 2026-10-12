@@ -598,7 +598,7 @@ void Application::retroBanner(float y) {
   paint_.icon(ready ? 24 : 25, 282, y + 19, ready ? Good : Pending, 26);
   // What the player needs to know: whether games will run, and where they show up.
   paint_.fonts.middle(!ready                 ? tr("RetroArch가 설치되어 있지 않습니다. Y로 설치해야 게임을 실행할 수 있습니다.")
-                      : state_.makeShortcuts ? tr("RetroArch가 설치되어 있습니다. 받은 게임은 홈 메뉴에 바로가기로 추가됩니다.")
+                      : state_.makeShortcuts ? tr("RetroArch가 설치되어 있습니다. 게임을 다운로드하면 홈 메뉴에 바로가기를 생성합니다.")
                                              : tr("RetroArch가 설치되어 있습니다."),
                       322, y + Height / 2, 19, Ink, true, 900);
 }

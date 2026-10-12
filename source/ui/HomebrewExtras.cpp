@@ -17,7 +17,7 @@ bool updateAvailable(const Application::PatchRow &row) {
 // What A does to a patch row, as on 유저 패치's menu.
 const char *patchVerb(const Application::PatchRow &row) {
   if (!row.record) return tr("다운로드 및 적용");
-  if (updateAvailable(row)) return tr("새 버전으로 바꾸기");
+  if (updateAvailable(row)) return tr("업데이트|동작");
   return row.record->on ? tr("끄기") : tr("켜기");
 }
 } // namespace
@@ -147,7 +147,7 @@ void Application::homebrewExtrasDialog() {
       lit = row.record && row.record->on && !busy && !update;
       state = busy ? tr(patchBusyLabel_.c_str())
             : !row.record ? tr("설치 안 됨")
-            : update ? tr("새 버전 있음")
+            : update ? tr("업데이트|항목")
             : row.record->on ? tr("켜짐") : tr("꺼짐");
       size = row.record ? row.record->bytes : row.patch.size;
     } else {

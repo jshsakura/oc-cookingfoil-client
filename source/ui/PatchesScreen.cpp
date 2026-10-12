@@ -17,7 +17,7 @@ bool updateAvailable(const Application::PatchRow &row) {
 const char *filterLabel(Application::PatchFilter filter) {
   switch (filter) {
   case Application::PatchFilter::Stored: return tr("설치됨");
-  case Application::PatchFilter::Updates: return tr("새 버전");
+  case Application::PatchFilter::Updates: return tr("업데이트|탭");
   default: return tr("전체");
   }
 }
@@ -239,7 +239,7 @@ std::vector<PatchChoice> patchChoices(const Application::PatchRow &row) {
     return out;
   }
   if (updateAvailable(row))
-    out.push_back({PatchOp::Update, tr("새 버전으로 바꾸기"), tr("켜져 있던 패치는 바꾼 뒤 다시 켭니다.")});
+    out.push_back({PatchOp::Update, tr("업데이트|동작"), tr("켜져 있던 패치는 바꾼 뒤 다시 켭니다.")});
   if (row.record->on)
     out.push_back({PatchOp::Disable, tr("끄기"), app ? tr("앱을 다시 켜면 원래대로 돌아옵니다. 받은 파일은 남겨 둡니다.")
                                                      : tr("게임을 다시 켜면 원래대로 돌아옵니다. 받은 파일은 남겨 둡니다.")});
@@ -390,7 +390,7 @@ void Application::startPatchGet(const UserPatch &patch, bool fresh) {
                   return;
                 }
                 if (!fresh) {
-                  done = tr("패치를 새 버전으로 바꿨습니다.");
+                  done = tr("패치를 업데이트했습니다.");
                   return;
                 }
                 // A fresh patch turns on right away unless it would replace
@@ -474,7 +474,7 @@ void Application::patchesScreen() {
     else if (patchError_)
       notice(tr("패치 목록을 불러오지 못했습니다."), patchError_.message, 25);
     else if (patchFilter_ != PatchFilter::All && !all.empty())
-      notice(patchFilter_ == PatchFilter::Stored ? tr("설치한 패치가 없습니다.") : tr("새 버전이 나온 패치가 없습니다."),
+      notice(patchFilter_ == PatchFilter::Stored ? tr("설치한 패치가 없습니다.") : tr("업데이트할 패치가 없습니다."),
              tr("패치는 SD 카드의 atmosphere/contents/타이틀 ID 폴더에 설치되고, 게임을 다시 켜면 적용됩니다."), 32);
     else
       notice(tr("받을 수 있는 패치가 없습니다."), tr("서버의 patches 폴더에 패치를 넣으면 여기에 나타납니다."), 32);
@@ -555,7 +555,7 @@ void Application::patchesScreen() {
       stored |= row.record.has_value();
     }
     const std::string state = busy ? tr(patchBusyLabel_.c_str())
-                              : update ? tr("새 버전 있음")
+                              : update ? tr("업데이트|항목")
                               : on ? tr("켜짐")
                               : stored ? tr("꺼짐") : tr("설치 안 됨");
     const SDL_Color fill = busy || update ? Butter : on ? Good : Line;
@@ -602,7 +602,7 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
     const bool update = updateAvailable(row);
     const std::string state = busy ? tr(patchBusyLabel_.c_str())
                               : !row.record ? tr("설치 안 됨")
-                              : update ? tr("새 버전 있음")
+                              : update ? tr("업데이트|항목")
                               : row.record->on ? tr("켜짐") : tr("꺼짐");
     const bool lit = row.record && row.record->on && !busy && !update;
     const float sw = paint_.fonts.measure(state, 16, true) + 20;

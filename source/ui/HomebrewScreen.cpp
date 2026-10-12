@@ -301,7 +301,7 @@ void Application::homebrewScreen() {
     const auto state = homebrewStatus(app);
     const bool busy = retroBusy_ == "homebrew:" + app.id;
     if (busy || state != homebrew::Status::Available)
-      paint_.pill(busy ? tr("받는 중") : state == homebrew::Status::Update ? tr("새 버전 있음") : tr("설치됨"), x + 8, y + 8);
+      paint_.pill(busy ? tr("받는 중") : state == homebrew::Status::Update ? tr("업데이트|항목") : tr("설치됨"), x + 8, y + 8);
     paint_.fonts.text(app.name, x, y + 158, 18, Ink, false, 150);
     // Size first; the version beside it only when both fit under the icon.
     float px = x;
@@ -336,7 +336,7 @@ void Application::homebrewAskDialog() {
   const float bodyH = top + (extras.empty() ? 0 : 16 + extras.size() * (Row + Gap) - Gap) + 24;
   // A focused 패치 or 세이브 row opens its list; otherwise A acts on the app.
   const auto accept = homebrewAskRow_ >= 0 ? tr("열기") : installed ? tr("지우기") : update ? tr("업데이트|동작") : tr("받기");
-  const auto body = modal(Width, bodyH, installed ? tr("설치된 앱") : update ? tr("새 버전을 받을까요?") : tr("이 앱을 받을까요?"),
+  const auto body = modal(Width, bodyH, installed ? tr("설치된 앱") : update ? tr("업데이트할까요?") : tr("이 앱을 받을까요?"),
                           tr("취소"), "", accept, 22);
   const float x = body.x + 32, y = body.y + 24, textX = x + Icon + 28;
   cover(app.iconUrl, x, y, int(Icon), false, app.name, true);
