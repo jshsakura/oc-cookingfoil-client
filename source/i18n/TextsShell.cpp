@@ -4,7 +4,6 @@
 namespace foil {
 namespace {
 const Translation rows[] = {
-    {"내 서버", "My server", "マイサーバー", "我的服务器"},
     {"받던 부분은 다음에 이어서 받을 수 있습니다.", "What came down so far can be picked up next time.", "途中まで入手した分は次回続きから入手できます。", "已下载的部分下次可以继续。"},
     {"새로고침합니다.", "Refreshing.", "更新します。", "正在刷新。"},
     {"목록을 다시 불러왔습니다.", "The list is up to date.", "リストを読み込み直しました。", "已重新加载列表。"},
@@ -54,7 +53,6 @@ const Translation rows[] = {
     {"서버 없음", "No server", "サーバーなし", "无服务器"},
     {"꺼 둠", "Off", "オフ", "已关闭"},
     {"연결 안 함", "Not connected", "未接続", "未连接"},
-    {"서버", "Server", "サーバー", "服务器"},
     // Storage
     {"확인 불가", "Unknown", "確認不可", "无法确认"},
     {"{0} 남음", "{0} free", "残り {0}", "剩余 {0}"},
@@ -92,9 +90,11 @@ const Translation rows[] = {
     {"이름", "Name", "名前", "名称"},
     {"입력", "Type", "入力", "输入"},
     {"저장", "Save", "保存", "保存"},
-    {"예: example.com 또는 http://192.168.0.2:8000", "e.g. example.com or http://192.168.0.2:8000",
-     "例: example.com または http://192.168.0.2:8000", "例如 example.com 或 http://192.168.0.2:8000"},
-    {"비워 둘 수 있습니다", "Optional", "省略できます", "可不填"},
+    {"서버 주소 (예: example.com)", "Server address (e.g. example.com)", "サーバーのアドレス (例: example.com)",
+     "服务器地址 (例如 example.com)"},
+    {"로그인 아이디", "Login username", "ログインID", "登录用户名"},
+    {"로그인 비밀번호", "Login password", "ログインパスワード", "登录密码"},
+    {"서버 이름", "Server name", "サーバー名", "服务器名称"},
     {"서버 주소를 입력합니다", "Enter the server address", "サーバーのアドレスを入力します", "输入服务器地址"},
     {"아이디를 입력합니다", "Enter the username", "ユーザー名を入力します", "输入用户名"},
     {"비밀번호를 입력합니다", "Enter the password", "パスワードを入力します", "输入密码"},

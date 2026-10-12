@@ -196,11 +196,11 @@ void Application::serverFormDialog() {
     paint_.fonts.middle(labels[field], x + 20, mid, 18, Secondary, true, 140);
     const auto &value = fieldOf(form.server, field);
     if (value.empty()) {
-      // What an empty field means: 주소 is needed, 이름 falls back to the host.
+      // A placeholder per field; 이름 shows the host it falls back to.
+      const char *placeholders[ServerFields] = {tr("서버 주소 (예: example.com)"), tr("로그인 아이디"),
+                                                tr("로그인 비밀번호"), tr("서버 이름")};
       const auto host = field == 3 ? hostOf(normalizeUrl(trimmed(form.server.url))) : "";
-      const std::string hint = field == 0 ? tr("예: example.com 또는 http://192.168.0.2:8000")
-                             : !host.empty() ? host
-                                             : tr("비워 둘 수 있습니다");
+      const std::string hint = host.empty() ? placeholders[field] : host;
       paint_.fonts.middle(hint, valueX, mid, 19, Secondary, false, valueW);
     } else if (field == 2) {
       // The password shows as dots, one per character up to a row's worth.
@@ -221,7 +221,7 @@ void Application::serverFormDialog() {
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 120});
   blockTouch();
   const auto ask = modal(640, 24 + 70 + 16, tr("이 서버를 삭제하시겠습니까?"), tr("취소"), "", tr("삭제"), 37);
-  paint_.fonts.text(serverTitle(form.server.title), ask.x + 32, ask.y + 24, 21, Ink, true, ask.w - 64);
+  paint_.fonts.text(form.server.title, ask.x + 32, ask.y + 24, 21, Ink, true, ask.w - 64);
   paint_.fonts.text(tr("다른 서버는 그대로 둡니다."), ask.x + 32, ask.y + 62, 19, Secondary, false, ask.w - 64);
 }
 } // namespace foil::ui

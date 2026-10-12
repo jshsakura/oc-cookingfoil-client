@@ -44,7 +44,7 @@ void Application::settings() {
     const auto &server = config_.servers[i];
     if (selected_ == i && !sidebar_) paint_.focusRow(Left + 14, y - 3, Width - 28, 52, Ground, 10);
     const bool active = size_t(i) == serverIndex_ && connected_;
-    paint_.fonts.middle(serverTitle(server.title), Inner + 27, y + 23, 21, Ink, true, 640);
+    paint_.fonts.middle(server.title, Inner + 27, y + 23, 21, Ink, true, 640);
     const bool current = size_t(i) == serverIndex_ && session_;
     // The Korean status is a key: statusColor() reads it, tr() draws it.
     const char *status = !server.enabled                         ? "꺼 둠" // i18n: keep
@@ -113,10 +113,12 @@ void Application::settings() {
   option(1, 26, tr("기본 저장 위치"), installTarget() == "nand" ? tr("본체") : tr("SD 카드"), Ink, true);
   // Ignoring signatures (the default) installs content that only runs with
   // sigpatches, which is what most homebrew installers expect.
-  option(4, 34, tr("서명 검사 무시 (시그패치 필요)"), "", Ink, true, state_.skipSignatureCheck ? 1 : 0);
+  option(4, 34, tr("서명 검사 무시"), "", Ink, true, state_.skipSignatureCheck ? 1 : 0);
+  note(4, tr("서명이 없는 파일도 설치합니다. 시그니처 패치가 필요합니다"));
   // Ignoring firmware (the default) clears the version a game asks for, so
   // it installs and launches on older firmware when it can run there.
   option(5, 27, tr("펌웨어 검사 무시"), "", Ink, true, state_.skipFirmwareCheck ? 1 : 0);
+  note(5, tr("요구 버전보다 낮은 펌웨어에서도 설치합니다"));
   // A HOME Menu shortcut with each retro game and homebrew app (and this
   // app's own), when the server builds one.
   option(6, 0, tr("홈 메뉴 바로가기 만들기"), "", Ink, true, state_.makeShortcuts ? 1 : 0);

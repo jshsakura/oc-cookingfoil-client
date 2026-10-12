@@ -30,13 +30,6 @@ int menuIndex(Screen screen) {
     if (MenuScreens[i] == screen) return i;
   return 0;
 }
-std::string serverTitle(const std::string &title) {
-  if (title == "원격 서버" || title == "Remote server") // i18n: keep
-    return tr("서버");
-  if (title == "내 서버" || title == "My server") // i18n: keep
-    return tr("내 서버");
-  return title;
-}
 Application::Application(SDL_Renderer *renderer, std::string configPath,
                          std::string statePath, std::string fixture)
     : paint_(renderer), configPath_(std::move(configPath)),

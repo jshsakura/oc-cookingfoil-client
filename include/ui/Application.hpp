@@ -61,7 +61,6 @@ enum class Action {
   ScrollDown
 };
 int themeIcon(const Theme &theme);
-std::string serverTitle(const std::string &title);
 class Application {
 public:
   Application(SDL_Renderer *renderer, std::string configPath = "",
