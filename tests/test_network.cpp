@@ -90,6 +90,8 @@ int runNetworkTests() {
     CHECK(std::find(headers.begin(), headers.end(), "Authorization: Basic dXNlcjpwYXNz") != headers.end());
     CHECK(std::find(headers.begin(), headers.end(), "CF-Access-Client-Secret: secret") != headers.end());
     CHECK(std::find(headers.begin(), headers.end(), "X-Access-Key: issued-key") != headers.end());
+    // The server answers in the app's language (game names, descriptions).
+    CHECK(std::any_of(headers.begin(), headers.end(), [](const std::string& h) { return h.rfind("Accept-Language: ", 0) == 0; }));
     auto foreign = foil::net::authHeaders(s, state, "https://other.example.com/icon.jpg");
     CHECK(foreign.size() == 1 && foreign[0].find("Version:") == 0);
     char temporary[] = "/tmp/cookingfoil-state-XXXXXX";

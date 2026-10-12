@@ -186,6 +186,11 @@ bool bundlePathAllowed(const std::string &path) {
   if (p[0] == "roms") return p.size() >= 3;
   return p.size() >= 3 && p[0] == "retroarch" && (p[1] == "overlays" || p[1] == "config");
 }
+std::string corePath(const std::string &core) {
+  if (core.empty() || core.size() > 64 || core.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_") != std::string::npos)
+    return "";
+  return "retroarch/cores/" + core + "_libretro_libnx.nro";
+}
 std::string systemName(const System &system, const std::string &languageCode) {
   static const char *codes[] = {"ko", "en", "ja", "zh"};
   for (size_t k = 0; k < system.names.size(); ++k)

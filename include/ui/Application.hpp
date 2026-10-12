@@ -322,7 +322,8 @@ private:
   bool ownShortcutChecked_ = false;
   const retro::Game *retroFocused() const;
   void scoreBadge(int score, float right, float y);
-  bool syncRetroArch();
+  bool syncRetroArch(bool full = false); // full: every file again, settings kept
+  bool retroCoreMissing(const retro::Game &game) const;
   void pollRetro();
   // Runs `job` on the retro worker; what it returns runs on the UI thread.
   bool runRetroJob(const std::string &busy, std::function<std::function<void()>()> job);

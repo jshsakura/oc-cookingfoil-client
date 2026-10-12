@@ -80,6 +80,9 @@ bool bundlePathAllowed(const std::string &path);
 std::string systemName(const System &system, const std::string &languageCode);
 // Where the RetroArch app is expected (the forwarder chainloads it).
 constexpr const char *RetroArchApp = "switch/retroarch_switch.nro";
+// Where RetroArch keeps a game's core ("fbneo" -> retroarch/cores/fbneo_libretro_libnx.nro);
+// empty for no core or an odd name.
+std::string corePath(const std::string &core);
 
 // What was taken from the base pack last time: path -> sha256. Kept in
 // state outside the pack so a changed file on the server is fetched again.

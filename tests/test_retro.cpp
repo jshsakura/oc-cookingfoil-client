@@ -17,6 +17,9 @@ int runRetroTests() {
     CHECK(systems[0].romCount == 181 && systems[0].coreName == "mGBA");
     CHECK(systemName(systems[0], "ko") == "게임보이 어드밴스");
     CHECK(systemName(systems[0], "ja") == "Game Boy Advance");
+    // A game's core on the card, by RetroArch's own file names.
+    CHECK(corePath("fbneo") == "retroarch/cores/fbneo_libretro_libnx.nro");
+    CHECK(corePath("").empty() && corePath("../x").empty() && corePath("a/b").empty());
   }
   CHECK(parseSystems("not json").empty());
 

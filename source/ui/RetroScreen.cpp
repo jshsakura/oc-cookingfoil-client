@@ -45,6 +45,11 @@ bool Application::retroInstalled(const retro::Game &game) const {
   const auto found = retroOnCard_.find(game.romPath);
   return found != retroOnCard_.end() && found->second;
 }
+// The game's core is not on the card while RetroArch is.
+bool Application::retroCoreMissing(const retro::Game &game) const {
+  const auto core = retro::corePath(game.core);
+  return !core.empty() && retroArchPresent() && !fileExists(sdRoot_ + "/" + core);
+}
 bool Application::retroBezelMissing(const retro::Game &game) const {
   if (!game.bezel || game.bezelPath.empty() || !retroInstalled(game)) return false;
   const auto found = retroOnCard_.find(game.bezelPath);
@@ -263,6 +268,9 @@ bool Application::getRetroGame(const retro::Game &game, bool again) {
             alert_ = error.message;
             return;
           }
+          // Its core missing: the RetroArch files come next, only what is
+          // missing or changed.
+          if (retroCoreMissing(game)) syncRetroArch();
           if (installRetroShortcut(game)) return; // 다운로드 shows the shortcut going in
           message(retroArchPresent() ? trf("{0}을(를) 받았습니다. RetroArch에서 실행합니다.", {game.name})
                                      : trf("{0}을(를) 받았습니다. Y로 RetroArch도 받습니다.", {game.name}));
@@ -336,17 +344,17 @@ bool Application::installShortcut(const std::string &name, const std::string &ic
                          : trf("홈 메뉴에 {0} 바로가기를 설치합니다.", {name}));
   return true;
 }
-bool Application::syncRetroArch() {
+bool Application::syncRetroArch(bool full) {
   const auto server = session_ ? session_->server() : Server{};
   const auto state = state_;
   const auto sd = sdRoot_;
   retroBytes_ = 0;
   if (!retroWorker_.joinable()) retroCancel_ = false;
-  if (!runRetroJob("pack", [this, server, state, sd]() -> std::function<void()> {
+  if (!runRetroJob("pack", [this, server, state, sd, full]() -> std::function<void()> {
         net::RetroReply reply;
         auto pack = net::retroPack(server, state, reply, &stop_);
         if (reply.error) return [this, reply] { message(reply.error.message); };
-        auto record = retro::parsePackRecord(readFile(sd + PackRecordPath));
+        auto record = full ? retro::PackRecord{} : retro::parsePackRecord(readFile(sd + PackRecordPath));
         const auto plan = retro::planPack(pack.value, record, fileExists, fileSize, sd);
         retroBytes_ = plan.bytes;
         Error error;
@@ -416,9 +424,9 @@ bool Application::syncRetroArch() {
 void Application::retroAction(Action a) {
   if (retroArchAsking_) {
     if (a == Action::Back) retroArchAsking_ = false;
-    if (a == Action::Accept) {
+    if (a == Action::Accept || a == Action::Queue) {
       retroArchAsking_ = false;
-      syncRetroArch();
+      syncRetroArch(a == Action::Queue);
     }
     return;
   }
@@ -539,10 +547,12 @@ void Application::retroConfirm() {
   paint_.fonts.text(facts, textX, at, 18, Ink, true, textW);
   if (!game.romPath.empty())
     paint_.fonts.text(game.romPath, textX, at + 30, 16, Secondary, false, textW);
+  if (retroCoreMissing(game))
+    paint_.fonts.wrapped(trf("{0} 코어가 없어 게임을 받은 뒤 함께 받습니다.", {game.core}), textX, at + 58, 16, Secondary, textW, 2);
 }
 void Application::retroArchConfirm() {
-  const auto body = modal(640, 24 + 84 + 24, tr("RetroArch를 다시 받을까요?"), tr("취소"), "", tr("다시 받기"), 3);
-  paint_.fonts.wrapped(tr("이미 SD 카드에 있습니다. 바뀐 파일과 빠진 코어만 다시 받고, 설정은 그대로 둡니다."), body.x + 32,
+  const auto body = modal(700, 24 + 84 + 24, tr("RetroArch를 다시 받을까요?"), tr("취소"), tr("전체 다시 받기"), tr("다시 받기"), 3);
+  paint_.fonts.wrapped(tr("이미 SD 카드에 있습니다. 바뀐 파일과 빠진 코어만 다시 받습니다. 전체 다시 받기는 모든 파일을 새로 받으며, 두 경우 모두 설정은 그대로 둡니다."), body.x + 32,
                        body.y + 24, 19, Secondary, body.w - 64, 3);
 }
 void Application::retroScreen() {

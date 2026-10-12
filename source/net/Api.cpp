@@ -63,6 +63,7 @@ std::string titleId(json_object* obj, const char* key) {
 std::vector<std::string> authHeaders(const Server& server, const State& state, const std::string& url) {
     std::vector<std::string> headers{"Version: " COOKINGFOIL_VERSION};
     if (originOf(url) != originOf(server.url)) return headers;
+    headers.push_back(std::string("Accept-Language: ") + languageCode());
     if (!server.username.empty() || !server.password.empty()) headers.push_back("Authorization: Basic " + base64(server.username + ":" + server.password));
     if (!state.deviceKey.empty()) headers.push_back("X-Device-Key: " + state.deviceKey);
     const auto key = state.accessKeys.find(server.url);
