@@ -1,0 +1,57 @@
+#include "ui/Runtime.hpp"
+#include "ui/Theme.hpp"
+#include <SDL2/SDL_image.h>
+#include <cstdio>
+int runConfigTests();
+int runNetworkTests();
+int runSessionTests();
+int runCatalogTests();
+int runUpdatesTests();
+int runInstalledTests();
+int runPairingTests();
+int runPairingUiTests(SDL_Renderer *renderer);
+int runSelectionTests();
+int runInstallerTests();
+int runPatchTests();
+int runI18nTests();
+int runSaveMetaTests();
+int runZipTests();
+int runDropboxUtilTests();
+int runSaveBackupTests();
+int runRetroTests();
+int runHistoryTests();
+int runClientUpdateTests();
+int runHomebrewTests();
+int runUiTests(SDL_Renderer *renderer);
+int main() {
+  foil::ui::Runtime app;
+  if (!app.open(1920, 1080, true))
+    return 1;
+  app.render();
+  char *directory = SDL_GetPrefPath("OpenCourse", "CookingFoil");
+  if (!directory)
+    return 1;
+  const auto path = std::string(directory) + "host-smoke.png";
+  SDL_free(directory);
+  if (!app.screenshot(path))
+    return 1;
+  auto *image = IMG_Load(path.c_str());
+  if (!image || image->w != 1920 || image->h != 1080)
+    return 1;
+  auto *pixels = static_cast<Uint32 *>(image->pixels);
+  Uint8 r, g, b;
+  SDL_GetRGB(pixels[0], image->format, &r, &g, &b);
+  const bool ok = r == foil::ui::Ground.r && g == foil::ui::Ground.g &&
+                  b == foil::ui::Ground.b;
+  SDL_FreeSurface(image);
+  std::remove(path.c_str());
+  std::puts(ok ? "Host screenshot smoke passed"
+               : "Host screenshot smoke failed");
+  const int failures = runConfigTests() + runNetworkTests() +
+                       runSessionTests() + runPairingTests() + runCatalogTests() + runUpdatesTests() + runInstalledTests() +
+                       runSelectionTests() + runInstallerTests() + runPatchTests() + runI18nTests() +
+                       runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runHistoryTests() + runClientUpdateTests() + runHomebrewTests() +
+                       runUiTests(app.renderer()) + runPairingUiTests(app.renderer());
+  std::printf("Core tests: %d failures\n", failures);
+  return (ok && failures == 0) ? 0 : 1;
+}

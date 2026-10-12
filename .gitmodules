@@ -1,0 +1,6 @@
+[submodule "third_party/CyberFoil"]
+	path = third_party/CyberFoil
+	url = https://github.com/luketanti/CyberFoil.git
+[submodule "third_party/QR-Code-generator"]
+	path = third_party/QR-Code-generator
+	url = https://github.com/nayuki/QR-Code-generator.git

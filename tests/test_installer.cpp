@@ -1,0 +1,54 @@
+#include "Test.hpp"
+#include "install/Installer.hpp"
+int runInstallerTests() {
+  int failures = 0;
+  foil::Item item;
+  item.url = "https://host/game.nsz?signature=test";
+  item.size = 4ULL * 1024 * 1024 * 1024;
+  CHECK(!foil::install::preflight({item}, 10ULL * 1024 * 1024 * 1024));
+  CHECK(foil::install::preflight({item}, 3ULL * 1024 * 1024 * 1024));
+  CHECK(foil::install::preflight({item}, std::nullopt));
+  CHECK(foil::install::preflight({}, 10ULL * 1024 * 1024 * 1024));
+  auto unsupported = item;
+  unsupported.url = "https://host/app.nro";
+  CHECK(foil::install::preflight({unsupported},
+                                 10ULL * 1024 * 1024 * 1024));
+  auto huge = item;
+  huge.size = UINT64_MAX;
+  CHECK(foil::install::preflight({huge, huge}, UINT64_MAX));
+  // A compressed .nsz unpacks on the console: room is checked against the
+  // installed size the server reports, not the smaller download.
+  auto packed = item;
+  packed.size = 2ULL * 1024 * 1024 * 1024;
+  packed.installSize = 6ULL * 1024 * 1024 * 1024;
+  CHECK(foil::install::preflight({packed}, 4ULL * 1024 * 1024 * 1024));
+  CHECK(!foil::install::preflight({packed}, 7ULL * 1024 * 1024 * 1024));
+  CHECK(foil::install::compareVersions("16.0.3", "17.0.0") < 0);
+  CHECK(foil::install::compareVersions("18.1.0", "18.1") == 0);
+  CHECK(foil::install::compareVersions("10.0.0", "9.2.0") > 0);
+  CHECK(foil::install::compareVersions("18.1.0", "18.1.0") == 0);
+  auto newer = item;
+  newer.requiredFirmware = "19.0.0";
+  CHECK(foil::install::missingFirmware({item, newer}, "18.1.0") == "19.0.0");
+  CHECK(foil::install::missingFirmware({newer}, "19.0.1").empty());
+  CHECK(foil::install::missingFirmware({newer}, "").empty());
+  CHECK(foil::install::missingFirmware({item}, "1.0.0").empty());
+  foil::install::Installer installer;
+  auto error = installer.start({item}, "Title", "", "sd", {}, {});
+  CHECK(error);
+  CHECK(!installer.running());
+  CHECK(installer.progress().status == foil::install::Status::Idle);
+  foil::install::Progress preview;
+  preview.status = foil::install::Status::Running;
+  preview.total = 1000;
+  installer.preview(preview);
+  installer.bytes("nca-a", 300, 10);
+  installer.bytes("nca-b", 150, 10);
+  CHECK(installer.progress().received == 450);
+  installer.bytes("nca-a", 350, 10);
+  CHECK(installer.progress().received == 500);
+  CHECK(installer.progress().percent == 50);
+  installer.cancel();
+  CHECK(installer.cancellationRequested());
+  return failures;
+}

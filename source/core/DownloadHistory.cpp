@@ -1,0 +1,81 @@
+#include "core/DownloadHistory.hpp"
+#include "core/Json.hpp"
+#include <algorithm>
+namespace foil::history {
+namespace {
+const char *name(Outcome outcome) {
+  switch (outcome) {
+  case Outcome::Done: return "done";
+  case Outcome::Failed: return "failed";
+  case Outcome::Cancelled: return "cancelled";
+  default: return "running";
+  }
+}
+Outcome outcomeOf(const std::string &text) {
+  return text == "done" ? Outcome::Done : text == "failed" ? Outcome::Failed
+         : text == "cancelled"                             ? Outcome::Cancelled
+                                                           : Outcome::Running;
+}
+} // namespace
+std::vector<Entry> parse(const std::string &json) {
+  std::vector<Entry> out;
+  Error error;
+  auto root = parseJson(json, error);
+  if (!root || !json_object_is_type(root.get(), json_type_array)) return out;
+  for (size_t i = 0; i < json_object_array_length(root.get()) && out.size() < 200; ++i) {
+    auto *object = json_object_array_get_idx(root.get(), i);
+    auto install = parsePending(stringField(object, "install"));
+    if (!install) continue;
+    Entry e;
+    e.id = uint64_t(std::max<int64_t>(integerField(object, "id"), 0));
+    e.install = std::move(*install);
+    e.outcome = outcomeOf(stringField(object, "outcome"));
+    e.error = stringField(object, "error");
+    e.at = integerField(object, "at");
+    e.kind = stringField(object, "kind");
+    e.payload = stringField(object, "payload");
+    out.push_back(std::move(e));
+  }
+  return out;
+}
+std::string serialize(const std::vector<Entry> &entries) {
+  Json list(json_object_new_array());
+  for (const auto &e : entries) {
+    auto *object = json_object_new_object();
+    json_object_object_add(object, "id", json_object_new_int64(int64_t(e.id)));
+    json_object_object_add(object, "install", json_object_new_string(serializePending(e.install).c_str()));
+    json_object_object_add(object, "outcome", json_object_new_string(name(e.outcome)));
+    json_object_object_add(object, "error", json_object_new_string(e.error.c_str()));
+    json_object_object_add(object, "at", json_object_new_int64(e.at));
+    if (!e.kind.empty()) {
+      json_object_object_add(object, "kind", json_object_new_string(e.kind.c_str()));
+      json_object_object_add(object, "payload", json_object_new_string(e.payload.c_str()));
+    }
+    json_object_array_add(list.get(), object);
+  }
+  return json_object_to_json_string_ext(list.get(), JSON_C_TO_STRING_PLAIN);
+}
+uint64_t add(std::vector<Entry> &entries, Entry entry, size_t cap) {
+  uint64_t top = 0;
+  for (const auto &e : entries) top = std::max(top, e.id);
+  entry.id = top + 1;
+  entries.insert(entries.begin(), std::move(entry));
+  if (entries.size() > cap) entries.resize(cap);
+  return top + 1;
+}
+bool finish(std::vector<Entry> &entries, Outcome outcome, const std::string &error, int64_t at,
+            const std::string &kind) {
+  for (auto &e : entries)
+    if (e.outcome == Outcome::Running && e.kind == kind) {
+      e.outcome = outcome;
+      e.error = error;
+      e.at = at;
+      return true;
+    }
+  return false;
+}
+void settle(std::vector<Entry> &entries) {
+  for (auto &e : entries)
+    if (e.outcome == Outcome::Running) e.outcome = Outcome::Failed;
+}
+} // namespace foil::history

@@ -1,0 +1,19 @@
+/build/
+/build-host/
+/out/
+/dist/
+*.nro
+*.nacp
+*.elf
+*.map
+*.lst
+.env
+config.json
+state.json
+/cache/
+__pycache__/
+
+# Notes kept on the developer's machine only
+/docs/*.md
+/CONTRIBUTING.md
+/SECURITY.md

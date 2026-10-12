@@ -1,0 +1,417 @@
+#include "ui/Application.hpp"
+#include "platform/Storage.hpp"
+#include "install/Installer.hpp"
+#include "core/I18n.hpp"
+#include "core/Log.hpp"
+#include <algorithm>
+#include <optional>
+namespace foil::ui {
+namespace {
+std::string languageName(const std::string &code) {
+  // Built per call so the names follow the interface language.
+  const std::pair<const char *, const char *> names[] = {
+      {"ko", tr("한국어")}, {"en", tr("영어")}, {"ja", tr("일본어")}, {"zh", tr("중국어")},
+      {"fr", tr("프랑스어")}, {"de", tr("독일어")}, {"es", tr("스페인어")}, {"it", tr("이탈리아어")},
+      {"ru", tr("러시아어")}, {"pt", tr("포르투갈어")}, {"nl", tr("네덜란드어")}};
+  for (const auto &[key, name] : names)
+    if (code.rfind(key, 0) == 0)
+      return name;
+  return code;
+}
+// 1234 -> "1,234".
+std::string countText(int count) {
+  auto text = std::to_string(count);
+  for (int at = int(text.size()) - 3; at > 0; at -= 3)
+    text.insert(size_t(at), ",");
+  return text;
+}
+std::string dateLabel(int date) {
+  auto text = std::to_string(date);
+  return text.size() == 8 ? text.substr(0, 4) + "." + text.substr(4, 2) + "." + text.substr(6, 2) : text;
+}
+} // namespace
+void Application::openDetail(size_t group) {
+  if (group >= groups_.size())
+    return;
+  detailGroup_ = group;
+  previous_ = screen_;
+  screen_ = Screen::Detail;
+  detail_ = {};
+  part_ = 0;
+  descriptionScroll_ = 0;
+  descriptionFocus_ = false;
+  galleryOpen_ = false;
+  screenshot_ = 0;
+  selection_ =
+      std::make_unique<Selection>(groups_[group], installTarget());
+  // Start on the install button; Up reaches the storage cards, then the items.
+  part_ = int(selection_->parts().size()) + 1;
+  fetchDetail();
+}
+void Application::fetchDetail() {
+  if (!session_)
+    return;
+  const auto found =
+      details_.find(session_->server().url + groups_[detailGroup_].id);
+  if (found != details_.end() && SDL_GetTicks() - found->second.at < 60000) {
+    detail_ = found->second.detail;
+    return;
+  }
+  if (network_.joinable())
+    return;
+  requestedId_ = groups_[detailGroup_].id;
+  detailLoading_ = true;
+  detailRequest_ = true;
+  const auto id = groups_[detailGroup_].id;
+  network_ = std::thread([this, id] {
+    const bool ok = guarded("detail", [this, &id] {
+      auto result = session_->detail(id);
+      incomingError_ = result.error;
+      incomingDetail_ = std::move(result.value);
+    });
+    if (!ok)
+      incomingError_.message = tr("상세 정보를 처리하다 오류가 났습니다.");
+    done_ = true;
+  });
+}
+void Application::detail() {
+  if (detailGroup_ >= groups_.size() || !selection_)
+    return;
+  const auto &g = groups_[detailGroup_];
+  const auto &item = g.representative;
+  // A localized store name wins over the detail's default one.
+  const auto &source = g.base ? *g.base : item;
+  const auto name = !source.names.empty() || detail_.name.empty() ? item.name : detail_.name;
+  auto publisher = detail_.publisher.empty() ? item.publisher : detail_.publisher;
+  // The server fills a missing publisher with its own name; that is not one.
+  if (publisher == "CookingFoil")
+    publisher.clear();
+  paint_.rect(0, 0, 1280, 212, {10, 10, 14, 255});
+  images_->draw(detail_.banner.empty() ? thumbnailUrl(item.icon) : thumbnailUrl(detail_.banner, "md"), 0, 0, 1280,
+                212, 0, true);
+  // Back link names the screen it returns to, with room before the cover.
+  const auto back = screenLabel(previous_);
+  paint_.icon(7, 32, 14, Surface, 20);
+  paint_.fonts.middle(back, 56, 24, 17, Surface);
+  hit(24, 4, 200, 40, [this] { action(Action::Back); });
+  constexpr int Top = 58;
+  cover(item.icon, 40, Top, 140, false, item.name);
+  paint_.fonts.text(name, 208, Top + 4, 38, Surface, true, 1010);
+  paint_.fonts.text(publisher, 208, Top + 62, 19, {228, 228, 234, 255}, false, 960);
+  // Pills stop before the install panel; one that would reach it is left
+  // out (genres are listed again in the facts below).
+  constexpr float PillsRight = 806;
+  float x = 208;
+  auto pill = [&](const std::string &text) {
+    if (x + paint_.fonts.measure(text, 17) + 28 > PillsRight)
+      return;
+    x += paint_.pill(text, x, Top + 100, true, 17) + 10;
+  };
+  const auto &languages = item.languages;
+  if (std::find(languages.begin(), languages.end(), "ko") != languages.end())
+    pill(tr("한국어"));
+  if (const int score = detail_.score ? detail_.score : g.base ? g.base->score : item.score)
+    pill(trf("평점 {0}점", {std::to_string(score)}));
+  if (!detail_.priceRegular.empty())
+    pill(detail_.priceDiscount.empty() ? "eShop " + priceText(detail_.priceRegular)
+                                       : trf("eShop 할인가 {0}", {priceText(detail_.priceDiscount)}));
+  // Genres last: the longest pill, and the first to give way.
+  if (!detail_.category.empty())
+    pill(detail_.category);
+  // The description column scrolls in the whole band between the header and
+  // the footer, with the same padding at the top and the bottom, so text
+  // slides under the header's edge instead of stopping short of it.
+  constexpr int BandTop = 212, BandBottom = 660, Pad = 14;
+  SDL_Rect leftClip{0, BandTop, 806, BandBottom - BandTop};
+  SDL_RenderSetClipRect(paint_.renderer, &leftClip);
+  const int offset = descriptionScroll_ * ScrollStep;
+  int y = BandTop + Pad - offset;
+  if (!detail_.description.empty()) {
+    y += paint_.fonts.wrapped(detail_.description, 40, y, 20, Ink, 750, 20, false, 1.6f) + 24;
+  } else if (detailLoading_) {
+    for (int line = 0; line < 3; ++line)
+      paint_.skeleton(40, y + line * 30, line == 2 ? 420 : 720, 18, 6);
+    y += 110;
+  } else {
+    // No description from the store: a quiet card instead of a gap, so the
+    // page still opens with something written.
+    constexpr float Height = 92, Badge = 52;
+    paint_.rect(40, y, 750, Height, Surface, 16);
+    paint_.rect(64, y + (Height - Badge) / 2, Badge, Badge, {255, 241, 204, 255}, int(Badge / 2));
+    paint_.icon(29, 64 + (Badge - 26) / 2, y + (Height - 26) / 2, Ink, 26);
+    paint_.fonts.middle(tr("소개 글이 아직 없습니다"), 136, y + 34, 20, Ink, true, 620);
+    paint_.fonts.middle(tr("제작사가 설명을 등록하지 않았습니다. 아래 정보로 게임을 확인합니다."), 136,
+                        y + 62, 16, Secondary, false, 630);
+    y += Height + 16;
+  }
+  y = infoCard(g, publisher, y) + 22;
+  if (detailLoading_ && detail_.screenshots.empty()) {
+    paint_.skeleton(40, y, 120, 22, 6);
+    for (int i = 0; i < 3; ++i)
+      paint_.skeleton(40 + i * 214, y + 40, 200, 112, 10);
+    y += 174;
+  }
+  if (!detail_.screenshots.empty()) {
+    paint_.fonts.text(tr("스크린샷"), 40, y, 20, Ink, true);
+    paint_.keyLabel("ZR", tr("크게 보기 · 사진을 눌러도 됩니다"), 150, y + 14, 17, Secondary);
+    y += 40;
+  }
+  for (size_t i = 0; i < detail_.screenshots.size() && i < 3; ++i) {
+    const int x = 40 + i * 214;
+    hit(x, y, 200, 112, [this, i] {
+      galleryOpen_ = true;
+      screenshot_ = i;
+    });
+    const auto thumb = thumbnailUrl(detail_.screenshots[i]);
+    // A picture that will not load says so instead of shimmering forever.
+    if (images_->failed(thumb)) {
+      paint_.rect(x, y, 200, 112, Line, 10);
+      const std::string none = tr("이미지 없음");
+      paint_.fonts.middle(none, x + (200 - paint_.fonts.measure(none, 16)) / 2, y + 56, 16, Secondary);
+      continue;
+    }
+    if (!images_->loaded(thumb))
+      paint_.skeleton(x, y, 200, 112, 10);
+    images_->draw(thumb, x, y, 200, 112, 10);
+  }
+  y += detail_.screenshots.empty() ? 0 : 134;
+  if (!g.alternatives.empty()) {
+    paint_.fonts.text(tr("다른 파일"), 40, y, 20, Ink, true);
+    y += 38;
+    for (const auto &f : g.alternatives) {
+      paint_.fonts.text(f.name + " · " + formatBytes(f.size), 40, y, 17,
+                        Secondary, false, 750);
+      y += 32;
+    }
+  }
+  // y is the bottom of the content; allow scrolling until it sits Pad
+  // above the footer.
+  descriptionHeight_ = std::max(0, y + offset - (BandBottom - Pad));
+  {
+    SDL_Rect full{0, 0, 1280, 660};
+    SDL_RenderSetClipRect(paint_.renderer, &full);
+    constexpr float View = BandBottom - BandTop;
+    // One mark only: with the cursor on the description its scroll hint
+    // stays up in butter.
+    paint_.scrollbar(798, BandTop + Pad, View - 2 * Pad, float(offset), View,
+                     View + float(descriptionHeight_), descriptionFocus_);
+  }
+  SDL_Rect full{0, 0, 1280, 660};
+  SDL_RenderSetClipRect(paint_.renderer, &full);
+  paint_.rect(818, 172, 430, 484, Surface, 20);
+  paint_.fonts.text(tr("설치할 항목"), 840, 192, 22, Ink, true);
+  const auto &parts = selection_->parts();
+  // Rows have room above and below their two lines; everything is centered
+  // in the row instead of hugging its top edge.
+  constexpr float RowTop = 226, RowPitch = 56, RowHeight = 52;
+  const int first = std::max(0, std::min(part_, int(parts.size()) - 1) - 3);
+  for (int i = 0; i < 4 && first + i < int(parts.size()); ++i) {
+    const int n = first + i;
+    const float y = RowTop + i * RowPitch, mid = y + RowHeight / 2;
+    const auto &f = parts[n];
+    const bool checked = selection_->enabled(n), locked = f.type == "base";
+    hit(840, y, 386, RowHeight, [this, n] {
+      part_ = n;
+      action(Action::Accept);
+    });
+    if (part_ == n && !descriptionFocus_)
+      paint_.focusRow(840, y, 386, RowHeight, Ground, 12);
+    const SDL_Color boxEdge = !locked && checked ? Ink : SDL_Color{138, 138, 147, 255};
+    paint_.rect(852, mid - 14, 28, 28, boxEdge, 8);
+    paint_.rect(854, mid - 12, 24, 24,
+                checked ? (locked ? SDL_Color{255, 224, 138, 255} : Butter) : Surface, 6);
+    if (checked)
+      paint_.icon(8, 856, mid - 10, locked ? Secondary : Ink, 20);
+    const auto label = f.type == "base"     ? std::string(tr("본편"))
+                       : f.type == "update" ? std::string(tr("업데이트|항목"))
+                                            : "DLC · " + f.name;
+    const auto sub = f.type == "base"     ? trf("{0} · 꼭 필요합니다", {versionLabel(f)})
+                     : f.type == "update" ? trf("{0} · 최신", {versionLabel(f)})
+                                          : std::string(tr("추가 콘텐츠"));
+    const auto size = formatBytes(f.size);
+    const float sizeWidth = paint_.fonts.measure(size, 18, true);
+    paint_.fonts.middle(label, 894, mid - 10, 18, Ink, true, 300 - sizeWidth);
+    paint_.fonts.middle(sub, 894, mid + 12, 15, Secondary, false, 300 - sizeWidth);
+    paint_.fonts.middle(size, 1212 - sizeWidth, mid, 18, Ink, true);
+  }
+  if (parts.size() > 4) {
+    paint_.fonts.text(
+        std::to_string(std::min<int>(int(parts.size()), part_ + 1)) + " / " +
+            std::to_string(parts.size()),
+        1148, 194, 15, Secondary);
+    paint_.scrollbar(1232, RowTop, 4 * RowPitch - 4, float(first), 4, float(parts.size()));
+  }
+  paint_.rect(840, 454, 386, 1, Line);
+  paint_.fonts.middle(tr("합계"), 852, 476, 18, Secondary);
+  const auto total = formatBytes(selection_->total());
+  paint_.fonts.middle(total, 1214 - paint_.fonts.measure(total, 24, true), 476,
+                      24, Ink, true);
+  // Two half-width cards, matching L/R: name on top, free space below, each
+  // truncated to its card so longer labels cannot collide.
+  struct Target {
+    const char *id, *label;
+    std::optional<uint64_t> free;
+  };
+  const Target targets[] = {{"sd", tr("SD 카드"), sdFree_}, {"nand", tr("본체"), nandFree_}};
+  constexpr float CardWidth = (386 - 8) / 2.f, CardTop = 494, CardHeight = 60;
+  for (int n = 0; n < 2; ++n) {
+    const auto &t = targets[n];
+    const float x = 840 + n * (CardWidth + 8);
+    const bool chosen = selection_->target == t.id;
+    hit(x, CardTop, CardWidth, CardHeight, [this, n, id = std::string(t.id)] {
+      part_ = int(selection_->parts().size());
+      storageCursor_ = n;
+      selection_->target = id;
+    });
+    // The card under the cursor wears the focus border; the dark fill
+    // marks the one chosen.
+    if (n == storageCursor_ && part_ == int(parts.size()) && !descriptionFocus_)
+      paint_.outline(x, CardTop, CardWidth, CardHeight, 12);
+    paint_.rect(x, CardTop, CardWidth, CardHeight, chosen ? Ink : Ground, 12);
+    const auto color = chosen ? Surface : Ink;
+    // Icon centered on the card's height, with clear room before the text.
+    constexpr float IconSize = 24, TextLeft = 52;
+    paint_.icon(n == 0 ? 26 : 27, x + 16, CardTop + (CardHeight - IconSize) / 2,
+                chosen ? Butter : Secondary, int(IconSize));
+    paint_.fonts.middle(t.label, x + TextLeft, CardTop + 21, 18, color, chosen, CardWidth - TextLeft - 12);
+    const auto room = t.free           ? trf("{0} 여유", {formatBytes(*t.free)})
+                      : storageChecked_ ? std::string(tr("여유 공간 확인 불가"))
+                                        : std::string(tr("확인 중"));
+    paint_.fonts.middle(room, x + TextLeft, CardTop + 41, 15,
+                        chosen ? SDL_Color{200, 200, 206, 255} : Secondary, false, CardWidth - TextLeft - 12);
+  }
+  hit(840, 568, 386, 60, [this] {
+    part_ = int(selection_->parts().size()) + 1;
+    action(Action::Accept);
+  });
+  if (part_ == int(parts.size()) + 1 && !descriptionFocus_)
+    paint_.ring(840, 568, 386, 60, 14);
+  paint_.rect(840, 568, 386, 60, Butter, 14);
+  const auto install = tr("설치하기");
+  paint_.keyLabel("A", install, 840 + (386 - paint_.keyLabelWidth("A", install, 22, true)) / 2, 598, 22, Ink, true);
+  if (galleryOpen_) gallery();
+}
+// Facts as a labeled grid, then languages, genres and contents as chips.
+// Returns the y below the last block.
+float Application::infoCard(const Group &g, const std::string &publisher, float y) {
+  const auto &item = g.representative;
+  auto extension = item.url.substr(0, item.url.find_first_of("?#"));
+  extension = extension.substr(extension.find_last_of('.') + 1);
+  if (extension.size() > 4)
+    extension.clear();
+  for (auto &c : extension)
+    c = std::toupper(static_cast<unsigned char>(c));
+  const int release = detail_.releaseDate ? detail_.releaseDate : item.releaseDate;
+  const int players = detail_.players ? detail_.players : item.players;
+  struct Fact {
+    int icon;
+    std::string label, value;
+    SDL_Color color = Ink;
+  };
+  std::vector<Fact> facts;
+  if (detail_.priceRegular.empty() && g.base && !g.base->priceRegular.empty()) {
+    detail_.priceRegular = g.base->priceRegular;
+    detail_.priceDiscount = g.base->priceDiscount;
+    detail_.priceCountry = g.base->priceCountry;
+  }
+  if (!detail_.priceRegular.empty()) {
+    const auto country = detail_.priceCountry == "US"   ? " " + std::string(tr("(미국)"))
+                         : detail_.priceCountry == "JP" ? " " + std::string(tr("(일본)"))
+                                                        : std::string();
+    facts.push_back({15, tr("eShop 가격"), (detail_.priceDiscount.empty()
+                                       ? priceText(detail_.priceRegular)
+                                       : trf("{0} · 정가 {1}", {priceText(detail_.priceDiscount),
+                                                               priceText(detail_.priceRegular)})) +
+                                      country});
+  }
+  {
+    // Review score: rating and vote count over the score and its label.
+    const auto &rated = g.base ? *g.base : item;
+    const int score = detail_.score ? detail_.score : rated.score;
+    const int votes = detail_.scoreCount ? detail_.scoreCount : rated.scoreCount;
+    // The detail call names the label in Korean; the catalog sends a key.
+    const auto label = !detail_.scoreLabel.empty() ? detail_.scoreLabel
+                                                   : genreLabel(scoreLabels_, rated.scoreLabel);
+    if (score) {
+      // The vote count rides on the label so the value fits its cell.
+      auto text = trf("{0}점", {std::to_string(score)});
+      if (!label.empty()) text += " · " + label;
+      facts.push_back({31, votes ? trf("평점 · {0}명", {countText(votes)}) : std::string(tr("평점")), text});
+    }
+  }
+  if (release) facts.push_back({11, tr("출시일"), dateLabel(release)});
+  if (!publisher.empty()) facts.push_back({12, tr("제작사"), publisher});
+  if (players) facts.push_back({13, tr("플레이 인원"), players == 1 ? std::string(tr("1명")) : trf("최대 {0}명", {std::to_string(players)})});
+  facts.push_back({14, tr("본편 용량"), formatBytes(g.base ? g.base->size : item.size)});
+  const auto &base = g.base ? *g.base : item;
+  if (base.installSize) facts.push_back({14, tr("설치 용량"), formatBytes(base.installSize)});
+  // The update can need newer firmware than the base; the higher one counts.
+  std::vector<Item> needs{base};
+  if (!detail_.requiredFirmware.empty()) needs.front().requiredFirmware = detail_.requiredFirmware;
+  if (g.update) needs.push_back(*g.update);
+  std::string firmware;
+  for (const auto &n : needs)
+    if (!n.requiredFirmware.empty() && (firmware.empty() || install::compareVersions(firmware, n.requiredFirmware) < 0))
+      firmware = n.requiredFirmware;
+  if (!firmware.empty()) {
+    const auto console = platform::firmwareVersion();
+    if (!install::missingFirmware(needs, console).empty())
+      facts.push_back({27, tr("필요 펌웨어"), trf("{0} 이상 · 본체 {1}", {firmware, console}), Bad});
+    else
+      facts.push_back({27, tr("필요 펌웨어"), firmware});
+  }
+  if (!detail_.ratingContent.empty()) facts.push_back({25, tr("이용 등급"), detail_.ratingContent});
+  const int dlcTotal = detail_.dlcTotal ? detail_.dlcTotal : base.dlcTotal;
+  if (dlcTotal) facts.push_back({22, "DLC", trf("{0}개 출시 · {1}개 보유", {std::to_string(dlcTotal), std::to_string(g.dlc.size())})});
+  facts.push_back({19, tr("최신 버전"), versionLabel(g.update ? *g.update : item)});
+  if (!extension.empty()) facts.push_back({16, tr("파일 형식"), extension});
+  if (!item.region.empty()) facts.push_back({17, tr("지역"), item.region});
+  facts.push_back({18, tr("타이틀 ID"), g.id});
+  constexpr float Left = 40, Width = 750, Columns = 3, Cell = Width / Columns, RowHeight = 66;
+  const int rows = int((facts.size() + 2) / 3);
+  paint_.rect(Left, y, Width, rows * RowHeight + 24, Surface, 16);
+  for (size_t n = 0; n < facts.size(); ++n) {
+    const float x = Left + 20 + (n % 3) * Cell, top = y + 16 + (n / 3) * RowHeight;
+    paint_.icon(facts[n].icon, x, top + 1, Secondary, 16);
+    paint_.fonts.middle(facts[n].label, x + 22, top + 9, 15, Secondary);
+    paint_.fonts.text(facts[n].value, x, top + 24, 18, facts[n].color, true, Cell - 30);
+  }
+  y += rows * RowHeight + 24 + 22;
+  auto chips = [&](const std::string &title, const std::vector<std::string> &labels) {
+    if (labels.empty())
+      return;
+    paint_.fonts.text(title, Left, y, 18, Ink, true);
+    float x = Left + 110;
+    for (const auto &label : labels) {
+      const float w = paint_.fonts.measure(label, 16, true) + 24;
+      if (x + w > Left + Width) {
+        x = Left + 110;
+        y += 38;
+      }
+      paint_.rect(x, y - 3, w, 30, Surface, 15);
+      paint_.fonts.middle(label, x + 12, y + 12, 16, Ink, true);
+      x += w + 8;
+    }
+    y += 46;
+  };
+  std::vector<std::string> languages;
+  for (const auto &code : item.languages) {
+    const auto name = languageName(code);
+    if (std::find(languages.begin(), languages.end(), name) == languages.end())
+      languages.push_back(name);
+  }
+  // Labels from the detail call; otherwise the catalog's keys, translated.
+  auto genres = detail_.categoryLabels;
+  if (genres.empty())
+    for (const auto &key : item.categories) genres.push_back(genreLabel(genreNames_, key));
+  if (genres.empty() && !detail_.category.empty())
+    genres.push_back(detail_.category);
+  std::vector<std::string> contents{tr("본편")};
+  if (g.update) contents.push_back(trf("업데이트 {0}", {versionLabel(*g.update)}));
+  if (!g.dlc.empty()) contents.push_back(trf("DLC {0}개", {std::to_string(g.dlc.size())}));
+  chips(tr("지원 언어"), languages);
+  chips(tr("장르"), genres);
+  chips(tr("구성"), contents);
+  return y;
+}
+} // namespace foil::ui

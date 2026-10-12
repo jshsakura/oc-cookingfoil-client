@@ -1,0 +1,808 @@
+{
+  "sections": [
+    {
+      "id": "all",
+      "items": [
+        {
+          "title_id": "0100E5E01C098000",
+          "base_title_id": "0100E5E01C098000",
+          "name": "Lantern Road",
+          "size": 4402341888,
+          "url": "https://fixture.invalid/0100E5E01C098000.nsz",
+          "icon_url": "https://fixture.invalid/icons/0100E5E01C098000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "Butter Works",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 2000000000,
+          "display_version": "1.0.0",
+          "release_date": 20240715,
+          "rank": 40,
+          "players": 1,
+          "categories": [
+            "RPG",
+            "Strategy"
+          ]
+        },
+        {
+          "title_id": "0100E5E01C098000",
+          "base_title_id": "0100E5E01C098000",
+          "name": "Lantern Road",
+          "size": 1395864371,
+          "url": "https://fixture.invalid/0100E5E01C098000-upd.nsz",
+          "icon_url": "https://fixture.invalid/icons/0100E5E01C098000.jpg",
+          "app_type": "update",
+          "app_version": 131072,
+          "publisher": "Butter Works",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 2000000000,
+          "display_version": "1.4.1",
+          "release_date": 20240715,
+          "rank": 40,
+          "players": 1,
+          "categories": [
+            "RPG",
+            "Strategy"
+          ]
+        },
+        {
+          "title_id": "0100E5E01C099001",
+          "base_title_id": "0100E5E01C098000",
+          "name": "Ember Pass",
+          "size": 1395864371,
+          "url": "https://fixture.invalid/0100E5E01C098000-dlc0.nsp",
+          "icon_url": "https://fixture.invalid/icons/0100E5E01C098000.jpg",
+          "app_type": "dlc",
+          "app_version": 0,
+          "publisher": "Butter Works",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 2000000000,
+          "release_date": 20240715,
+          "rank": 40,
+          "players": 1,
+          "categories": [
+            "RPG",
+            "Strategy"
+          ]
+        },
+        {
+          "title_id": "0100E5E01C099002",
+          "base_title_id": "0100E5E01C098000",
+          "name": "Hollow Crown",
+          "size": 966367641,
+          "url": "https://fixture.invalid/0100E5E01C098000-dlc1.nsp",
+          "icon_url": "https://fixture.invalid/icons/0100E5E01C098000.jpg",
+          "app_type": "dlc",
+          "app_version": 0,
+          "publisher": "Butter Works",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 2000000000,
+          "release_date": 20240715,
+          "rank": 40,
+          "players": 1,
+          "categories": [
+            "RPG",
+            "Strategy"
+          ]
+        },
+        {
+          "title_id": "01002FC00412C000",
+          "base_title_id": "01002FC00412C000",
+          "name": "Paper Moon",
+          "size": 4402341888,
+          "url": "https://fixture.invalid/01002FC00412C000.nsz",
+          "icon_url": "https://fixture.invalid/icons/01002FC00412C000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999999,
+          "release_date": 20180518,
+          "rank": 25,
+          "players": 1,
+          "categories": [
+            "Action",
+            "Adventure"
+          ]
+        },
+        {
+          "title_id": "01002FC00412D001",
+          "base_title_id": "01002FC00412C000",
+          "name": "추가 콘텐츠 1",
+          "size": 1200000000,
+          "url": "https://fixture.invalid/01002FC00412C000-dlc0.nsp",
+          "icon_url": "https://fixture.invalid/icons/01002FC00412C000.jpg",
+          "app_type": "dlc",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999999,
+          "release_date": 20180518,
+          "rank": 25,
+          "players": 1,
+          "categories": [
+            "Action",
+            "Adventure"
+          ]
+        },
+        {
+          "title_id": "01002FC00412D002",
+          "base_title_id": "01002FC00412C000",
+          "name": "추가 콘텐츠 2",
+          "size": 910000000,
+          "url": "https://fixture.invalid/01002FC00412C000-dlc1.nsp",
+          "icon_url": "https://fixture.invalid/icons/01002FC00412C000.jpg",
+          "app_type": "dlc",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999999,
+          "release_date": 20180518,
+          "rank": 25,
+          "players": 1,
+          "categories": [
+            "Action",
+            "Adventure"
+          ]
+        },
+        {
+          "title_id": "01002FC00412D003",
+          "base_title_id": "01002FC00412C000",
+          "name": "추가 콘텐츠 3",
+          "size": 910000000,
+          "url": "https://fixture.invalid/01002FC00412C000-dlc2.nsp",
+          "icon_url": "https://fixture.invalid/icons/01002FC00412C000.jpg",
+          "app_type": "dlc",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999999,
+          "release_date": 20180518,
+          "rank": 25,
+          "players": 1,
+          "categories": [
+            "Action",
+            "Adventure"
+          ]
+        },
+        {
+          "title_id": "01003D90058FC000",
+          "base_title_id": "01003D90058FC000",
+          "name": "Circuit Garden",
+          "size": 4402341888,
+          "url": "https://fixture.invalid/01003D90058FC000.nsz",
+          "icon_url": "https://fixture.invalid/icons/01003D90058FC000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999998,
+          "release_date": 20200709,
+          "rank": 60,
+          "players": 1,
+          "categories": [
+            "RPG",
+            "Action"
+          ]
+        },
+        {
+          "title_id": "01003D90058FC000",
+          "base_title_id": "01003D90058FC000",
+          "name": "Circuit Garden",
+          "size": 1234000000,
+          "url": "https://fixture.invalid/01003D90058FC000-upd.nsz",
+          "icon_url": "https://fixture.invalid/icons/01003D90058FC000.jpg",
+          "app_type": "update",
+          "app_version": 131072,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999998,
+          "display_version": "1.6.0",
+          "release_date": 20200709,
+          "rank": 60,
+          "players": 1,
+          "categories": [
+            "RPG",
+            "Action"
+          ]
+        },
+        {
+          "title_id": "01003D90058FD001",
+          "base_title_id": "01003D90058FC000",
+          "name": "추가 콘텐츠 1",
+          "size": 1200000000,
+          "url": "https://fixture.invalid/01003D90058FC000-dlc0.nsp",
+          "icon_url": "https://fixture.invalid/icons/01003D90058FC000.jpg",
+          "app_type": "dlc",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999998,
+          "release_date": 20200709,
+          "rank": 60,
+          "players": 1,
+          "categories": [
+            "RPG",
+            "Action"
+          ]
+        },
+        {
+          "title_id": "01008D100DE46000",
+          "base_title_id": "01008D100DE46000",
+          "name": "Neon Ronin",
+          "size": 4402341888,
+          "url": "https://fixture.invalid/01008D100DE46000.nsz",
+          "icon_url": "https://fixture.invalid/icons/01008D100DE46000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999997,
+          "release_date": 20210126,
+          "rank": 80,
+          "players": 1,
+          "categories": [
+            "Action",
+            "Platformer"
+          ]
+        },
+        {
+          "title_id": "01008D100DE46000",
+          "base_title_id": "01008D100DE46000",
+          "name": "Neon Ronin",
+          "size": 1234000000,
+          "url": "https://fixture.invalid/01008D100DE46000-upd.nsz",
+          "icon_url": "https://fixture.invalid/icons/01008D100DE46000.jpg",
+          "app_type": "update",
+          "app_version": 131072,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999997,
+          "display_version": "1.6.0",
+          "release_date": 20210126,
+          "rank": 80,
+          "players": 1,
+          "categories": [
+            "Action",
+            "Platformer"
+          ]
+        },
+        {
+          "title_id": "01009440164AE000",
+          "base_title_id": "01009440164AE000",
+          "name": "Midnight Fox",
+          "size": 4402341888,
+          "url": "https://fixture.invalid/01009440164AE000.nsz",
+          "icon_url": "https://fixture.invalid/icons/01009440164AE000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999996,
+          "release_date": 20230412,
+          "rank": 90,
+          "players": 1,
+          "categories": [
+            "Action",
+            "RPG"
+          ]
+        },
+        {
+          "title_id": "01005FD017E60000",
+          "base_title_id": "01005FD017E60000",
+          "name": "Iron Comet: Overdrive",
+          "size": 4402341888,
+          "url": "https://fixture.invalid/01005FD017E60000.nsz",
+          "icon_url": "https://fixture.invalid/icons/01005FD017E60000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999995,
+          "release_date": 20230523,
+          "rank": 55,
+          "players": 1,
+          "categories": [
+            "Action",
+            "Shooter"
+          ]
+        },
+        {
+          "title_id": "01005FD017E60000",
+          "base_title_id": "01005FD017E60000",
+          "name": "Iron Comet: Overdrive",
+          "size": 1234000000,
+          "url": "https://fixture.invalid/01005FD017E60000-upd.nsz",
+          "icon_url": "https://fixture.invalid/icons/01005FD017E60000.jpg",
+          "app_type": "update",
+          "app_version": 131072,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999995,
+          "display_version": "1.6.0",
+          "release_date": 20230523,
+          "rank": 55,
+          "players": 1,
+          "categories": [
+            "Action",
+            "Shooter"
+          ]
+        },
+        {
+          "title_id": "01005FD017E61001",
+          "base_title_id": "01005FD017E60000",
+          "name": "추가 콘텐츠 1",
+          "size": 1200000000,
+          "url": "https://fixture.invalid/01005FD017E60000-dlc0.nsp",
+          "icon_url": "https://fixture.invalid/icons/01005FD017E60000.jpg",
+          "app_type": "dlc",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999995,
+          "release_date": 20230523,
+          "rank": 55,
+          "players": 1,
+          "categories": [
+            "Action",
+            "Shooter"
+          ]
+        },
+        {
+          "title_id": "0100B5301A180000",
+          "base_title_id": "0100B5301A180000",
+          "name": "Tiny Knights: Castle Run",
+          "size": 4402341888,
+          "url": "https://fixture.invalid/0100B5301A180000.nsz",
+          "icon_url": "https://fixture.invalid/icons/0100B5301A180000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999994,
+          "release_date": 20230223,
+          "rank": 100,
+          "players": 2,
+          "categories": [
+            "Action",
+            "Platformer"
+          ]
+        },
+        {
+          "title_id": "0100B99019412000",
+          "base_title_id": "0100B99019412000",
+          "name": "버터 블록 대작전",
+          "size": 4402341888,
+          "url": "https://fixture.invalid/0100B99019412000.nsz",
+          "icon_url": "https://fixture.invalid/icons/0100B99019412000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999993,
+          "release_date": 20240216,
+          "rank": 3,
+          "players": 2,
+          "categories": [
+            "Puzzle",
+            "Action"
+          ]
+        },
+        {
+          "title_id": "0100B99019412000",
+          "base_title_id": "0100B99019412000",
+          "name": "버터 블록 대작전",
+          "size": 1234000000,
+          "url": "https://fixture.invalid/0100B99019412000-upd.nsz",
+          "icon_url": "https://fixture.invalid/icons/0100B99019412000.jpg",
+          "app_type": "update",
+          "app_version": 131072,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999993,
+          "display_version": "1.6.0",
+          "release_date": 20240216,
+          "rank": 3,
+          "players": 2,
+          "categories": [
+            "Puzzle",
+            "Action"
+          ]
+        },
+        {
+          "title_id": "0100E46006708000",
+          "base_title_id": "0100E46006708000",
+          "name": "Sky Farm",
+          "size": 4402341888,
+          "url": "https://fixture.invalid/0100E46006708000.nsz",
+          "icon_url": "https://fixture.invalid/icons/0100E46006708000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999992,
+          "release_date": 20190627,
+          "rank": 8,
+          "players": 8,
+          "categories": [
+            "Action",
+            "Adventure"
+          ]
+        },
+        {
+          "title_id": "0100E46006708000",
+          "base_title_id": "0100E46006708000",
+          "name": "Sky Farm",
+          "size": 1234000000,
+          "url": "https://fixture.invalid/0100E46006708000-upd.nsz",
+          "icon_url": "https://fixture.invalid/icons/0100E46006708000.jpg",
+          "app_type": "update",
+          "app_version": 131072,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999992,
+          "display_version": "1.6.0",
+          "release_date": 20190627,
+          "rank": 8,
+          "players": 8,
+          "categories": [
+            "Action",
+            "Adventure"
+          ]
+        },
+        {
+          "title_id": "01000EA014150000",
+          "base_title_id": "01000EA014150000",
+          "name": "Starlight Saga",
+          "size": 4402341888,
+          "url": "https://fixture.invalid/01000EA014150000.nsz",
+          "icon_url": "https://fixture.invalid/icons/01000EA014150000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999991,
+          "release_date": 20230420,
+          "rank": 30,
+          "players": 1,
+          "categories": [
+            "RPG"
+          ]
+        },
+        {
+          "title_id": "01007CF00D5BA000",
+          "base_title_id": "01007CF00D5BA000",
+          "name": "Thunder Twins 2",
+          "size": 4402341888,
+          "url": "https://fixture.invalid/01007CF00D5BA000.nsz",
+          "icon_url": "https://fixture.invalid/icons/01007CF00D5BA000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999990,
+          "release_date": 20190919,
+          "rank": 70,
+          "players": 1,
+          "categories": [
+            "Action"
+          ]
+        },
+        {
+          "title_id": "0100522014E10000",
+          "base_title_id": "0100522014E10000",
+          "name": "LITTLE ISLANDS",
+          "size": 4402341888,
+          "url": "https://fixture.invalid/0100522014E10000.nsz",
+          "icon_url": "https://fixture.invalid/icons/0100522014E10000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999989,
+          "release_date": 20220401,
+          "rank": 75,
+          "players": 1,
+          "categories": [
+            "Strategy",
+            "Puzzle"
+          ]
+        },
+        {
+          "title_id": "0100522014E10000",
+          "base_title_id": "0100522014E10000",
+          "name": "LITTLE ISLANDS",
+          "size": 1234000000,
+          "url": "https://fixture.invalid/0100522014E10000-upd.nsz",
+          "icon_url": "https://fixture.invalid/icons/0100522014E10000.jpg",
+          "app_type": "update",
+          "app_version": 131072,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999989,
+          "display_version": "1.6.0",
+          "release_date": 20220401,
+          "rank": 75,
+          "players": 1,
+          "categories": [
+            "Strategy",
+            "Puzzle"
+          ]
+        },
+        {
+          "title_id": "0100001019F6E000",
+          "base_title_id": "0100001019F6E000",
+          "name": "Road Rally 2",
+          "size": 4402341888,
+          "url": "https://fixture.invalid/0100001019F6E000.nsz",
+          "icon_url": "https://fixture.invalid/icons/0100001019F6E000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999988,
+          "release_date": 20230914,
+          "rank": 45,
+          "players": 4,
+          "categories": [
+            "Racing",
+            "Sports"
+          ]
+        },
+        {
+          "title_id": "0100001019F6E000",
+          "base_title_id": "0100001019F6E000",
+          "name": "Road Rally 2",
+          "size": 1234000000,
+          "url": "https://fixture.invalid/0100001019F6E000-upd.nsz",
+          "icon_url": "https://fixture.invalid/icons/0100001019F6E000.jpg",
+          "app_type": "update",
+          "app_version": 131072,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999988,
+          "display_version": "1.6.0",
+          "release_date": 20230914,
+          "rank": 45,
+          "players": 4,
+          "categories": [
+            "Racing",
+            "Sports"
+          ]
+        },
+        {
+          "title_id": "0100001019F6F001",
+          "base_title_id": "0100001019F6E000",
+          "name": "추가 콘텐츠 1",
+          "size": 1200000000,
+          "url": "https://fixture.invalid/0100001019F6E000-dlc0.nsp",
+          "icon_url": "https://fixture.invalid/icons/0100001019F6E000.jpg",
+          "app_type": "dlc",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999988,
+          "release_date": 20230914,
+          "rank": 45,
+          "players": 4,
+          "categories": [
+            "Racing",
+            "Sports"
+          ]
+        },
+        {
+          "title_id": "0100001019F6F002",
+          "base_title_id": "0100001019F6E000",
+          "name": "추가 콘텐츠 2",
+          "size": 910000000,
+          "url": "https://fixture.invalid/0100001019F6E000-dlc1.nsp",
+          "icon_url": "https://fixture.invalid/icons/0100001019F6E000.jpg",
+          "app_type": "dlc",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999988,
+          "release_date": 20230914,
+          "rank": 45,
+          "players": 4,
+          "categories": [
+            "Racing",
+            "Sports"
+          ]
+        },
+        {
+          "title_id": "0100001019F6F003",
+          "base_title_id": "0100001019F6E000",
+          "name": "추가 콘텐츠 3",
+          "size": 910000000,
+          "url": "https://fixture.invalid/0100001019F6E000-dlc2.nsp",
+          "icon_url": "https://fixture.invalid/icons/0100001019F6E000.jpg",
+          "app_type": "dlc",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999988,
+          "release_date": 20230914,
+          "rank": 45,
+          "players": 4,
+          "categories": [
+            "Racing",
+            "Sports"
+          ]
+        },
+        {
+          "title_id": "0100001019F6F004",
+          "base_title_id": "0100001019F6E000",
+          "name": "추가 콘텐츠 4",
+          "size": 910000000,
+          "url": "https://fixture.invalid/0100001019F6E000-dlc3.nsp",
+          "icon_url": "https://fixture.invalid/icons/0100001019F6E000.jpg",
+          "app_type": "dlc",
+          "app_version": 0,
+          "publisher": "CookingFoil",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 1999999988,
+          "release_date": 20230914,
+          "rank": 45,
+          "players": 4,
+          "categories": [
+            "Racing",
+            "Sports"
+          ]
+        }
+      ]
+    }
+  ],
+  "genres": {
+    "Action": {
+      "en": "Action",
+      "ko": "액션",
+      "ja": "アクション",
+      "zh": "动作"
+    },
+    "RPG": {
+      "en": "RPG",
+      "ko": "RPG",
+      "ja": "ロールプレイング",
+      "zh": "角色扮演"
+    },
+    "Strategy": {
+      "en": "Strategy",
+      "ko": "전략",
+      "ja": "ストラテジー",
+      "zh": "策略"
+    },
+    "Adventure": {
+      "en": "Adventure",
+      "ko": "어드벤처",
+      "ja": "アドベンチャー",
+      "zh": "冒险"
+    },
+    "Racing": {
+      "en": "Racing",
+      "ko": "레이싱",
+      "ja": "レース",
+      "zh": "竞速"
+    },
+    "Sports": {
+      "en": "Sports",
+      "ko": "스포츠",
+      "ja": "スポーツ",
+      "zh": "体育"
+    },
+    "Puzzle": {
+      "en": "Puzzle",
+      "ko": "퍼즐",
+      "ja": "パズル",
+      "zh": "益智"
+    },
+    "Platformer": {
+      "en": "Platformer",
+      "ko": "플랫포머",
+      "ja": "プラットフォーマー",
+      "zh": "平台跳跃"
+    },
+    "Shooter": {
+      "en": "Shooter",
+      "ko": "슈팅",
+      "ja": "シューティング",
+      "zh": "射击"
+    }
+  }
+}

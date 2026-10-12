@@ -1,0 +1,141 @@
+#include <cerrno>
+#include <cstring>
+#include "core/Config.hpp"
+#include "core/Json.hpp"
+#include "core/I18n.hpp"
+#include <curl/curl.h>
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <fcntl.h>
+#include <unistd.h>
+namespace foil {
+namespace {
+std::string lower(std::string s) { std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); }); return s; }
+std::string urlPart(CURLU* url, CURLUPart part, unsigned flags = 0) {
+    char* raw = nullptr;
+    if (curl_url_get(url, part, &raw, flags) != CURLUE_OK) return {};
+    std::string value(raw); curl_free(raw); return value;
+}
+bool headerSafe(const std::string& value) { return value.find_first_of("\r\n") == std::string::npos; }
+}
+std::string normalizeUrl(const std::string& input) {
+    std::string url = input;
+    const auto first = url.find_first_not_of(" \t");
+    if (first == std::string::npos) return {};
+    url = url.substr(first, url.find_last_not_of(" \t") - first + 1);
+    for (unsigned char c : url) if (c <= 32 || c == 127) return {};
+    if (url.find("://") == std::string::npos) url = "https://" + url;
+    while (!url.empty() && url.back() == '/') url.pop_back();
+    const auto lowered = lower(url);
+    for (const std::string suffix : {"/shop.tfl", "/shop.json"}) {
+        if (lowered.size() >= suffix.size() && lowered.compare(lowered.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            url.resize(url.size() - suffix.size()); break;
+        }
+    }
+    auto* handle = curl_url();
+    if (!handle) return {};
+    const bool parsed = curl_url_set(handle, CURLUPART_URL, url.c_str(), 0) == CURLUE_OK;
+    const auto scheme = lower(urlPart(handle, CURLUPART_SCHEME));
+    const bool valid = parsed && (scheme == "http" || scheme == "https") && !urlPart(handle, CURLUPART_HOST).empty()
+        && urlPart(handle, CURLUPART_USER).empty() && urlPart(handle, CURLUPART_PASSWORD).empty()
+        && urlPart(handle, CURLUPART_QUERY).empty() && urlPart(handle, CURLUPART_FRAGMENT).empty();
+    std::string normalized = valid ? urlPart(handle, CURLUPART_URL) : "";
+    curl_url_cleanup(handle);
+    while (!normalized.empty() && normalized.back() == '/') normalized.pop_back();
+    return normalized;
+}
+std::string originOf(const std::string& url) {
+    auto* h = curl_url();
+    if (!h || curl_url_set(h, CURLUPART_URL, url.c_str(), 0) != CURLUE_OK) { if (h) curl_url_cleanup(h); return {}; }
+    auto result = lower(urlPart(h, CURLUPART_SCHEME)) + "://" + lower(urlPart(h, CURLUPART_HOST));
+    const auto port = urlPart(h, CURLUPART_PORT, CURLU_NO_DEFAULT_PORT);
+    if (!port.empty()) result += ":" + port;
+    curl_url_cleanup(h);
+    return result;
+}
+Parsed<Config> parseConfig(const std::string& json) {
+    Parsed<Config> result;
+    auto root = parseJson(json, result.error);
+    if (result.error) return result;
+    auto fail = [&](const std::string& message) { result.error.message = message; };
+    if (!json_object_is_type(root.get(), json_type_object)) { fail(tr("설정은 JSON 객체로 작성해 주세요.")); return result; }
+    auto* servers = field(root.get(), "servers");
+    if (servers && !json_object_is_type(servers, json_type_array)) { fail(tr("servers는 배열로 작성해 주세요.")); return result; }
+    const auto count = servers ? json_object_array_length(servers) : 0;
+    if (count > 32) { fail(tr("서버는 32개까지 등록할 수 있습니다.")); return result; }
+    for (size_t i = 0; i < count; ++i) {
+        auto* object = json_object_array_get_idx(servers, i);
+        Server server;
+        if (!json_object_is_type(object, json_type_object)) { fail(tr("서버 항목을 확인해 주세요.")); return result; }
+        for (const auto* key : {"url", "title", "username", "password", "cfClientId", "cfClientSecret"}) {
+            auto* value = field(object, key);
+            if (value && (!json_object_is_type(value, json_type_string) || !headerSafe(json_object_get_string(value)))) {
+                fail(trf("{0}는 줄바꿈 없는 문자열로 작성해 주세요.", {key})); return result;
+            }
+        }
+        server.url = normalizeUrl(stringField(object, "url"));
+        if (server.url.empty()) { fail(trf("서버 {0}의 HTTP/HTTPS 주소를 확인해 주세요.", {std::to_string(i + 1)})); return result; }
+        server.title = stringField(object, "title");
+        if (server.title.empty()) server.title = originOf(server.url).substr(originOf(server.url).find("://") + 3);
+        server.username = stringField(object, "username"); server.password = stringField(object, "password");
+        server.cfClientId = stringField(object, "cfClientId"); server.cfClientSecret = stringField(object, "cfClientSecret");
+        auto* enabled = field(object, "enabled");
+        if (enabled && !json_object_is_type(enabled, json_type_boolean)) { fail(tr("enabled는 true 또는 false로 작성해 주세요.")); return result; }
+        server.enabled = !enabled || json_object_get_boolean(enabled);
+        result.value.servers.push_back(server);
+    }
+    for (const auto* key : {"language", "installTarget"}) {
+        auto* value = field(root.get(), key);
+        if (value && !json_object_is_type(value, json_type_string)) { fail(trf("{0}는 문자열로 작성해 주세요.", {key})); return result; }
+    }
+    result.value.language = stringField(root.get(), "language", "ko");
+    result.value.installTarget = stringField(root.get(), "installTarget", "sd");
+    if (result.value.language != "ko" && result.value.language != "en" && result.value.language != "ja" && result.value.language != "zh") fail(tr("language는 ko, en, ja, zh 중 하나로 작성해 주세요."));
+    if (result.value.installTarget != "sd" && result.value.installTarget != "nand") fail(tr("installTarget은 sd 또는 nand로 작성해 주세요."));
+    return result;
+}
+std::string serializeConfig(const Config& config, bool redact) {
+    Json root(json_object_new_object());
+    auto* servers = json_object_new_array();
+    for (const auto& s : config.servers) {
+        auto* object = json_object_new_object();
+        auto add = [&](const char* key, const std::string& value) { json_object_object_add(object, key, json_object_new_string(value.c_str())); };
+        add("title", s.title); add("url", s.url); add("username", s.username);
+        add("password", redact && !s.password.empty() ? "••••" : s.password);
+        add("cfClientId", redact && !s.cfClientId.empty() ? "••••" : s.cfClientId);
+        add("cfClientSecret", redact && !s.cfClientSecret.empty() ? "••••" : s.cfClientSecret);
+        json_object_object_add(object, "enabled", json_object_new_boolean(s.enabled));
+        json_object_array_add(servers, object);
+    }
+    json_object_object_add(root.get(), "servers", servers);
+    json_object_object_add(root.get(), "language", json_object_new_string(config.language.c_str()));
+    json_object_object_add(root.get(), "installTarget", json_object_new_string(config.installTarget.c_str()));
+    return std::string(json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_NOSLASHESCAPE)) + "\n";
+}
+Parsed<Config> loadConfig(const std::string& path) {
+    std::error_code ec;
+    if (std::filesystem::exists(path, ec)) return parseConfig(readFile(path));
+    Parsed<Config> result;
+    if (ec) { result.error.message = ec.message(); return result; }
+    const auto parent = std::filesystem::path(path).parent_path();
+    if (!parent.empty() && !makeDirectories(parent.string())) { result.error.message = std::strerror(errno); return result; }
+    const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if (fd < 0) {
+        if (errno == EEXIST) return parseConfig(readFile(path));
+        result.error.message = tr("설정 파일을 만들지 못했습니다."); return result;
+    }
+    const auto contents = serializeConfig(result.value);
+    size_t offset = 0;
+    while (offset < contents.size()) {
+        const auto written = ::write(fd, contents.data() + offset, contents.size() - offset);
+        if (written <= 0) break;
+        offset += written;
+    }
+    const bool flushed = ::fsync(fd) == 0;
+    const bool closed = ::close(fd) == 0;
+    result.created = offset == contents.size() && flushed && closed;
+    if (!result.created) result.error.message = tr("설정 파일을 쓰지 못했습니다.");
+    return result;
+}
+}

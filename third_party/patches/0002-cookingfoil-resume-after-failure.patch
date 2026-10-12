@@ -1,0 +1,61 @@
+--- a/include/install/install.hpp	2026-10-11 05:50:00.759090057 +0900
++++ b/include/install/install.hpp	2026-10-11 05:50:00.777005328 +0900
+@@ -55,7 +55,10 @@
+             virtual std::vector<std::tuple<nx::ncm::ContentMeta, NcmContentInfo>> ReadCNMT() = 0;
+             bool IsSessionInstalledNca(const NcmContentId& ncaId) const;
+             void TrackSessionInstalledNca(const NcmContentId& ncaId);
+-            void CleanupSessionInstalledNcas();
++            // keepFinished: leave content that finished downloading (registered)
++            // so a retry resumes; only unfinished placeholders go. A cancel
++            // passes false and removes everything this session wrote.
++            void CleanupSessionInstalledNcas(bool keepFinished = false);
+ 
+             virtual void InstallContentMetaRecords(tin::data::ByteBuffer& installContentMetaBuf, int i);
+             virtual void InstallApplicationRecord(int i);
+--- a/source/install/install.cpp	2026-10-11 05:50:00.758138990 +0900
++++ b/source/install/install.cpp	2026-10-11 05:50:00.776019561 +0900
+@@ -64,7 +64,7 @@
+             m_sessionInstalledNcas.push_back(ncaId);
+     }
+ 
+-    void Install::CleanupSessionInstalledNcas()
++    void Install::CleanupSessionInstalledNcas(bool keepFinished)
+     {
+         if (m_sessionInstalledNcas.empty())
+             return;
+@@ -75,6 +75,8 @@
+                 contentStorage.DeletePlaceholder(*(const NcmPlaceHolderId*)&ncaId);
+             } catch (...) {}
+ 
++            if (keepFinished)
++                continue;
+             try {
+                 if (contentStorage.Has(ncaId))
+                     contentStorage.Delete(ncaId);
+@@ -162,7 +164,7 @@
+             }
+         }
+         catch (...) {
+-            CleanupSessionInstalledNcas();
++            CleanupSessionInstalledNcas(!inst::ui::instPage::isInstallCancelRequested());
+             throw;
+         }
+     }
+@@ -178,7 +180,7 @@
+         }
+         catch (std::runtime_error& e)
+         {
+-            CleanupSessionInstalledNcas();
++            CleanupSessionInstalledNcas(!inst::ui::instPage::isInstallCancelRequested());
+             throw;
+         }
+ 
+@@ -218,7 +220,7 @@
+             // Committed metadata may reference new content. Keep it on a
+             // publication failure rather than leave a broken database record.
+             if (!publishingMetadata)
+-                CleanupSessionInstalledNcas();
++                CleanupSessionInstalledNcas(!inst::ui::instPage::isInstallCancelRequested());
+             throw;
+         }
+     }

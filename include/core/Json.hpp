@@ -1,0 +1,20 @@
+#pragma once
+#include "core/Types.hpp"
+#include <json-c/json.h>
+#include <memory>
+namespace foil {
+struct JsonDelete { void operator()(json_object* p) const { if (p) json_object_put(p); } };
+using Json = std::unique_ptr<json_object, JsonDelete>;
+Json parseJson(const std::string& text, Error& error);
+json_object* field(json_object* obj, const char* key);
+std::string stringField(json_object* obj, const char* key, const std::string& fallback = "");
+int64_t integerField(json_object* obj, const char* key, int64_t fallback = 0);
+// A server path ("/api/...") joined to `base`, or an absolute http(s) URL;
+// anything else reads as "".
+std::string urlField(json_object* obj, const char* key, const std::string& base);
+std::string readFile(const std::string& path);
+bool atomicWrite(const std::string& path, const std::string& contents, std::string& error);
+// mkdir -p that stops at a device root ("sdmc:"): std::filesystem::create_directories
+// takes "sdmc:" for a folder on the console and fails before making any.
+bool makeDirectories(const std::string& path);
+}

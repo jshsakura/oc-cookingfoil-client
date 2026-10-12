@@ -1,0 +1,323 @@
+diff --git a/include/install/install.hpp b/include/install/install.hpp
+index 17b8df7..40125c5 100755
+--- a/include/install/install.hpp
++++ b/include/install/install.hpp
+@@ -47,6 +47,7 @@ namespace tin::install
+             bool m_declinedValidation = false;
+ 
+             std::vector<nx::ncm::ContentMeta> m_contentMeta;
++            std::vector<NcmContentInfo> m_cnmtRecords;
+             std::vector<NcmContentId> m_sessionInstalledNcas;
+ 
+             Install(NcmStorageId destStorageId, bool ignoreReqFirmVersion);
+diff --git a/source/install/http_nsp.cpp b/source/install/http_nsp.cpp
+index 3dc0422..50d2f4a 100755
+--- a/source/install/http_nsp.cpp
++++ b/source/install/http_nsp.cpp
+@@ -21,6 +21,7 @@ SOFTWARE.
+ */
+ 
+ #include "install/http_nsp.hpp"
++#include "install/EngineHooks.hpp"
+ 
+ #include <atomic>
+ #include <cstdio>
+@@ -241,6 +242,7 @@ namespace tin::install::nsp
+                     }
+                 }
+ 
++                foil::install::reportBytes(displayFileName,static_cast<uint64_t>(sizeBuffered),emaSpeed);
+                 inst::ui::instPage::setInstInfoText("inst.info_page.downloading"_lang + inst::util::formatUrlString(displayFileName) + "inst.info_page.at"_lang + FormatOneDecimal(emaSpeed) + " MB/s");
+                 inst::ui::instPage::setInstBarPerc((double)downloadProgress);
+                 inst::ui::instPage::setProgressDetailText(
+@@ -250,6 +252,7 @@ namespace tin::install::nsp
+                 );
+             }
+         }
++        foil::install::reportBytes(displayFileName,bufferedPlaceholderWriter.GetSizeBuffered(),emaSpeed);
+         inst::ui::instPage::setInstBarPerc(100);
+         inst::ui::instPage::setProgressDetailText("Downloaded 100% • Verifying and installing...");
+ 
+diff --git a/source/install/http_xci.cpp b/source/install/http_xci.cpp
+index a4066ca..325c6b9 100755
+--- a/source/install/http_xci.cpp
++++ b/source/install/http_xci.cpp
+@@ -21,6 +21,7 @@ SOFTWARE.
+ */
+ 
+ #include "install/http_xci.hpp"
++#include "install/EngineHooks.hpp"
+ 
+ #include "nx/nca_writer.h"
+ #include "util/error.hpp"
+@@ -48,6 +49,7 @@ namespace tin::install::xci
+         float progress = 0.0f;
+         u64 fileStart = GetDataOffset() + fileEntry->dataOffset;
+         u64 fileOff = 0;
++        const u64 began=armGetSystemTick();
+         size_t readSize = 0x400000;
+         auto readBuffer = std::make_unique<u8[]>(readSize);
+ 
+@@ -71,6 +73,8 @@ namespace tin::install::xci
+                 this->BufferData(readBuffer.get(), fileOff + fileStart, readSize);
+                 writer.write(readBuffer.get(), readSize);
+                 fileOff += readSize;
++                const auto seconds=double(armGetSystemTick()-began)/armGetSystemTickFreq();
++                foil::install::reportBytes(ncaFileName,fileOff,seconds>0?fileOff/seconds/(1024*1024):0);
+             }
+             inst::ui::instPage::setInstBarPerc(100);
+         } catch (std::exception& e) {
+diff --git a/source/install/install.cpp b/source/install/install.cpp
+index 28c939e..5c56175 100755
+--- a/source/install/install.cpp
++++ b/source/install/install.cpp
+@@ -86,7 +86,7 @@ namespace tin::install
+     // TODO: Implement RAII on NcmContentMetaDatabase
+     void Install::InstallContentMetaRecords(tin::data::ByteBuffer& installContentMetaBuf, int i)
+     {
+-        NcmContentMetaDatabase contentMetaDatabase;
++        NcmContentMetaDatabase contentMetaDatabase{};
+         NcmContentMetaKey contentMetaKey = m_contentMeta[i].GetContentMetaKey();
+ 
+         try
+@@ -141,8 +141,8 @@ namespace tin::install
+                 {
+                     LOG_DEBUG("Installing CNMT NCA...\n");
+                     inst::diag::NoteStep("Prepare phase: installing CNMT NCA " + tin::util::GetNcaIdString(cnmtContentRecord.content_id));
+-                    this->InstallNCA(cnmtContentRecord.content_id);
+                     TrackSessionInstalledNca(cnmtContentRecord.content_id);
++                    this->InstallNCA(cnmtContentRecord.content_id);
+                 }
+                 else
+                 {
+@@ -158,8 +158,7 @@ namespace tin::install
+                 m_contentMeta[i].GetInstallContentMeta(installContentMetaBuf, cnmtContentRecord, m_ignoreReqFirmVersion);
+                 inst::diag::NoteStep("Prepare phase: writing content meta record #" + std::to_string(i + 1));
+ 
+-                this->InstallContentMetaRecords(installContentMetaBuf, i);
+-                this->InstallApplicationRecord(i);
++                m_cnmtRecords.push_back(cnmtContentRecord);
+             }
+         }
+         catch (...) {
+@@ -170,6 +169,7 @@ namespace tin::install
+ 
+     void Install::Begin()
+     {
++        bool publishingMetadata = false;
+         LOG_DEBUG("Installing ticket and cert...\n");
+         inst::diag::NoteStep("Install phase: ticket/cert import");
+         try
+@@ -178,7 +178,8 @@ namespace tin::install
+         }
+         catch (std::runtime_error& e)
+         {
+-            LOG_DEBUG("WARNING: Ticket installation failed! This may not be an issue, depending on your use case.\nProceed with caution!\n");
++            CleanupSessionInstalledNcas();
++            throw;
+         }
+ 
+         try {
+@@ -198,13 +199,26 @@ namespace tin::install
+ 
+                     LOG_DEBUG("Installing from %s\n", tin::util::GetNcaIdString(record.content_id).c_str());
+                     inst::diag::NoteStep("Install phase: writing NCA " + tin::util::GetNcaIdString(record.content_id));
+-                    this->InstallNCA(record.content_id);
+                     TrackSessionInstalledNca(record.content_id);
++                    this->InstallNCA(record.content_id);
+                 }
+             }
++            if (inst::ui::instPage::isInstallCancelRequested())
++                THROW_FORMAT("Installation canceled.");
++            // Publish title metadata after content installation succeeds.
++            publishingMetadata = true;
++            for(size_t i=0;i<m_contentMeta.size();++i) {
++                tin::data::ByteBuffer metadata;
++                m_contentMeta[i].GetInstallContentMeta(metadata,m_cnmtRecords[i],m_ignoreReqFirmVersion);
++                this->InstallContentMetaRecords(metadata,i);
++                this->InstallApplicationRecord(i);
++            }
+         }
+         catch (...) {
+-            CleanupSessionInstalledNcas();
++            // Committed metadata may reference new content. Keep it on a
++            // publication failure rather than leave a broken database record.
++            if (!publishingMetadata)
++                CleanupSessionInstalledNcas();
+             throw;
+         }
+     }
+diff --git a/source/install/install_nsp.cpp b/source/install/install_nsp.cpp
+index eb97222..3be09b7 100755
+--- a/source/install/install_nsp.cpp
++++ b/source/install/install_nsp.cpp
+@@ -65,7 +65,10 @@ namespace tin::install::nsp
+             LOG_DEBUG("CNMT Name: %s\n", cnmtNcaName.c_str());
+ 
+             // We install the cnmt nca early to read from it later
+-            this->InstallNCA(cnmtContentId);
++            if(!contentStorage.Has(cnmtContentId)) {
++                TrackSessionInstalledNca(cnmtContentId);
++                this->InstallNCA(cnmtContentId);
++            }
+             std::string cnmtNCAFullPath = contentStorage.GetPath(cnmtContentId);
+ 
+             NcmContentInfo cnmtContentInfo;
+diff --git a/source/install/install_xci.cpp b/source/install/install_xci.cpp
+index 17c29ba..59c4417 100755
+--- a/source/install/install_xci.cpp
++++ b/source/install/install_xci.cpp
+@@ -61,7 +61,10 @@ namespace tin::install::xci
+             LOG_DEBUG("CNMT Name: %s\n", cnmtNcaName.c_str());
+ 
+             // We install the cnmt nca early to read from it later
+-            this->InstallNCA(cnmtContentId);
++            if(!contentStorage.Has(cnmtContentId)) {
++                TrackSessionInstalledNca(cnmtContentId);
++                this->InstallNCA(cnmtContentId);
++            }
+             std::string cnmtNCAFullPath = contentStorage.GetPath(cnmtContentId);
+ 
+             NcmContentInfo cnmtContentInfo;
+diff --git a/source/nx/ipc/ns_ext.c b/source/nx/ipc/ns_ext.c
+index 0ad0c8b..4e1f4a8 100755
+--- a/source/nx/ipc/ns_ext.c
++++ b/source/nx/ipc/ns_ext.c
+@@ -34,6 +34,8 @@ Result nsextInitialize(void) {
+             g_nsAppManSrv = *nsGetServiceSession_ApplicationManagerInterface();
+         } else {
+             rc = nsGetApplicationManagerInterface(&g_nsAppManSrv);
++            if (R_FAILED(rc))
++                nsExit();
+         }
+     }
+ 
+diff --git a/source/util/network_util.cpp b/source/util/network_util.cpp
+index 1fc0545..ea0dad8 100755
+--- a/source/util/network_util.cpp
++++ b/source/util/network_util.cpp
+@@ -21,6 +21,7 @@ SOFTWARE.
+ */
+ 
+ #include "util/network_util.hpp"
++#include "core/Config.hpp"
+ 
+ #include <switch.h>
+ #include <curl/curl.h>
+@@ -45,6 +46,17 @@ namespace inst::ui {
+ 
+ namespace tin::network
+ {
++    static std::vector<std::string> g_extra_headers;
++    static std::string g_header_origin;
++    void SetExtraHeaders(const std::vector<std::string>& headers,const std::string& origin) {
++        g_extra_headers=headers;g_header_origin=origin;
++    }
++    static curl_slist* RequestHeaders(const std::string& url) {
++        curl_slist* list=nullptr;
++        if(foil::originOf(url)==g_header_origin)for(const auto& header:g_extra_headers)
++            if(header.find_first_of("\r\n")==std::string::npos)list=curl_slist_append(list,header.c_str());
++        return list;
++    }
+     static std::string g_basic_auth_user;
+     static std::string g_basic_auth_pass;
+     static bool g_basic_auth_set = false;
+@@ -214,39 +226,26 @@ namespace tin::network
+         const auto range = ss.str();
+ 
+         curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
+-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false);
++        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
++        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
++        curl_easy_setopt(curl, CURLOPT_CAINFO, "romfs:/cacert.pem");
++        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
++        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
++        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
++        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
++        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, +[](void*,curl_off_t,curl_off_t,curl_off_t,curl_off_t)->int{return inst::ui::instPage::isInstallCancelRequested()?1:0;});
+         const std::string& userAgent = inst::curl::getUserAgent();
+         curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.c_str());
+         curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "identity");
+         curl_easy_setopt(curl, CURLOPT_RANGE, range.c_str());
+-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
++        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+         curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 8L);
+         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callbackCtx);
+         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &ParseHTMLDataCallback);
+         std::string authValue;
+         ApplyBasicAuth(curl, authValue);
+ 
+-        struct curl_slist* headerList = nullptr;
+-        std::string versionValue;
+-        std::string revisionValue;
+-        BuildVersionAndRevision(versionValue, revisionValue);
+-        const std::string themeHeader = "Theme: 0000000000000000000000000000000000000000000000000000000000000000";
+-        const std::string uidHeader = "UID: " + inst::util::ComputeUidFromMmcCid();
+-        const std::string versionHeader = "Version: " + versionValue;
+-        const std::string revisionHeader = "Revision: " + revisionValue;
+-        const std::string languageHeader = "Language: " + Language::GetRemoteHeaderLanguage();
+-        const std::string hauthHeader = "HAUTH: " + inst::util::ComputeHauthFromUrl(requestUrl);
+-        const std::string uauthHeader = "UAUTH: " + inst::util::ComputeUauthFromUrl(
+-            requestUrl,
+-            g_basic_auth_set ? g_basic_auth_user : "",
+-            g_basic_auth_set ? g_basic_auth_pass : "");
+-        headerList = curl_slist_append(headerList, themeHeader.c_str());
+-        headerList = curl_slist_append(headerList, languageHeader.c_str());
+-        headerList = curl_slist_append(headerList, hauthHeader.c_str());
+-        headerList = curl_slist_append(headerList, uidHeader.c_str());
+-        headerList = curl_slist_append(headerList, versionHeader.c_str());
+-        headerList = curl_slist_append(headerList, revisionHeader.c_str());
+-        headerList = curl_slist_append(headerList, uauthHeader.c_str());
++        struct curl_slist* headerList=RequestHeaders(requestUrl);
+         if (headerList)
+             curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerList);
+ 
+@@ -317,9 +316,16 @@ namespace tin::network
+ 
+         curl_easy_setopt(curl, CURLOPT_URL, m_url.c_str());
+         curl_easy_setopt(curl, CURLOPT_NOBODY, true);
+-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
++        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+         curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 8L);
+-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false);
++        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
++        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
++        curl_easy_setopt(curl, CURLOPT_CAINFO, "romfs:/cacert.pem");
++        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
++        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
++        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
++        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
++        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, +[](void*,curl_off_t,curl_off_t,curl_off_t,curl_off_t)->int{return inst::ui::instPage::isInstallCancelRequested()?1:0;});
+         const std::string& userAgent = inst::curl::getUserAgent();
+         curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.c_str());
+         curl_easy_setopt(curl, CURLOPT_HEADERDATA, this);
+@@ -327,9 +333,13 @@ namespace tin::network
+         std::string authValue;
+         ApplyBasicAuth(curl, authValue);
+ 
++        struct curl_slist* headerList=RequestHeaders(m_url);
++        if(headerList)curl_easy_setopt(curl,CURLOPT_HTTPHEADER,headerList);
+         rc = curl_easy_perform(curl);
++        if(headerList)curl_slist_free_all(headerList);
+         if (rc != CURLE_OK)
+         {
++            curl_easy_cleanup(curl);
+             THROW_FORMAT("Failed to retrieve HTTP Header: %s\n", curl_easy_strerror(rc));
+         }
+ 
+@@ -662,7 +672,14 @@ namespace tin::network
+         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DROP");
+         const std::string& userAgent = inst::curl::getUserAgent();
+         curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.c_str());
+-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false);
++        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
++        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
++        curl_easy_setopt(curl, CURLOPT_CAINFO, "romfs:/cacert.pem");
++        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
++        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
++        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
++        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
++        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, +[](void*,curl_off_t,curl_off_t,curl_off_t,curl_off_t)->int{return inst::ui::instPage::isInstallCancelRequested()?1:0;});
+         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 50);
+ 
+         curl_easy_perform(curl);

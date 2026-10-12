@@ -1,0 +1,20 @@
+{
+  "servers": [
+    {
+      "title": "My server",
+      "url": "https://files.example.com",
+      "username": "",
+      "password": "",
+      "enabled": true
+    },
+    {
+      "title": "Backup server",
+      "url": "https://files2.example.com",
+      "cfClientId": "",
+      "cfClientSecret": "",
+      "enabled": false
+    }
+  ],
+  "language": "en",
+  "installTarget": "sd"
+}
