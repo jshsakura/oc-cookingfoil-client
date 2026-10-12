@@ -9,6 +9,10 @@ std::atomic<Language> current{Language::Korean};
 struct Registry {
   std::vector<std::pair<const Translation *, size_t>> tables;
   std::unordered_map<std::string, const Translation *> index;
+  // tr()'s keys by address: most are literals drawn every frame, so this
+  // spares copying and hashing the text each time. A hit is checked
+  // against the text, since a buffer can hold another key later.
+  std::unordered_map<const char *, const Translation *> byAddress;
   size_t indexed = 0; // tables already in index
   std::mutex lock;
 };
@@ -18,16 +22,34 @@ Registry &registry() {
 }
 // Tables register during static initialization (tests add one later), so
 // the index catches up with any table it has not seen yet.
-const Translation *lookup(const std::string &korean) {
-  auto &r = registry();
-  std::lock_guard<std::mutex> guard(r.lock);
+void catchUp(Registry &r) {
   for (; r.indexed < r.tables.size(); ++r.indexed) {
     const auto &[rows, count] = r.tables[r.indexed];
     for (size_t i = 0; i < count; ++i)
       r.index.emplace(rows[i].ko, &rows[i]);
   }
+}
+const Translation *lookup(const std::string &korean) {
+  auto &r = registry();
+  std::lock_guard<std::mutex> guard(r.lock);
+  catchUp(r);
   const auto found = r.index.find(korean);
   return found == r.index.end() ? nullptr : found->second;
+}
+const Translation *lookupKey(const char *key) {
+  auto &r = registry();
+  std::lock_guard<std::mutex> guard(r.lock);
+  const auto seen = r.byAddress.find(key);
+  if (seen != r.byAddress.end() && std::strcmp(seen->second->ko, key) == 0)
+    return seen->second;
+  catchUp(r);
+  const auto found = r.index.find(key);
+  if (found == r.index.end()) {
+    if (seen != r.byAddress.end()) r.byAddress.erase(seen);
+    return nullptr;
+  }
+  r.byAddress[key] = found->second;
+  return found->second;
 }
 } // namespace
 TranslationTable::TranslationTable(const Translation *rows, size_t count) {
@@ -91,7 +113,7 @@ const char *tr(const char *key) {
     return key;
   if (lang == Language::Korean)
     return korean(key);
-  const auto *row = findTranslation(key);
+  const auto *row = lookupKey(key);
   if (!row)
     return korean(key);
   const char *text = lang == Language::English    ? row->en
