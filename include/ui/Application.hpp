@@ -98,6 +98,16 @@ public:
   // Set when the sidebar search item is chosen; the platform opens a keyboard.
   bool takeSearchRequest() { return std::exchange(searchRequested_, false); }
   void requestSearch() { searchRequested_ = true; }
+  // A line of text the app asks for (a field of the server form): the
+  // platform opens its keyboard and hands what was typed to enterText().
+  struct TextRequest {
+    std::string guide, initial;
+    bool password = false; // typed hidden
+    int maxLength = 256;
+  };
+  std::optional<TextRequest> takeTextRequest() { return std::exchange(textRequest_, std::nullopt); }
+  // Goes to the field that asked last; nothing happens once its form closed.
+  void enterText(const std::string &text);
   bool requestQuit();
   // Where this .nro runs from (argv[0]); 설정 > 앱 업데이트 replaces it.
   void setSelfPath(std::string path) { selfPath_ = std::move(path); }
@@ -163,6 +173,9 @@ public:
   int savesTab() const { return savesTab_; }
   const std::string &headerFocus() const { return headerFocus_; }
   bool onMenu() const { return sidebar_; }
+  bool serverFormOpen() const { return serverForm_.has_value(); }
+  const Config &config() const { return config_; }
+  size_t activeServer() const { return serverIndex_; }
 #endif
   // Where installs go: 설정's choice, else config.json's.
   std::string installTarget() const {
@@ -517,7 +530,30 @@ private:
   float pageTitle(const std::string &title, const std::string &meta = "", float metaRight = 0);
   void connect(size_t server);
   void clearCatalog();
-  void reload();
+  // `prefer`: the server to connect to when it is on, else the first one on.
+  void reload(int prefer = -1);
+  // 설정's server form (ServerForm.cpp): + 서버 추가 opens it empty, A on a
+  // server opens that one. Rows: the four fields, then 저장 and 삭제.
+  struct ServerForm {
+    int index = -1; // the server edited; -1 a new one
+    Server server;  // the edited copy
+    int row = 0;    // 0 주소, 1 아이디, 2 비밀번호, 3 이름, 4 저장, 5 삭제
+    std::string error;
+    bool confirmDelete = false;
+  };
+  static constexpr int ServerFields = 4, ServerSaveRow = 4, ServerDeleteRow = 5;
+  std::optional<ServerForm> serverForm_;
+  std::optional<TextRequest> textRequest_;
+  int textField_ = -1; // the form field the keyboard types into
+  void openServerForm(int index);
+  void serverFormAction(Action a);
+  void serverFormDialog();
+  void askServerField(int field);
+  void saveServerForm();
+  void deleteServerForm();
+  // Writes `next` to config.json and reads it back, connecting to `prefer`;
+  // `done` is the message once it is in. An alert says why when it fails.
+  bool writeServers(const Config &next, int prefer, const std::string &done);
   void openDetail(size_t group);
   void fetchDetail();
   void card(const Group &g, float x, float y, bool selected,
@@ -633,7 +669,7 @@ private:
   bool cancelRetro_ = false; // the cancel popup is about the retro download
   bool confirmCancel_ = false, confirmExit_ = false, exitAfterCancel_ = false,
        exitRequested_ = false;
-  bool serverHelp_ = false, searchRequested_ = false, confirmInstall_ = false;
+  bool searchRequested_ = false, confirmInstall_ = false;
   int dialogFocus_ = 0;
   void dialogHints(float right, float y, const std::string &close,
                    const std::string &apply = "", const std::string &accept = "");

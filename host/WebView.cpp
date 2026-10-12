@@ -1,6 +1,7 @@
 #include "host/WebView.hpp"
 #include <SDL2/SDL_image.h>
 #include <arpa/inet.h>
+#include <cctype>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -53,6 +54,10 @@ img.onpointerup=e=>{if(start&&!moved){const p=at(e);send('/tap?x='+p[0].toFixed(
 async function loop(){
   try{const r=await fetch('/frame.png?'+Date.now());
     if(r.headers.get('X-Search')){const q=prompt('게임 이름으로 찾기','');if(q!==null)send('/search?q='+encodeURIComponent(q));}
+    const g=r.headers.get('X-Text-Guide');
+    if(g!==null){const hidden=r.headers.get('X-Text-Password');
+      const v=prompt(decodeURIComponent(g),hidden?'':decodeURIComponent(r.headers.get('X-Text-Initial')||''));
+      if(v!==null&&!(hidden&&v===''))send('/text?v='+encodeURIComponent(v));}
     const u=URL.createObjectURL(await r.blob());
     const old=img.src;img.src=u;if(old)URL.revokeObjectURL(old);}catch(e){}
   setTimeout(loop,120);
@@ -67,6 +72,18 @@ std::string decode(const std::string &text) {
       i += 2;
     } else
       out += text[i] == '+' ? ' ' : text[i];
+  }
+  return out;
+}
+// For a header value: everything but letters and digits as %XX.
+std::string encode(const std::string &text) {
+  static const char *hex = "0123456789ABCDEF";
+  std::string out;
+  for (unsigned char c : text) {
+    if (std::isalnum(c))
+      out += char(c);
+    else
+      out += {'%', hex[c >> 4], hex[c & 15]};
   }
   return out;
 }
@@ -182,8 +199,14 @@ int serveWeb(ui::Application &app, ui::Runtime &runtime, int port) {
     auto args = query(target);
     if (path == "/frame.png") {
       // A search request (search bar tap, X) asks the page for a query.
-      const std::string search = app.takeSearchRequest() ? "X-Search: 1\r\nAccess-Control-Expose-Headers: X-Search\r\n" : "";
-      reply(client, "image/png", frame(runtime.renderer()), search);
+      std::string extra = app.takeSearchRequest() ? "X-Search: 1\r\nAccess-Control-Expose-Headers: X-Search\r\n" : "";
+      // A field the app asks for (the server form). A password is never
+      // sent back to the page; an empty answer keeps it.
+      if (const auto text = app.takeTextRequest())
+        extra += "X-Text-Guide: " + encode(text->guide) + "\r\n" +
+                 (text->password ? std::string("X-Text-Password: 1\r\n")
+                                 : "X-Text-Initial: " + encode(text->initial) + "\r\n");
+      reply(client, "image/png", frame(runtime.renderer()), extra);
     } else if (path == "/key") {
       input(app, args["k"]);
       reply(client, "text/plain", "ok");
@@ -192,6 +215,9 @@ int serveWeb(ui::Application &app, ui::Runtime &runtime, int port) {
       reply(client, "text/plain", "ok");
     } else if (path == "/drag") {
       app.drag(std::strtof(args["dy"].c_str(), nullptr));
+      reply(client, "text/plain", "ok");
+    } else if (path == "/text") {
+      app.enterText(args["v"]);
       reply(client, "text/plain", "ok");
     } else if (path == "/search") {
       app.search(args["q"]);

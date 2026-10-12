@@ -113,6 +113,9 @@ std::string serializeConfig(const Config& config, bool redact) {
     json_object_object_add(root.get(), "installTarget", json_object_new_string(config.installTarget.c_str()));
     return std::string(json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_NOSLASHESCAPE)) + "\n";
 }
+bool saveConfig(const std::string& path, const Config& config, std::string& error) {
+    return atomicWrite(path, serializeConfig(config), error);
+}
 Parsed<Config> loadConfig(const std::string& path) {
     std::error_code ec;
     if (std::filesystem::exists(path, ec)) return parseConfig(readFile(path));

@@ -1,4 +1,5 @@
 #include "Test.hpp"
+#include "core/Config.hpp"
 #include "core/Json.hpp"
 #include "ui/Application.hpp"
 #include <filesystem>
@@ -278,6 +279,100 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(reload.groupCount() == 0);
     CHECK(reload.current() == foil::ui::Screen::Settings);
     std::filesystem::remove_all(root);
+  }
+  char formDirectory[] = "/tmp/cookingfoil-form-XXXXXX";
+  const auto formRoot = mkdtemp(formDirectory);
+  CHECK(formRoot != nullptr);
+  if (formRoot) {
+    // 설정 > + 서버 추가: the form starts empty, each field asks for the
+    // keyboard, 저장 writes config.json and connects to the new server.
+    const auto configPath = std::string(formRoot) + "/config.json";
+    const auto statePath = std::string(formRoot) + "/state.json";
+    std::string error;
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"Old","url":"http://127.0.0.1:1","enabled":false}]})", error));
+    foil::ui::Application form(renderer, configPath, statePath, "host/fixtures/art");
+    CHECK(form.open());
+    CHECK(form.current() == foil::ui::Screen::Settings);
+    form.render();
+    // One server row, then "+ 서버 추가" under it.
+    form.touch(700, 86 + 61 + 16 + 16 + 26);
+    CHECK(form.serverFormOpen());
+    CHECK(!form.takeTextRequest());
+    // Y with no address stays in the form and writes nothing.
+    const auto before = foil::readFile(configPath);
+    form.action(foil::ui::Action::Queue);
+    CHECK(form.serverFormOpen());
+    CHECK(foil::readFile(configPath) == before);
+    form.action(foil::ui::Action::Accept);
+    auto request = form.takeTextRequest();
+    CHECK(request && request->initial.empty() && !request->password);
+    // An address without http:// or https:// is refused.
+    form.enterText("127.0.0.1:1");
+    form.action(foil::ui::Action::Reload);
+    CHECK(form.serverFormOpen());
+    CHECK(foil::readFile(configPath) == before);
+    form.enterText("http://127.0.0.1:1/");
+    form.action(foil::ui::Action::Down);
+    form.action(foil::ui::Action::Accept);
+    request = form.takeTextRequest();
+    CHECK(request && request->initial.empty() && !request->password);
+    form.enterText("player");
+    form.action(foil::ui::Action::Down);
+    form.action(foil::ui::Action::Accept);
+    request = form.takeTextRequest();
+    CHECK(request && request->password);
+    form.enterText("secret word");
+    form.render();
+    form.action(foil::ui::Action::Down); // 이름, left empty
+    form.action(foil::ui::Action::Down); // 저장
+    form.action(foil::ui::Action::Accept);
+    CHECK(!form.serverFormOpen());
+    auto saved = foil::loadConfig(configPath);
+    CHECK(!saved.error && saved.value.servers.size() == 2);
+    if (saved.value.servers.size() == 2) {
+      CHECK(saved.value.servers[0].title == "Old" && !saved.value.servers[0].enabled);
+      const auto &added = saved.value.servers[1];
+      CHECK(added.url == "http://127.0.0.1:1" && added.title == "127.0.0.1:1" && added.enabled);
+      CHECK(added.username == "player" && added.password == "secret word");
+    }
+    CHECK(form.config().servers.size() == 2);
+    CHECK(form.activeServer() == 1);
+    // A on the server opens it on 저장; Up to 이름, a new name, Y saves.
+    SDL_Delay(300);
+    form.render();
+    form.action(foil::ui::Action::Accept);
+    CHECK(form.serverFormOpen());
+    form.action(foil::ui::Action::Up);
+    form.action(foil::ui::Action::Accept);
+    request = form.takeTextRequest();
+    CHECK(request && request->initial == "127.0.0.1:1");
+    form.enterText("새 서버");
+    form.action(foil::ui::Action::Queue);
+    CHECK(!form.serverFormOpen());
+    saved = foil::loadConfig(configPath);
+    CHECK(saved.value.servers.size() == 2 && saved.value.servers[1].title == "새 서버" &&
+          saved.value.servers[1].password == "secret word");
+    // 삭제 asks first, then leaves the other server alone.
+    SDL_Delay(300);
+    form.render();
+    form.action(foil::ui::Action::Accept);
+    form.action(foil::ui::Action::Right);
+    form.action(foil::ui::Action::Accept);
+    form.render();
+    SDL_Delay(750);
+    form.action(foil::ui::Action::Accept);
+    CHECK(!form.serverFormOpen());
+    saved = foil::loadConfig(configPath);
+    CHECK(saved.value.servers.size() == 1 && saved.value.servers[0].title == "Old");
+    // B closes the form without writing.
+    const auto kept = foil::readFile(configPath);
+    form.render();
+    form.action(foil::ui::Action::Accept);
+    CHECK(form.serverFormOpen());
+    form.action(foil::ui::Action::Back);
+    CHECK(!form.serverFormOpen());
+    CHECK(foil::readFile(configPath) == kept);
+    std::filesystem::remove_all(formRoot);
   }
   return failures;
 }

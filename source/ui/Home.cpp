@@ -24,7 +24,7 @@ void Application::home() {
       notice(config_.servers.empty() ? tr("등록된 서버가 없습니다.")
              : none                  ? tr("켜 둔 서버가 없습니다.")
                                      : tr("설정에서 연결할 서버를 고릅니다."),
-             trf("서버 웹페이지의 설정에서 파일을 받아 SD 카드에 넣습니다.\n{0}\n파일을 넣은 뒤 - 버튼으로 새로고침합니다.", {"sdmc:/switch/cookingfoil/config.json"}), 21);
+             tr("설정의 + 서버 추가에서 서버 주소와 계정을 입력합니다."), 21);
       return;
     }
     if (error_) {

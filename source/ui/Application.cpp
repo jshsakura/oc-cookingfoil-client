@@ -370,7 +370,7 @@ void Application::message(const std::string &text) {
   notice_ = text;
   noticeAt_ = SDL_GetTicks();
 }
-void Application::reload() {
+void Application::reload(int prefer) {
   if (network_.joinable() && !done_) {
     message(tr("서버에 연결하고 있습니다."));
     return;
@@ -396,7 +396,11 @@ void Application::reload() {
   state_ = state.value;
   applyStartupLanguage();
   if (parsed.created)
-    message(tr("설정 파일을 만들었습니다. PC나 FTP에서 서버 주소를 추가합니다."));
+    message(tr("설정 파일을 만들었습니다. 설정의 + 서버 추가에서 서버를 등록합니다."));
+  if (prefer >= 0 && size_t(prefer) < config_.servers.size() && config_.servers[prefer].enabled) {
+    connect(prefer);
+    return;
+  }
   auto found = std::find_if(config_.servers.begin(), config_.servers.end(),
                             [](const auto &s) { return s.enabled; });
   if (found == config_.servers.end()) {
@@ -762,6 +766,10 @@ void Application::action(Action a) {
     }
     return;
   }
+  if (serverForm_) {
+    serverFormAction(a);
+    return;
+  }
   if (viewPopup_) {
     // Filters sit in a two-column grid, sorts in one column to its right.
     constexpr int Cols = PopupFilterColumns;
@@ -894,11 +902,6 @@ void Application::action(Action a) {
   if (confirmPatchRemove_ || managingPatch_ || pickingPatch_ || (screen_ == Screen::Patches && (a == Action::Queue || a == Action::Previous || a == Action::Next || a == Action::Search)) ||
       (screen_ == Screen::Patches && !sidebar_ && a != Action::Back)) {
     patchAction(a);
-    return;
-  }
-  if (serverHelp_) {
-    if (a == Action::Accept || a == Action::Back)
-      serverHelp_ = false;
     return;
   }
   if (confirmCancel_) {
@@ -1151,8 +1154,8 @@ void Application::action(Action a) {
       case 6: toggleInstallCheck(state_.makeShortcuts); break;
       case 7: toggleInstallCheck(state_.reportErrors); break;
       default:
-        if (selected_ == int(config_.servers.size())) serverHelp_ = true;
-        else connect(std::max(0, selected_));
+        // A server opens its form; "+ 서버 추가" an empty one.
+        openServerForm(selected_ < int(config_.servers.size()) ? std::max(0, selected_) : -1);
       }
     }
     if (a == Action::Left)

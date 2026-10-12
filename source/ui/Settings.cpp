@@ -60,7 +60,7 @@ void Application::settings() {
     paint_.rect(Inner, y + 17, 12, 12, statusColor(status), 6);
     if (i + 1 < count) paint_.rect(Left, y + 54, Width, 1, Line);
   }
-  // Where config.json lives is explained in "+ 서버 추가".
+  // "+ 서버 추가" opens the server form, empty.
   if (selected_ == count && !sidebar_) paint_.ring(Left, addTop + oy, Width, 52, 12);
   paint_.rect(Left, addTop + oy, Width, 52, Surface, 12);
   paint_.fonts.middle(tr("+ 서버 추가"), Inner, addTop + oy + 26, 21, Ink, true);
@@ -68,7 +68,7 @@ void Application::settings() {
     hit(Left, addTop + oy, Width, 52, [this, count] {
       sidebar_ = false;
       selected_ = count;
-      serverHelp_ = true;
+      action(Action::Accept);
     });
   // The options share one card, one row each, focused like the server rows.
   paint_.rect(Left, optionsTop + oy, Width, optionsHeight, Surface, 18);
