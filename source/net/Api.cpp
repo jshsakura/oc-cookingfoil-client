@@ -5,11 +5,13 @@
 #include "core/Config.hpp"
 #include "core/Log.hpp"
 #include "core/Homebrew.hpp"
+#include "net/Ranged.hpp"
 #include <curl/curl.h>
 #include <algorithm>
 #include <cctype>
 #include <limits>
 #include <cstdio>
+#include <filesystem>
 #include <cstdlib>
 #include <ctime>
 #include <memory>
@@ -44,6 +46,11 @@ size_t writeHeader(char* data, size_t size, size_t count, void* context) {
         if (key == "etag") {
             auto value = line.substr(colon + 1); const auto begin = value.find_first_not_of(" \t\r\n");
             static_cast<Response*>(context)->etag = begin == std::string::npos ? "" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
+        } else if (key == "content-range") {
+            auto value = line.substr(colon + 1); const auto begin = value.find_first_not_of(" \t\r\n");
+            static_cast<Response*>(context)->contentRange = begin == std::string::npos ? "" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
+        } else if (key == "content-length") {
+            static_cast<Response*>(context)->contentLength = std::strtoull(line.c_str() + colon + 1, nullptr, 10);
         } else if (key == "retry-after") {
             const auto seconds = std::strtol(line.c_str() + colon + 1, nullptr, 10);
             static_cast<Response*>(context)->retryAfter = int(std::clamp<long>(seconds, 0, 3600));
@@ -186,19 +193,31 @@ Response get(const std::string& url, const std::vector<std::string>& headers, co
 namespace {
 struct Stream {
     CURL* curl;
+    Response* result;
+    const std::function<Start(const Response&)>* start;
     const std::function<bool(const char*, size_t)>* onData;
-    bool aborted = false;
+    bool aborted = false, started = false;
+    Start verdict = Start::Drop;
 };
 size_t streamBody(char* data, size_t size, size_t count, void* context) {
     auto& s = *static_cast<Stream*>(context);
-    long status = 0;
-    curl_easy_getinfo(s.curl, CURLINFO_RESPONSE_CODE, &status);
-    if (status != 200) return size * count; // error pages are dropped
+    if (!s.started) {
+        s.started = true;
+        curl_easy_getinfo(s.curl, CURLINFO_RESPONSE_CODE, &s.result->status);
+        s.verdict = (*s.start)(*s.result);
+    }
+    if (s.verdict == Start::Stop) { s.aborted = true; return 0; }
+    if (s.verdict == Start::Drop) return size * count; // error pages are dropped
     if (!(*s.onData)(data, size * count)) { s.aborted = true; return 0; }
     return size * count;
 }
 }
 Response stream(const std::string& url, const std::vector<std::string>& headers,
+                const std::function<bool(const char*, size_t)>& onData, const std::atomic<bool>* cancel) {
+    return stream(url, headers, [](const Response& reply) { return reply.status == 200 ? Start::Take : Start::Drop; }, onData, cancel);
+}
+Response stream(const std::string& url, const std::vector<std::string>& headers,
+                const std::function<Start(const Response&)>& start,
                 const std::function<bool(const char*, size_t)>& onData, const std::atomic<bool>* cancel) {
     Response result;
     if (!isHttp(url)) { result.error = tr("HTTP/HTTPS 주소를 확인해 주세요."); return result; }
@@ -206,7 +225,7 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
     if (!curl) { result.error = tr("연결을 시작하지 못했습니다."); return result; }
     curl_slist* list = nullptr;
     for (const auto& header : headers) if (header.find_first_of("\r\n") == std::string::npos) list = curl_slist_append(list, header.c_str());
-    Stream context{curl, &onData};
+    Stream context{curl, &result, &start, &onData};
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 #ifdef __SWITCH__
     curl_easy_setopt(curl, CURLOPT_CAINFO, "romfs:/cacert.pem");
@@ -746,16 +765,48 @@ Parsed<std::vector<UserPatch>> Session::patches() {
     return result;
 }
 bool Session::downloadPatch(const UserPatch& patch, const std::string& dir, std::atomic<uint64_t>& received, Error& error) {
-    TarWriter writer(dir, [&patch](const std::string& path) { return patchPathAllowed(patch, path); });
     const auto url = server_.url + "/api/patches/" + patch.id + "/download";
-    const auto response = stream(url, authHeaders(server_, state_, url), [&](const char* data, size_t size) {
-        received += size;
-        return writer.feed(data, size);
-    }, cancel_);
-    if (!writer.error().empty()) { error.message = writer.error(); return false; }
-    if (!response.error.empty()) { error.message = response.error; return false; }
-    if (response.status != 200) { error.message = trf("패치를 받지 못했습니다. HTTP {0}", {std::to_string(response.status)}); return false; }
-    if (!writer.finish()) { error.message = writer.error(); return false; }
+    // The same patch build (its hash, which the server also sends as the
+    // ETag) continues from the last whole file an earlier try left in dir.
+    PartInfo wanted;
+    wanted.url = url;
+    wanted.tag = patch.hash.empty() ? patch.version + "@" + std::to_string(patch.updatedAt) : patch.hash;
+    wanted.size = patch.size;
+    const auto record = dir + "/" + ResumeFile;
+    const auto kept = parsePartInfo(readFile(record));
+    const uint64_t from = samePart(kept, wanted) ? kept.offset : 0;
+    std::error_code ec;
+    if (!from) std::filesystem::remove_all(dir, ec);
+    else logLine("patch " + patch.id + " resumes at " + std::to_string(from));
+    const auto fetch = rangedTar(url, authHeaders(server_, state_, url), from, from ? kept.etag : "",
+        [&](uint64_t at) {
+            std::error_code ignored;
+            if (!at) std::filesystem::remove_all(dir, ignored);
+            makeDirectories(dir);
+            return std::make_unique<TarWriter>(dir, [&patch](const std::string& path) { return patchPathAllowed(patch, path); });
+        },
+        [&](uint64_t boundary, const std::string& etag) {
+            auto info = wanted;
+            info.offset = boundary;
+            info.etag = etag;
+            std::string ignored;
+            atomicWrite(record, serializePartInfo(info), ignored);
+        },
+        received, cancel_);
+    // A drop or a cancel keeps what arrived for the next try; anything else
+    // starts that try over.
+    const auto fail = [&](const std::string& message, bool keep) {
+        std::error_code ignored;
+        if (!keep) std::filesystem::remove_all(dir, ignored);
+        error.message = message;
+        return false;
+    };
+    if (!fetch.tarError.empty()) return fail(fetch.tarError, false);
+    if (!fetch.response.error.empty()) return fail(fetch.response.error, true);
+    if (!rangedOk(fetch.response))
+        return fail(trf("패치를 받지 못했습니다. HTTP {0}", {std::to_string(fetch.response.status)}), false);
+    if (!fetch.complete) return fail(tr("패치를 받다가 끊겼습니다. 다시 받습니다."), false);
+    std::filesystem::remove(record, ec);
     return true;
 }
 }

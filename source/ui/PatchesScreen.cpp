@@ -379,10 +379,12 @@ void Application::startPatchGet(const UserPatch &patch, bool fresh) {
   runPatchJob(patch.id, fresh ? Getting : Updating,
               [patch, fresh, received = &patchReceived_](net::Session &session, PatchStore &store, Error &error,
                                                          std::string &done) {
+                // What an earlier try left in staging is resumed (or cleared)
+                // by the download itself, and kept when it drops again.
                 std::error_code ec;
-                std::filesystem::remove_all(store.staging(patch.id), ec);
-                if (!session.downloadPatch(patch, store.staging(patch.id), *received, error) ||
-                    !store.commit(patch, error)) {
+                if (!session.downloadPatch(patch, store.staging(patch.id), *received, error))
+                  return;
+                if (!store.commit(patch, error)) {
                   std::filesystem::remove_all(store.staging(patch.id), ec);
                   return;
                 }
