@@ -8,7 +8,7 @@
 namespace foil::ui {
 namespace {
 constexpr float Top = 90, RowHeight = 84, RowStep = 96;
-constexpr int Visible = 5;
+constexpr int Visible = 6; // rows down to the footer; 세이브 > 드롭박스 fits five under its account card
 } // namespace
 void Application::savesAction(Action a) {
   // A game's saves open in the same dialog as 설치된 게임's, saves only.
@@ -116,7 +116,7 @@ void Application::savesScreen() {
     return;
   }
   if (deviceBusy_ && !managedGame_) {
-    for (int n = 0; n <= Visible; ++n) paint_.skeleton(260, Top + n * RowStep, 992, RowHeight, 16);
+    for (int n = 0; n < Visible; ++n) paint_.skeleton(260, Top + n * RowStep, 992, RowHeight, 16);
     return;
   }
   if (deviceError_ && !managedGame_) {
@@ -137,7 +137,7 @@ void Application::savesScreen() {
   const int first = std::clamp(selected_ - Visible / 2, 0, std::max(0, count - Visible));
   paint_.scrollbar(1266, Top, RowStep * Visible - 12, float(first), Visible, float(count));
   const auto backupsRoot = saves::keeperRoot(sdRoot_);
-  for (int i = first; i < count && i <= first + Visible; ++i) {
+  for (int i = first; i < count && i < first + Visible; ++i) {
     const auto &g = installed_.games[rows[i]];
     const float y = Top + (i - first) * RowStep;
     hit(260, y, 992, RowHeight, [this, i] {
@@ -354,7 +354,7 @@ void Application::shopSavesList() {
     if (!connected_)
       notice(tr("서버에 연결되어 있지 않습니다."), tr("서버에 연결한 뒤 서버 세이브를 불러옵니다."), 21);
     else if (!shopSavesLoaded_ || shopSavesWorker_.joinable())
-      for (int n = 0; n <= Visible; ++n) paint_.skeleton(260, Top + n * RowStep, 992, RowHeight, 16);
+      for (int n = 0; n < Visible; ++n) paint_.skeleton(260, Top + n * RowStep, 992, RowHeight, 16);
     else if (shopSavesMissing_)
       notice(tr("이 서버는 세이브를 제공하지 않습니다."), tr("서버의 saves 폴더에 세이브를 넣으면 여기에 나타납니다."), 36);
     else if (shopSavesError_)
@@ -369,7 +369,7 @@ void Application::shopSavesList() {
   shopSaveRow_ = std::clamp(shopSaveRow_, 0, count - 1);
   const int first = std::clamp(shopSaveRow_ - Visible / 2, 0, std::max(0, count - Visible));
   paint_.scrollbar(1266, Top, RowStep * Visible - 12, float(first), Visible, float(count));
-  for (int i = first; i < count && i <= first + Visible; ++i) {
+  for (int i = first; i < count && i < first + Visible; ++i) {
     const auto [start, saves] = groups[i];
     const auto &save = shopSaves_[start];
     const float y = Top + (i - first) * RowStep;
