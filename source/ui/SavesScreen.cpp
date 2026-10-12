@@ -59,8 +59,8 @@ void Application::savesAction(Action a) {
     sidebar_ = true;
     return;
   }
-  // X searches 내 기기 and 공유; on 드롭박스 it is the unlink key.
-  if (a == Action::Search && savesTab_ != 2) {
+  // X searches every tab, 드롭박스 too (Y unlinks there).
+  if (a == Action::Search) {
     requestSearch();
     return;
   }
@@ -84,10 +84,9 @@ void Application::savesAction(Action a) {
 }
 void Application::savesScreen() {
   const bool shop = savesTab_ == 1;
-  // Search at the right end, as on every list (드롭박스 keeps X to unlink and
-  // leaves its place empty, so the tabs stay put); the tabs left of it.
+  // Search at the right end, as on every list; the tabs left of it.
   const float searchX = SearchX;
-  if (savesTab_ != 2) searchBar(savesQuery_, searchX);
+  searchBar(savesQuery_, searchX);
   const float tabsLeft = headerTabs({tr("내 기기"), tr("공유"), tr("드롭박스")}, savesTab_, [this](int n) {
     savesTab_ = n;
     if (n == 1 && !shopSavesLoaded_) loadShopSaves();

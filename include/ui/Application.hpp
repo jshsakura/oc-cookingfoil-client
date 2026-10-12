@@ -383,6 +383,7 @@ private:
   // for the phone), then each game's backups go up to Dropbox or come down
   // into the console's backups, in oc-save-keeper's layout (DropboxScreen.cpp).
   void dropboxTab();
+  std::vector<int> dropboxGameRows() const;
   void dropboxAction(Action action);
   void dropboxDialog(); // a game's backups, or the unlink question
   void dropboxEnter();  // the tab opened: read dropbox.json, list once

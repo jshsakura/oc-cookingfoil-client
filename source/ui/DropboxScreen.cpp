@@ -281,7 +281,7 @@ void Application::dropboxAction(Action a) {
     }
     return;
   }
-  if (a == Action::Queue || a == Action::Reload) {
+  if (a == Action::Reload) {
     if (dropboxLinked_ && !dropboxWorker_.joinable()) listDropbox();
     return;
   }
@@ -289,17 +289,34 @@ void Application::dropboxAction(Action a) {
     if (a == Action::Accept && !dropboxWorker_.joinable() && !dropboxMissing_) startDropboxLink();
     return;
   }
-  // X unlinks (it asks first); A is only ever about a game's backups.
-  if (a == Action::Search) {
+  // Y unlinks (it asks first); X searches as on the other tabs; A is only
+  // ever about a game's backups.
+  if (a == Action::Queue) {
     dropboxUnlinkAsk_ = true;
     return;
   }
-  const int count = int(installed_.games.size());
-  if (a == Action::Up) dropboxRow_ = std::max(0, dropboxRow_ - 1);
-  if (a == Action::Down) dropboxRow_ = std::min(count - 1, dropboxRow_ + 1);
-  if (a == Action::Accept && count) openDropboxGame();
+  if (a == Action::Search) {
+    requestSearch();
+    return;
+  }
+  // The cursor is a game's index; up and down walk the games the search keeps.
+  const auto rows = dropboxGameRows();
+  if (rows.empty()) return;
+  auto at = std::find(rows.begin(), rows.end(), dropboxRow_);
+  int pos = at == rows.end() ? 0 : int(at - rows.begin());
+  if (a == Action::Up) pos = std::max(0, pos - 1);
+  if (a == Action::Down) pos = std::min(int(rows.size()) - 1, pos + 1);
+  dropboxRow_ = rows[pos];
+  if (a == Action::Accept) openDropboxGame();
 }
 
+// The installed games the 세이브 search keeps, as indexes into the list.
+std::vector<int> Application::dropboxGameRows() const {
+  std::vector<int> rows;
+  for (int i = 0; i < int(installed_.games.size()); ++i)
+    if (textMatches({installed_.games[i].name, installed_.games[i].titleId}, savesQuery_)) rows.push_back(i);
+  return rows;
+}
 void Application::dropboxTab() {
   dropboxEnter();
   if (!dropboxLinked_) {
@@ -352,23 +369,29 @@ void Application::dropboxTab() {
                                                      : trf("드롭박스에 백업 {0}개", {std::to_string(uploaded)});
   paint_.fonts.text(status, 324, Top + 40, 16, dropboxError_ && dropboxBusy_.empty() ? Bad : Secondary, false, 640);
   const std::string unlink = tr("연결 해제");
-  const float uw = paint_.keyLabelWidth("X", unlink, 17, true);
-  paint_.keyLabel("X", unlink, 1230 - uw, Top + AccountHeight / 2, 17, Secondary, true);
-  hit(1230 - uw - 8, Top + 8, uw + 16, AccountHeight - 16, [this] { action(Action::Search); });
+  const float uw = paint_.keyLabelWidth("Y", unlink, 17, true);
+  paint_.keyLabel("Y", unlink, 1230 - uw, Top + AccountHeight / 2, 17, Secondary, true);
+  hit(1230 - uw - 8, Top + 8, uw + 16, AccountHeight - 16, [this] { action(Action::Queue); });
   if (installed_.games.empty()) {
     paint_.fonts.text(deviceBusy_ ? tr("설치 목록을 읽고 있습니다.") : tr("세이브를 관리할 게임이 없습니다."), 290,
                       ListTop + 20, 19, Secondary);
     return;
   }
-  const int count = int(installed_.games.size());
-  dropboxRow_ = std::clamp(dropboxRow_, 0, count - 1);
-  const int focus = dropboxRow_;
+  const auto rows = dropboxGameRows();
+  if (rows.empty()) {
+    paint_.fonts.text(trf("'{0}'에 맞는 게임이 없습니다.", {savesQuery_}), 290, ListTop + 20, 19, Secondary);
+    return;
+  }
+  if (std::find(rows.begin(), rows.end(), dropboxRow_) == rows.end()) dropboxRow_ = rows.front();
+  const int count = int(rows.size());
+  const int focus = int(std::find(rows.begin(), rows.end(), dropboxRow_) - rows.begin());
   const int first = std::clamp(focus - Visible / 2, 0, std::max(0, count - Visible));
   paint_.scrollbar(1266, ListTop, RowStep * Visible - 12, float(first), Visible, float(count));
   const auto root = saves::keeperRoot(sdRoot_);
-  for (int i = first; i < count && i < first + Visible; ++i) {
+  for (int n = first; n < count && n < first + Visible; ++n) {
+    const int i = rows[n];
     const auto &g = installed_.games[i];
-    const float y = ListTop + (i - first) * RowStep;
+    const float y = ListTop + (n - first) * RowStep;
     hit(260, y, 992, RowHeight, [this, i] {
       if (inContent() && dropboxRow_ == i) action(Action::Accept);
       sidebar_ = false;
