@@ -254,21 +254,15 @@ std::vector<int> Application::gameRows(const std::string &query) const {
     if (textMatches({installed_.games[i].name, installed_.games[i].titleId}, query)) out.push_back(i);
   return out;
 }
-// How many server saves the game under the cursor has (the footer says
-// 세이브 고르기 when there is more than one).
-int Application::shopSaveChoices() const {
-  const auto groups = shopSaveGroups();
-  return groups.empty() ? 0 : groups[std::clamp(shopSaveRow_, 0, int(groups.size()) - 1)].second;
-}
-// A on a game's row: one save goes straight on, several open a picker.
+// A on a game's row opens its saves to pick from, even when there is one.
 void Application::chooseShopGame() {
   const auto groups = shopSaveGroups();
   if (groups.empty() || deviceBusy_) return;
-  const auto [start, count] = groups[std::clamp(shopSaveRow_, 0, int(groups.size()) - 1)];
+  const int start = groups[std::clamp(shopSaveRow_, 0, int(groups.size()) - 1)].first;
   shopSavePick_ = start;
-  // A game not here asks for the game first; an app's saves always pick.
+  // A game not here asks for the game first.
   const bool app = !shopSaves_[start].homebrewApp.empty();
-  if (count == 1 || (!app && !shopSaveTargetHere(shopSaves_[start]))) {
+  if (!app && !shopSaveTargetHere(shopSaves_[start])) {
     chooseShopSave();
     return;
   }

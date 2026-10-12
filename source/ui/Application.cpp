@@ -1548,9 +1548,7 @@ void Application::render() {
     footer(managedGame_ ? std::vector<std::pair<std::string, std::string>>{{"A", tr("선택")}, {"B", tr("뒤로")}}
            : sidebar_ || savesTab_ == 2 || (savesTab_ == 1 ? shopSaves_.empty() : installed_.games.empty())
                ? std::vector<std::pair<std::string, std::string>>{{"B", tr("뒤로")}}
-               : std::vector<std::pair<std::string, std::string>>{{"A", savesTab_ != 1 ? tr("세이브 관리")
-                                                                                     : shopSaveChoices() > 1 ? tr("세이브 고르기")
-                                                                                                             : tr("적용하기")},
+               : std::vector<std::pair<std::string, std::string>>{{"A", savesTab_ != 1 ? tr("세이브 관리") : tr("세이브 고르기")},
                                                                   {"B", tr("뒤로")}});
   else if (screen_ == Screen::Updates) {
     // Only offer what can happen now.
