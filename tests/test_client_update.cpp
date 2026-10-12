@@ -20,23 +20,6 @@ int runClientUpdateTests() {
   CHECK(!parseRelease(R"({"version":"0.1.3","size":0,"sha256":")" + sha + R"(","url":"/x"})", "https://s"));
   CHECK(!parseRelease(R"({"version":"0.1.3","size":10,"sha256":")" + sha + R"(","url":"ftp://x"})", "https://s"));
   CHECK(!parseRelease("nope", "https://s"));
-  // The app's own HOME Menu shortcut, when the server builds one.
-  const auto withShortcut = parseRelease(R"({"version":"0.1.17","size":1000,"sha256":")" + sha +
-                                         R"(","url":"/api/client/cookingfoil.nro","forwarder_url":"/api/client/forwarder",)"
-                                         R"("forwarder_title_id":"0512BCE4CF34D000","forwarder_size":271064})",
-                                         "https://shop.example");
-  CHECK(withShortcut && withShortcut->forwarderUrl == "https://shop.example/api/client/forwarder" &&
-        withShortcut->forwarderTitleId == "0512BCE4CF34D000" && withShortcut->forwarderSize == 271064 &&
-        withShortcut->forwarderVersion == 0);
-  // A shortcut version the server names comes along; one out of range reads as none.
-  {
-    const auto versioned = foil::update::parseRelease(
-        R"({"version":"0.2.16","size":1,"sha256":")" + std::string(64, 'a') +
-            R"(","url":"/c.nro","forwarder_url":"/f","forwarder_title_id":"0512BCE4CF34D000","forwarder_version":1048576})",
-        "https://shop.example");
-    CHECK(versioned && versioned->forwarderVersion == 1048576);
-  }
-  CHECK(r && r->forwarderUrl.empty());
   CHECK(sha256Hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
   return failures;
 }

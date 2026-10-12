@@ -441,7 +441,6 @@ void Application::poll() {
   pollAppUpdate();
   pollLog();
   pollHomebrew();
-  ensureOwnShortcut();
   // No dimming or auto-sleep while something downloads.
   const bool downloading = installer_.running() || retroDownloading() || (patchWorker_.joinable() && !patchBusy_.empty()) ||
                            appUpdate_ == AppUpdate::Downloading;
@@ -1331,8 +1330,12 @@ float Application::statusBar() {
                                                           : "서버 없음"; // i18n: keep
   constexpr float Mid = 690;
   float x = 32;
-  paint_.rect(x, Mid - 5, 10, 10, statusColor(status), 5);
-  x += 18;
+  // The state in its color; a console with no internet also gets the
+  // Wi-Fi-off mark ahead of it.
+  if (offline) {
+    paint_.icon(20, x, Mid - 10, statusColor(status), 20);
+    x += 28;
+  }
   x = paint_.fonts.middle(tr(status), x, Mid, 17, statusColor(status), true) + 30;
   const struct {
     int icon;

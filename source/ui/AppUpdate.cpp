@@ -44,24 +44,6 @@ void Application::checkAppUpdate() {
     updateDone_ = true;
   });
 }
-// Once the server's release is known and the console's titles are read: a
-// console without this app's HOME Menu shortcut gets it (설정 can turn that
-// off). Only on the console; the PC preview has no HOME Menu.
-void Application::ensureOwnShortcut() {
-#ifdef __SWITCH__
-  if (ownShortcutChecked_ || appRelease_.forwarderTitleId.empty() || !installed_.installed.complete || installer_.running())
-    return;
-  ownShortcutChecked_ = true;
-  const auto &titles = installed_.installed.titles;
-  // Missing, or older than the one the server built for this release.
-  const auto found = std::find_if(titles.begin(), titles.end(), [this](const InstalledTitle &t) {
-    return strcasecmp(t.titleId.c_str(), appRelease_.forwarderTitleId.c_str()) == 0;
-  });
-  if (found == titles.end() || found->version < appRelease_.forwarderVersion)
-    installShortcut("CookingFoil", "", appRelease_.forwarderUrl, appRelease_.forwarderTitleId, appRelease_.forwarderSize,
-                    false);
-#endif
-}
 void Application::installAppUpdate() {
   if (updateWorker_.joinable() || appUpdate_ != AppUpdate::Available || !session_) return;
   if (sdFree_ && *sdFree_ < appRelease_.size * 2) {

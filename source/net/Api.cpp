@@ -12,7 +12,6 @@
 #include <memory>
 #include <set>
 #include <chrono>
-#include <mutex>
 #include <thread>
 #ifdef __SWITCH__
 #include <switch.h>
@@ -107,35 +106,11 @@ std::string connectionError(int code, const std::string& url) {
         return curl_easy_strerror(static_cast<CURLcode>(code));
     }
 }
-// TLS sessions and DNS answers shared by every request: a new connection
-// resumes the last session instead of a full handshake. Open connections are
-// not shared, since a server that closes after each reply would leave a dead
-// one to reuse.
-static CURLSH* sharedHandles() {
-    static std::mutex locks[CURL_LOCK_DATA_LAST];
-    static CURLSH* share = [] {
-        auto* handle = curl_share_init();
-        if (!handle) return handle;
-        curl_share_setopt(handle, CURLSHOPT_LOCKFUNC,
-                          +[](CURL*, curl_lock_data data, curl_lock_access, void*) { locks[data].lock(); });
-        curl_share_setopt(handle, CURLSHOPT_UNLOCKFUNC, +[](CURL*, curl_lock_data data, void*) { locks[data].unlock(); });
-        curl_share_setopt(handle, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
-        curl_share_setopt(handle, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
-        return handle;
-    }();
-    return share;
-}
-// Settings every request shares: the cache above and keep-alive.
-static void common(CURL* curl) {
-    if (auto* share = sharedHandles()) curl_easy_setopt(curl, CURLOPT_SHARE, share);
-    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-}
 Response get(const std::string& url, const std::vector<std::string>& headers, const std::string& etag, const std::atomic<bool>* cancel) {
     Response result;
     if (!isHttp(url)) { result.error = tr("HTTP/HTTPS 주소를 확인해 주세요."); return result; }
     auto* curl = curl_easy_init();
     if (!curl) { result.error = tr("연결을 시작하지 못했습니다."); return result; }
-    common(curl);
     curl_slist* list = nullptr;
     for (const auto& header : headers) if (header.find_first_of("\r\n") == std::string::npos) list = curl_slist_append(list, header.c_str());
     if (!etag.empty() && etag.find_first_of("\r\n") == std::string::npos) list = curl_slist_append(list, ("If-None-Match: " + etag).c_str());
@@ -198,7 +173,6 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
     if (!isHttp(url)) { result.error = tr("HTTP/HTTPS 주소를 확인해 주세요."); return result; }
     auto* curl = curl_easy_init();
     if (!curl) { result.error = tr("연결을 시작하지 못했습니다."); return result; }
-    common(curl);
     curl_slist* list = nullptr;
     for (const auto& header : headers) if (header.find_first_of("\r\n") == std::string::npos) list = curl_slist_append(list, header.c_str());
     Stream context{curl, &onData};
@@ -278,7 +252,6 @@ Response post(const std::string& url, const std::vector<std::string>& headers, c
     }
     auto* curl = curl_easy_init();
     if (!curl) { result.error = tr("연결을 시작하지 못했습니다."); return result; }
-    common(curl);
     curl_slist* list = nullptr;
     for (const auto& header : headers) if (header.find_first_of("\r\n") == std::string::npos) list = curl_slist_append(list, header.c_str());
     Posting context{curl, &result, out.get()};

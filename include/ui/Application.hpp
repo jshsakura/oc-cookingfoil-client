@@ -315,9 +315,6 @@ private:
   bool installRetroShortcut(const retro::Game &game);
   bool installShortcut(const std::string &name, const std::string &icon, const std::string &url,
                        const std::string &titleId, uint64_t size, bool justDownloaded = true);
-  // This app's own shortcut, once a launch, when the console has none yet.
-  void ensureOwnShortcut();
-  bool ownShortcutChecked_ = false;
   const retro::Game *retroFocused() const;
   void scoreBadge(int score, float right, float y);
   bool syncRetroArch(bool full = false); // full: every file again, settings kept
