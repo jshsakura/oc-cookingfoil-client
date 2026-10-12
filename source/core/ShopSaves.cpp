@@ -1,6 +1,7 @@
 #include "core/ShopSaves.hpp"
 #include "core/Homebrew.hpp"
 #include "core/I18n.hpp"
+#include "core/SaveBackups.hpp"
 #include "core/Json.hpp"
 #include <algorithm>
 #include <filesystem>
@@ -50,6 +51,8 @@ std::vector<ShopSave> parse(const std::string &json, const std::string &base) {
       if (last.rfind("출처:", 0) == 0 || last.rfind("Source:", 0) == 0) // i18n: keep
         s.description.erase(s.description.find_last_not_of(" \n", nl) + 1);
     }
+    s.saveType = stringField(object, "saveType");
+    if (s.saveType != "device" && s.saveType != "account") s.saveType.clear();
     s.gameVersion = stringField(object, "gameVersion");
     s.hash = stringField(object, "hash");
     s.size = uint64_t(std::max<int64_t>(integerField(object, "size"), 0));
@@ -109,6 +112,10 @@ bool placeFiles(const std::string &from, const std::string &to, const std::strin
   }
   fs::remove_all(from, ec);
   return true;
+}
+Error targetMismatch(const ShopSave &save, bool deviceTarget) {
+  if (save.saveType.empty()) return {};
+  return saves::kindMismatch(save.saveType == "device", deviceTarget);
 }
 std::string gameName(const ShopSave &save, const std::string &languageCode) {
   static const char *codes[] = {"ko", "en", "ja", "zh"};

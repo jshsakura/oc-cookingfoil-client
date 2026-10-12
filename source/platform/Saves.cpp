@@ -221,6 +221,7 @@ Parsed<saves::LocalBackup> importBackup(const SaveJob &job, const std::function<
 Error restoreSave(const SaveJob &job, const saves::LocalBackup &backup) {
   struct stat st {};
   if (stat(backup.path.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) return {tr("백업 폴더를 찾지 못했습니다.")};
+  if (auto error = saves::restoreMismatch(backup, job.save.device())) return error;
   // An account without a save gets one first; there is nothing to fall
   // back on then. Otherwise the copy to fall back on comes first, and
   // without it nothing is overwritten.

@@ -13,6 +13,9 @@ struct ShopSave {
   // An app's save has no Title ID: its files go as files into installRoot
   // (switch/<app>) on the SD card, not into system save data.
   std::string homebrewApp, installRoot;
+  // "device" for a shared save every account plays on, "account" for one
+  // account's; empty when the server does not say, and then either fits.
+  std::string saveType;
 };
 // `base` resolves "/api/..." URLs; entries without an id, Title ID (or an
 // app with its switch/<app> root) or URL are dropped.
@@ -25,6 +28,9 @@ bool homebrewPathAllowed(const ShopSave &save, const std::string &path);
 // Moves every file under `from` to the same place under `to`, a file
 // already there moved to the same place under `keep` first; `from` goes.
 bool placeFiles(const std::string &from, const std::string &to, const std::string &keep, std::string &error);
+// Why `save` may not go into the chosen save, the shared one when
+// `deviceTarget`; nothing when it fits.
+Error targetMismatch(const ShopSave &save, bool deviceTarget);
 // The name shown for the save's game in the interface language.
 std::string gameName(const ShopSave &save, const std::string &languageCode);
 } // namespace foil::shopsaves

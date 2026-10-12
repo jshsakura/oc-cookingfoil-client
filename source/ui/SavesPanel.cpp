@@ -13,6 +13,14 @@ std::string when(std::time_t at) {
   return text;
 }
 } // namespace
+std::string Application::backupDetail(const saves::LocalBackup &b) const {
+  std::string detail = saves::deviceBackup(b)      ? std::string(tr("공용 세이브"))
+                       : b.meta.userName.empty() ? std::string(tr("정보 없는 백업"))
+                                                 : b.meta.userName;
+  if (!b.meta.deviceLabel.empty()) detail += " · " + b.meta.deviceLabel;
+  if (b.meta.isAutoBackup) detail += " · " + std::string(tr("복원 전 자동 백업"));
+  return detail;
+}
 void Application::openSave(int index) {
   if (!managedGame_ || index < 0 || index >= int(saves_.size())) return;
   saveOpen_ = index;
@@ -116,7 +124,9 @@ void Application::saveAction(Action a) {
   if (saveRow_ == 0) {
     runSaveJob(false);
   } else if (onBackup) {
-    saveConfirm_ = SaveConfirm::Restore;
+    // A shared save's backup never goes into an account, nor the other way.
+    if (auto error = saves::restoreMismatch(backups_[saveRow_ - 1], saves_[*saveOpen_].device())) message(error.message);
+    else saveConfirm_ = SaveConfirm::Restore;
   } else {
     RemovalRequest request;
     request.applicationId = managedGame_->applicationId;
@@ -155,8 +165,9 @@ void Application::savePanel() {
   } else {
     if (save.missing) {
       paint_.fonts.text(tr("백업할 세이브가 없습니다"), x + 62, y + 8, 21, Secondary, true);
-      paint_.fonts.text(tr("아래 백업을 복원하면 이 계정에 세이브를 새로 만듭니다."), x + 62, y + 37, 16, Secondary, false,
-                        w - 82);
+      paint_.fonts.text(save.device() ? tr("아래 백업을 복원하면 공용 세이브를 새로 만듭니다.")
+                                      : tr("아래 백업을 복원하면 이 계정에 세이브를 새로 만듭니다."),
+                        x + 62, y + 37, 16, Secondary, false, w - 82);
     } else {
       paint_.fonts.text(tr("지금 세이브를 백업합니다"), x + 62, y + 8, 21, Ink, true);
       paint_.fonts.text(tr("SD 카드의 oc-save-keeper 폴더에 저장해 두 앱이 함께 씁니다."), x + 62, y + 37, 16, Secondary,
@@ -176,17 +187,16 @@ void Application::savePanel() {
     if (row == last) {
       paint_.icon(37, x + 20, y + Row / 2 - 13, Bad, 26);
       paint_.fonts.text(tr("세이브 삭제"), x + 62, y + 8, 21, Bad, true);
-      paint_.fonts.text(save.type == 3 ? tr("모든 계정이 함께 쓰는 플레이 기록을 삭제합니다.") : tr("이 계정의 플레이 기록을 삭제합니다."),
+      paint_.fonts.text(save.device() ? tr("모든 계정이 함께 쓰는 플레이 기록을 삭제합니다.") : tr("이 계정의 플레이 기록을 삭제합니다."),
                         x + 62, y + 37, 16, Secondary);
       continue;
     }
     const auto &b = backups_[row - 1];
-    paint_.icon(30, x + 20, y + Row / 2 - 13, Ink, 26);
-    paint_.fonts.text(when(b.timestamp), x + 62, y + 8, 21, Ink, true);
-    std::string detail = b.meta.userName.empty() ? std::string(tr("정보 없는 백업")) : b.meta.userName;
-    if (!b.meta.deviceLabel.empty()) detail += " · " + b.meta.deviceLabel;
-    if (b.meta.isAutoBackup) detail += " · " + std::string(tr("복원 전 자동 백업"));
-    paint_.fonts.text(detail, x + 62, y + 37, 16, Secondary, false, w - 220);
+    // A backup of the other kind of save is listed greyed: it cannot go here.
+    const bool fits = !saves::restoreMismatch(b, save.device());
+    paint_.icon(30, x + 20, y + Row / 2 - 13, fits ? Ink : Secondary, 26);
+    paint_.fonts.text(when(b.timestamp), x + 62, y + 8, 21, fits ? Ink : Secondary, true);
+    paint_.fonts.text(backupDetail(b), x + 62, y + 37, 16, Secondary, false, w - 220);
     const auto size = formatBytes(uint64_t(b.size));
     paint_.fonts.middle(size, x + w - 20 - paint_.fonts.measure(size, 18, true), y + Row / 2, 18, Ink, true);
   }

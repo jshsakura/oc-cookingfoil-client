@@ -100,6 +100,15 @@ std::string userIdOf(const std::array<uint64_t, 2> &user) {
   if (!user[0] && !user[1]) return "device";
   return titleHex(user[1]) + titleHex(user[0]);
 }
+bool deviceBackup(const LocalBackup &backup) { return backup.hasMeta && backup.meta.userId == "device"; }
+Error kindMismatch(bool deviceSource, bool deviceTarget) {
+  if (deviceSource == deviceTarget) return {};
+  return {deviceSource ? tr("공용 세이브용이라 계정 세이브에 넣을 수 없습니다. 공용 세이브를 고릅니다.")
+                       : tr("계정 세이브용이라 공용 세이브에 넣을 수 없습니다. 계정을 고릅니다.")};
+}
+Error restoreMismatch(const LocalBackup &backup, bool deviceTarget) {
+  return kindMismatch(deviceBackup(backup), deviceTarget);
+}
 std::string backupStamp(std::time_t when) {
   std::tm local {};
 #ifdef _WIN32
