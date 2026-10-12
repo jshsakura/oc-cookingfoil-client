@@ -13,7 +13,13 @@ struct Game {
   std::string id, name, file, system, core, iconUrl, bundleUrl;
   std::string original; // the game's original title; patched versions share it
   std::string variant;  // the version or patch tag ("J-K v20230715 v1 font.galmuri"); empty for none
-  std::string region;   // kr jp us eu asia br world, or empty; the server marks it on the cover
+  std::string region;   // kr jp us eu asia br world, or empty; shown as a flag instead of the variant
+  // The variant's tags, read by the server: official or patch
+  // (empty when it sent none), the release it came from (jp, us) and its version.
+  struct Edition {
+    bool korean = false;
+    std::string source, from, version;
+  } edition;
   // Its HOME Menu shortcut: a small NSP that starts the game's core and ROM.
   std::string forwarderUrl, forwarderTitleId;
   uint64_t forwarderSize = 0;

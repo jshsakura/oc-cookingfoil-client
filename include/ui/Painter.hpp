@@ -36,6 +36,9 @@ public:
   void logo(float x, float y);
   // A language's flag (foil::Language order), drawn into w x h (Flags.cpp).
   void flag(int language, float x, float y, float w, float h);
+  // A game's region as a small flag (kr jp us eu br; a globe for world, a
+  // label for asia), w x h at x, y. Nothing for an unknown code.
+  void region(const std::string &code, float x, float y, float w, float h);
   // An on/off switch, the knob on the right and green when on.
   void toggle(float x, float y, bool on);
   // Loading screen, presented at once: the mark and wordmark centered on

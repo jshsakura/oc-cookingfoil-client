@@ -508,9 +508,20 @@ std::vector<std::string> Application::retroLabels(const retro::Game &game, bool 
     out.push_back(format);
   }
   if (game.bezel) out.push_back(tr("베젤 포함"));
+  // What kind of release it is, in one word; the popup adds where it came
+  // from and its version.
+  const auto &edition = game.edition;
+  if (edition.source == "official") out.push_back(tr("정발"));
+  else if (edition.source == "patch") out.push_back(tr("한글"));
+  if (detail && !edition.from.empty()) {
+    const auto from = edition.from == "jp" ? tr("일본판") : edition.from == "us" ? tr("북미판")
+                    : edition.from == "eu" ? tr("유럽판") : "";
+    if (*from) out.push_back(from);
+  }
+  if (detail && !edition.version.empty()) out.push_back(edition.version);
   // Versions of one game share a name; the tag tells them apart. With a
-  // region the server marks the cover itself, and the tag waits for the popup.
-  if (!game.variant.empty() && (detail || game.region.empty())) {
+  // region or an edition, the flag and the badge do that instead.
+  if (!game.variant.empty() && game.region.empty() && edition.source.empty()) {
     auto tag = game.variant;
     if (tag.size() > 28) {
       size_t cut = 26;
@@ -537,6 +548,7 @@ void Application::retroConfirm() {
   const auto body = modal(780, 24 + Cover + 24, title, tr("취소"), "", get, 35);
   const float x = body.x + 32, y = body.y + 24, textX = x + Cover + 28, textW = body.w - 64 - Cover - 28;
   cover(game.iconUrl, x, y, int(Cover), false, game.name, true);
+  paint_.region(game.region, x + Cover - 44, y + Cover - 32, 36, 24);
   float at = y + paint_.fonts.wrapped(game.name, textX, y, 22, Ink, textW, 3, true) + 6;
   if (!game.original.empty() && game.original != game.name)
     at += paint_.fonts.wrapped(game.original, textX, at, 17, Secondary, textW, 2) + 4;
@@ -659,6 +671,7 @@ void Application::retroList() {
     if (inContent() && i == selected_) paint_.ring(260, y, 992, RowHeight, 16);
     paint_.rect(260, y, 992, RowHeight, Surface, 16);
     cover(thumbnailUrl(game.iconUrl), 278, y + 10, 64, false, game.name, true);
+    paint_.region(game.region, 278 + 64 - 23, y + 10 + 64 - 16, 20, 13);
     if (inContent() && i == selected_) marquee(game.name, 360, y + 12, 21, 620);
     else paint_.fonts.text(game.name, 360, y + 12, 21, Ink, true, 620);
     // Under the name, labels: its format, a bezel, its score.

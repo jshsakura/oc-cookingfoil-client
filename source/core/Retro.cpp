@@ -65,6 +65,16 @@ Game parseGame(json_object *object, const std::string &base) {
   g.region = stringField(object, "region");
   static const std::set<std::string> Regions{"kr", "jp", "us", "eu", "asia", "br", "world"};
   if (!Regions.count(g.region)) g.region.clear();
+  if (auto *edition = field(object, "edition"); json_object_is_type(edition, json_type_object)) {
+    g.edition.korean = json_object_get_boolean(field(edition, "korean"));
+    g.edition.source = stringField(edition, "source");
+    if (g.edition.source != "official" && g.edition.source != "patch")
+      g.edition.source.clear();
+    g.edition.from = stringField(edition, "from");
+    if (!Regions.count(g.edition.from)) g.edition.from.clear();
+    g.edition.version = stringField(edition, "version");
+    if (g.edition.version.size() > 24) g.edition.version.clear();
+  }
   g.size = positive(object, "size");
   g.addedAt = integerField(object, "addedAt");
   g.rating = int(std::clamp<int64_t>(integerField(object, "rating"), 0, 100));
@@ -251,6 +261,12 @@ std::string serializeGame(const Game &game) {
   text("original", game.original);
   text("variant", game.variant);
   text("region", game.region);
+  auto *edition = json_object_new_object();
+  json_object_object_add(edition, "korean", json_object_new_boolean(game.edition.korean));
+  json_object_object_add(edition, "source", json_object_new_string(game.edition.source.c_str()));
+  json_object_object_add(edition, "from", json_object_new_string(game.edition.from.c_str()));
+  json_object_object_add(edition, "version", json_object_new_string(game.edition.version.c_str()));
+  json_object_object_add(root.get(), "edition", edition);
   text("iconUrl", game.iconUrl);
   text("bundleUrl", game.bundleUrl);
   text("forwarderUrl", game.forwarderUrl);

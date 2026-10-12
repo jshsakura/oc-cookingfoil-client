@@ -4,6 +4,9 @@
 #include "ui/Painter.hpp"
 #include <SDL2/SDL_image.h>
 #include <cmath>
+#include <map>
+#include <utility>
+#include <algorithm>
 #include <string>
 namespace foil::ui {
 namespace {
@@ -13,6 +16,28 @@ const char *const FlagSvg[] = {
     R"svg(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600"><rect width="900" height="600" fill="#fff"/><circle cx="450" cy="300" r="180" fill="#BC002D"/></svg>)svg",
     R"svg(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 20"><rect width="30" height="20" fill="#EE1C25"/><path fill="#FFFF00" d="M5.00,2.00 L5.67,4.07 L7.85,4.07 L6.09,5.35 L6.76,7.43 L5.00,6.15 L3.24,7.43 L3.91,5.35 L2.15,4.07 L4.33,4.07Z M9.14,2.51 L9.62,1.97 L9.25,1.34 L9.91,1.63 L10.39,1.08 L10.33,1.80 L11.00,2.09 L10.29,2.25 L10.22,2.97 L9.85,2.35Z M11.01,4.14 L11.66,3.82 L11.56,3.10 L12.07,3.62 L12.72,3.30 L12.38,3.95 L12.88,4.47 L12.17,4.34 L11.83,4.99 L11.73,4.27Z M11.04,6.73 L11.76,6.70 L11.96,6.00 L12.21,6.68 L12.94,6.66 L12.37,7.10 L12.62,7.79 L12.01,7.38 L11.44,7.83 L11.64,7.13Z M9.22,8.38 L9.90,8.63 L10.35,8.06 L10.32,8.79 L11.00,9.05 L10.30,9.24 L10.26,9.96 L9.87,9.36 L9.16,9.55 L9.62,8.98Z"/></svg>)svg",
 };
+// Regions beyond the languages' flags: Europe's ring of stars and Brazil.
+const char *const RegionSvg[] = {
+    R"svg(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 20"><rect width="30" height="20" fill="#003399"/><g fill="#FFCC00"><circle cx="15" cy="4" r="1"/><circle cx="18" cy="4.8" r="1"/><circle cx="20.2" cy="7" r="1"/><circle cx="21" cy="10" r="1"/><circle cx="20.2" cy="13" r="1"/><circle cx="18" cy="15.2" r="1"/><circle cx="15" cy="16" r="1"/><circle cx="12" cy="15.2" r="1"/><circle cx="9.8" cy="13" r="1"/><circle cx="9" cy="10" r="1"/><circle cx="9.8" cy="7" r="1"/><circle cx="12" cy="4.8" r="1"/></g></svg>)svg",
+    R"svg(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 20"><rect width="30" height="20" fill="#009C3B"/><path fill="#FFDF00" d="M15 2L28 10L15 18L2 10Z"/><circle cx="15" cy="10" r="4.6" fill="#002776"/></svg>)svg",
+};
+// One SVG rasterized at the drawn size, kept under `key`.
+SDL_Texture *rasterize(SDL_Renderer *renderer, std::map<std::string, SDL_Texture *> &cache, const std::string &key,
+                       std::string svg, float w, float h) {
+  float sx = 1, sy = 1;
+  SDL_RenderGetScale(renderer, &sx, &sy);
+  const int pw = int(std::lround(w * sx)), ph = int(std::lround(h * sy));
+  const auto sized = key + ":" + std::to_string(pw) + "x" + std::to_string(ph);
+  auto found = cache.find(sized);
+  if (found != cache.end()) return found->second;
+  svg.insert(svg.find("<svg") + 4, " width=\"" + std::to_string(pw) + "\" height=\"" + std::to_string(ph) + "\"");
+  SDL_Texture *texture = nullptr;
+  if (auto *surface = IMG_LoadSVG_RW(SDL_RWFromConstMem(svg.data(), int(svg.size())))) {
+    texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_FreeSurface(surface);
+  }
+  return cache.emplace(sized, texture).first->second;
+}
 } // namespace
 void Painter::flag(int language, float x, float y, float w, float h) {
   if (language < 0 || language >= int(sizeof FlagSvg / sizeof *FlagSvg)) return;
@@ -36,5 +61,32 @@ void Painter::flag(int language, float x, float y, float w, float h) {
   rect(x - 1, y - 1, w + 2, h + 2, Line, 4); // a hairline so white flags keep their edge
   const SDL_FRect dest{x, y, w, h};
   SDL_RenderCopyF(renderer, found->second, nullptr, &dest);
+}
+} // namespace foil::ui
+namespace foil::ui {
+void Painter::region(const std::string &code, float x, float y, float w, float h) {
+  static const std::pair<const char *, int> Languages[] = {{"kr", 0}, {"us", 1}, {"jp", 2}};
+  for (const auto &[name, language] : Languages)
+    if (code == name) return flag(language, x, y, w, h);
+  if (code == "eu" || code == "br") {
+    auto *texture = rasterize(renderer, flags_, "region-" + code, RegionSvg[code == "eu" ? 0 : 1], w, h);
+    if (!texture) return;
+    rect(x - 1, y - 1, w + 2, h + 2, Line, 4);
+    const SDL_FRect dest{x, y, w, h};
+    SDL_RenderCopyF(renderer, texture, nullptr, &dest);
+    return;
+  }
+  // No one flag: a dark chip the flag's size, a globe for the world and
+  // the name for Asia.
+  if (code != "world" && code != "asia") return;
+  const SDL_Color chip{22, 22, 26, 210}, white{255, 255, 255, 255};
+  rect(x - 1, y - 1, w + 2, h + 2, chip, 4);
+  if (code == "world") {
+    const int size = int(h) - 2;
+    icon(17, x + (w - size) / 2, y + 1, white, size);
+  } else {
+    const int size = std::max(9, int(h * 0.5f));
+    fonts.middle("ASIA", x + (w - fonts.measure("ASIA", size, true)) / 2, y + h / 2, size, white, true);
+  }
 }
 } // namespace foil::ui

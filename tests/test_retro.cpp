@@ -21,6 +21,13 @@ int runRetroTests() {
     CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"kr"})").region == "kr");
     CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"mars"})").region.empty());
     CHECK(parseGameJson(serializeGame(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"eu"})"))).region == "eu");
+    // The edition's tags, each checked; unknown ones are dropped.
+    {
+      const auto g = parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","edition":{"korean":true,"source":"patch","from":"jp","version":"v1.1"}})");
+      CHECK(g.edition.korean && g.edition.source == "patch" && g.edition.from == "jp" && g.edition.version == "v1.1");
+      CHECK(parseGameJson(serializeGame(g)).edition.source == "patch");
+      CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","edition":{"source":"bootleg","from":"xx"}})").edition.source.empty());
+    }
     // A game's core on the card, by RetroArch's own file names.
     CHECK(corePath("fbneo") == "retroarch/cores/fbneo_libretro_libnx.nro");
     CHECK(corePath("").empty() && corePath("../x").empty() && corePath("a/b").empty());

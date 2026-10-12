@@ -98,8 +98,11 @@ void Application::retroHome() {
         paint_.fonts.middle(label, cx + 11, cy + 6 + h / 2, 13, Surface, true);
       }
       scoreBadge(game.rating, cx + Card - 6, cy + 6);
+      // Bottom right: its region's flag, left of the check once it is on the card.
+      const bool installed = retroInstalled(game) && !retroBezelMissing(game);
+      paint_.region(game.region, cx + Card - (installed ? 64 : 34), cy + Card - 26, 27, 18);
       // On the card already: a check on the bottom right.
-      if (retroInstalled(game) && !retroBezelMissing(game)) {
+      if (installed) {
         paint_.rect(cx + Card - 30, cy + Card - 30, 24, 24, Good, 12);
         paint_.icon(8, cx + Card - 27, cy + Card - 27, Surface, 18);
       }
