@@ -30,6 +30,35 @@ std::string dateLabel(int date) {
   return text.size() == 8 ? text.substr(0, 4) + "." + text.substr(4, 2) + "." + text.substr(6, 2) : text;
 }
 } // namespace
+// Patches the game cannot run without, ahead of its description: what they
+// are and how big, as the server describes them.
+int Application::requiredPatchesCard(int y) {
+  std::vector<const UserPatch *> needed;
+  for (const auto &patch : detail_.patches)
+    if (patch.required) needed.push_back(&patch);
+  if (needed.empty()) return y;
+  constexpr float X = 40, W = 750, Inner = 64, InnerW = W - 48;
+  // Measured first (drawn off screen), so the card fits its text.
+  float height = 20 + 30;
+  for (const auto *patch : needed) {
+    height += 30;
+    if (!patch->description.empty())
+      height += paint_.fonts.wrapped(patch->description, Inner, -10000, 17, Secondary, InnerW, 6) + 8;
+  }
+  height += 10;
+  paint_.rect(X, y, W, height, {255, 241, 204, 255}, 16);
+  paint_.icon(33, X + 20, y + 18, Pending, 24);
+  paint_.fonts.text(tr("함께 설치해야 하는 패치가 있습니다"), Inner, y + 18, 19, Ink, true, InnerW - 20);
+  float line = y + 20 + 30;
+  for (const auto *patch : needed) {
+    paint_.fonts.text(patch->name + (patch->size ? " · " + formatBytes(patch->size) : std::string()), Inner, line, 18,
+                      Ink, true, InnerW);
+    line += 30;
+    if (!patch->description.empty())
+      line += paint_.fonts.wrapped(patch->description, Inner, line, 17, Secondary, InnerW, 6) + 8;
+  }
+  return int(y + height + 18);
+}
 void Application::openDetail(size_t group) {
   if (group >= groups_.size())
     return;
@@ -126,6 +155,7 @@ void Application::detail() {
   SDL_RenderSetClipRect(paint_.renderer, &leftClip);
   const int offset = descriptionScroll_ * ScrollStep;
   int y = BandTop + Pad - offset;
+  y = requiredPatchesCard(y);
   if (!detail_.description.empty()) {
     y += paint_.fonts.wrapped(detail_.description, 40, y, 20, Ink, 750, 20, false, 1.6f) + 24;
   } else if (detailLoading_) {

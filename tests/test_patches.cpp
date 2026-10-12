@@ -214,10 +214,10 @@ int runPatchTests() {
   // The game a patch is for comes with it when the shop does not list it.
   {
     const auto list = foil::net::parsePatches(std::string(R"({"patches":[
-      {"id":"a-1","title_id":"01001730144DA000","name":"한글패치",
+      {"id":"a-1","title_id":"01001730144DA000","name":"한글패치","required":false,
        "game":{"name":"Base","names":{"ko":"한국어 이름","ja":"日本語"},"icon":"/api/icon/01001730144DA000"}},
       {"id":"b-2","title_id":"01002A000CD48000","name":"한글패치","game":{"icon":"javascript:x"}},
-      {"id":"c-3","title_id":"010043600B6A6000","name":"한글패치"}]})"));
+      {"id":"c-3","title_id":"010043600B6A6000","name":"한글패치","required":"yes"}]})"));
     CHECK(list.size() == 3);
     if (list.size() == 3) {
       CHECK(list[0].gameName == "Base");
@@ -225,6 +225,8 @@ int runPatchTests() {
       CHECK(list[0].gameIcon == "/api/icon/01001730144DA000");
       CHECK(list[1].gameIcon.empty()); // neither http(s) nor a shop path
       CHECK(list[2].gameName.empty() && list[2].gameNames.empty());
+      // Only a real true marks a patch the game needs.
+      CHECK(!list[0].required && !list[2].required);
     }
   }
   // An app's patch: no Title ID, its app's folder instead. Entries that name
@@ -235,13 +237,14 @@ int runPatchTests() {
       {"id":"hb-2","title_id":null,"homebrew":"../atmosphere","kinds":["homebrew"]},
       {"id":"hb-3","title_id":null,"homebrew":"a/b"},
       {"id":"hb-4","title_id":null},
-      {"id":"g-1","title_id":"01001730144DA000","homebrew":"sm64","name":"게임 패치"}]})"));
+      {"id":"g-1","title_id":"01001730144DA000","homebrew":"sm64","name":"게임 패치","required":true}]})"));
     CHECK(list.size() == 2);
     if (list.size() == 2) {
       CHECK(list[0].id == "hb-1" && list[0].titleId.empty() && list[0].homebrewApp == "sm64");
       CHECK(list[0].kinds.size() == 1 && list[0].kinds[0] == "homebrew" && list[0].name == "HD 텍스처");
       // A game patch stays a game patch.
       CHECK(list[1].titleId == "01001730144DA000" && list[1].homebrewApp.empty());
+      CHECK(list[1].required && !list[0].required);
     }
   }
   {

@@ -353,6 +353,8 @@ std::vector<UserPatch> parsePatches(json_object* array) {
         p.gameVersion = textField(object, "game_version");
         p.author = stringField(object, "author");
         p.description = stringField(object, "description");
+        auto* required = field(object, "required");
+        p.required = json_object_is_type(required, json_type_boolean) && json_object_get_boolean(required);
         p.hash = stringField(object, "hash");
         p.size = positive(object, "size");
         p.files = int(std::min<uint64_t>(positive(object, "files"), INT32_MAX));

@@ -445,6 +445,7 @@ private:
   void runSaveJob(bool restore);
   void pollSaveJob();
   void detail();
+  int requiredPatchesCard(int y); // returns the y below it
   void gallery();
   void downloads();
   void updates();

@@ -15,6 +15,7 @@ struct UserPatch {
   uint64_t size = 0;
   int files = 0;
   int64_t updatedAt = 0;
+  bool required = false; // the game does not run without it
   // The game the patch is for, from the server's titledb, for games the
   // shop itself does not list. Names are ko, en, ja, zh; any may be empty.
   std::string gameName, gameIcon;

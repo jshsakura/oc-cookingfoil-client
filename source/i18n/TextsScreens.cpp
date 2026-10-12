@@ -294,6 +294,7 @@ const Translation rows[] = {
      "The publisher has not added a description. Check the details below.",
      "メーカーが説明を登録していません。下の情報でゲームを確認します。",
      "发行商尚未提供简介。请查看下方信息。"},
+    {"함께 설치해야 하는 패치가 있습니다", "This game needs a patch to run", "このゲームの実行には次のパッチが必要です", "运行此游戏需要以下补丁"},
     {"스크린샷", "Screenshots", "スクリーンショット", "截图"},
     {"크게 보기 · 사진을 눌러도 됩니다", "Enlarge · or tap a picture", "拡大 · 写真をタップしても開けます", "放大 · 也可点按图片"},
     {"다른 파일", "Other files", "ほかのファイル", "其他文件"},
