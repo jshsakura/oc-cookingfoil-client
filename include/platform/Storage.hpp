@@ -8,6 +8,14 @@ bool applicationMode();
 std::string firmwareVersion();
 std::optional<uint64_t> freeSpace(const std::string &target);
 std::optional<uint64_t> totalSpace(const std::string &target);
+// Whether a file of `size` bytes must be made as a split ("big") file: a
+// FAT32 card holds at most 4 GiB - 1 bytes in one file.
+bool needsBigFile(uint64_t size);
+// Makes `path` (an sdmc: path) an empty big file, replacing whatever was
+// there, before it is opened for writing: the system then splits it on a
+// FAT32 card out of sight and it reads back, appends and deletes as one file.
+// Nothing to do off the console. `error` gets the system's reason.
+bool createBigFile(const std::string &path, std::string &error);
 // The console's system language as ko, en, ja or zh; empty when unknown or
 // none of those.
 std::string systemLanguage();
