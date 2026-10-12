@@ -229,6 +229,10 @@ void Application::localizeNames() {
 void Application::setItems(std::vector<Item> items) {
   const auto started = SDL_GetTicks();
   groups_ = groupCatalog(items);
+  groupIndex_.clear();
+  groupIndex_.reserve(groups_.size());
+  for (size_t i = 0; i < groups_.size(); ++i)
+    groupIndex_.emplace(groups_[i].id, i);
   updatesStale_ = true;
   // Groups copy each item into files (and the base into representative);
   // only the base, or the representative without one, needs its names.
@@ -250,11 +254,25 @@ void Application::setItems(std::vector<Item> items) {
   selected_ = 0;
   logLine("catalog grouped " + std::to_string(SDL_GetTicks() - started) + "ms, " + std::to_string(groups_.size()) + " games");
 }
+const Group *Application::findGroup(const std::string &id) const {
+  const auto found = groupIndex_.find(id);
+  return found == groupIndex_.end() ? nullptr : &groups_[found->second];
+}
+std::string Application::installedIcon(const InstalledGame &game) {
+  if (!game.iconBytes.empty()) {
+    auto key = "installed:" + game.titleId;
+    images_->provide(key, game.iconBytes);
+    return key;
+  }
+  const auto *group = findGroup(game.titleId);
+  return group ? group->representative.icon : "";
+}
 void Application::clearCatalog() {
   serverPatches_.clear();
   patchesLoaded_ = false;
   patchError_ = {};
   groups_.clear();
+  groupIndex_.clear();
   themes_.clear();
   chips_.clear();
   activeChips_.clear();
@@ -559,7 +577,7 @@ void Application::poll() {
   error_ = {};
   offerResume();
 }
-std::vector<size_t> Application::libraryList() const {
+const std::vector<size_t> &Application::libraryList() const {
   std::string key = std::to_string(catalogVersion_) + "|" + std::to_string(int(librarySort_)) + "|";
   for (const auto i : activeChips_)
     key += std::to_string(i) + ",";
@@ -579,20 +597,21 @@ std::vector<size_t> Application::libraryList() const {
 void Application::rebuildHome() {
   installedMask_.assign(groups_.size(), false);
   if (installed_.installed.complete)
-    for (size_t i = 0; i < groups_.size(); ++i)
-      installedMask_[i] = std::any_of(installed_.installed.titles.begin(),
-                                      installed_.installed.titles.end(),
-                                      [&](const auto &t) { return t.titleId == groups_[i].id; });
+    for (const auto &t : installed_.installed.titles)
+      if (const auto found = groupIndex_.find(t.titleId); found != groupIndex_.end())
+        installedMask_[found->second] = true;
   // Admin picks (feature: featured) lead the home, mapped onto loaded groups.
   std::vector<HomeTheme> pinned;
   heroBanner_.clear();
   for (const auto &shelf : featured_) {
     HomeTheme row{{shelf.title, SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}, {}};
-    for (const auto &id : shelf.titleIds)
-      for (size_t i = 0; i < groups_.size(); ++i)
-        if (groups_[i].id == id && groups_[i].base && !installedMask_[i] &&
-            row.items.size() < HomeRowLimit)
-          row.items.push_back(i);
+    for (const auto &id : shelf.titleIds) {
+      const auto found = groupIndex_.find(id);
+      if (found == groupIndex_.end()) continue;
+      const size_t i = found->second;
+      if (groups_[i].base && !installedMask_[i] && row.items.size() < HomeRowLimit)
+        row.items.push_back(i);
+    }
     if (row.items.empty())
       continue;
     if (pinned.empty() && session_)
@@ -640,22 +659,6 @@ void Application::openViewPopup() {
 bool Application::draftOn(int index) const {
   return index == 0 ? draftChips_.empty()
                     : std::find(draftChips_.begin(), draftChips_.end(), index) != draftChips_.end();
-}
-bool Application::chipOn(int index) const {
-  return index == 0 ? activeChips_.empty()
-                    : std::find(activeChips_.begin(), activeChips_.end(), index) != activeChips_.end();
-}
-// "전체" (0) clears the filters; any other chip toggles on top of the rest.
-void Application::toggleChip(int index) {
-  if (index <= 0) {
-    activeChips_.clear();
-    return;
-  }
-  const auto found = std::find(activeChips_.begin(), activeChips_.end(), index);
-  if (found == activeChips_.end())
-    activeChips_.push_back(index);
-  else
-    activeChips_.erase(found);
 }
 // Row 0 is the hero; rows 1.. are themes_.
 std::vector<size_t> Application::homeRow(int row) const {
@@ -722,7 +725,7 @@ void Application::search(std::string query) {
 }
 std::string Application::selectedName() const {
   if (screen_ == Screen::Library) {
-    const auto list = libraryList();
+    const auto &list = libraryList();
     if (!list.empty())
       return groups_[list[std::clamp(selected_, 0, int(list.size() - 1))]]
           .representative.name;

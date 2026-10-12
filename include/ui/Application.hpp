@@ -19,6 +19,7 @@
 #include <functional>
 #include <memory>
 #include <set>
+#include <unordered_map>
 #include "core/Homebrew.hpp"
 #include <utility>
 namespace foil::ui {
@@ -119,7 +120,6 @@ public:
   bool managingGame() const { return managedGame_.has_value(); }
   bool viewingScreenshots() const { return galleryOpen_; }
   bool confirmingRemoval() const { return removal_.has_value(); }
-  bool confirmingInstall() const { return confirmInstall_; }
   const std::string &alert() const { return alert_; }
   size_t installedCount() const { return installed_.games.size(); }
 #ifndef __SWITCH__
@@ -141,11 +141,6 @@ public:
     deviceFixture_ = true;
   }
   void previewFeatures(std::set<std::string> features) { features_ = std::move(features); }
-  void previewHomebrew(std::vector<homebrew::App> apps) {
-    homebrew_ = std::move(apps);
-    homebrewLoaded_ = true;
-  }
-  int homebrewCount() const { return int(homebrewRows().size()); }
   void previewInstalled(InstalledLibrary library, std::vector<SaveEntry> saves = {}) {
     installed_ = std::move(library);
     installed_.games = sortInstalled(std::move(installed_.games), installedSort_);
@@ -465,7 +460,8 @@ private:
   bool pickingPatch_ = false;
   int patchPickRow_ = 0;
   std::string patchPickId_;
-  std::vector<PatchRow> patchRows() const; // allPatchRows() under the current tab
+  std::vector<PatchRow> patchRows() const { return patchRows(allPatchRows()); } // allPatchRows() under the current tab
+  std::vector<PatchRow> patchRows(std::vector<PatchRow> all) const;          // `all` under the current tab
   PatchFilter patchFilter_ = PatchFilter::Stored; // 설치됨 first, as on 내 게임 and 홈브류
   void patchesScreen();
   void patchAction(Action action);
@@ -600,7 +596,7 @@ private:
   float dragRest_ = 0;
   std::vector<size_t> homeRow(int row) const;
   void openTheme(size_t row);
-  std::vector<size_t> libraryList() const;
+  const std::vector<size_t> &libraryList() const; // cached until its inputs change
   void message(const std::string &text);
   Painter paint_;
   std::unique_ptr<Images> images_;
@@ -609,6 +605,11 @@ private:
   Error error_;
   std::string configPath_, statePath_, fixture_, query_, notice_;
   std::vector<Group> groups_;
+  // groups_ by id, rebuilt with it: a title ID finds its game without a scan.
+  std::unordered_map<std::string, size_t> groupIndex_;
+  const Group *findGroup(const std::string &id) const;
+  // An installed game's cover: the console's own icon, else the shop's.
+  std::string installedIcon(const InstalledGame &game);
   Screen screen_ = Screen::Home, previous_ = Screen::Home;
   bool sidebar_ = true, connected_ = false; // the cursor starts on the menu, on 홈
   // The cursor went to the menu only because the screen had nothing yet.
@@ -616,8 +617,6 @@ private:
   int nav_ = 0, row_ = 1, selected_ = 0;
   // Filters that are on (indices into chips_, never 0 which is "전체").
   std::vector<int> activeChips_;
-  bool chipOn(int index) const;
-  void toggleChip(int index);
   // The filtered list is rebuilt only when its inputs change.
   mutable std::string listKey_;
   mutable std::vector<size_t> listCache_;

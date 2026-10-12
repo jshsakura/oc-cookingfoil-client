@@ -37,8 +37,7 @@ bool Application::patchFilterMatches(PatchFilter filter, const PatchRow &row) {
   }
   return true;
 }
-std::vector<Application::PatchRow> Application::patchRows() const {
-  auto rows = allPatchRows();
+std::vector<Application::PatchRow> Application::patchRows(std::vector<PatchRow> rows) const {
   rows.erase(std::remove_if(rows.begin(), rows.end(),
                             [this](const PatchRow &row) {
                               return !patchFilterMatches(patchFilter_, row) ||
@@ -64,12 +63,10 @@ std::vector<Application::PatchRow> Application::allPatchRows() const {
       row.installed = !app || homebrewStatus(*app) != homebrew::Status::Available;
       return;
     }
-    const auto group = std::find_if(groups_.begin(), groups_.end(),
-                                    [&](const Group &g) { return g.id == row.patch.titleId; });
-    if (group != groups_.end()) {
+    if (const auto *group = findGroup(row.patch.titleId)) {
       row.game = group->representative.name;
       row.icon = group->representative.icon;
-      row.shopGroup = int(group - groups_.begin());
+      row.shopGroup = int(group - groups_.data());
     }
     const auto local = std::find_if(installed_.games.begin(), installed_.games.end(),
                                     [&](const InstalledGame &g) { return g.titleId == row.patch.titleId; });
@@ -442,8 +439,8 @@ void Application::patchesScreen() {
   if (!patchesLoaded_ && !patchFetching_ && !patchError_ && connected_)
     fetchPatches();
   needHomebrewList(); // apps' patches take the app's name and icon from it
-  const auto rows = patchRows();
   const auto all = allPatchRows();
+  const auto rows = patchRows(all);
   // The title counts what the tab shows, as on 내 게임 and 홈브류.
   int on = 0;
   for (const auto &row : rows)

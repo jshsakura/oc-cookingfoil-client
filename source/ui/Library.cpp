@@ -12,7 +12,7 @@ void Application::searchBar(const std::string &query, float x, float w) {
                       query.empty() ? Secondary : Ink, !query.empty(), w - 106);
 }
 void Application::library() {
-  const auto list = libraryList();
+  const auto &list = libraryList();
   // Nothing listed: the cursor waits on the search box.
   if (list.empty() && inContent()) headerFocus_ = "search";
   auto count = std::to_string(list.size());

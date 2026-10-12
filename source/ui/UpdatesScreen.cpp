@@ -47,10 +47,9 @@ std::vector<UpdateCandidate> Application::updateRows() const {
   rows.erase(std::remove_if(rows.begin(), rows.end(),
                             [&](const auto &row) {
                               if (!type.empty() && row.item.type != type) return true;
-                              const auto group = std::find_if(groups_.begin(), groups_.end(),
-                                                              [&](const auto &g) { return g.id == row.baseId; });
+                              const auto *group = findGroup(row.baseId);
                               return !textMatches({row.item.name, row.baseId,
-                                                   group == groups_.end() ? std::string() : group->representative.name},
+                                                   group ? std::string_view(group->representative.name) : std::string_view()},
                                                   updatesQuery_);
                             }),
              rows.end());
@@ -111,7 +110,7 @@ void Application::updates() {
   paint_.scrollbar(1266, 90, 480, float(first), 4, float(rows.size()));
   for (int i = first; i < int(rows.size()) && i < first + 4; ++i) {
     const auto &row = rows[i];
-    const auto group = std::find_if(groups_.begin(), groups_.end(), [&](const auto &g) { return g.id == row.baseId; });
+    const auto *group = findGroup(row.baseId);
     const int y = 90 + (i - first) * 124;
     hit(260, y, 992, 108, [this, i] {
       sidebar_ = false;
@@ -119,8 +118,8 @@ void Application::updates() {
     });
     if (inContent() && i == selected_) paint_.ring(260, y, 992, 108, 18);
     paint_.rect(260, y, 992, 108, Surface, 18);
-    const auto name = group == groups_.end() ? row.item.name : group->representative.name;
-    cover(group == groups_.end() ? row.item.icon : group->representative.icon, 282, y + 14, 80, false, name);
+    const auto name = group ? group->representative.name : row.item.name;
+    cover(group ? group->representative.icon : row.item.icon, 282, y + 14, 80, false, name);
     paint_.fonts.text(name, 382, y + 24, 22, Ink, true, 620);
     std::string installed = row.installedVersion ? "v" + std::to_string(*row.installedVersion) : tr("없음");
     const auto local = std::find_if(installed_.games.begin(), installed_.games.end(), [&](const auto &g) { return g.titleId == row.baseId; });

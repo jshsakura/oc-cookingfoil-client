@@ -147,12 +147,7 @@ void Application::savesScreen() {
     });
     if (inContent() && i == selected_ && !managedGame_) paint_.ring(260, y, 992, RowHeight, 16);
     paint_.rect(260, y, 992, RowHeight, Surface, 16);
-    std::string icon = "installed:" + g.titleId;
-    if (!g.iconBytes.empty()) images_->provide(icon, g.iconBytes);
-    else {
-      const auto match = std::find_if(groups_.begin(), groups_.end(), [&](const auto &group) { return group.id == g.titleId; });
-      icon = match == groups_.end() ? "" : match->representative.icon;
-    }
+    const auto icon = installedIcon(g);
     cover(icon, 278, y + 10, 64, false, g.name);
     paint_.fonts.text(g.name, 360, y + 12, 21, Ink, true, 640);
     paint_.fonts.text(g.titleId, 360, y + 46, 16, Secondary);
@@ -234,10 +229,12 @@ void Application::sortShopSaves() {
 // together): the list shows one row per game or app.
 std::vector<std::pair<int, int>> Application::shopSaveGroups() const {
   std::vector<std::pair<int, int>> out;
-  const auto owner = [this](int i) { return homebrew::ownerKey(shopSaves_[i].titleId, shopSaves_[i].homebrewApp); };
-  for (int i = 0; i < int(shopSaves_.size()); ++i)
-    if (!out.empty() && owner(out.back().first) == owner(i)) ++out.back().second;
-    else out.push_back({i, 1});
+  std::string last; // the running group's owner
+  for (int i = 0; i < int(shopSaves_.size()); ++i) {
+    auto owner = homebrew::ownerKey(shopSaves_[i].titleId, shopSaves_[i].homebrewApp);
+    if (!out.empty() && owner == last) ++out.back().second;
+    else out.push_back({i, 1}), last = std::move(owner);
+  }
   // The search keeps a game or app when its name or any of its saves matches.
   out.erase(std::remove_if(out.begin(), out.end(),
                            [&](const std::pair<int, int> &group) {
@@ -292,8 +289,8 @@ void Application::chooseShopSave() {
                                  [&](const auto &g) { return g.titleId == save.titleId; });
   if (game == installed_.games.end()) {
     // Asks first, as 유저 패치 does: the game comes from the shop when it has it.
-    const auto group = std::find_if(groups_.begin(), groups_.end(), [&](const Group &g) { return g.id == save.titleId; });
-    saveGameGroup_ = group != groups_.end() ? int(group - groups_.begin()) : -1;
+    const auto *group = findGroup(save.titleId);
+    saveGameGroup_ = group ? int(group - groups_.data()) : -1;
     saveNeedsGame_ = true;
     return;
   }
