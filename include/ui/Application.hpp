@@ -212,8 +212,6 @@ public:
 private:
   void shell();
   float statusBar();
-  int signal_ = 3;          // net::signalStrength(), refreshed by statusBar
-  uint32_t signalAt_ = 0;
   // Before the shop approves this device only 홈 (the approval page) and
   // 설정 open; the rest need the shop.
   // 레트로 게임 and 홈브류 show only when the server has some.

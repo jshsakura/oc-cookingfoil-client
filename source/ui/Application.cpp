@@ -1329,15 +1329,7 @@ float Application::statusBar() {
                        : session_                         ? "연결 중" // i18n: keep
                                                           : "서버 없음"; // i18n: keep
   constexpr float Mid = 690;
-  float x = 28;
-  // First the console's own link, read once a second: a cut Wi-Fi shows
-  // at a glance, before any server error does.
-  if (SDL_GetTicks() - signalAt_ >= 1000 || !signalAt_) {
-    signalAt_ = SDL_GetTicks();
-    signal_ = net::signalStrength();
-  }
-  paint_.icon(signal_ < 0 ? 20 : 39, x, Mid - 10, signal_ < 0 ? Bad : signal_ <= 1 ? Pending : Ink, 20);
-  x += 30;
+  float x = 32;
   paint_.rect(x, Mid - 5, 10, 10, statusColor(status), 5);
   x += 18;
   x = paint_.fonts.middle(tr(status), x, Mid, 17, statusColor(status), true) + 30;
