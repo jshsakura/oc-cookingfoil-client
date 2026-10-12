@@ -305,7 +305,8 @@ void Application::applyConfirm() {
   blockTouch();
   const auto body = modal(700, 20 + 30 + 84 + 16, tr("이 세이브를 적용합니까?"), tr("취소"), "", tr("적용합니다"), 36);
   paint_.fonts.text(applying_->name, body.x + 32, body.y + 20, 21, Ink, true, body.w - 64);
-  paint_.fonts.wrapped(trf("{0}의 지금 세이브를 이 세이브로 바꿉니다. 지금 세이브는 먼저 자동으로 백업해 세이브 화면에서 되돌릴 수 있습니다.",
+  paint_.fonts.wrapped(target.missing ? trf("{0}에 세이브를 새로 만들고 이 세이브를 넣습니다.", {target.userName})
+                                      : trf("{0}의 지금 세이브를 이 세이브로 바꿉니다. 지금 세이브는 먼저 자동으로 백업해 세이브 화면에서 되돌릴 수 있습니다.",
                            {target.userName}),
                        body.x + 32, body.y + 56, 19, Secondary, body.w - 64, 3);
 }
@@ -380,7 +381,16 @@ void Application::savePickDialog() {
     else paint_.rect(x, y, w, Row, Ground, 12);
     paint_.fonts.text(save.name, x + 20, y + 10, 20, Ink, true, w - 160);
     std::string meta;
-    if (!save.gameVersion.empty()) meta = trf("게임 {0}용", {save.gameVersion});
+    // When it was put on the server, then which game build it is for.
+    if (save.updatedAt > 0) {
+      const std::time_t at = save.updatedAt;
+      std::tm local{};
+      localtime_r(&at, &local);
+      char day[16];
+      std::strftime(day, sizeof(day), "%Y-%m-%d", &local);
+      meta = day;
+    }
+    if (!save.gameVersion.empty()) meta += (meta.empty() ? "" : " · ") + trf("게임 {0}용", {save.gameVersion});
     if (!save.description.empty()) meta += (meta.empty() ? "" : " · ") + save.description;
     paint_.fonts.text(meta, x + 20, y + 40, 16, Secondary, false, w - 160);
     const auto size = formatBytes(save.size);

@@ -182,8 +182,8 @@ public:
   // Flips one of the install checks in 설정 and saves state.json.
   void toggleInstallCheck(bool &skip);
   void saveOwnState();
-  // 설정's options card: 언어, 기본 저장 위치, 서명 검사, 펌웨어 검사, 홈 메뉴
-  // 바로가기, 남은 파일 정리, 앱 업데이트, 오류 자동 보고.
+  // 설정's options card: 언어, 기본 저장 위치, 앱 업데이트, 남은 파일 정리,
+  // then the switches: 서명 검사, 펌웨어 검사, 홈 메뉴 바로가기, 오류 로그 전송.
   static constexpr int SettingsOptions = 8;
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
@@ -228,6 +228,7 @@ private:
     return menuShown(item) && (!pairingPending_ || item == 0 || item == MenuItems - 1);
   }
   std::set<std::string> features_; // the server's /api/shop/info features
+  std::string thisDevice_; // oc-save-keeper's id for this console, read when a save panel opens
   // 홈브류: the server's apps beside what this console holds (the ledger).
   std::vector<homebrew::App> homebrew_;
   homebrew::Ledger homebrewLedger_;

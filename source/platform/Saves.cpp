@@ -4,6 +4,7 @@
 #include "core/I18n.hpp"
 #include "core/Log.hpp"
 #include <cstdio>
+#include <filesystem>
 #include <functional>
 #include <ctime>
 #include <memory>
@@ -35,6 +36,44 @@ int64_t journalSize(const SaveEntry &save) {
   const auto bytes = save.type == FsSaveDataType_Device ? control->nacp.device_save_data_journal_size
                                                         : control->nacp.user_account_save_data_journal_size;
   return bytes > 0 ? bytes : DefaultJournal;
+}
+// A save the game has not made yet for this account (or the shared one),
+// created the way JKSV does: sizes and owner from the game's control data.
+Error createSave(const SaveEntry &save) {
+  if (R_FAILED(nsInitialize())) return {tr("게임 정보를 읽지 못해 세이브를 만들지 못했습니다.")};
+  auto control = std::make_unique<NsApplicationControlData>();
+  u64 size = 0;
+  const auto rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, save.applicationId, control.get(),
+                                              sizeof(*control), &size);
+  nsExit();
+  if (R_FAILED(rc) || size < sizeof(NacpStruct)) return failure(tr("게임 정보를 읽지 못해 세이브를 만들지 못했습니다."), rc);
+  const auto &nacp = control->nacp;
+  const bool device = save.type == FsSaveDataType_Device;
+  const s64 bytes = s64(device ? nacp.device_save_data_size : nacp.user_account_save_data_size);
+  const s64 journal = s64(device ? nacp.device_save_data_journal_size : nacp.user_account_save_data_journal_size);
+  if (bytes <= 0) return {tr("이 게임은 이 세이브를 쓰지 않습니다.")};
+  FsSaveDataAttribute attr{};
+  attr.application_id = save.applicationId;
+  if (!device) {
+    attr.uid.uid[0] = save.user[0];
+    attr.uid.uid[1] = save.user[1];
+  }
+  attr.save_data_type = save.type;
+  attr.save_data_rank = FsSaveDataRank_Primary;
+  attr.save_data_index = 0;
+  FsSaveDataCreationInfo info{};
+  info.save_data_size = bytes;
+  info.journal_size = journal > 0 ? journal : DefaultJournal;
+  info.available_size = 0x4000;
+  info.owner_id = nacp.save_data_owner_id ? nacp.save_data_owner_id : save.applicationId;
+  info.flags = 0;
+  info.save_data_space_id = FsSaveDataSpaceId_User;
+  FsSaveDataMetaInfo meta{};
+  meta.size = 0x40060;
+  meta.type = FsSaveDataMetaType_Thumbnail;
+  const auto created = fsCreateSaveDataFileSystem(&attr, &info, &meta);
+  if (R_FAILED(created)) return failure(tr("세이브를 새로 만들지 못했습니다."), created);
+  return {};
 }
 // Mounts one save as "cfsave:" for as long as it lives.
 class SaveMount {
@@ -172,6 +211,7 @@ Parsed<saves::LocalBackup> backupKeeping(const SaveJob &job, bool rollback, cons
 }
 } // namespace
 Parsed<saves::LocalBackup> backupSave(const SaveJob &job, bool rollback) {
+  if (job.save.missing) return {{}, {tr("아직 세이브가 없어 백업할 것이 없습니다.")}};
   return backupKeeping(job, rollback, "");
 }
 Parsed<saves::LocalBackup> importBackup(const SaveJob &job, const std::function<Error(const std::string &)> &fill,
@@ -181,9 +221,21 @@ Parsed<saves::LocalBackup> importBackup(const SaveJob &job, const std::function<
 Error restoreSave(const SaveJob &job, const saves::LocalBackup &backup) {
   struct stat st {};
   if (stat(backup.path.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) return {tr("백업 폴더를 찾지 못했습니다.")};
-  // The copy to fall back on. Without it nothing is overwritten.
-  auto rollback = backupKeeping(job, true, backup.path);
-  if (rollback.error) return {trf("복원 전에 지금 세이브를 백업하지 못해 복원하지 않았습니다. {0}", {rollback.error.message})};
+  // An account without a save gets one first; there is nothing to fall
+  // back on then. Otherwise the copy to fall back on comes first, and
+  // without it nothing is overwritten.
+  Parsed<saves::LocalBackup> rollback;
+  if (job.save.missing) {
+#ifdef __SWITCH__
+    if (auto error = createSave(job.save)) return error;
+#else
+    std::error_code ec;
+    std::filesystem::create_directories(fakeSave(job), ec);
+#endif
+  } else {
+    rollback = backupKeeping(job, true, backup.path);
+    if (rollback.error) return {trf("복원 전에 지금 세이브를 백업하지 못해 복원하지 않았습니다. {0}", {rollback.error.message})};
+  }
   if (job.copied) job.copied->store(0);
 #ifdef __SWITCH__
   SaveMount mount(job.save);
@@ -198,6 +250,7 @@ Error restoreSave(const SaveJob &job, const saves::LocalBackup &backup) {
 #endif
   auto error = copyIn(backup.path, target, hooks);
   if (!error) return {};
+  if (job.save.missing) return {trf("새로 만든 세이브에 복원하지 못했습니다. {0}", {error.message})};
   logLine("saves: restore failed, putting the rollback back: " + error.message);
   if (auto again = copyIn(rollback.value.path, target, hooks)) {
     logLine("saves: rollback failed: " + again.message);

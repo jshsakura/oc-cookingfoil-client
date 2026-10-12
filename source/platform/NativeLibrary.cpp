@@ -253,6 +253,17 @@ Parsed<std::vector<SaveEntry>> readSaves(uint64_t applicationId) {
   const bool accounts = R_SUCCEEDED(accountInitialize(AccountServiceType_System));
   struct Accounts { bool initialized; ~Accounts() { if (initialized) accountExit(); } } closer{accounts};
   std::vector<SaveEntry> result;
+  const auto nameOf = [&](AccountUid uid) {
+    std::string name = trf("계정 {0}", {hex(uid.uid[0]) + hex(uid.uid[1])});
+    AccountProfile profile{};
+    if (accounts && R_SUCCEEDED(accountGetProfile(&profile, uid))) {
+      AccountProfileBase base{};
+      if (R_SUCCEEDED(accountProfileGet(&profile, nullptr, &base)) && !bounded(base.nickname).empty())
+        name = bounded(base.nickname);
+      accountProfileClose(&profile);
+    }
+    return name;
+  };
   for (;;) {
     FsSaveDataInfo entries[32]{};
     s64 count = 0;
@@ -268,22 +279,47 @@ Parsed<std::vector<SaveEntry>> readSaves(uint64_t applicationId) {
       save.applicationId = applicationId; save.saveId = v.save_data_id;
       save.type = v.save_data_type;
       save.user = {v.uid.uid[0], v.uid.uid[1]}; save.bytes = v.size;
-      save.userName = shared ? std::string(tr("공용 세이브")) : trf("계정 {0}", {hex(v.uid.uid[0]) + hex(v.uid.uid[1])});
-      if (accounts && account) {
-        AccountProfile profile{};
-        if (R_SUCCEEDED(accountGetProfile(&profile, v.uid))) {
-          AccountProfileBase base{};
-          if (R_SUCCEEDED(accountProfileGet(&profile, nullptr, &base))) {
-            const auto name = bounded(base.nickname);
-            if (!name.empty()) save.userName = name;
-          }
-          accountProfileClose(&profile);
-        }
-      }
+      save.userName = shared ? std::string(tr("공용 세이브")) : nameOf(v.uid);
       result.push_back(std::move(save));
     }
     if (count < 32) break;
   }
+  // Every account (and the shared save) the game could have but does not
+  // yet, as JKSV lists them: restoring there creates the save first. The
+  // game's control data says which kinds it uses.
+  NacpStruct nacp{};
+  bool control = false;
+  if (R_SUCCEEDED(nsInitialize())) {
+    auto data = std::make_unique<NsApplicationControlData>();
+    u64 size = 0;
+    control = R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_Storage, applicationId, data.get(),
+                                                      sizeof(*data), &size)) &&
+              size >= sizeof(NacpStruct);
+    if (control) nacp = data->nacp;
+    nsExit();
+  }
+  const auto has = [&](int type, const std::array<uint64_t, 2> &user) {
+    return std::any_of(result.begin(), result.end(), [&](const SaveEntry &s) { return s.type == type && s.user == user; });
+  };
+  const auto missing = [&](int type, const std::array<uint64_t, 2> &user, const std::string &name) {
+    SaveEntry save;
+    save.applicationId = applicationId;
+    save.type = type;
+    save.user = user;
+    save.userName = name;
+    save.missing = true;
+    result.push_back(std::move(save));
+  };
+  if (control && accounts && nacp.user_account_save_data_size > 0) {
+    AccountUid uids[ACC_USER_LIST_SIZE]{};
+    s32 total = 0;
+    if (R_SUCCEEDED(accountListAllUsers(uids, ACC_USER_LIST_SIZE, &total)))
+      for (s32 i = 0; i < total; ++i)
+        if (accountUidIsValid(&uids[i]) && !has(FsSaveDataType_Account, {uids[i].uid[0], uids[i].uid[1]}))
+          missing(FsSaveDataType_Account, {uids[i].uid[0], uids[i].uid[1]}, nameOf(uids[i]));
+  }
+  if (control && nacp.device_save_data_size > 0 && !has(FsSaveDataType_Device, {0, 0}))
+    missing(FsSaveDataType_Device, {0, 0}, tr("공용 세이브"));
   return {std::move(result), {}};
 #else
   (void)applicationId;

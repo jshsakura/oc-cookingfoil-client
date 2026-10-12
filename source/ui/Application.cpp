@@ -1115,11 +1115,12 @@ void Application::action(Action a) {
         state_.installTarget = installTarget() == "nand" ? "sd" : "nand";
         saveOwnState();
         break;
-      case 2: toggleInstallCheck(state_.skipSignatureCheck); break;
-      case 3: toggleInstallCheck(state_.skipFirmwareCheck); break;
-      case 4: toggleInstallCheck(state_.makeShortcuts); break;
-      case 5: startCleanup(false); break;
-      case 6: appUpdateAction(a); break;
+      case 2: appUpdateAction(a); break;
+      case 3: startCleanup(false); break;
+      // The switches, together.
+      case 4: toggleInstallCheck(state_.skipSignatureCheck); break;
+      case 5: toggleInstallCheck(state_.skipFirmwareCheck); break;
+      case 6: toggleInstallCheck(state_.makeShortcuts); break;
       case 7: toggleInstallCheck(state_.reportErrors); break;
       default:
         if (selected_ == int(config_.servers.size())) serverHelp_ = true;

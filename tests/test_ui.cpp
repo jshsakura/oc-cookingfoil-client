@@ -166,6 +166,30 @@ int runUiTests(SDL_Renderer *renderer) {
   CHECK(!app.managingGame());
   CHECK(app.current() == foil::ui::Screen::Installed);
   {
+    // An account without a save yet: listed, but nothing to back up or
+    // delete there (only a backup to restore, which creates it).
+    foil::SaveEntry none;
+    none.applicationId = installed.applicationId;
+    none.user = {3, 4};
+    none.userName = "사용자 2";
+    none.missing = true;
+    app.previewInstalled({{true, {{installed.titleId, 0}}}, {installed}}, {save, none});
+    app.screen(foil::ui::Screen::Installed);
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.managingGame());
+    app.render();
+    app.action(foil::ui::Action::Down);
+    app.action(foil::ui::Action::Down);
+    app.action(foil::ui::Action::Accept); // the save panel for 사용자 2
+    app.render();
+    app.action(foil::ui::Action::Accept); // "back up now" on a missing save
+    CHECK(!app.confirmingRemoval());
+    app.render();
+    app.action(foil::ui::Action::Back);
+    app.action(foil::ui::Action::Back);
+    CHECK(!app.managingGame());
+  }
+  {
     // 내 게임 is one menu row for the console's games, their updates and DLC;
     // L R moves along 설치됨 · 업데이트 · DLC and wraps around.
     CHECK(foil::ui::MenuItems == 9);

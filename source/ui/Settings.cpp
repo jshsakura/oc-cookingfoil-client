@@ -113,20 +113,20 @@ void Application::settings() {
   option(1, 26, tr("기본 저장 위치"), installTarget() == "nand" ? tr("본체") : tr("SD 카드"), Ink, true);
   // Ignoring signatures (the default) installs content that only runs with
   // sigpatches, which is what most homebrew installers expect.
-  option(2, 34, tr("서명 검사 무시 (시그패치 필요)"), "", Ink, true, state_.skipSignatureCheck ? 1 : 0);
+  option(4, 34, tr("서명 검사 무시 (시그패치 필요)"), "", Ink, true, state_.skipSignatureCheck ? 1 : 0);
   // Ignoring firmware (the default) clears the version a game asks for, so
   // it installs and launches on older firmware when it can run there.
-  option(3, 27, tr("펌웨어 검사 무시"), "", Ink, true, state_.skipFirmwareCheck ? 1 : 0);
+  option(5, 27, tr("펌웨어 검사 무시"), "", Ink, true, state_.skipFirmwareCheck ? 1 : 0);
   // A HOME Menu shortcut with each retro game and homebrew app (and this
   // app's own), when the server builds one.
-  option(4, 0, tr("홈 메뉴 바로가기 만들기"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
-  note(4, state_.makeShortcuts ? tr("레트로 게임과 홈브류를 받으면 함께 만듭니다") : tr("만들지 않습니다"));
+  option(6, 0, tr("홈 메뉴 바로가기 만들기"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
+  note(6, state_.makeShortcuts ? tr("레트로 게임 및 홈브류 다운로드 시 바로가기를 자동 생성합니다") : tr("만들지 않습니다"));
   // Leftover cleanup: content no installed game uses, found first and only
   // deleted after a confirmation.
-  option(5, 14, tr("남은 파일 정리"),
+  option(3, 14, tr("남은 파일 정리"),
          !cleanupBusy_ ? tr("중단된 다운로드와 쓰지 않는 설치 파일을 찾아 지웁니다") : cleanupRemoving_ ? tr("지우는 중") : tr("찾는 중"), Secondary, false);
   // This build against the server's newest; A checks or updates.
-  option(6, 3, tr("앱 업데이트"), appUpdateStatus(), appUpdate_ == AppUpdate::Available ? Ink : Secondary,
+  option(2, 3, tr("앱 업데이트"), appUpdateStatus(), appUpdate_ == AppUpdate::Available ? Ink : Secondary,
          appUpdate_ == AppUpdate::Available);
   // When on, an error popup sends the log's tail to the server, where the
   // admin page shows it; the last send's result reads left of the switch.

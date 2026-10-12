@@ -19,6 +19,11 @@ void Application::openSave(int index) {
   saveRow_ = 0;
   saveConfirm_ = SaveConfirm::None;
   backups_ = saves::listBackups(saves::keeperRoot(sdRoot_), managedGame_->applicationId);
+  // This console's id, to tell backups made elsewhere.
+  if (thisDevice_.empty()) {
+    const auto device = saves::loadDevice(saves::keeperRoot(sdRoot_), std::time(nullptr), unsigned(std::clock()));
+    if (!device.error) thisDevice_ = device.value.id;
+  }
 }
 void Application::runSaveJob(bool restore) {
   if (!managedGame_ || !saveOpen_ || deviceBusy_ || saveWorker_.joinable()) return;
@@ -103,6 +108,11 @@ void Application::saveAction(Action a) {
     saveConfirm_ = SaveConfirm::Trash;
   }
   if (a != Action::Accept) return;
+  // No save yet: nothing to back up or delete, only a backup to restore.
+  if (saves_[*saveOpen_].missing && (saveRow_ == 0 || saveRow_ == last)) {
+    message(tr("아직 세이브가 없습니다. 백업을 골라 복원하면 새로 만듭니다."));
+    return;
+  }
   if (saveRow_ == 0) {
     runSaveJob(false);
   } else if (onBackup) {
@@ -127,7 +137,9 @@ void Application::savePanel() {
                           onBackup ? tr("휴지통") : "", "", 36);
   const float x = body.x + 32, w = body.w - 64;
   float y = body.y + 20;
-  paint_.fonts.text(trf("{0} 세이브 · {1}", {save.userName, formatBytes(save.bytes)}), x, y, 17, Secondary, false, w);
+  paint_.fonts.text(save.missing ? trf("{0} · 아직 세이브가 없습니다", {save.userName})
+                                 : trf("{0} 세이브 · {1}", {save.userName, formatBytes(save.bytes)}),
+                    x, y, 17, Secondary, false, w);
   y += 28;
   const bool idle = !removal_ && saveConfirm_ == SaveConfirm::None;
   // Back up now.
@@ -141,9 +153,15 @@ void Application::savePanel() {
                       x + 62, y + 8, 21, Ink, true);
     paint_.fonts.text(tr("끝날 때까지 본체를 끄지 않습니다."), x + 62, y + 37, 16, Secondary);
   } else {
-    paint_.fonts.text(tr("지금 세이브를 백업합니다"), x + 62, y + 8, 21, Ink, true);
-    paint_.fonts.text(tr("SD 카드의 oc-save-keeper 폴더에 저장해 두 앱이 함께 씁니다."), x + 62, y + 37, 16, Secondary,
-                      false, w - 82);
+    if (save.missing) {
+      paint_.fonts.text(tr("백업할 세이브가 없습니다"), x + 62, y + 8, 21, Secondary, true);
+      paint_.fonts.text(tr("아래 백업을 복원하면 이 계정에 세이브를 새로 만듭니다."), x + 62, y + 37, 16, Secondary, false,
+                        w - 82);
+    } else {
+      paint_.fonts.text(tr("지금 세이브를 백업합니다"), x + 62, y + 8, 21, Ink, true);
+      paint_.fonts.text(tr("SD 카드의 oc-save-keeper 폴더에 저장해 두 앱이 함께 씁니다."), x + 62, y + 37, 16, Secondary,
+                        false, w - 82);
+    }
   }
   y += Row + 16;
   paint_.fonts.text(backups_.empty() ? std::string(tr("아직 백업이 없습니다.")) : trf("백업 {0}개", {std::to_string(backups_.size())}),
@@ -178,10 +196,14 @@ void Application::savePanel() {
   const bool restore = saveConfirm_ == SaveConfirm::Restore;
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 150});
   blockTouch();
-  std::string text = restore ? trf("{0}의 지금 세이브를 이 백업으로 바꿉니다. 지금 세이브는 먼저 자동으로 백업합니다.", {save.userName})
-                             : std::string(tr("oc-save-keeper의 휴지통으로 옮기며, 그 앱에서 되살릴 수 있습니다."));
+  std::string text = !restore     ? std::string(tr("oc-save-keeper의 휴지통으로 옮기며, 그 앱에서 되살릴 수 있습니다."))
+                     : save.missing ? trf("{0}에 세이브를 새로 만들고 이 백업을 넣습니다.", {save.userName})
+                                    : trf("{0}의 지금 세이브를 이 백업으로 바꿉니다. 지금 세이브는 먼저 자동으로 백업합니다.", {save.userName});
   if (restore && b.hasMeta && !b.meta.userId.empty() && b.meta.userId != saves::userIdOf(save.user))
     text += " " + trf("{0} 계정에서 만든 백업입니다.", {b.meta.userName.empty() ? b.meta.userId : b.meta.userName});
+  // A backup made on another console (its device id differs from this one's).
+  if (restore && b.hasMeta && !b.meta.deviceId.empty() && !thisDevice_.empty() && b.meta.deviceId != thisDevice_)
+    text += " " + trf("다른 기기({0})에서 만든 백업입니다.", {b.meta.deviceLabel.empty() ? b.meta.deviceId.substr(0, 8) : b.meta.deviceLabel});
   const auto confirm = modal(700, 20 + 30 + 84 + 16, restore ? tr("이 백업으로 복원합니까?") : tr("백업을 휴지통으로 옮깁니까?"),
                              tr("취소"), "", restore ? tr("복원합니다") : tr("옮깁니다"), restore ? 3 : 37);
   paint_.fonts.text(when(b.timestamp), confirm.x + 32, confirm.y + 20, 21, Ink, true);

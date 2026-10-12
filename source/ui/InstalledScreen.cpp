@@ -29,6 +29,8 @@ void Application::pollDevice() {
   deviceError_ = incomingDeviceError_;
   if (readingSaves_) {
     saves_ = std::move(incomingSaves_);
+    // Accounts without a save yet come after the saves there are.
+    std::stable_partition(saves_.begin(), saves_.end(), [](const SaveEntry &e) { return !e.missing; });
     readingSaves_ = false;
     return;
   }
@@ -280,12 +282,20 @@ void Application::management() {
       else paint_.rect(x, y, w, Row, Ground, 12);
       paint_.icon(device ? 14 : 13, x + 20, y + Row / 2 - 13, Ink, 26);
       paint_.fonts.text(save.userName, x + 62, y + 9, 21, Ink, true, w - 220);
-      paint_.fonts.text(applying_ ? tr("이 계정에 적용합니다. 지금 세이브는 먼저 백업합니다.")
-                        : device  ? tr("모든 계정이 함께 쓰는 세이브를 백업·복원·삭제합니다.")
-                                  : tr("이 계정의 세이브를 백업·복원·삭제합니다."),
+      paint_.fonts.text(applying_ && save.missing ? tr("이 계정에 세이브를 새로 만들어 적용합니다.")
+                        : applying_             ? tr("이 계정에 적용합니다. 지금 세이브는 먼저 백업합니다.")
+                        : save.missing          ? tr("아직 세이브가 없습니다. 백업을 복원하면 새로 만듭니다.")
+                        : device                ? tr("모든 계정이 함께 쓰는 세이브를 백업·복원·삭제합니다.")
+                                                : tr("이 계정의 세이브를 백업·복원·삭제합니다."),
                         x + 62, y + 39, 16, Secondary, false, w - 220);
-      const auto size = formatBytes(save.bytes);
-      paint_.fonts.middle(size, x + w - 20 - paint_.fonts.measure(size, 18, true), y + Row / 2, 18, Ink, true);
+      // A save's size; an account without one says so in a grey label.
+      if (save.missing) {
+        const auto label = tr("세이브 없음");
+        paint_.pill(label, x + w - 20 - paint_.fonts.measure(label, 15, true) - 18, y + Row / 2 - 13);
+      } else {
+        const auto size = formatBytes(save.bytes);
+        paint_.fonts.middle(size, x + w - 20 - paint_.fonts.measure(size, 18, true), y + Row / 2, 18, Ink, true);
+      }
     }
   }
   removalConfirm();

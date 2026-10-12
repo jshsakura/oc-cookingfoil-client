@@ -26,6 +26,9 @@ struct SaveEntry {
   std::array<uint64_t, 2> user{};
   int space = 1, type = 1, rank = 0;
   std::string userName;
+  // An account (or the shared save) the game has no save for yet; restoring
+  // a backup or a server save creates it first.
+  bool missing = false;
 };
 enum class RemovalKind { Game, Save };
 struct RemovalRequest {
