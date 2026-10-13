@@ -155,7 +155,7 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
 void Application::topCard(const TopCard &c) {
   if (c.key != topCardKey_) {
     topCardKey_ = c.key;
-    topCardBytes_ = c.bytes;
+    topCardBytes_ = topCardStartBytes_ = c.bytes;
     topCardMovedAt_ = SDL_GetTicks() / 1000.;
     shownPercent_ = -1;
     downloadSpeed_.reset();
@@ -196,7 +196,10 @@ void Application::topCard(const TopCard &c) {
     topCardMovedAt_ = now;
   }
   const double still = now - topCardMovedAt_;
-  if (!c.paused && c.measure && c.bytes > 0 && still >= 6) {
+  // Only once this download has had bytes: before that it is still getting
+  // ready (checking the install, putting a resumed point back together),
+  // which is no stall of the server's.
+  if (!c.paused && c.measure && c.bytes > topCardStartBytes_ && still >= 6) {
     status += " · " + trf("No data from the server for {0} s. It reconnects by itself.", {std::to_string(int(still))});
     downloadSpeed_.add(now, c.bytes);
   } else if (!c.paused && c.measure) {
