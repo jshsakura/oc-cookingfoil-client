@@ -33,8 +33,11 @@ bool Runtime::open(int width, int height, bool offscreen) {
     renderer_ = SDL_CreateSoftwareRenderer(surface_);
   } else {
 #ifdef __SWITCH__
-    window_ = SDL_CreateWindow("CookingFoil", 0, 0, 0, 0,
-                               SDL_WINDOW_FULLSCREEN_DESKTOP);
+    // 720p always: the handheld screen's own size, and the console scales it
+    // up when docked. The port's desktop mode is 1080p even in handheld,
+    // which tripled every frame buffer and texture of an album launch's
+    // small heap for detail the handheld screen cannot show.
+    window_ = SDL_CreateWindow("CookingFoil", 0, 0, Width, Height, 0);
 #else
     window_ = SDL_CreateWindow("CookingFoil", SDL_WINDOWPOS_CENTERED,
                                SDL_WINDOWPOS_CENTERED, width, height,
