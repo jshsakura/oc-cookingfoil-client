@@ -71,6 +71,8 @@ private:
   };
   std::map<std::pair<int, int>, ScrollSeen> scrolls_;
   std::map<int, SDL_Texture *> icons_;
+  std::map<int, SDL_Texture *> corners_;
+  SDL_Texture *cornerTexture(int r);
   SDL_Texture *logo_ = nullptr, *wordmark_ = nullptr;
   std::map<std::string, SDL_Texture *> flags_;
   SDL_Texture *renderWordmark(int size = 27);

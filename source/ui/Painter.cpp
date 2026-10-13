@@ -6,6 +6,34 @@
 #include <iterator>
 #include <string>
 namespace foil::ui {
+// A white top-left quarter circle of radius r whose edge pixels carry
+// their coverage as alpha (4x4 samples), tinted per draw.
+SDL_Texture *Painter::cornerTexture(int r) {
+  if (const auto found = corners_.find(r); found != corners_.end())
+    return found->second;
+  SDL_Texture *texture = nullptr;
+  if (auto *surface = SDL_CreateRGBSurfaceWithFormat(0, r, r, 32, SDL_PIXELFORMAT_RGBA32)) {
+    auto *pixels = static_cast<Uint32 *>(surface->pixels);
+    const int stride = surface->pitch / 4;
+    for (int py = 0; py < r; ++py)
+      for (int px = 0; px < r; ++px) {
+        int inside = 0;
+        for (int sy = 0; sy < 4; ++sy)
+          for (int sx = 0; sx < 4; ++sx) {
+            const float dx = r - (px + (sx + .5f) / 4), dy = r - (py + (sy + .5f) / 4);
+            inside += dx * dx + dy * dy <= float(r) * r;
+          }
+        pixels[py * stride + px] =
+            SDL_MapRGBA(surface->format, 255, 255, 255, Uint8(inside * 255 / 16));
+      }
+    texture = SDL_CreateTextureFromSurface(renderer, surface);
+    if (texture)
+      SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    SDL_FreeSurface(surface);
+  }
+  corners_[r] = texture;
+  return texture;
+}
 void Painter::rect(float x, float y, float w, float h, SDL_Color color,
                    int radius) {
   SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
@@ -25,24 +53,35 @@ void Painter::rect(float x, float y, float w, float h, SDL_Color color,
                       int(clip.h * sy)};
     SDL_RenderSetClipRect(renderer, &physical);
   }
-  const int height = std::lround(h * sy);
-  const float rr = std::min<float>(radius, std::min(w, h) / 2) * sx;
-  const int edge = std::min(height / 2, int(std::ceil(rr)));
-  SDL_Rect middle{int(std::lround(x * sx)), int(std::lround(y * sy)) + edge,
-                  int(std::lround(w * sx)), height - 2 * edge};
-  if (middle.h > 0)
-    SDL_RenderFillRect(renderer, &middle);
-  for (int i = 0; i < 2 * edge; ++i) {
-    const int yy = i < edge ? i : height - 2 * edge + i;
-    const float dy = yy < rr             ? rr - yy - .5f
-                     : yy >= height - rr ? yy - (height - rr) + .5f
-                                         : 0;
-    const float inset =
-        dy > 0 ? rr - std::sqrt(std::max(0.f, rr * rr - dy * dy)) : 0;
-    SDL_Rect row{int(std::lround(x * sx + inset)),
-                 int(std::lround(y * sy)) + yy,
-                 int(std::lround(w * sx - 2 * inset)), 1};
-    SDL_RenderFillRect(renderer, &row);
+  // Physical pixels: the straight parts as plain fills, each corner as a
+  // smoothed quarter circle, so curves never show stair steps.
+  const int left = int(std::lround(x * sx)), top = int(std::lround(y * sy));
+  const int width = int(std::lround((x + w) * sx)) - left;
+  const int height = int(std::lround((y + h) * sy)) - top;
+  const int r = std::min({int(std::lround(radius * sx)), width / 2, height / 2});
+  if (r <= 0) {
+    SDL_Rect whole{left, top, width, height};
+    SDL_RenderFillRect(renderer, &whole);
+  } else {
+    const SDL_Rect fills[] = {{left + r, top, width - 2 * r, r},
+                              {left, top + r, width, height - 2 * r},
+                              {left + r, top + height - r, width - 2 * r, r}};
+    for (const auto &fill : fills)
+      if (fill.w > 0 && fill.h > 0)
+        SDL_RenderFillRect(renderer, &fill);
+    if (auto *corner = cornerTexture(r)) {
+      SDL_SetTextureColorMod(corner, color.r, color.g, color.b);
+      SDL_SetTextureAlphaMod(corner, color.a);
+      const struct { int x, y; SDL_RendererFlip flip; } corners[] = {
+          {left, top, SDL_FLIP_NONE},
+          {left + width - r, top, SDL_FLIP_HORIZONTAL},
+          {left, top + height - r, SDL_FLIP_VERTICAL},
+          {left + width - r, top + height - r, SDL_RendererFlip(SDL_FLIP_HORIZONTAL | SDL_FLIP_VERTICAL)}};
+      for (const auto &c : corners) {
+        SDL_Rect to{c.x, c.y, r, r};
+        SDL_RenderCopyEx(renderer, corner, nullptr, &to, 0, nullptr, c.flip);
+      }
+    }
   }
   SDL_RenderSetScale(renderer, sx, sy);
   if (clipped)
@@ -320,6 +359,8 @@ Painter::~Painter() {
     SDL_DestroyTexture(wordmark_);
   for (const auto &pair : icons_)
     SDL_DestroyTexture(pair.second);
+  for (const auto &pair : corners_)
+    if (pair.second) SDL_DestroyTexture(pair.second);
   for (const auto &pair : flags_)
     if (pair.second) SDL_DestroyTexture(pair.second);
 }
