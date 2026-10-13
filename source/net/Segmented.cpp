@@ -13,6 +13,11 @@ namespace foil::net {
 namespace {
 using Clock = std::chrono::steady_clock;
 constexpr int MaxFails = 3;          // a part failing this often ends the parallel phase
+// While bytes arrived this recently, a dropped connection or a server error
+// is the network coming back (a console rejoining Wi-Fi takes about this
+// long): asked again from the same byte, not counted as a failure.
+constexpr auto ResumeWindow = std::chrono::seconds(60);
+constexpr auto RetryGap = std::chrono::seconds(2);
 constexpr auto ProgressEvery = std::chrono::milliseconds(250);
 constexpr auto CheckpointEvery = std::chrono::seconds(2);
 
@@ -123,6 +128,7 @@ struct Session {
   bool prepared = false; // the place for the bytes is ready: they may go to the writer
   bool ranged = true;   // the server answers ranges
   std::string etag;
+  std::chrono::steady_clock::time_point lastData = std::chrono::steady_clock::now();
 };
 
 bool hand(Session &s, Conn &c) {
@@ -135,10 +141,14 @@ bool hand(Session &s, Conn &c) {
   std::vector<char> data;
   data.swap(c.pending);
   c.pending.reserve(s.batch);
-  return s.writer.put(offset, std::move(data), [&s, seg, end] {
-    std::lock_guard<std::mutex> held(s.planLock);
-    if (seg >= 0 && size_t(seg) < s.written.size())
-      s.written[seg] = std::max(s.written[seg], end);
+  // What runs once the bytes are on the card holds the plan's lock and list,
+  // which outlive the session (the writer thread may finish after it).
+  auto &planLock = s.planLock;
+  auto &written = s.written;
+  return s.writer.put(offset, std::move(data), [&planLock, &written, seg, end] {
+    std::lock_guard<std::mutex> held(planLock);
+    if (seg >= 0 && size_t(seg) < written.size())
+      written[seg] = std::max(written[seg], end);
   });
 }
 
@@ -151,7 +161,17 @@ void parseRange(const std::string &value, uint64_t &start, uint64_t &total) {
   }
 }
 
+size_t onHeaderUnsafe(char *data, size_t size, size_t count, void *user);
+// curl is C: an exception thrown through it ends the app. A callback that
+// fails (out of memory) fails the transfer instead.
 size_t onHeader(char *data, size_t size, size_t count, void *user) {
+  try {
+    return onHeaderUnsafe(data, size, count, user);
+  } catch (...) {
+    return 0;
+  }
+}
+size_t onHeaderUnsafe(char *data, size_t size, size_t count, void *user) {
   auto &c = *static_cast<Conn *>(user);
   std::string line(data, size * count);
   while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
@@ -181,7 +201,15 @@ struct BodyContext {
   Conn *conn;
 };
 
+size_t onBodyUnsafe(char *data, size_t size, size_t count, void *user);
 size_t onBody(char *data, size_t size, size_t count, void *user) {
+  try {
+    return onBodyUnsafe(data, size, count, user);
+  } catch (...) {
+    return 0;
+  }
+}
+size_t onBodyUnsafe(char *data, size_t size, size_t count, void *user) {
   auto &ctx = *static_cast<BodyContext *>(user);
   auto &s = *ctx.session;
   auto &c = *ctx.conn;
@@ -222,6 +250,8 @@ size_t onBody(char *data, size_t size, size_t count, void *user) {
   const size_t take = size_t(std::min<uint64_t>(room, n));
   c.pending.insert(c.pending.end(), data, data + take);
   countReceived(take);
+  if (take)
+    s.lastData = std::chrono::steady_clock::now();
   c.pos += take;
   {
     std::lock_guard<std::mutex> held(s.planLock);
@@ -385,7 +415,12 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         written[i] = plan.segments()[i].next;
       fails.assign(plan.segments().size(), 0);
       waitUntil.assign(plan.segments().size(), Clock::time_point());
-      if (!prepare(s.total)) {
+      bool ready = false;
+      try {
+        ready = prepare(s.total);
+      } catch (...) {
+      }
+      if (!ready) {
         result.error = "prepare";
         curl_multi_cleanup(multi);
         return result;
@@ -398,7 +433,12 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       // A known stretch of the file: parts planned now, every request closed.
       s.total = options.from + options.length;
       s.known = true;
-      if (!prepare(s.total)) {
+      bool ready = false;
+      try {
+        ready = prepare(s.total);
+      } catch (...) {
+      }
+      if (!ready) {
         result.error = "prepare";
         curl_multi_cleanup(multi);
         return result;
@@ -445,7 +485,12 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       // The size arrived on the first reply: plan the parts and open the rest.
       if (s.known && !started) {
         started = true;
-        if (!prepare(s.total)) {
+        bool ready = false;
+        try {
+          ready = prepare(s.total);
+        } catch (...) {
+        }
+        if (!ready) {
           failure = "prepare";
           break;
         }
@@ -532,9 +577,13 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
           waitUntil[size_t(seg)] = Clock::now() + std::chrono::seconds(5);
           continue;
         }
-        if (code == 401 || code == 403 || code == 404 || code == 416 || c->bad || ++fails[size_t(seg)] >= MaxFails ||
-            !s.known) {
-          if (!s.known || code == 401 || code == 403 || code == 404) {
+        const bool fatal = code == 401 || code == 403 || code == 404 || code == 416;
+        if (!fatal && !c->changed && (code >= 500 || !c->bad) && Clock::now() - s.lastData < ResumeWindow) {
+          waitUntil[size_t(seg)] = Clock::now() + RetryGap;
+          continue;
+        }
+        if (fatal || c->bad || ++fails[size_t(seg)] >= MaxFails || !s.known) {
+          if (!s.known || code == 401 || code == 403 || code == 404 || !options.fallBack) {
             failure = "http " + std::to_string(code);
             break;
           }
@@ -603,6 +652,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       log("download falls back to one connection");
       SegmentedOptions single = options;
       single.connections = 1;
+      single.fallBack = false;
       for (auto &part : plan.segments()) {
         for (int attempt = 0; part.left() > 0 && attempt < MaxFails; ++attempt) {
           if (cancelled()) {

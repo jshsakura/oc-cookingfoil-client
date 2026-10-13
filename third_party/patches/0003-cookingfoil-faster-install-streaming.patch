@@ -94,19 +94,20 @@ index a4c62f2..d917b1a 100755
      void ClearBasicAuth();
  
 diff --git a/source/install/http_nsp.cpp b/source/install/http_nsp.cpp
-index 50d2f4a..fc1842f 100755
+index 50d2f4a..5e54040 100755
 --- a/source/install/http_nsp.cpp
 +++ b/source/install/http_nsp.cpp
-@@ -84,7 +84,7 @@ namespace tin::install::nsp
+@@ -84,7 +84,8 @@ namespace tin::install::nsp
          }
      }
  
 -    bool stopThreadsHttpNsp;
-+    volatile bool stopThreadsHttpNsp;
++    // CookingFoil: atomic, read and written by three threads.
++    std::atomic<bool> stopThreadsHttpNsp{false};
  
      HTTPNSP::HTTPNSP(std::string url) :
          m_download(url), m_displayName(DeriveDisplayNameFromUrl(url))
-@@ -107,8 +107,24 @@ namespace tin::install::nsp
+@@ -107,8 +108,24 @@ namespace tin::install::nsp
          RetryConfirmState retryConfirm;
      };
  
@@ -131,15 +132,21 @@ index 50d2f4a..fc1842f 100755
          StreamFuncArgs* args = reinterpret_cast<StreamFuncArgs*>(in);
          try {
              auto streamFunc = [&](u8* streamBuf, size_t streamBufSize) -> size_t
-@@ -121,6 +137,7 @@ namespace tin::install::nsp
+@@ -119,8 +136,13 @@ namespace tin::install::nsp
+                 {
+                     if (inst::ui::instPage::isInstallCancelRequested())
                          return 0;
++                    // CookingFoil: the writer stopped (an error) and will not
++                    // empty the ring; waiting would hang the install for good.
++                    if (stopThreadsHttpNsp)
++                        return 0;
                      if (args->bufferedPlaceholderWriter->CanAppendData(streamBufSize))
                          break;
 +                    svcSleepThread(WaitNs);
                  }
  
                  args->bufferedPlaceholderWriter->AppendData(streamBuf, streamBufSize);
-@@ -145,6 +162,7 @@ namespace tin::install::nsp
+@@ -145,6 +167,7 @@ namespace tin::install::nsp
  
      int PlaceholderWriteFunc(void* in)
      {
@@ -147,7 +154,7 @@ index 50d2f4a..fc1842f 100755
          StreamFuncArgs* args = reinterpret_cast<StreamFuncArgs*>(in);
          try {
              while (!args->bufferedPlaceholderWriter->IsPlaceholderComplete() && !stopThreadsHttpNsp)
-@@ -155,6 +173,8 @@ namespace tin::install::nsp
+@@ -155,6 +178,8 @@ namespace tin::install::nsp
                  }
                  if (args->bufferedPlaceholderWriter->CanWriteSegmentToPlaceholder())
                      args->bufferedPlaceholderWriter->WriteSegmentToPlaceholder();
@@ -156,7 +163,7 @@ index 50d2f4a..fc1842f 100755
              }
          }
          catch (...) {
-@@ -164,6 +184,19 @@ namespace tin::install::nsp
+@@ -164,6 +189,19 @@ namespace tin::install::nsp
          return 0;
      }
  
@@ -176,7 +183,7 @@ index 50d2f4a..fc1842f 100755
      void HTTPNSP::StreamToPlaceholder(std::shared_ptr<nx::ncm::ContentStorage>& contentStorage, NcmContentId placeholderId)
      {
          const PFS0FileEntry* fileEntry = this->GetFileEntryByNcaId(placeholderId);
-@@ -173,6 +206,37 @@ namespace tin::install::nsp
+@@ -173,6 +211,37 @@ namespace tin::install::nsp
          LOG_DEBUG("Retrieving %s\n", displayFileName.c_str());
          size_t ncaSize = fileEntry->fileSize;
  
@@ -214,7 +221,34 @@ index 50d2f4a..fc1842f 100755
          tin::data::BufferedPlaceholderWriter bufferedPlaceholderWriter(contentStorage, placeholderId, ncaSize);
          StreamFuncArgs args;
          args.download = &m_download;
-@@ -194,6 +258,7 @@ namespace tin::install::nsp
+@@ -183,8 +252,24 @@ namespace tin::install::nsp
+         thrd_t writeThread;
+ 
+         stopThreadsHttpNsp = false;
+-        thrd_create(&curlThread, CurlStreamFunc, &args);
+-        thrd_create(&writeThread, PlaceholderWriteFunc, &args);
++        // CookingFoil: both threads use `args` and the writer on this stack,
++        // so whatever leaves this function (an exception included) stops and
++        // joins them first; a thread that could not start is never joined.
++        struct Joiner {
++            thrd_t* curl = nullptr;
++            thrd_t* write = nullptr;
++            ~Joiner() {
++                stopThreadsHttpNsp = true;
++                if (curl) thrd_join(*curl, NULL);
++                if (write) thrd_join(*write, NULL);
++            }
++        } joiner;
++        if (thrd_create(&curlThread, CurlStreamFunc, &args) != thrd_success)
++            THROW_FORMAT(("inst.net.transfer_interput"_lang).c_str());
++        joiner.curl = &curlThread;
++        if (thrd_create(&writeThread, PlaceholderWriteFunc, &args) != thrd_success)
++            THROW_FORMAT(("inst.net.transfer_interput"_lang).c_str());
++        joiner.write = &writeThread;
+ 
+         u64 freq = armGetSystemTickFreq();
+         u64 startTime = armGetSystemTick();
+@@ -194,6 +279,7 @@ namespace tin::install::nsp
          inst::ui::instPage::setInstBarPerc(0);
          while (!bufferedPlaceholderWriter.IsBufferDataComplete() && !stopThreadsHttpNsp)
          {
@@ -222,7 +256,7 @@ index 50d2f4a..fc1842f 100755
              if (inst::ui::instPage::isInstallCancelRequested()) {
                  args.retryConfirm.approved.store(false);
                  args.retryConfirm.pending.store(false);
-@@ -216,7 +281,7 @@ namespace tin::install::nsp
+@@ -216,7 +302,7 @@ namespace tin::install::nsp
              if (newTime - startTime >= freq * 0.5)
              {
                  size_t newSizeBuffered = bufferedPlaceholderWriter.GetSizeBuffered();
@@ -231,7 +265,7 @@ index 50d2f4a..fc1842f 100755
                  double duration = ((double)(newTime - startTime) / (double)freq);
                  double speed =  mbBuffered / duration;
  
-@@ -260,6 +325,7 @@ namespace tin::install::nsp
+@@ -260,6 +346,7 @@ namespace tin::install::nsp
          inst::ui::instPage::setInstBarPerc(0);
          while (!bufferedPlaceholderWriter.IsPlaceholderComplete() && !stopThreadsHttpNsp)
          {
@@ -239,6 +273,14 @@ index 50d2f4a..fc1842f 100755
              if (inst::ui::instPage::isInstallCancelRequested()) {
                  args.retryConfirm.approved.store(false);
                  args.retryConfirm.pending.store(false);
+@@ -280,6 +367,7 @@ namespace tin::install::nsp
+ 
+         thrd_join(curlThread, NULL);
+         thrd_join(writeThread, NULL);
++        joiner.curl = joiner.write = nullptr;
+         bufferedPlaceholderWriter.close();
+         if (inst::ui::instPage::isInstallCancelRequested())
+             THROW_FORMAT("Installation canceled.");
 diff --git a/source/install/http_xci.cpp b/source/install/http_xci.cpp
 index 325c6b9..70a8738 100755
 --- a/source/install/http_xci.cpp
@@ -555,7 +597,7 @@ index 59c4417..bd7aeca 100755
                  if (contentStorage->Has(ncaId))
                      contentStorage->Delete(ncaId);
 diff --git a/source/nx/nca_writer.cpp b/source/nx/nca_writer.cpp
-index 0ba55bd..c19531f 100755
+index 0ba55bd..7bcd946 100755
 --- a/source/nx/nca_writer.cpp
 +++ b/source/nx/nca_writer.cpp
 @@ -200,7 +200,60 @@ NcaBodyWriter::NcaBodyWriter(const NcmContentId& ncaId, u64 offset, std::shared_
@@ -658,6 +700,94 @@ index 0ba55bd..c19531f 100755
       }
  
       m_contentBuffer.resize(0);
+@@ -296,7 +369,7 @@ public:
+      }
+      ~DirectStreamWriter() override
+      {
+-          DirectStreamWriter::close();
++          try { DirectStreamWriter::close(); } catch (...) {} // CookingFoil: never throw from a destructor
+      }
+ 
+      void write(const u8* data, u64 sz) override
+@@ -347,7 +420,7 @@ public:
+ 
+      ~ZstdStreamWriter() override
+      {
+-          ZstdStreamWriter::close();
++          try { ZstdStreamWriter::close(); } catch (...) {} // CookingFoil: never throw from a destructor
+      }
+ 
+      void close() override
+@@ -421,7 +494,7 @@ public:
+ 
+      ~NczBlockStreamWriter() override
+      {
+-          NczBlockStreamWriter::close();
++          try { NczBlockStreamWriter::close(); } catch (...) {} // CookingFoil: never throw from a destructor
+      }
+ 
+      void close() override
+@@ -603,7 +676,8 @@ public:
+ 
+      ~NczBodyWriter() override
+      {
+-          NcaBodyWriter::close();
++          // CookingFoil: as in ~NcaWriter, a throw here would end the app.
++          try { NcaBodyWriter::close(); } catch (...) {}
+      }
+ 
+ protected:
+@@ -887,30 +961,37 @@ NcaWriter::NcaWriter(const NcmContentId& ncaId, std::shared_ptr<nx::ncm::Content
+ 
+ NcaWriter::~NcaWriter()
+ {
+-     NcaWriter::close();
++     // CookingFoil: a destructor that throws ends the app (std::terminate);
++     // the install is failing anyway when close() throws here.
++     try { NcaWriter::close(); } catch (...) {}
+ }
+ 
+ void NcaWriter::close()
+ {
+      if (isClosed()) return; // Idempotent close
+ 
+-     if (m_writer)
++     // CookingFoil: closed first and the state let go even when what
++     // follows throws, so a later close (the destructor's) does not throw
++     // the same error again.
++     CloseableWriter::close();
++     auto writer = std::move(m_writer);
++     m_writer = NULL;
++     std::vector<u8> header;
++     header.swap(m_buffer);
++     auto storage = m_contentStorage;
++     m_contentStorage = NULL;
++     if (writer)
+      {
+-          m_writer->close();
+-          m_writer = NULL;
++          writer->close();
+      }
+-     else if (!m_buffer.empty())
++     else if (!header.empty() && storage)
+      {
+-          if (m_contentStorage)
+-          {
+-               flushHeader();
+-          }
+-
++          m_buffer.swap(header);
++          m_contentStorage = storage;
++          try { flushHeader(); } catch (...) { m_buffer.clear(); m_contentStorage = NULL; throw; }
+           m_buffer.clear(); // reclaim ok
++          m_contentStorage = NULL;
+      }
+-     m_contentStorage = NULL;
+-
+-     CloseableWriter::close(); // Mark as closed after all cleanups are done
+ }
+ 
+ void NcaWriter::write(const  u8* ptr, u64 sz)
 diff --git a/source/nx/ncm.cpp b/source/nx/ncm.cpp
 index 643c236..cc42774 100755
 --- a/source/nx/ncm.cpp
@@ -683,7 +813,7 @@ index 643c236..cc42774 100755
      {
          ASSERT_OK(ncmContentStorageRegister(&m_contentStorage, &registeredId, &placeholderId), "Failed to register placeholder NCA");
 diff --git a/source/util/network_util.cpp b/source/util/network_util.cpp
-index ea0dad8..cde78c2 100755
+index ea0dad8..9c7f78a 100755
 --- a/source/util/network_util.cpp
 +++ b/source/util/network_util.cpp
 @@ -20,6 +20,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
@@ -696,7 +826,35 @@ index ea0dad8..cde78c2 100755
  #include "util/network_util.hpp"
  #include "core/Config.hpp"
  
-@@ -207,6 +210,203 @@ namespace tin::network
+@@ -185,6 +188,8 @@ namespace tin::network
+     {
+         std::function<size_t (u8* bytes, size_t size)>* streamFunc = nullptr;
+         bool hadException = false;
++        CURL* curl = nullptr;   // CookingFoil: to read the reply's status
++        bool checked = false;
+     };
+ 
+     static size_t ParseHTMLDataCallback(char* bytes, size_t size, size_t numItems, void* userData)
+@@ -196,6 +201,18 @@ namespace tin::network
+         if (inst::ui::instPage::isInstallCancelRequested())
+             return 0;
+ 
++        // CookingFoil: only a 206 carries the bytes asked for. An error page
++        // (503, 429, 524, a proxy's 5xx) must not go into the NCA as data;
++        // the request fails and is asked again from the same byte.
++        if (!ctx->checked && ctx->curl)
++        {
++            long code = 0;
++            curl_easy_getinfo(ctx->curl, CURLINFO_RESPONSE_CODE, &code);
++            if (code != 206)
++                return 0;
++            ctx->checked = true;
++        }
++
+         const size_t numBytes = size * numItems;
+         try {
+             if (*ctx->streamFunc != nullptr)
+@@ -207,6 +224,221 @@ namespace tin::network
          }
      }
  
@@ -773,6 +931,8 @@ index ea0dad8..cde78c2 100755
 +            std::vector<u8> data;
 +            int attempts = 0;
 +            bool done = false;
++            bool checked = false; // the reply's status was looked at
++            u64* lastData = nullptr; // when any piece last received bytes
 +            u64 retryAt = 0; // a failed piece waits until this tick before asking again
 +        };
 +        const std::string requestUrl = TrimCopy(StripUrlFragment(url));
@@ -785,8 +945,18 @@ index ea0dad8..cde78c2 100755
 +            const size_t n = size * count;
 +            if (inst::ui::instPage::isInstallCancelRequested() || part->data.size() + n > part->length)
 +                return 0;
++            // An error page is not the piece's bytes: fail, and ask again.
++            if (!part->checked)
++            {
++                long code = 0;
++                curl_easy_getinfo(part->curl, CURLINFO_RESPONSE_CODE, &code);
++                if (code != 206)
++                    return 0;
++                part->checked = true;
++            }
 +            part->data.insert(part->data.end(), bytes, bytes + n);
 +            foil::net::countReceived(n); // CookingFoil: the screen's speed
++            if (part->lastData) *part->lastData = armGetSystemTick();
 +            return n;
 +        };
 +        const auto issue = [&](Part& part) {
@@ -797,6 +967,7 @@ index ea0dad8..cde78c2 100755
 +            if (part.headers) curl_slist_free_all(part.headers);
 +            part.curl = curl_easy_init();
 +            if (!part.curl) return false;
++            part.checked = false;
 +            const size_t from = part.start + part.data.size();
 +            part.range = std::to_string(from) + "-" + std::to_string(part.start + part.length - 1);
 +            part.headers = SetupRangeHandle(part.curl, requestUrl, part.range, part.authValue);
@@ -817,6 +988,10 @@ index ea0dad8..cde78c2 100755
 +        size_t next = offset, delivered = 0;
 +        const size_t end = offset + size;
 +        bool failed = false;
++        // CookingFoil: while bytes arrived within the last minute, a dropped
++        // connection or a server error is retried without counting.
++        u64 lastData = armGetSystemTick();
++        const u64 resumeWindow = armGetSystemTickFreq() * 60;
 +        while (delivered < size && !failed)
 +        {
 +            // A slow piece at the front does not hold the other connections:
@@ -833,6 +1008,7 @@ index ea0dad8..cde78c2 100755
 +            {
 +                auto part = std::make_unique<Part>();
 +                part->start = next;
++                part->lastData = &lastData;
 +                part->length = std::min(g_parallelChunk, end - next);
 +                part->data.reserve(part->length);
 +                next += part->length;
@@ -866,15 +1042,15 @@ index ea0dad8..cde78c2 100755
 +                    drop(*part);
 +                } else if (Paused() && !Stopping()) {
 +                    drop(*part); // asked again after the pause
-+                } else if (code == 401 || code == 403 || code == 404 || code == 416 ||
-+                           Stopping() || ++part->attempts > 3) {
++                } else if (code == 401 || code == 403 || code == 404 || code == 416 || Stopping() ||
++                           (armGetSystemTick() - lastData > resumeWindow && ++part->attempts > 3)) {
 +                    failed = true;
 +                } else {
 +                    // Asked again after a pause: longer when the server is busy
 +                    // (503), rate limited (429) or the tunnel timed out (524).
 +                    drop(*part);
 +                    const bool busy = code == 503 || code == 429 || code == 524;
-+                    part->retryAt = armGetSystemTick() + armGetSystemTickFreq() * (busy ? 5 : 1);
++                    part->retryAt = armGetSystemTick() + armGetSystemTickFreq() * (busy ? 5 : 2);
 +                }
 +            }
 +            // Whatever is complete at the front goes on, in order.
@@ -900,7 +1076,7 @@ index ea0dad8..cde78c2 100755
      static int StreamHttpRangeForUrl(const std::string& url, size_t offset, size_t size,
          const std::function<size_t (u8* bytes, size_t size)>& streamFunc)
      {
-@@ -233,11 +433,19 @@ namespace tin::network
+@@ -233,13 +465,22 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -920,8 +1096,11 @@ index ea0dad8..cde78c2 100755
 +        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
          curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
          curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 8L);
++        callbackCtx.curl = curl;
          curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callbackCtx);
-@@ -325,7 +533,7 @@ namespace tin::network
+         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &ParseHTMLDataCallback);
+         std::string authValue;
+@@ -325,7 +566,7 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -930,7 +1109,7 @@ index ea0dad8..cde78c2 100755
          const std::string& userAgent = inst::curl::getUserAgent();
          curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.c_str());
          curl_easy_setopt(curl, CURLOPT_HEADERDATA, this);
-@@ -437,6 +645,7 @@ namespace tin::network
+@@ -437,6 +678,7 @@ namespace tin::network
      {
          auto streamFunc = *reinterpret_cast<std::function<size_t (u8* bytes, size_t size)>*>(userData);
          const size_t numBytes = size * numItems;
@@ -938,7 +1117,7 @@ index ea0dad8..cde78c2 100755
          try {
              if (streamFunc != nullptr)
                  return streamFunc((u8*)bytes, numBytes);
-@@ -496,14 +705,18 @@ namespace tin::network
+@@ -496,14 +738,18 @@ namespace tin::network
  
              while (true)
              {
@@ -958,7 +1137,7 @@ index ea0dad8..cde78c2 100755
  
                      const size_t currentOffset = requestOffset + bytesReceived;
                      const size_t remaining = requestSize - bytesReceived;
-@@ -514,6 +727,17 @@ namespace tin::network
+@@ -514,6 +760,17 @@ namespace tin::network
                      const int rc = StreamHttpRangeForUrl(url, currentOffset, remaining, trackingFunc);
                      if (rc == 0)
                          return 0;
@@ -976,7 +1155,7 @@ index ea0dad8..cde78c2 100755
  
                      const bool fatal =
                          rc == 1999 ||
-@@ -547,7 +771,21 @@ namespace tin::network
+@@ -547,7 +804,21 @@ namespace tin::network
          };
  
          if (!m_isJbod)
@@ -998,7 +1177,7 @@ index ea0dad8..cde78c2 100755
  
          size_t globalOffset = offset;
          size_t remaining = size;
-@@ -679,7 +917,7 @@ namespace tin::network
+@@ -679,7 +950,7 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);

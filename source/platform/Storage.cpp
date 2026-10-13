@@ -111,9 +111,13 @@ std::string systemLanguage() {
 }
 void keepAwake(bool on) {
 #ifdef __SWITCH__
-  // Media playback state turns off auto-dimming and auto-sleep in both
-  // applet and application mode, and is cleared when the app exits.
+  // Media playback state keeps the screen from dimming in both modes; as an
+  // application auto-sleep is also turned off outright, which media playback
+  // alone does not do (a long download let the console fall asleep and drop
+  // its connections). Both are cleared when the app exits.
   appletSetMediaPlaybackState(on);
+  if (appletGetAppletType() == AppletType_Application)
+    appletSetAutoSleepDisabled(on);
 #else
   (void)on;
 #endif

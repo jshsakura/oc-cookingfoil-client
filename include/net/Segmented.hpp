@@ -11,6 +11,9 @@ typedef void CURL;
 namespace foil::net {
 struct SegmentedOptions {
   int connections = 1;
+  // A part that keeps failing goes on alone on one connection; that pass
+  // itself (false) fails instead of falling back again.
+  bool fallBack = true;
   // Only [from, from + length) of the file (an NCA inside an NSP); length 0
   // is the whole file. With a length the size is known up front: every
   // request names its end and no first probe is needed.
