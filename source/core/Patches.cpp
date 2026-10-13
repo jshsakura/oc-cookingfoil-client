@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <sys/stat.h>
 #include <utility>
 namespace foil {
 namespace fs = std::filesystem;
@@ -131,6 +132,15 @@ bool inWhole(const std::string &path, const std::vector<std::string> &whole) {
 }
 } // namespace
 
+std::optional<FileMark> fileMark(const std::string &fullPath) {
+  struct stat st {};
+  if (::stat(fullPath.c_str(), &st) != 0)
+    return std::nullopt;
+  return FileMark{uint64_t(st.st_size), int64_t(st.st_mtime)};
+}
+bool sameFile(const FileMark &then, const FileMark &now) {
+  return !then.foreign() && then.size == now.size && (then.mtime == 0 || now.mtime == 0 || then.mtime == now.mtime);
+}
 bool patchPathAllowed(const std::string &titleId, const std::string &path) {
   if (titleId.size() != 16 || path.empty() || path.find_first_of("\\:") != std::string::npos)
     return false;
@@ -461,6 +471,16 @@ bool PatchStore::save(Error &error) {
     json_object_object_add(p, "order", json_object_new_int64(r.order));
     if (!r.roots.empty())
       json_object_object_add(p, "roots", array(r.roots));
+    if (!r.marks.empty()) {
+      auto *marks = json_object_new_object();
+      for (const auto &[path, m] : r.marks) {
+        auto *pair = json_object_new_array();
+        json_object_array_add(pair, json_object_new_int64(int64_t(m.size)));
+        json_object_array_add(pair, json_object_new_int64(m.mtime));
+        json_object_object_add(marks, path.c_str(), pair);
+      }
+      json_object_object_add(p, "marks", marks);
+    }
     if (!r.shadowed.empty()) {
       auto *shadowed = json_object_new_object();
       for (const auto &[path, by] : r.shadowed)
@@ -530,6 +550,19 @@ bool PatchStore::load(Error &error) {
         for (const auto &root : strings(field(p, "roots")))
           if (wholeRoot(root + "/x/x") == root)
             r.roots.push_back(root);
+        // [size, mtime] per path; one not listed or not readable is dropped.
+        if (auto *marks = field(p, "marks"); json_object_is_type(marks, json_type_object)) {
+          json_object_object_foreach(marks, path, pair) {
+            if (!lists(r, path) || !json_object_is_type(pair, json_type_array) ||
+                json_object_array_length(pair) != 2)
+              continue;
+            const auto size = json_object_get_int64(json_object_array_get_idx(pair, 0));
+            if (size == -1)
+              r.marks[path] = FileMark::foreignFile();
+            else if (size >= 0)
+              r.marks[path] = {uint64_t(size), json_object_get_int64(json_object_array_get_idx(pair, 1))};
+          }
+        }
         records_[r.id] = std::move(r);
       }
     }
@@ -565,6 +598,8 @@ bool PatchStore::load(Error &error) {
   for (const auto &rel : userFiles)
     if (!place(rel, error))
       return false;
+  if (!userFiles.empty() && !save(error)) // marks of any patch file placed back
+    return false;
   markShadows();
   const std::vector<std::string> taken(cheatPaths_.begin(), cheatPaths_.end());
   for (const auto &path : taken)
@@ -592,21 +627,55 @@ const PatchRecord *PatchStore::holder(const std::string &path) const {
   std::error_code ec;
   if (!fs::exists(sd(path), ec))
     return nullptr;
-  for (const auto &[id, r] : records_)
-    if ((r.on || !r.pending.empty()) && lists(r, path) && !fs::exists(stored(r.id, path), ec))
+  std::optional<FileMark> now;
+  bool looked = false;
+  for (const auto &[id, r] : records_) {
+    if (!(r.on || !r.pending.empty()) || !lists(r, path) || fs::exists(stored(r.id, path), ec))
+      continue;
+    const auto marked = r.marks.find(path);
+    if (marked == r.marks.end())
+      return &r; // a ledger from before marks: the patch's, as it always was
+    if (!looked) {
+      now = fileMark(sd(path));
+      looked = true;
+    }
+    if (now && sameFile(marked->second, *now))
       return &r;
-  return nullptr;
+  }
+  return nullptr; // the user's: put there by hand, or changed since
 }
+void PatchStore::mark(const std::string &id, const std::string &path) {
+  const auto it = records_.find(id);
+  if (it == records_.end())
+    return;
+  if (const auto now = fileMark(sd(path)))
+    it->second.marks[path] = *now;
+  else
+    it->second.marks.erase(path);
+}
+// A file of the user's stays where the user put it unless a patch has a copy
+// to put there instead; then it goes aside under _base and comes back once no
+// patch's copy needs the place.
 bool PatchStore::place(const std::string &path, Error &error) {
   std::error_code ec;
   const auto *want = provider(path);
+  const bool wantHas = want && fs::exists(stored(want->id, path), ec);
   if (fs::exists(sd(path), ec)) {
     const auto *have = holder(path);
     if (have == want)
       return true; // the right patch's copy, or the user's file with no patch over it
+    if (!have && !wantHas) {
+      // The user's file, and no patch's copy to put on top of it. Marked so
+      // it never reads as the patch's.
+      if (want)
+        records_[want->id].marks[path] = FileMark::foreignFile();
+      return true;
+    }
     if (have) {
-      if (!move(sd(path), stored(have->id, path), error))
+      const auto id = have->id;
+      if (!move(sd(path), stored(id, path), error))
         return false;
+      records_[id].marks.erase(path);
     } else {
       // The user's file goes aside. One is already there only when the user
       // put another file in place since; that one is kept apart, never lost.
@@ -619,12 +688,20 @@ bool PatchStore::place(const std::string &path, Error &error) {
         return false;
     }
   }
-  if (want) {
-    if (fs::exists(stored(want->id, path), ec))
-      return move(stored(want->id, path), sd(path), error);
+  if (wantHas) {
+    if (!move(stored(want->id, path), sd(path), error))
+      return false;
+    mark(want->id, path);
+    return true;
+  }
+  if (want)
     logLine("patches: " + want->id + " is missing " + path);
-  } else if (fs::exists(base(path), ec))
+  // No patch's copy to put here: the user's own file comes back, if any.
+  if (fs::exists(base(path), ec)) {
+    if (want)
+      records_[want->id].marks[path] = FileMark::foreignFile();
     return move(base(path), sd(path), error);
+  }
   prune(sd(path));
   return true;
 }
@@ -752,6 +829,15 @@ bool PatchStore::holdsOnly(const PatchRecord &record, const std::string &root, c
   std::sort(found.begin(), found.end());
   return found == mine;
 }
+bool PatchStore::unchanged(const PatchRecord &record, const std::string &root) const {
+  for (const auto &[file, then] : record.marks)
+    if (under(file, root)) {
+      const auto now = fileMark(sd(file));
+      if (!now || !sameFile(then, *now))
+        return false;
+    }
+  return true;
+}
 bool PatchStore::placeRest(const PatchRecord &record, const std::vector<std::string> &whole, Error &error) {
   const size_t total = record.files.size();
   size_t done = 0;
@@ -794,6 +880,10 @@ bool PatchStore::finishEnable(PatchRecord &record, Error &error) {
     if (!fs::exists(from, ec) && fs::is_directory(to, ec))
       whole.push_back(root);
   }
+  // A rename keeps each file as it was: marked here, one lookup each.
+  for (const auto &file : record.files)
+    if (inWhole(file, whole))
+      mark(record.id, file);
   if (!placeRest(record, whole, error))
     return false;
   record.pending.clear();
@@ -815,9 +905,9 @@ bool PatchStore::finishDisable(PatchRecord &record, Error &error) {
   std::vector<std::string> whole;
   for (const auto &root : record.roots) {
     const auto from = sd(root), to = stored(record.id, root);
-    // A file the user added below the folder keeps it on the card; then the
-    // patch's files leave one by one and the user's stays.
-    if (!fs::exists(to, ec) && holdsOnly(record, root, from)) {
+    // A file the user added or replaced below the folder keeps it on the
+    // card; then the patch's files leave one by one and the user's stays.
+    if (!fs::exists(to, ec) && holdsOnly(record, root, from) && unchanged(record, root)) {
       if (!move(from, to, error))
         return false;
       prune(from);
@@ -829,6 +919,13 @@ bool PatchStore::finishDisable(PatchRecord &record, Error &error) {
     return false;
   record.pending.clear();
   record.roots.clear();
+  // Off, it has nothing on the card. A path whose copy it no longer has (the
+  // user wrote over it) is marked foreign, so whatever is there later never
+  // reads as its own, not even when it goes on again.
+  record.marks.clear();
+  for (const auto &file : record.files)
+    if (!fs::exists(stored(record.id, file), ec))
+      record.marks[file] = FileMark::foreignFile();
   if (!save(error))
     return false;
   for (const auto &cheat : record.cheats)
@@ -871,6 +968,30 @@ bool PatchStore::remove(const std::string &id, Error &error) {
   fs::remove_all(storeRoot_ + "/" + id, ec);
   records_.erase(id);
   return save(error);
+}
+bool PatchStore::reapply(const std::string &id, size_t &left, Error &error) {
+  left = 0;
+  const auto it = records_.find(id);
+  if (it == records_.end() || !it->second.on)
+    return true;
+  auto &record = it->second;
+  std::error_code ec;
+  for (const auto &file : record.files) {
+    if (provider(file) != &record || fs::exists(sd(file), ec))
+      continue;
+    if (!fs::exists(stored(id, file), ec)) {
+      ++left;
+      continue;
+    }
+    if (!place(file, error))
+      return false;
+  }
+  if (!save(error))
+    return false;
+  for (const auto &cheat : record.cheats)
+    if (!rebuildCheat(cheat, error))
+      return false;
+  return true;
 }
 bool PatchStore::commit(const UserPatch &patch, Error &error) {
   const bool app = !patch.homebrewApp.empty();
@@ -921,5 +1042,57 @@ bool PatchStore::commit(const UserPatch &patch, Error &error) {
     return false;
   // Back on where it was in the order: patches over it stay over it.
   return !wasOn || turnOn(fresh, order, error);
+}
+
+PatchChecker::PatchChecker(std::string sdRoot, std::string storeRoot, const std::map<std::string, PatchRecord> &records)
+    : sdRoot_(std::move(sdRoot)), storeRoot_(std::move(storeRoot)) {
+  // Only what the ledger says is on the card: each enabled patch's files
+  // that no patch turned on later covers. Cheats are rebuilt, never checked.
+  for (const auto &[id, r] : records) {
+    if (!r.on || !r.pending.empty())
+      continue;
+    for (const auto &file : r.files) {
+      if (r.shadowed.count(file))
+        continue;
+      Item item{id, file, std::nullopt};
+      if (const auto marked = r.marks.find(file); marked != r.marks.end())
+        item.mark = marked->second;
+      work_.push_back(std::move(item));
+    }
+  }
+}
+bool PatchChecker::run(size_t maxLooks, std::chrono::milliseconds budget, const std::atomic<bool> *stop) {
+  const auto until = std::chrono::steady_clock::now() + budget;
+  const size_t limit = looks_ + maxLooks;
+  std::error_code ec;
+  while (next_ < work_.size()) {
+    if ((stop && stop->load()) || looks_ >= limit || std::chrono::steady_clock::now() >= until)
+      return false;
+    const auto &item = work_[next_];
+    auto &health = health_[item.id];
+    // A folder that moves whole is looked at once; with it gone, so are all
+    // its files.
+    const auto root = wholeRoot(item.path);
+    if (!root.empty()) {
+      auto card = cardRoots_.find(root);
+      if (card == cardRoots_.end()) {
+        ++looks_;
+        card = cardRoots_.emplace(root, fs::is_directory(sdRoot_ + "/" + root, ec)).first;
+      }
+      if (!card->second) {
+        ++health.missing;
+        ++next_;
+        continue;
+      }
+    }
+    ++looks_;
+    if (const auto now = fileMark(sdRoot_ + "/" + item.path)) {
+      if (item.mark && !sameFile(*item.mark, *now))
+        ++health.changed;
+    } else
+      ++health.missing;
+    ++next_;
+  }
+  return true;
 }
 } // namespace foil

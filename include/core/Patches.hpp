@@ -1,4 +1,6 @@
 #pragma once
+#include <atomic>
+#include <chrono>
 #include <functional>
 #include "core/Types.hpp"
 #include <cstdio>
@@ -93,6 +95,20 @@ private:
 // high bit is set (sizes past 8 GiB). UINT64_MAX when unreadable.
 uint64_t tarSize(const char *field);
 
+// A file as a patch left it on the card: its size and, when the card keeps
+// it through a rename, its modified time (0 when unknown, then not compared).
+// A foreign mark says the file at the path is the user's, not the patch's.
+struct FileMark {
+  uint64_t size = 0;
+  int64_t mtime = 0;
+  static FileMark foreignFile() { return {UINT64_MAX, 0}; }
+  bool foreign() const { return size == UINT64_MAX; }
+  bool operator==(const FileMark &other) const { return size == other.size && mtime == other.mtime; }
+};
+// The mark of the file at a full path now, or nothing when there is none.
+std::optional<FileMark> fileMark(const std::string &fullPath);
+// Whether a file marked `now` is still the one marked `then`.
+bool sameFile(const FileMark &then, const FileMark &now);
 struct PatchRecord {
   std::string id, titleId, name, version, hash;
   std::string homebrewApp; // an app's patch: its files go below switch/<app>/
@@ -110,6 +126,10 @@ struct PatchRecord {
   // each, instead of file by file. Kept with the pending mark so a move cut
   // short finishes the same way.
   std::vector<std::string> roots;
+  // Files this patch put on the card, as they were then. A file there that
+  // no longer matches is the user's, and stays the user's. Ledgers from
+  // before marks have none, and their files count as the patch's.
+  std::map<std::string, FileMark> marks;
 };
 // What a patch picked with a game install still needs, given what the SD
 // store holds of it: fetch it, fetch its newer build, switch it on, or nothing.
@@ -147,6 +167,11 @@ public:
   bool enable(const std::string &id, Error &error);
   bool disable(const std::string &id, Error &error);
   bool remove(const std::string &id, Error &error);
+  // Puts back the enabled patch's files missing from the card from its store.
+  // `left` counts the ones its store lacks too: those need a new download.
+  bool reapply(const std::string &id, size_t &left, Error &error);
+  const std::string &sdRoot() const { return sdRoot_; }
+  const std::string &storeRoot() const { return storeRoot_; }
   // Called as enable or disable moves files: files done so far, and all of
   // them. A folder moved whole counts every file in it at once.
   void progress(std::function<void(size_t, size_t)> report) { progress_ = std::move(report); }
@@ -165,8 +190,11 @@ private:
   // The patch whose copy belongs at path: the latest one turned on.
   const PatchRecord *provider(const std::string &path) const;
   // The patch whose copy is on the card at path: one on or moving that lists
-  // the path and whose store is missing it.
+  // the path, whose store is missing it and whose mark (when it has one)
+  // still matches the file. Anything else there is the user's.
   const PatchRecord *holder(const std::string &path) const;
+  // Records the file the patch just put on the card at path.
+  void mark(const std::string &id, const std::string &path);
   // Moves files so the card holds what provider() says, the user's own file
   // when no patch covers the path, or nothing.
   bool place(const std::string &path, Error &error);
@@ -177,6 +205,9 @@ private:
   std::vector<std::string> wholeRoots(const PatchRecord &record, bool enabling) const;
   // Whether the folder at dir holds exactly the record's files below root.
   bool holdsOnly(const PatchRecord &record, const std::string &root, const std::string &dir) const;
+  // Whether every file of record below root the ledger marked is still as
+  // the patch left it on the card.
+  bool unchanged(const PatchRecord &record, const std::string &root) const;
   // Places each file not under a folder that moved whole, reporting progress.
   bool placeRest(const PatchRecord &record, const std::vector<std::string> &whole, Error &error);
   std::string sdRoot_, storeRoot_;
@@ -184,5 +215,39 @@ private:
   std::map<std::string, PatchRecord> records_;
   std::set<std::string> cheatPaths_; // cheat files we currently write
   int64_t order_ = 0;
+};
+
+// What the light check found of one enabled patch's files on the card.
+struct PatchHealth {
+  size_t missing = 0; // not on the card
+  size_t changed = 0; // on the card but not as the patch left it: the user's
+};
+// Looks at the card for the files the ledger says enabled patches have there,
+// and nothing else. Works from a copy of the records, so it runs on its own
+// thread while the store stays with the patch worker. It stops when its
+// budget is spent or `stop` is set and goes on from there the next run.
+class PatchChecker {
+public:
+  PatchChecker(std::string sdRoot, std::string storeRoot, const std::map<std::string, PatchRecord> &records);
+  // True once every file has been looked at.
+  bool run(size_t maxLooks, std::chrono::milliseconds budget, const std::atomic<bool> *stop = nullptr);
+  bool finished() const { return next_ >= work_.size(); }
+  // Per patch id; a patch shows up once the check has reached it.
+  const std::map<std::string, PatchHealth> &health() const { return health_; }
+  size_t looks() const { return looks_; } // file system lookups so far
+  size_t files() const { return work_.size(); }
+
+private:
+  struct Item {
+    std::string id, path;
+    std::optional<FileMark> mark;
+  };
+  std::string sdRoot_, storeRoot_;
+  std::vector<Item> work_;
+  size_t next_ = 0, looks_ = 0;
+  std::map<std::string, PatchHealth> health_;
+  // Whether each folder that moves whole is on the card, so the files below
+  // a missing one need no lookup each.
+  std::map<std::string, bool> cardRoots_;
 };
 } // namespace foil

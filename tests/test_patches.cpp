@@ -410,8 +410,9 @@ static int runPatchWholeTests() {
   fs::remove_all(root);
   return failures;
 }
+int runPatchMarkTests();
 int runPatchTests() {
-  int failures = runPatchOwnerTests() + runPatchLayerTests() + runPatchWholeTests();
+  int failures = runPatchOwnerTests() + runPatchLayerTests() + runPatchWholeTests() + runPatchMarkTests();
   // An app's patch reads as 홈브류 in the list, not as an unknown kind.
   CHECK(std::string(foil::patchKindLabel("homebrew")) != foil::patchKindLabel("something-else"));
   CHECK(foil::patchPathAllowed(Tid, Romfs));
