@@ -55,10 +55,10 @@ index 8e5b7e5..c4fb307 100755
  
  class NcaWriter : public CloseableWriter
 diff --git a/include/util/network_util.hpp b/include/util/network_util.hpp
-index a4c62f2..d7b00d3 100755
+index a4c62f2..d917b1a 100755
 --- a/include/util/network_util.hpp
 +++ b/include/util/network_util.hpp
-@@ -84,11 +84,17 @@ namespace tin::network
+@@ -84,11 +84,18 @@ namespace tin::network
  
          public:
              HTTPDownload(std::string url);
@@ -70,8 +70,9 @@ index a4c62f2..d7b00d3 100755
      };
  
 +    // CookingFoil: large ranges are fetched on `connections` at once in
-+    // `chunk`-byte pieces (1 keeps a single stream).
-+    void SetParallelDownload(int connections, size_t chunk);
++    // `chunk`-byte pieces (1 keeps a single stream), with up to `ahead`
++    // pieces a connection held past a slow one at the front.
++    void SetParallelDownload(int connections, size_t chunk, int ahead);
 +
      void SetBasicAuth(const std::string& user, const std::string& pass);
      void ClearBasicAuth();
@@ -509,7 +510,7 @@ index 0ba55bd..c19531f 100755
  
       m_contentBuffer.resize(0);
 diff --git a/source/util/network_util.cpp b/source/util/network_util.cpp
-index ea0dad8..89d495d 100755
+index ea0dad8..cde78c2 100755
 --- a/source/util/network_util.cpp
 +++ b/source/util/network_util.cpp
 @@ -20,6 +20,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
@@ -522,7 +523,7 @@ index ea0dad8..89d495d 100755
  #include "util/network_util.hpp"
  #include "core/Config.hpp"
  
-@@ -207,6 +210,190 @@ namespace tin::network
+@@ -207,6 +210,203 @@ namespace tin::network
          }
      }
  
@@ -537,14 +538,17 @@ index ea0dad8..89d495d 100755
 +    }
 +
 +    // CookingFoil: how many range requests a large file is fetched with at
-+    // once, and how big each is. 1 keeps the engine's single stream.
++    // once, how big each is, and how many pieces per connection may be held
++    // ahead of the next byte in order. 1 keeps the engine's single stream.
 +    static int g_parallelConnections = 1;
 +    static size_t g_parallelChunk = 0x400000;
++    static int g_parallelAhead = 1;
 +
-+    void SetParallelDownload(int connections, size_t chunk)
++    void SetParallelDownload(int connections, size_t chunk, int ahead)
 +    {
 +        g_parallelConnections = std::max(1, connections);
 +        g_parallelChunk = std::max<size_t>(0x100000, chunk);
++        g_parallelAhead = std::max(1, ahead);
 +    }
 +
 +    // The options every range request carries: TLS against the app's CA
@@ -642,7 +646,17 @@ index ea0dad8..89d495d 100755
 +        bool failed = false;
 +        while (delivered < size && !failed)
 +        {
-+            while ((int)window.size() < g_parallelConnections && next < end)
++            // A slow piece at the front does not hold the other connections:
++            // they go on to the next pieces while fewer than `connections` are
++            // being read, up to `ahead` pieces a connection held in all.
++            const auto reading = [&] {
++                int count = 0;
++                for (const auto& part : window)
++                    count += !part->done;
++                return count;
++            };
++            while (reading() < g_parallelConnections &&
++                   (int)window.size() < g_parallelConnections * g_parallelAhead && next < end)
 +            {
 +                auto part = std::make_unique<Part>();
 +                part->start = next;
@@ -713,7 +727,7 @@ index ea0dad8..89d495d 100755
      static int StreamHttpRangeForUrl(const std::string& url, size_t offset, size_t size,
          const std::function<size_t (u8* bytes, size_t size)>& streamFunc)
      {
-@@ -233,11 +420,19 @@ namespace tin::network
+@@ -233,11 +433,19 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -734,7 +748,7 @@ index ea0dad8..89d495d 100755
          curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
          curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 8L);
          curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callbackCtx);
-@@ -325,7 +520,7 @@ namespace tin::network
+@@ -325,7 +533,7 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -743,7 +757,7 @@ index ea0dad8..89d495d 100755
          const std::string& userAgent = inst::curl::getUserAgent();
          curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.c_str());
          curl_easy_setopt(curl, CURLOPT_HEADERDATA, this);
-@@ -437,6 +632,7 @@ namespace tin::network
+@@ -437,6 +645,7 @@ namespace tin::network
      {
          auto streamFunc = *reinterpret_cast<std::function<size_t (u8* bytes, size_t size)>*>(userData);
          const size_t numBytes = size * numItems;
@@ -751,7 +765,7 @@ index ea0dad8..89d495d 100755
          try {
              if (streamFunc != nullptr)
                  return streamFunc((u8*)bytes, numBytes);
-@@ -496,14 +692,18 @@ namespace tin::network
+@@ -496,14 +705,18 @@ namespace tin::network
  
              while (true)
              {
@@ -771,7 +785,7 @@ index ea0dad8..89d495d 100755
  
                      const size_t currentOffset = requestOffset + bytesReceived;
                      const size_t remaining = requestSize - bytesReceived;
-@@ -514,6 +714,17 @@ namespace tin::network
+@@ -514,6 +727,17 @@ namespace tin::network
                      const int rc = StreamHttpRangeForUrl(url, currentOffset, remaining, trackingFunc);
                      if (rc == 0)
                          return 0;
@@ -789,7 +803,7 @@ index ea0dad8..89d495d 100755
  
                      const bool fatal =
                          rc == 1999 ||
-@@ -547,7 +758,21 @@ namespace tin::network
+@@ -547,7 +771,21 @@ namespace tin::network
          };
  
          if (!m_isJbod)
@@ -811,7 +825,7 @@ index ea0dad8..89d495d 100755
  
          size_t globalOffset = offset;
          size_t remaining = size;
-@@ -679,7 +904,7 @@ namespace tin::network
+@@ -679,7 +917,7 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);

@@ -118,8 +118,11 @@ void nativeInstall(const Item &item, const std::string &target,
   current.application = appletGetAppletType() == AppletType_Application;
   current.connections = foil::net::connectionsFor(item.url, 0);
   // Pieces of 8 MB as an application: the next byte in order is never far
-  // off, so the bar and the card keep moving.
-  tin::network::SetParallelDownload(current.connections, current.application ? 0x800000 : 0x400000);
+  // off, so the bar and the card keep moving. A slow piece at the front
+  // does not stop the others: an application holds up to two pieces a
+  // connection (4 x 2 x 8 MB = 64 MB), the album one (16 MB).
+  tin::network::SetParallelDownload(current.connections, current.application ? 0x800000 : 0x400000,
+                                    current.application ? 2 : 1);
   // Off in 설정: the required system version is cleared so the console
   // launches the game anyway (it may still fail on firmware that is too old).
   const bool ignoreFirmware = sink && sink->skipFirmwareCheck();
