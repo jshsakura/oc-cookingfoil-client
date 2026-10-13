@@ -20,7 +20,6 @@ bool saveState(const std::string& path, const State& state, Error& error) {
     json_object_object_add(object.get(), "language", json_object_new_string(state.language.c_str()));
     json_object_object_add(object.get(), "ignoreSignature", json_object_new_boolean(state.skipSignatureCheck));
     json_object_object_add(object.get(), "ignoreFirmware", json_object_new_boolean(state.skipFirmwareCheck));
-    json_object_object_add(object.get(), "reportErrors", json_object_new_boolean(state.reportErrors));
     json_object_object_add(object.get(), "makeShortcuts", json_object_new_boolean(state.makeShortcuts));
     json_object_object_add(object.get(), "installTarget", json_object_new_string(state.installTarget.c_str()));
     auto* keys = json_object_new_object();
@@ -53,8 +52,6 @@ Parsed<State> loadState(const std::string& path) {
         if (json_object_is_type(skip, json_type_boolean)) result.value.skipSignatureCheck = json_object_get_boolean(skip);
         auto* firmware = field(root.get(), "ignoreFirmware");
         if (json_object_is_type(firmware, json_type_boolean)) result.value.skipFirmwareCheck = json_object_get_boolean(firmware);
-        auto* report = field(root.get(), "reportErrors");
-        if (json_object_is_type(report, json_type_boolean)) result.value.reportErrors = json_object_get_boolean(report);
         auto* shortcuts = field(root.get(), "makeShortcuts");
         if (json_object_is_type(shortcuts, json_type_boolean)) result.value.makeShortcuts = json_object_get_boolean(shortcuts);
         const auto target = stringField(root.get(), "installTarget");

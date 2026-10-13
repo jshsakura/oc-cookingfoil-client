@@ -32,6 +32,7 @@ public:
     std::string plan; // net::SegmentPlan::save()
   };
   std::optional<ResumePoint> resumePoint(const std::string &key);
+  std::map<std::string, ResumePoint> resumePoints();
   bool saveResumePoint(const std::string &key, const ResumePoint &point);
   void forgetResumePoint(const std::string &key);
 

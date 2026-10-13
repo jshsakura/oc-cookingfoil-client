@@ -136,12 +136,6 @@ void Application::settings() {
   // This build against the server's newest; A checks or updates.
   option(2, 3, tr("App update"), appUpdateStatus(), appUpdate_ == AppUpdate::Available ? Ink : Secondary,
          appUpdate_ == AppUpdate::Available);
-  // When on, an error popup sends the log's tail to the server, where the
-  // admin page shows it; the last send's result reads left of the switch.
-  option(7, 40, tr("Send error logs"), "", Ink, true, state_.reportErrors ? 1 : 0);
-  note(7, !state_.reportErrors ? std::string(tr("Not sent"))
-          : logStatus_.empty() ? std::string(tr("Sends the log to your connected server when an error occurs"))
-                               : logStatus_);
   if (error_)
     paint_.fonts.wrapped(error_.message + (error_.line ? " " + trf("(line {0})", {std::to_string(error_.line)}) : ""),
                          Left, optionsTop + optionsHeight + 8 + oy, 17, Secondary, Width, 1);

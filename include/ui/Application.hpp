@@ -240,7 +240,7 @@ public:
   void saveOwnState();
   // 설정's options card: 언어, 기본 저장 위치, 앱 업데이트, 남은 파일 정리,
   // then the switches: 서명 검사, 펌웨어 검사, 홈 메뉴 바로가기, 오류 로그 전송.
-  static constexpr int SettingsOptions = 8;
+  static constexpr int SettingsOptions = 7;
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).
@@ -640,12 +640,8 @@ private:
   std::function<void()> updateFinish_;
   // 설정 > 오류 기록 보내기, and on its own whenever an error popup shows:
   // the log's tail goes to the server (data/client/logs) to be read there.
-  void sendLog(const std::string &reason);
   void pollLog();
-  std::thread logWorker_;
-  std::atomic<bool> logDone_{false};
-  std::function<void()> logFinish_;
-  std::string lastAlert_, logStatus_; // the alert already sent; 설정's line
+  std::string lastAlert_; // the alert already written to the log
   void checkAppUpdate();
   void installAppUpdate();
   void pollAppUpdate();
@@ -924,8 +920,6 @@ private:
   // Every automatic ask is bounded; - or Y starts them again.
   uint32_t pairSince_ = 0;    // when approval became pending; polling stops after a while
   int patchRetries_ = 0, retroRetries_ = 0;
-  int logsSent_ = 0;
-  uint32_t logSentAt_ = 0;
   InstalledLibrary installed_, incomingInstalled_;
   std::vector<SaveEntry> saves_, incomingSaves_;
   Error deviceError_, incomingDeviceError_;

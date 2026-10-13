@@ -179,18 +179,14 @@ std::string resumeKey(const std::string &nca) {
     c = char(std::tolower(static_cast<unsigned char>(c)));
   return (sink ? sink->target() : std::string("sd")) + ":" + id;
 }
-DownloadStore *store() {
-  auto *sink = engineSink();
-  return sink ? sink->store() : nullptr;
-}
 } // namespace
 bool resumable(const std::string &nca) {
-  auto *db = store();
-  return db && db->resumePoint(resumeKey(nca)).has_value();
+  auto *sink = engineSink();
+  return sink && sink->resumePoint(resumeKey(nca)).has_value();
 }
 void forgetResume(const std::string &nca) {
-  if (auto *db = store())
-    db->forgetResumePoint(resumeKey(nca));
+  if (auto *sink = engineSink())
+    sink->forgetResumePoint(resumeKey(nca));
 }
 Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, const std::function<bool()> &prepare,
                      const std::function<bool(uint64_t, const char *, size_t)> &write,
@@ -228,9 +224,8 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
   // Cut off before: on from where each part stood, if the file is the same
   // one (the server's validator says so, or it starts over).
   const auto key = resumeKey(content);
-  auto *db = store();
-  if (db)
-    if (const auto point = db->resumePoint(key);
+  if (sink)
+    if (const auto point = sink->resumePoint(key);
         point && point->url == current.url && point->total == from + size &&
         foil::net::SegmentPlan::load(point->plan, options.resume)) {
       options.resumeTotal = point->total;
@@ -240,7 +235,7 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
     }
   // Where it stands, every few seconds, once the bytes are on the card.
   uint64_t savedTick = 0;
-  if (db)
+  if (sink)
     options.checkpoint = [&](const std::string &etag, uint64_t total, const std::string &plan) {
       const uint64_t now = svcGetSystemTick();
       if (savedTick && now - savedTick < 5ull * 19200000)
@@ -248,15 +243,15 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
       savedTick = now;
       if (flush)
         flush();
-      db->saveResumePoint(key, {current.url, etag, total, plan});
+      sink->keepResumePoint(key, {current.url, etag, total, plan});
     };
   const auto result = foil::net::segmentedFetch(
       current.url, [&](uint64_t) { return prepare(); },
       [&](uint64_t offset, const char *data, size_t length) { return offset >= from && write(offset - from, data, length); },
       options);
   if (result.cancelled) {
-    if (db)
-      db->forgetResumePoint(key);
+    if (sink)
+      sink->forgetResumePoint(key);
     return Placed::Cancelled;
   }
   if (!result.ok) {
@@ -264,8 +259,8 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
     logLine("segmented download failed: " + result.error + " status=" + std::to_string(result.status));
     return Placed::Failed;
   }
-  if (db)
-    db->forgetResumePoint(key);
+  if (sink)
+    sink->forgetResumePoint(key);
   reportBytes(content, size, speed);
   return Placed::Done;
 }

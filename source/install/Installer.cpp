@@ -1,5 +1,6 @@
 #include "core/Log.hpp"
 #include "install/Installer.hpp"
+#include <utility>
 #include <cstdio>
 #include <chrono>
 #include "install/EngineHooks.hpp"
@@ -77,6 +78,32 @@ Installer::~Installer() {
 bool Installer::running() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return progress_.status == Status::Running;
+}
+void Installer::loadResumePoints(std::map<std::string, ResumePoint> points) {
+  std::lock_guard<std::mutex> held(resumeLock_);
+  resume_ = std::move(points);
+  resumeChanges_.clear();
+}
+std::optional<Installer::ResumePoint> Installer::resumePoint(const std::string &key) const {
+  std::lock_guard<std::mutex> held(resumeLock_);
+  const auto found = resume_.find(key);
+  if (found == resume_.end())
+    return std::nullopt;
+  return found->second;
+}
+void Installer::keepResumePoint(const std::string &key, const ResumePoint &point) {
+  std::lock_guard<std::mutex> held(resumeLock_);
+  resume_[key] = point;
+  resumeChanges_[key] = point;
+}
+void Installer::forgetResumePoint(const std::string &key) {
+  std::lock_guard<std::mutex> held(resumeLock_);
+  if (resume_.erase(key))
+    resumeChanges_[key] = std::nullopt;
+}
+std::map<std::string, std::optional<Installer::ResumePoint>> Installer::takeResumeChanges() {
+  std::lock_guard<std::mutex> held(resumeLock_);
+  return std::exchange(resumeChanges_, {});
 }
 std::string Installer::target() const {
   std::lock_guard<std::mutex> lock(mutex_);

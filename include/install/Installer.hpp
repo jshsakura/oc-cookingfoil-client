@@ -1,15 +1,13 @@
 #pragma once
 #include "core/State.hpp"
 #include "core/I18n.hpp"
+#include "core/DownloadStore.hpp"
 #include <atomic>
 #include <deque>
 #include <map>
 #include <mutex>
 #include <optional>
 #include <thread>
-namespace foil {
-class DownloadStore;
-}
 namespace foil::install {
 enum class Status { Idle, Running, Succeeded, Failed, Cancelled };
 struct Progress {
@@ -78,9 +76,16 @@ public:
   // Set from 설정 when the install starts; the engine reads it per file.
   bool skipSignatureCheck() const { return skipSignature_; }
   bool skipFirmwareCheck() const { return skipFirmware_; }
-  // 다운로드's database: where a cut-off file stands (EngineHooks).
-  void setStore(DownloadStore *store) { store_ = store; }
-  DownloadStore *store() const { return store_; }
+  // Where cut-off files stand (EngineHooks), held here so the install
+  // thread never waits on the card: the UI thread loads them from
+  // 다운로드's database and writes back what changed (takeResumeChanges).
+  using ResumePoint = DownloadStore::ResumePoint;
+  void loadResumePoints(std::map<std::string, ResumePoint> points);
+  std::optional<ResumePoint> resumePoint(const std::string &key) const;
+  void keepResumePoint(const std::string &key, const ResumePoint &point);
+  void forgetResumePoint(const std::string &key);
+  // What changed since the last call: a point to keep, or none to forget.
+  std::map<std::string, std::optional<ResumePoint>> takeResumeChanges();
   // "sd" or "nand", as the install was started.
   std::string target() const;
   bool running() const;
@@ -102,7 +107,9 @@ private:
   Progress progress_;
   uint64_t completed_ = 0;
   std::map<std::string, uint64_t> contents_;
-  DownloadStore *store_ = nullptr;
+  mutable std::mutex resumeLock_;
+  std::map<std::string, ResumePoint> resume_;
+  std::map<std::string, std::optional<ResumePoint>> resumeChanges_;
 };
 void nativeInstall(const Item &item, const std::string &target,
                    const std::vector<std::string> &headers);

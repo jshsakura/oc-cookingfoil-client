@@ -57,8 +57,6 @@ Application::~Application() {
     retroWorker_.join();
   if (updateWorker_.joinable())
     updateWorker_.join();
-  if (logWorker_.joinable())
-    logWorker_.join();
   if (homebrewWorker_.joinable())
     homebrewWorker_.join();
   if (homebrewCardWorker_.joinable())
@@ -506,6 +504,13 @@ void Application::poll() {
     awake_ = downloading;
     platform::keepAwake(awake_);
   }
+  // Where a cut-off file stands, from the install thread to the card.
+  for (const auto &[key, point] : installer_.takeResumeChanges()) {
+    if (point)
+      store_.saveResumePoint(key, *point);
+    else
+      store_.forgetResumePoint(key);
+  }
   const auto installStatus = installer_.progress().status;
   if (installStatus == install::Status::Running) {
     const auto bytes = net::receivedBytes();
@@ -632,7 +637,6 @@ void Application::poll() {
     state_.language = mine.language;
     state_.skipSignatureCheck = mine.skipSignatureCheck;
     state_.skipFirmwareCheck = mine.skipFirmwareCheck;
-    state_.reportErrors = mine.reportErrors;
     state_.makeShortcuts = mine.makeShortcuts;
     state_.installTarget = mine.installTarget;
     state_.pairMessages = mine.pairMessages;
@@ -1229,7 +1233,6 @@ void Application::action(Action a) {
       case 4: toggleInstallCheck(state_.skipSignatureCheck); break;
       case 5: toggleInstallCheck(state_.skipFirmwareCheck); break;
       case 6: toggleInstallCheck(state_.makeShortcuts); break;
-      case 7: toggleInstallCheck(state_.reportErrors); break;
       default:
         // A server opens its form; "+ 서버 추가" an empty one.
         openServerForm(selected_ < int(config_.servers.size()) ? std::max(0, selected_) : -1);
@@ -1929,7 +1932,7 @@ void Application::openDownloads(const std::string &sd) {
     return;
   }
   history_ = store_.load();
-  installer_.setStore(&store_);
+  installer_.loadResumePoints(store_.resumePoints());
   const auto old = sd + "/switch/cookingfoil/downloads.json";
   if (history_.empty() && std::filesystem::exists(old)) {
     history_ = history::parse(readFile(old));
@@ -1990,7 +1993,7 @@ void Application::startCleanup(bool remove) {
     cleanupWorker_.join();
   cleanupWorker_ = std::thread([this, remove] {
     if (!guarded("cleanup", [this, remove] { cleanupResult_ = platform::cleanOrphans(remove, &cleanupProgress_, [this](const std::string &key) {
-      return store_.resumePoint(key).has_value();
+      return installer_.resumePoint(key).has_value();
     }); }))
       cleanupResult_ = {{}, {tr("Cleanup failed. Check log.txt.")}};
     cleanupDone_ = true;

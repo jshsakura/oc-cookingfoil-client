@@ -139,11 +139,6 @@ int runNetworkTests() {
         auto changed = fresh.value; changed.accessKeys[s.url] = "issued-key";
         foil::Error error; CHECK(foil::saveState(path, changed, error));
         CHECK(foil::loadState(path).value.accessKeys.at(s.url) == "issued-key");
-        // Error reports go to the server unless turned off in 설정.
-        CHECK(fresh.value.reportErrors);
-        changed.reportErrors = false;
-        CHECK(foil::saveState(path, changed, error));
-        CHECK(!foil::loadState(path).value.reportErrors);
         // HOME Menu shortcuts for retro games and homebrew: on unless turned off.
         CHECK(fresh.value.makeShortcuts);
         changed.makeShortcuts = false;

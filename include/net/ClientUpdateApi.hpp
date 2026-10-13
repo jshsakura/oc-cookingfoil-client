@@ -16,8 +16,4 @@ std::optional<update::Release> latestClient(const Server &server, const State &s
 bool installClient(const Server &server, const State &state, const update::Release &release,
                    const std::string &target, std::atomic<uint64_t> &received, Error &error,
                    const std::atomic<bool> *cancel);
-// POST /api/client/log: the log's tail and why it was sent, for reading on
-// the server (data/client/logs). False with `error` set when it did not go.
-bool sendClientLog(const Server &server, const State &state, const std::string &log, const std::string &reason,
-                   Error &error, const std::atomic<bool> *cancel);
 } // namespace foil::net

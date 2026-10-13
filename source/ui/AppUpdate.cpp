@@ -103,45 +103,13 @@ void Application::installAppUpdate() {
     updateDone_ = true;
   });
 }
-void Application::sendLog(const std::string &reason) {
-  // One upload a minute and five a launch: a repeating error must not
-  // flood the server.
-  constexpr int MaxLogs = 5;
-  constexpr uint32_t LogGapMs = 60 * 1000;
-  if (logWorker_.joinable() || !session_ || !connected_ || logsSent_ >= MaxLogs ||
-      (logSentAt_ && SDL_GetTicks() - logSentAt_ < LogGapMs))
-    return;
-  ++logsSent_;
-  logSentAt_ = SDL_GetTicks();
-  constexpr size_t MaxLog = 60 * 1024;
-  auto log = logTail(MaxLog);
-  if (log.empty()) return;
-  const auto server = session_->server();
-  const auto state = state_;
-  logWorker_ = std::thread([this, server, state, log = std::move(log), reason] {
-    Error error;
-    guarded("log", [&] { net::sendClientLog(server, state, log, reason, error, &stop_); });
-    logFinish_ = [this, error] {
-      if (error) return;
-      char at[16]{};
-      const auto now = std::time(nullptr);
-      std::strftime(at, sizeof(at), "%H:%M", std::localtime(&now));
-      logStatus_ = trf("Sent at {0}", {at});
-    };
-    logDone_ = true;
-  });
-}
 void Application::pollLog() {
-  // An error popup that just appeared: into the log, then to the server.
+  // An error popup that just appeared goes into the log on the card.
   if (!alert_.empty() && alert_ != lastAlert_) {
     lastAlert_ = alert_;
     logLine("alert: " + alertTitle_ + " | " + alert_);
-    if (state_.reportErrors) sendLog("alert: " + alertTitle_ + " " + alert_);
   } else if (alert_.empty())
     lastAlert_.clear();
-  if (!logDone_.exchange(false)) return;
-  logWorker_.join();
-  if (logFinish_) std::exchange(logFinish_, nullptr)();
 }
 void Application::pollAppUpdate() {
   if (!updateDone_.exchange(false)) return;

@@ -237,6 +237,18 @@ std::optional<DownloadStore::ResumePoint> DownloadStore::resumePoint(const std::
     return std::nullopt;
   return ResumePoint{read.column(0), read.column(1), uint64_t(sqlite3_column_int64(read.get(), 2)), read.column(3)};
 }
+std::map<std::string, DownloadStore::ResumePoint> DownloadStore::resumePoints() {
+  std::lock_guard<std::mutex> held(lock_);
+  std::map<std::string, ResumePoint> out;
+  if (!db_)
+    return out;
+  Statement read(db_, "SELECT key, url, etag, total, plan FROM resume_points");
+  if (!read)
+    return out;
+  while (read.step() == SQLITE_ROW)
+    out[read.column(0)] = {read.column(1), read.column(2), uint64_t(sqlite3_column_int64(read.get(), 3)), read.column(4)};
+  return out;
+}
 bool DownloadStore::saveResumePoint(const std::string &key, const ResumePoint &point) {
   std::lock_guard<std::mutex> held(lock_);
   if (!db_)

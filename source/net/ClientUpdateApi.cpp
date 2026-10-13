@@ -58,20 +58,4 @@ bool installClient(const Server &server, const State &state, const update::Relea
   std::filesystem::remove(partInfoPath(part), ec);
   return true;
 }
-bool sendClientLog(const Server &server, const State &state, const std::string &log, const std::string &reason,
-                   Error &error, const std::atomic<bool> *cancel) {
-  const auto url = server.url + "/api/client/log";
-  auto headers = authHeaders(server, state, url);
-  headers.push_back("Content-Type: text/plain; charset=utf-8");
-  headers.push_back("X-Log-Reason: " + dropbox::percentEncode(reason.substr(0, 200)));
-  PostOptions options;
-  options.body = log;
-  options.timeout = 30;
-  const auto response = post(url, headers, options, cancel);
-  if (!response.error.empty()) error.message = response.error;
-  else if (response.status == 404) error.message = tr("The server does not take error logs.");
-  else if (response.status < 200 || response.status >= 300)
-    error.message = trf("Could not send the error log. HTTP {0}", {std::to_string(response.status)});
-  return !error;
-}
 } // namespace foil::net

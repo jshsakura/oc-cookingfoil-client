@@ -6,14 +6,17 @@ endif
 include $(DEVKITPRO)/libnx/switch_rules
 TARGET := cookingfoil
 BUILD := build
-SOURCES := source source/core source/net source/ui source/platform source/install source/i18n
+SOURCES := source source/core source/net source/ui source/platform source/install source/i18n source/zstd
 ENGINE_ROOT := third_party/CyberFoil
 ENGINE_DIRS := $(ENGINE_ROOT)/source/install $(ENGINE_ROOT)/source/nx $(ENGINE_ROOT)/source/nx/ipc $(ENGINE_ROOT)/source/data $(ENGINE_ROOT)/source/util
 ENGINE_CPP := $(filter-out %/usb_nsp.cpp %/usb_xci.cpp %/sdmc_nsp.cpp %/sdmc_xci.cpp %/usbhdd.cpp,$(wildcard $(ENGINE_ROOT)/source/install/*.cpp $(ENGINE_ROOT)/source/nx/*.cpp $(ENGINE_ROOT)/source/data/*.cpp)) $(addprefix $(ENGINE_ROOT)/source/util/,crypto.cpp file_util.cpp title_util.cpp network_util.cpp)
 ENGINE_C := $(wildcard $(ENGINE_ROOT)/source/nx/ipc/*.c) $(ENGINE_ROOT)/source/util/debug.c
 QR_ROOT := third_party/QR-Code-generator/cpp
 SQLITE_ROOT := third_party/sqlite
-INCLUDES := engine-shim include $(ENGINE_ROOT)/include $(ENGINE_ROOT)/include/util $(QR_ROOT) $(SQLITE_ROOT)
+# zstd 1.5.7, decompression only (see the Makefile).
+ZSTD_DIRS := third_party/zstd/lib/common third_party/zstd/lib/decompress
+ZSTD_C := entropy_common.c error_private.c fse_decompress.c xxhash.c zstd_common.c huf_decompress.c zstd_ddict.c zstd_decompress.c zstd_decompress_block.c ZstdSnapshot.c
+INCLUDES := engine-shim include $(ENGINE_ROOT)/include $(ENGINE_ROOT)/include/util $(QR_ROOT) $(SQLITE_ROOT) third_party/zstd/lib source/zstd
 APP_TITLE := CookingFoil
 APP_AUTHOR := OpenCourse
 # The one place the version lives: the NACP, the HTTP Version header and the
@@ -24,14 +27,14 @@ CFLAGS := -g -Wall -Wextra -O2 -ffunction-sections $(ARCH) $(INCLUDE) -D__SWITCH
 CXXFLAGS := $(CFLAGS) -std=c++17 -fno-rtti
 ASFLAGS := -g $(ARCH)
 LDFLAGS = -specs=$(DEVKITPRO)/libnx/switch.specs $(ARCH) -Wl,--gc-sections,-Map,$(notdir $*.map)
-LIBS := -lzstd -lSDL2_image -lSDL2_ttf `sdl2-config --libs` -lfreetype -lharfbuzz -lwebp -lpng -ljpeg `curl-config --libs` -lmbedtls -lmbedx509 -lmbedcrypto -ljson-c -lnx -lminizip -lz -lbz2
+LIBS := -lSDL2_image -lSDL2_ttf `sdl2-config --libs` -lfreetype -lharfbuzz -lwebp -lpng -ljpeg `curl-config --libs` -lmbedtls -lmbedx509 -lmbedcrypto -ljson-c -lnx -lminizip -lz -lbz2
 LIBDIRS := $(PORTLIBS) $(LIBNX)
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 export OUTPUT := $(CURDIR)/$(TARGET)
 export TOPDIR := $(CURDIR)
-export VPATH := $(foreach dir,$(SOURCES) $(ENGINE_DIRS) $(QR_ROOT) $(SQLITE_ROOT),$(CURDIR)/$(dir))
+export VPATH := $(foreach dir,$(SOURCES) $(ENGINE_DIRS) $(QR_ROOT) $(SQLITE_ROOT) $(ZSTD_DIRS),$(CURDIR)/$(dir))
 export DEPSDIR := $(CURDIR)/$(BUILD)
-export OFILES := $(foreach dir,$(SOURCES),$(notdir $(patsubst %.cpp,%.o,$(wildcard $(dir)/*.cpp)))) $(notdir $(ENGINE_CPP:.cpp=.o) $(ENGINE_C:.c=.o)) qrcodegen.o sqlite3.o
+export OFILES := $(foreach dir,$(SOURCES),$(notdir $(patsubst %.cpp,%.o,$(wildcard $(dir)/*.cpp)))) $(notdir $(ENGINE_CPP:.cpp=.o) $(ENGINE_C:.c=.o)) qrcodegen.o sqlite3.o $(ZSTD_C:.c=.o)
 export INCLUDE := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) $(foreach dir,$(LIBDIRS),-I$(dir)/include) -I$(CURDIR)/$(BUILD)
 export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export LD := $(CXX)
@@ -65,5 +68,6 @@ $(OUTPUT).elf: $(OFILES)
 # SQLite: its own warnings off; one thread uses it; no extensions, no WAL
 # (it needs shared memory the console does not have).
 sqlite3.o: CFLAGS += -w -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_OMIT_WAL -DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_OMIT_DEPRECATED
+$(ZSTD_C:.c=.o): CFLAGS += -w -DZSTD_DISABLE_ASM -DZSTD_LEGACY_SUPPORT=0 -DDEBUGLEVEL=0 -DZSTD_TRACE=0 -I$(TOPDIR)/third_party/zstd/lib/common
 -include $(OFILES:.o=.d)
 endif

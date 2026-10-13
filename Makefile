@@ -8,10 +8,16 @@ HOST_PACKAGES := sdl2 SDL2_ttf SDL2_image json-c libcurl
 HOST_FLAGS := -std=c++17 -O2 -g -Wall -Wextra -Wpedantic -Iinclude $(shell pkg-config --cflags $(HOST_PACKAGES))
 HOST_LIBS := $(shell pkg-config --libs $(HOST_PACKAGES)) -pthread
 QR_ROOT := third_party/QR-Code-generator/cpp
-HOST_FLAGS += -I$(QR_ROOT) -Ithird_party/sqlite
+HOST_FLAGS += -I$(QR_ROOT) -Ithird_party/sqlite -Ithird_party/zstd/lib -Isource/zstd
 # SQLite (third_party/sqlite, the amalgamation): built once as C with its own
 # warnings off; no extensions, so nothing loads code at run time.
 SQLITE_FLAGS := -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_OMIT_DEPRECATED
+# zstd's decoder (third_party/zstd, 1.5.7, decompression only), fixed so a
+# saved decoder state (source/zstd) reads back the same in every build.
+ZSTD_C := $(addprefix third_party/zstd/lib/common/,entropy_common.c error_private.c fse_decompress.c xxhash.c zstd_common.c) \
+          $(addprefix third_party/zstd/lib/decompress/,huf_decompress.c zstd_ddict.c zstd_decompress.c zstd_decompress_block.c) \
+          source/zstd/ZstdSnapshot.c
+ZSTD_FLAGS := -DZSTD_DISABLE_ASM -DZSTD_LEGACY_SUPPORT=0 -DDEBUGLEVEL=0 -DZSTD_TRACE=0 -Ithird_party/zstd/lib -Ithird_party/zstd/lib/common
 # makefiles/switch.mk holds major.minor; the last number is the commit
 # count, so every build reads newer than the one before and 설정 > 앱
 # 업데이트 can tell them apart (the server reads it from the NACP).
@@ -21,7 +27,7 @@ APP_BASE := $(shell sed -n 's/^APP_VERSION := //p' makefiles/switch.mk)
 APP_BUILD := $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
 APP_VERSION := $(basename $(APP_BASE)).$(APP_BUILD)
 HOST_FLAGS += -DCOOKINGFOIL_VERSION=\"$(APP_VERSION)\"
-SHARED := $(wildcard source/core/*.cpp source/net/*.cpp source/ui/*.cpp source/install/*.cpp source/platform/*.cpp source/i18n/*.cpp) $(QR_ROOT)/qrcodegen.cpp
+SHARED := $(wildcard source/core/*.cpp source/net/*.cpp source/ui/*.cpp source/install/*.cpp source/platform/*.cpp source/i18n/*.cpp source/zstd/*.cpp) $(QR_ROOT)/qrcodegen.cpp
 # Save backups zip with minizip. Without it on the host (Debian/Ubuntu package
 # libminizip-dev) the zip code and its archive tests are left out.
 ifeq ($(shell pkg-config --exists minizip && echo yes),yes)
@@ -57,7 +63,7 @@ $(QR_ROOT)/qrcodegen.hpp: $(QR_ROOT)/qrcodegen.cpp
 # share the app's objects instead of compiling everything twice.
 HOST_OBJ := build-host/obj
 host_obj = $(addprefix $(HOST_OBJ)/,$(patsubst %.cpp,%.o,$(1)))
-SHARED_OBJ := $(call host_obj,$(SHARED)) $(HOST_OBJ)/third_party/sqlite/sqlite3.o
+SHARED_OBJ := $(call host_obj,$(SHARED)) $(HOST_OBJ)/third_party/sqlite/sqlite3.o $(addprefix $(HOST_OBJ)/,$(ZSTD_C:.c=.o))
 HOST_APP_OBJ := $(call host_obj,$(wildcard host/*.cpp))
 TEST_OBJ := $(call host_obj,$(wildcard tests/*.cpp))
 # The version is a -D flag, which make does not see change: the files that
@@ -71,6 +77,9 @@ $(HOST_OBJ)/%.o: %.cpp
 $(HOST_OBJ)/third_party/sqlite/sqlite3.o: third_party/sqlite/sqlite3.c
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O2 -w $(SQLITE_FLAGS) -DSQLITE_THREADSAFE=0 -c $< -o $@
+$(addprefix $(HOST_OBJ)/,$(ZSTD_C:.c=.o)): $(HOST_OBJ)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -O2 -w $(ZSTD_FLAGS) -c $< -o $@
 -include $(SHARED_OBJ:.o=.d) $(HOST_APP_OBJ:.o=.d) $(TEST_OBJ:.o=.d)
 build-host/cookingfoil-host: $(HOST_APP_OBJ) $(SHARED_OBJ)
 	$(HOST_CXX) $^ -o $@ $(HOST_LIBS)
