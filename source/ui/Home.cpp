@@ -53,7 +53,7 @@ void Application::home() {
   auto slideImages = [this](int slide) {
     const auto &icon = groups_[heroes_[slide].index].representative.icon;
     const bool banner = !heroBanner_.empty() && heroFeatured_ && slide == 0;
-    return std::array<std::string, 2>{banner ? thumbnailUrl(heroBanner_, "md") : thumbnailUrl(icon),
+    return std::array<std::string, 2>{banner ? thumbnailUrl(heroBanner_, "xl") : thumbnailUrl(icon),
                                        thumbnailUrl(icon, "md")};
   };
   auto ready = [&](int slide) {
@@ -85,7 +85,7 @@ void Application::home() {
   paint_.rect(260, 24 - scroll, 992, 248, {10, 10, 14, 255}, 20);
   // An admin banner shows as is under a dark wash; otherwise the cover blurs.
   if (!heroBanner_.empty() && heroFeatured_ && heroSlide_ == 0) {
-    images_->draw(thumbnailUrl(heroBanner_, "md"), 260, 24 - scroll, 992, 248, 20);
+    images_->draw(thumbnailUrl(heroBanner_, "xl"), 260, 24 - scroll, 992, 248, 20);
     paint_.rect(260, 24 - scroll, 992, 248, {10, 10, 14, 150}, 20);
   } else {
     images_->draw(thumbnailUrl(g.representative.icon), 260, 24 - scroll, 992, 248, 20, true);

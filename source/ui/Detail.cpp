@@ -124,7 +124,7 @@ void Application::detail() {
   if (publisher == "CookingFoil")
     publisher.clear();
   paint_.rect(0, 0, 1280, 212, {10, 10, 14, 255});
-  images_->draw(detail_.banner.empty() ? thumbnailUrl(item.icon) : thumbnailUrl(detail_.banner, "md"), 0, 0, 1280,
+  images_->draw(detail_.banner.empty() ? thumbnailUrl(item.icon) : thumbnailUrl(detail_.banner, "xl"), 0, 0, 1280,
                 212, 0, true);
   // Back link names the screen it returns to, with room before the cover.
   const auto back = screenLabel(previous_);

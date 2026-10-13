@@ -157,8 +157,10 @@ void Images::worker() {
     if (bytes.empty() && !path.empty())
       bytes = readFile(path);
     if (bytes.empty() && fixture_.empty()) {
-      const auto result =
-          net::get(url, net::authHeaders(server_, state, url), "", &stop_);
+      // WebP when the server has it (a third smaller), JPEG otherwise.
+      auto headers = net::authHeaders(server_, state, url);
+      headers.push_back("Accept: image/webp,image/*;q=0.8");
+      const auto result = net::get(url, headers, "", &stop_);
       if (result.status == 200 && result.error.empty())
         bytes = result.body;
       if (!bytes.empty() && !path.empty()) {
