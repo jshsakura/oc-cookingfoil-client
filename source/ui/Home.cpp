@@ -1,4 +1,5 @@
 #include "ui/Application.hpp"
+#include <cmath>
 #include <algorithm>
 #include <array>
 namespace foil::ui {
@@ -78,7 +79,9 @@ void Application::home() {
   }
   const auto &g = groups_[hero_];
   // Keep the focused row where the first row sits; the hero scrolls away.
-  const int scroll = !sidebar_ && row_ >= 2 ? (row_ - 1) * RowHeight : 0;
+  // A finger moves the page freely (glide); otherwise it follows the cursor.
+  const int scroll = std::lround(glide("home", 232, 0, 1048, 660, !sidebar_ && row_ >= 2 ? (row_ - 1) * RowHeight : 0,
+                                       RowTop + float(themes_.size()) * RowHeight + 16 - 660, 1));
   hit(260, 24 - scroll, 992, 248, [this] { openDetail(hero_); });
   if (row_ == 0 && !sidebar_)
     paint_.ring(260, 24 - scroll, 992, 248, 20);

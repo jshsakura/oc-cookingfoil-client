@@ -3,6 +3,16 @@
 #include <cmath>
 namespace foil::ui {
 void Application::hit(float x, float y, float w, float h, std::function<void()> run) {
+  // Inside a gliding list only the part on screen answers.
+  if (!clips_.empty()) {
+    SDL_Rect clip{};
+    SDL_RenderGetClipRect(paint_.renderer, &clip);
+    const float left = std::max(x, float(clip.x)), top = std::max(y, float(clip.y));
+    const float right = std::min(x + w, float(clip.x + clip.w)), bottom = std::min(y + h, float(clip.y + clip.h));
+    if (right <= left || bottom <= top)
+      return;
+    x = left, y = top, w = right - left, h = bottom - top;
+  }
   hits_.push_back({{x, y, w, h}, std::move(run)});
 }
 // A touched header item takes the cursor, as a touched card or menu item
@@ -118,6 +128,10 @@ bool Application::popupOpen() const {
 }
 void Application::touch(float x, float y) {
   poll();
+  if (swallowTap_) {
+    swallowTap_ = false;
+    return;
+  }
   // A tap moves the cursor off the header; the tapped thing takes it.
   headerFocus_.clear();
   // Hits are recorded in draw order, so the last match is the one on top.
@@ -131,18 +145,18 @@ void Application::touch(float x, float y) {
   }
 }
 void Application::drag(float dy) {
-  dragRest_ += dy;
-  const bool detailText = screen_ == Screen::Detail && !galleryOpen_;
-  const float step = detailText ? ScrollStep : 240;
-  while (std::abs(dragRest_) >= step) {
-    // Finger up moves the content up, which reads further down.
-    const bool forward = dragRest_ < 0;
-    dragRest_ += forward ? step : -step;
-    if (detailText)
-      action(forward ? Action::ScrollDown : Action::ScrollUp);
-    else if (screen_ == Screen::Library || screen_ == Screen::Installed || screen_ == Screen::Homebrew)
-      action(forward ? Action::Down : Action::Up);
-  }
+  // In a gliding area: the view follows the finger (finger up reads further
+  // down), and the speed of the last moves becomes the flick. Elsewhere a
+  // drag does nothing; it never moves the cursor.
+  if (!glide_.held)
+    return;
+  const uint32_t now = SDL_GetTicks();
+  const float steps = -dy / glide_.unit;
+  glide_.pos = glideFollow(steps);
+  const float dt = std::max(0.008f, (now - glide_.at) / 1000.f);
+  // Smoothed, so one jittery sample does not throw the list.
+  glide_.velocity = 0.6f * (steps / dt) + 0.4f * glide_.velocity;
+  glide_.at = now;
 }
 void Application::hintAction(const std::string &key) {
   if (key == "A") action(Action::Accept);

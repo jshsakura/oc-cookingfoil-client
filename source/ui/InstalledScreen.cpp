@@ -205,11 +205,16 @@ void Application::installedScreen() {
     return std::any_of(pending.begin(), pending.end(),
                        [&](const auto &row) { return row.baseId == titleId && row.item.type == "update"; });
   };
-  const int first = std::max(0, selected_ / 6 - 1) * 6;
-  paint_.scrollbar(1266, 146, 500, float(first / 6), 2.1f, float((rows.size() + 5) / 6));
-  for (int n = 0; n < 18 && first + n < int(rows.size()); ++n) {
+  // The row at the top follows the cursor, or the finger while it glides.
+  const int rowCount = int((rows.size() + 5) / 6);
+  const float top = glide("installed", 232, 146 - 8, 1048, 660 - 146 + 8, float(std::max(0, selected_ / 6 - 1)),
+                          float(rowCount - 2), 240);
+  const int first = int(top) * 6;
+  paint_.scrollbar(1266, 146, 500, top, 2.1f, float(rowCount));
+  clipTo(232, 146 - 8, 1048, 660 - 146 + 8);
+  for (int n = 0; n < 24 && first + n < int(rows.size()); ++n) {
     const auto &g = installed_.games[rows[first + n]];
-    const int x = 260 + n % 6 * 170, y = 146 + n / 6 * 240;
+    const float x = 260 + n % 6 * 170, y = 146 + (n / 6 + int(top) - top) * 240;
     const auto icon = installedIcon(g);
     hit(x, y, 150, 220, [this, index = first + n] {
       sidebar_ = false;
@@ -224,6 +229,7 @@ void Application::installedScreen() {
     if (g.bytes)
       paint_.fonts.text(formatBytes(g.bytes), x + pill + 8, y + 196, 15, Secondary, false, 142 - pill);
   }
+  unclip();
   if (managedGame_) management();
 }
 void Application::management() {

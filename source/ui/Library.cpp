@@ -43,11 +43,19 @@ void Application::library() {
     notice(tr("조건에 맞는 게임이 없습니다."), tr("Y로 필터를 바꾸거나 X로 검색어를 바꿉니다."), 23);
     return;
   }
-  const int first = std::max(0, selected_ / 6 - 1) * 6;
-  for (int n = 0; n < 18 && first + n < int(list.size()); ++n)
-    card(groups_[list[first + n]], 260 + n % 6 * 170, 104 + n / 6 * 240,
-         inContent() && selected_ == first + n);
-  // Rows of six; about two and a half fit on screen.
-  paint_.scrollbar(1266, 104, 540, float(first / 6), 2.3f, float((list.size() + 5) / 6));
+  // Rows of six; about two and a half fit on screen. The row at the top
+  // follows the cursor, or the finger (fractional while it glides).
+  constexpr float Top = 104, RowHeight = 240;
+  const int rows = int((list.size() + 5) / 6);
+  const float top = glide("library", 232, Top - 8, 1048, 660 - Top + 8, float(std::max(0, selected_ / 6 - 1)),
+                          float(rows - 2), RowHeight);
+  clipTo(232, Top - 8, 1048, 660 - Top + 8);
+  for (int row = int(top); row < int(top) + 4 && row < rows; ++row)
+    for (int col = 0; col < 6 && row * 6 + col < int(list.size()); ++col) {
+      const int n = row * 6 + col;
+      card(groups_[list[n]], 260 + col * 170, Top + (row - top) * RowHeight, inContent() && selected_ == n);
+    }
+  unclip();
+  paint_.scrollbar(1266, 104, 540, top, 2.3f, float(rows));
 }
 } // namespace foil::ui

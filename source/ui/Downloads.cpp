@@ -191,11 +191,15 @@ void Application::downloadsHistory() {
   }
   const int count = int(list.size());
   downloadsRow_ = std::clamp(downloadsRow_, 0, count - 1);
-  const int first = std::clamp(downloadsRow_ - Visible / 2, 0, std::max(0, count - Visible));
-  paint_.scrollbar(1266, Top, Step * Visible - 12, float(first), Visible, float(count));
-  for (int n = first; n < count && n <= first + Visible; ++n) {
+  // The row at the top follows the cursor, or the finger while it glides.
+  const float top = glide("downloads", 232, Top, 1048, 660 - (Top), float(std::clamp(downloadsRow_ - Visible / 2, 0, std::max(0, count - Visible))),
+                          float((count) - (Visible)), Step);
+  const int first = int(top);
+  paint_.scrollbar(1266, Top, Step * Visible - 12, top, Visible, float(count));
+  clipTo(232, Top, 1048, 660 - (Top));
+  for (int n = first; n < count && n <= first + Visible + 1; ++n) {
     const auto &e = history_[list[n]];
-    const float y = Top + (n - first) * Step;
+    const float y = Top + (n - top) * Step;
     hit(260, y, 992, Row, [this, n] {
       if (inContent() && downloadsRow_ == n && downloadsTab_ == 2) action(Action::Accept);
       sidebar_ = false;
@@ -227,6 +231,7 @@ void Application::downloadsHistory() {
     const auto size = formatBytes(bytes);
     paint_.fonts.text(size, 1230 - paint_.fonts.measure(size, 17, true), y + 54, 17, Ink, true);
   }
+  unclip();
 }
 void Application::downloadsAction(Action a) {
   if (a == Action::Previous || a == Action::Next) {

@@ -686,13 +686,17 @@ void Application::patchesScreen() {
   const auto games = patchGames(rows);
   selected_ = std::clamp(selected_, 0, int(games.size()) - 1);
   // The focus rides the middle row once past it, the list scrolling under it.
-  const int first = std::clamp(selected_ - VisibleRows / 2, 0, std::max(0, int(games.size()) - VisibleRows));
-  paint_.scrollbar(1266, RowTop, RowStep * VisibleRows - 16, float(first), VisibleRows, float(games.size()));
+  // The row at the top follows the cursor, or the finger while it glides.
+  const float top = glide("patches", 232, RowTop, 1048, 660 - (RowTop), float(std::clamp(selected_ - VisibleRows / 2, 0, std::max(0, int(games.size()) - VisibleRows))),
+                          float((int(games.size())) - (VisibleRows)), RowStep);
+  const int first = int(top);
+  paint_.scrollbar(1266, RowTop, RowStep * VisibleRows - 16, top, VisibleRows, float(games.size()));
   // One more row than fits, cut off by the footer, so a longer list looks
   // like it goes on instead of looking like four games in all.
-  for (int i = first; i < int(games.size()) && i <= first + VisibleRows; ++i) {
+  clipTo(232, RowTop, 1048, 660 - (RowTop));
+  for (int i = first; i < int(games.size()) && i <= first + VisibleRows + 1; ++i) {
     const auto &game = games[i];
-    const float y = RowTop + (i - first) * RowStep;
+    const float y = RowTop + (i - top) * RowStep;
     hit(260, y, 992, RowHeight, [this, i] {
       if (inContent() && selected_ == i)
         action(Action::Accept);
@@ -783,6 +787,7 @@ void Application::patchesScreen() {
       paint_.fonts.text(size, right - paint_.fonts.measure(size, 18, true), y + 68, 18, Ink, true);
     }
   }
+  unclip();
 }
 // A game's patches, one row each; A opens the chosen one's menu.
 void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame &game) {
@@ -800,10 +805,14 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
   paint_.fonts.wrapped(game.game, x + Icon + 20, body.y + 24, 18, Ink, textW, 2, true);
   paint_.fonts.text(trf("패치 {0}개", {std::to_string(count)}), x + Icon + 20, body.y + 24 + gameH + 4, 16, Secondary);
   const float listTop = body.y + 24 + head + 16;
-  const int first = std::clamp(patchPickRow_ - Visible / 2, 0, std::max(0, count - Visible));
-  for (int n = first; n < count && n < first + Visible; ++n) {
+  // The row at the top follows the cursor, or the finger while it glides.
+  const float pickTop = glide("patchPick", x, listTop, w, shown * (Row + Gap), float(std::clamp(patchPickRow_ - Visible / 2, 0, std::max(0, count - Visible))),
+                          float((count) - (Visible)), (Row + Gap));
+  const int first = int(pickTop);
+  clipTo(x, listTop, w, shown * (Row + Gap));
+  for (int n = first; n < count && n <= first + Visible; ++n) {
     const auto &row = rows[game.rows[n]];
-    const float y = listTop + (n - first) * (Row + Gap);
+    const float y = listTop + (n - pickTop) * (Row + Gap);
     hit(x, y, w, Row, [this, n] {
       patchPickRow_ = n;
       action(Action::Accept);
@@ -842,6 +851,7 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
     const auto size = formatBytes(row.record ? row.record->bytes : row.patch.size);
     paint_.fonts.text(size, x + w - 16 - paint_.fonts.measure(size, 17, true), y + 44, 17, Ink, true);
   }
+  unclip();
 }
 void Application::patchDialog() {
   const auto rows = patchRows();

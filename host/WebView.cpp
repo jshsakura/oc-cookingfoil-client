@@ -45,12 +45,27 @@ document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>key(b.dataset.k))
 const keys={ArrowUp:'UP',ArrowDown:'DOWN',ArrowLeft:'LEFT',ArrowRight:'RIGHT',Enter:'A',Escape:'B',Backspace:'B',
   x:'X',y:'Y',l:'L',r:'R',z:'ZR',PageUp:'SUP',PageDown:'SDOWN','+':'PLUS'};
 addEventListener('keydown',e=>{const k=keys[e.key];if(k){e.preventDefault();key(k);}});
-let start=null,last=0,moved=false;
+let start=null,last=0,moved=false,trail=[];
 const at=(e)=>{const r=img.getBoundingClientRect();return[(e.clientX-r.left)*1280/r.width,(e.clientY-r.top)*720/r.height];};
-img.onpointerdown=e=>{start=at(e);last=start[1];moved=false;img.setPointerCapture(e.pointerId);};
-img.onpointermove=e=>{if(!start)return;const p=at(e);if(Math.abs(p[1]-start[1])>14)moved=true;
-  if(moved){send('/drag?dy='+(p[1]-last).toFixed(1));last=p[1];}};
-img.onpointerup=e=>{if(start&&!moved){const p=at(e);send('/tap?x='+p[0].toFixed(1)+'&y='+p[1].toFixed(1));}start=null;};
+// Touch goes out in order, one request at a time, moves added up while one
+// is on its way: through the tunnel they would otherwise arrive shuffled.
+let queue=Promise.resolve(),pending=0,busy=false;
+const seq=(p)=>{queue=queue.then(()=>fetch(p)).catch(()=>{});return queue;};
+const flush=()=>{if(busy||!pending)return;const d=pending;pending=0;busy=true;
+  seq('/drag?dy='+d.toFixed(1)).then(()=>{busy=false;flush();});};
+img.onpointerdown=e=>{start=at(e);last=start[1];moved=false;trail=[[performance.now(),start[1]]];
+  img.setPointerCapture(e.pointerId);seq('/down');};
+img.onpointermove=e=>{if(!start)return;const p=at(e);const now=performance.now();
+  trail.push([now,p[1]]);while(trail.length>2&&now-trail[0][0]>100)trail.shift();
+  if(!moved&&Math.abs(p[1]-start[1])>14){moved=true;seq('/dragstart?x='+start[0].toFixed(1)+'&y='+start[1].toFixed(1));}
+  if(moved){pending+=p[1]-last;last=p[1];flush();}};
+// The flick's speed is measured here, where the finger is, not from when
+// the moves reach the server.
+img.onpointerup=e=>{if(start&&!moved){const p=at(e);seq('/tap?x='+p[0].toFixed(1)+'&y='+p[1].toFixed(1));}
+  else if(start&&moved){const a=trail[0],b=trail[trail.length-1],dt=(b[0]-a[0])/1000;
+    const v=dt>0&&performance.now()-b[0]<80?(b[1]-a[1])/dt:0;
+    const end=()=>{if(busy||pending){setTimeout(end,10);return;}seq('/dragend?v='+v.toFixed(1));};end();}
+  start=null;};
 let shown='';
 async function loop(){
   try{const r=await fetch('/frame.png?h='+shown+'&t='+Date.now());
@@ -235,6 +250,15 @@ int serveWeb(ui::Application &app, ui::Runtime &runtime, int port) {
       reply(client, "text/plain", "ok");
     } else if (path == "/tap") {
       app.touch(std::strtof(args["x"].c_str(), nullptr), std::strtof(args["y"].c_str(), nullptr));
+      reply(client, "text/plain", "ok");
+    } else if (path == "/down") {
+      app.fingerDown();
+      reply(client, "text/plain", "ok");
+    } else if (path == "/dragstart") {
+      app.dragBegin(std::strtof(args["x"].c_str(), nullptr), std::strtof(args["y"].c_str(), nullptr));
+      reply(client, "text/plain", "ok");
+    } else if (path == "/dragend") {
+      app.dragEnd(std::strtof(args["v"].c_str(), nullptr));
       reply(client, "text/plain", "ok");
     } else if (path == "/drag") {
       app.drag(std::strtof(args["dy"].c_str(), nullptr));

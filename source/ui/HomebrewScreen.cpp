@@ -439,12 +439,17 @@ void Application::homebrewScreen() {
   }
   // A grid of icons like 내 게임: the state on the icon, the size under the name.
   selected_ = std::clamp(selected_, 0, int(rows.size()) - 1);
-  const int first = std::max(0, selected_ / 6 - 1) * 6;
-  paint_.scrollbar(1266, 104, 500, float(first / 6), 2.1f, float((rows.size() + 5) / 6));
-  for (int n = 0; n < 18 && first + n < int(rows.size()); ++n) {
+  // The row at the top follows the cursor, or the finger while it glides.
+  const int rowCount = int((rows.size() + 5) / 6);
+  const float top = glide("homebrew", 232, 104 - 8, 1048, 660 - 104 + 8, float(std::max(0, selected_ / 6 - 1)),
+                          float(rowCount - 2), 240);
+  const int first = int(top) * 6;
+  paint_.scrollbar(1266, 104, 500, top, 2.1f, float(rowCount));
+  clipTo(232, 104 - 8, 1048, 660 - 104 + 8);
+  for (int n = 0; n < 24 && first + n < int(rows.size()); ++n) {
     const int i = first + n;
     const auto &app = homebrewAt(rows[i]);
-    const float x = 260 + n % 6 * 170, y = 104 + n / 6 * 240;
+    const float x = 260 + n % 6 * 170, y = 104 + (n / 6 + int(top) - top) * 240;
     hit(x, y, 150, 220, [this, i] {
       if (inContent() && selected_ == i) action(Action::Accept);
       sidebar_ = false;
@@ -464,6 +469,7 @@ void Application::homebrewScreen() {
     if (!app.version.empty() && px + paint_.fonts.measure(version, 15, true) + 18 <= x + 150)
       paint_.pill(version, px, y + 194);
   }
+  unclip();
 }
 // Before it comes down: the app's icon, name and facts, and its description
 // when the server has one (without, the card stays short).

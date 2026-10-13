@@ -1,4 +1,5 @@
 #include "ui/Application.hpp"
+#include <cmath>
 #include "platform/Storage.hpp"
 #include "install/Installer.hpp"
 #include "core/I18n.hpp"
@@ -164,7 +165,9 @@ void Application::detail() {
   constexpr int BandTop = 212, BandBottom = 660, Pad = 14;
   SDL_Rect leftClip{0, BandTop, 806, BandBottom - BandTop};
   SDL_RenderSetClipRect(paint_.renderer, &leftClip);
-  const int offset = descriptionScroll_ * ScrollStep;
+  // The text follows its scroll steps, or the finger while it glides.
+  const int offset = int(std::lround(glide("description", 0, BandTop, 806, BandBottom - BandTop,
+                                           float(descriptionScroll_ * ScrollStep), float(descriptionHeight_), 1)));
   int y = BandTop + Pad - offset;
   y = requiredPatchesCard(y);
   y = notesCard(y);
@@ -252,10 +255,13 @@ void Application::detail() {
   // Rows have room above and below their two lines; everything is centered
   // in the row instead of hugging its top edge.
   constexpr float RowTop = 226, RowPitch = 56, RowHeight = 52;
-  const int first = std::max(0, std::min(part_, rows - 1) - 3);
-  for (int i = 0; i < 4 && first + i < rows; ++i) {
+  const float top = glide("parts", 840, RowTop - 4, 386, 4 * RowPitch, float(std::max(0, std::min(part_, rows - 1) - 3)),
+                          float(rows - 4), RowPitch);
+  const int first = int(top);
+  clipTo(840, RowTop - 4, 386, 4 * RowPitch);
+  for (int i = 0; i < 5 && first + i < rows; ++i) {
     const int n = first + i;
-    const float y = RowTop + i * RowPitch, mid = y + RowHeight / 2;
+    const float y = RowTop + (n - top) * RowPitch, mid = y + RowHeight / 2;
     const auto *patch = selection_->patch(size_t(n));
     const bool checked = selection_->enabled(n), locked = !patch && parts[n].type == "base";
     hit(840, y, 386, RowHeight, [this, n] {
@@ -295,6 +301,7 @@ void Application::detail() {
     paint_.fonts.middle(sub, 894, mid + 12, 15, Secondary, false, 300 - sizeWidth);
     paint_.fonts.middle(size, 1212 - sizeWidth, mid, 18, Ink, true);
   }
+  unclip();
   if (rows > 4) {
     paint_.fonts.text(std::to_string(std::min(rows, part_ + 1)) + " / " + std::to_string(rows), 1148, 194, 15,
                       Secondary);

@@ -21,6 +21,7 @@
 #include <functional>
 #include <memory>
 #include <set>
+#include <cmath>
 #include <unordered_map>
 #include "core/HomebrewCard.hpp"
 #include <utility>
@@ -245,6 +246,13 @@ public:
   // Touch: a tap runs the topmost area drawn last frame; a drag scrolls.
   void touch(float x, float y);
   void drag(float dy);
+  void fingerDown(); // a finger lands: a coasting list stops, and that touch opens nothing
+  void dragBegin(float x, float y); // a finger starts moving (past the tap slop)
+  // A finger lifts. `fingerSpeed` (px/s, down positive) when the caller
+  // measured the flick itself (the web preview); otherwise from the moves.
+  void dragEnd(float fingerSpeed = NAN);
+  bool gliding() const { return glide_.active; }
+  float glidePos() const { return glide_.pos; } // tests
   // User patches: the server's list joined with what the SD store holds.
   struct PatchRow {
     UserPatch patch;
@@ -691,7 +699,11 @@ private:
              bool selected = false, const std::string &name = "", bool exact = false, bool dark = false);
   void footer(const std::vector<std::pair<std::string, std::string>> &hints);
   void hit(float x, float y, float w, float h, std::function<void()> run);
-  void blockTouch() { hit(0, 0, 1280, 720, [] {}); }
+  // Under a popup nothing answers: no taps, and no list glides behind it.
+  void blockTouch() {
+    hit(0, 0, 1280, 720, [] {});
+    glideAreas_.clear();
+  }
   void hintAction(const std::string &key);
   // Whether the current screen has anything the cursor can land on.
   bool hasFocusable() const;
@@ -726,7 +738,34 @@ private:
   bool menuPending_ = false;
   uint32_t menuAt_ = 0;
   void openMenuScreen(Screen target);
-  float dragRest_ = 0;
+  // Touch scrolling that glides like a phone's. A screen registers each
+  // scrolling area as it draws (glide()); a finger in one moves it freely
+  // and a flick keeps it going. The cursor stays put: any button brings
+  // the view back to it (unglide()).
+  struct GlideArea {
+    std::string id;
+    SDL_FRect area;
+    float shown = 0, max = 0, unit = 1; // what was drawn, its end, pixels per step
+  };
+  std::vector<GlideArea> glideAreas_; // as the last frame drew them
+  struct Glide {
+    std::string id;
+    float pos = 0, velocity = 0, max = 0, unit = 1; // in steps (rows, or pixels when unit is 1)
+    bool active = false, held = false;
+    uint32_t at = 0; // the last finger move or glide step
+  } glide_;
+  bool swallowTap_ = false; // the touch that stopped a coasting list
+  // Where the area `id` (x, y, w, h on screen) starts: `focus` (what the
+  // cursor wants) unless the finger moved it; 0..max, in steps of `unit` px.
+  float glide(const std::string &id, float x, float y, float w, float h, float focus, float max, float unit);
+  void glideStep(); // the flick's coast and the spring back from an end, once a frame
+  float glideFollow(float steps) const; // where `steps` more takes it, stretching past an end
+  // A gliding list draws rows cut at its edges: drawing and touch are both
+  // kept inside the area until unclip().
+  std::vector<SDL_Rect> clips_;
+  void clipTo(float x, float y, float w, float h);
+  void unclip();
+  void unglide() { glide_.active = glide_.held = false; }
   std::vector<size_t> homeRow(int row) const;
   void openTheme(size_t row);
   const std::vector<size_t> &libraryList() const; // cached until its inputs change

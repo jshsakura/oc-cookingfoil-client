@@ -91,14 +91,20 @@ int main(int argc, char **argv) {
             touchX = tx;
             touchY = lastY = ty;
             dragging = false;
+            ui.fingerDown();
           } else if (event.type == SDL_FINGERMOTION) {
-            if (std::abs(ty - touchY) > TapSlop || std::abs(tx - touchX) > TapSlop)
+            if (!dragging && (std::abs(ty - touchY) > TapSlop || std::abs(tx - touchX) > TapSlop)) {
               dragging = true;
+              ui.dragBegin(touchX, touchY);
+            }
             if (dragging)
               ui.drag(ty - lastY);
             lastY = ty;
-          } else if (event.type == SDL_FINGERUP && !dragging) {
-            ui.touch(tx, ty);
+          } else if (event.type == SDL_FINGERUP) {
+            if (dragging)
+              ui.dragEnd();
+            else
+              ui.touch(tx, ty);
           }
         }
         if (quit && ui.requestQuit())

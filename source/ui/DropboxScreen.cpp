@@ -421,13 +421,17 @@ void Application::dropboxTab() {
   const int count = int(rows.size());
   const int focus = dropboxFocus(rows);
   dropboxCursor_ = rows[focus].applicationId;
-  const int first = std::clamp(focus - Visible / 2, 0, std::max(0, count - Visible));
-  paint_.scrollbar(1266, ListTop, RowStep * Visible - 12, float(first), Visible, float(count));
+  // The row at the top follows the cursor, or the finger while it glides.
+  const float top = glide("dropbox", 232, ListTop, 1048, 660 - (ListTop), float(std::clamp(focus - Visible / 2, 0, std::max(0, count - Visible))),
+                          float((count) - (Visible)), RowStep);
+  const int first = int(top);
+  paint_.scrollbar(1266, ListTop, RowStep * Visible - 12, top, Visible, float(count));
   const auto root = saves::keeperRoot(sdRoot_);
-  for (int n = first; n < count && n < first + Visible; ++n) {
+  clipTo(232, ListTop, 1048, 660 - (ListTop));
+  for (int n = first; n < count && n <= first + Visible + 1; ++n) {
     const auto &g = rows[n];
     const auto id = g.applicationId;
-    const float y = ListTop + (n - first) * RowStep;
+    const float y = ListTop + (n - top) * RowStep;
     hit(260, y, 992, RowHeight, [this, id] {
       if (inContent() && dropboxCursor_ == id) action(Action::Accept);
       sidebar_ = false;
@@ -460,6 +464,7 @@ void Application::dropboxTab() {
     badge(trf("내 기기 {0}개", {std::to_string(local)}), local > 0);
     if (!g.installed) badge(tr("게임 미설치"), false);
   }
+  unclip();
 }
 
 void Application::dropboxDialog() {
@@ -490,9 +495,13 @@ void Application::dropboxDialog() {
   const auto body = modal(860, 24 + rows * (Row + Gap) + 40 + note, game.name, working ? "" : tr("닫기"), "",
                           dropboxPopupAccept(), 36);
   const float x = body.x + 32, w = body.w - 64;
-  const int top = std::clamp(dropboxPick_ - rows / 2, 0, std::max(0, total - rows));
-  for (int n = top; n < top + rows; ++n) {
-    const float y = body.y + 24 + (n - top) * (Row + Gap);
+  // The row at the top follows the cursor, or the finger while it glides.
+  const float topRow = glide("dropboxPick", x, body.y + 24, w, rows * (Row + Gap), float(std::clamp(dropboxPick_ - rows / 2, 0, std::max(0, total - rows))),
+                          float((total) - (rows)), (Row + Gap));
+  const int top = int(topRow);
+  clipTo(x, body.y + 24, w, rows * (Row + Gap));
+  for (int n = top; n < total && n <= top + rows; ++n) {
+    const float y = body.y + 24 + (n - topRow) * (Row + Gap);
     hit(x, y, w, Row, [this, n] {
       dropboxPick_ = n;
       action(Action::Accept);
@@ -528,6 +537,7 @@ void Application::dropboxDialog() {
     const std::string side = here ? std::string(tr("내 기기에 있음")) : formatBytes(r.size);
     paint_.fonts.middle(side, x + w - 20 - paint_.fonts.measure(side, 17, true), y + Row / 2, 17, here ? Good : Ink, true);
   }
+  unclip();
   const float line = body.y + 24 + rows * (Row + Gap) + 4;
   if (working)
     paint_.fonts.text(dropboxBusy_ == "upload" ? tr("드롭박스에 올리고 있습니다.") : tr("드롭박스에서 받고 있습니다."), x, line,
@@ -552,10 +562,14 @@ void Application::dropboxUploadList() {
   dropboxUploadPick_ = std::clamp(dropboxUploadPick_, 0, total - 1);
   const auto body = modal(860, 24 + rows * (Row + Gap) + 40, game.name, working ? "" : tr("뒤로"), "", tr("올리기"), 36);
   const float x = body.x + 32, w = body.w - 64;
-  const int top = std::clamp(dropboxUploadPick_ - rows / 2, 0, std::max(0, total - rows));
-  for (int n = top; n < top + rows; ++n) {
+  // The row at the top follows the cursor, or the finger while it glides.
+  const float topRow = glide("dropboxUpload", x, body.y + 24, w, rows * (Row + Gap), float(std::clamp(dropboxUploadPick_ - rows / 2, 0, std::max(0, total - rows))),
+                          float((total) - (rows)), (Row + Gap));
+  const int top = int(topRow);
+  clipTo(x, body.y + 24, w, rows * (Row + Gap));
+  for (int n = top; n < total && n <= top + rows; ++n) {
     const auto &b = dropboxLocal_[n];
-    const float y = body.y + 24 + (n - top) * (Row + Gap);
+    const float y = body.y + 24 + (n - topRow) * (Row + Gap);
     hit(x, y, w, Row, [this, n] {
       dropboxUploadPick_ = n;
       action(Action::Accept);
@@ -570,6 +584,7 @@ void Application::dropboxUploadList() {
     const std::string side = there ? std::string(tr("드롭박스에 있음")) : formatBytes(uint64_t(b.size));
     paint_.fonts.middle(side, x + w - 20 - paint_.fonts.measure(side, 17, true), y + Row / 2, 17, there ? Good : Ink, true);
   }
+  unclip();
   const float line = body.y + 24 + rows * (Row + Gap) + 4;
   paint_.fonts.text(working ? tr("드롭박스에 올리고 있습니다.") : tr("드롭박스에 있는 백업은 같은 이름으로 덮어씁니다."), x, line, 18,
                     Secondary);

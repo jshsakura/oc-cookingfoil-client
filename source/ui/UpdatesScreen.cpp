@@ -106,12 +106,16 @@ void Application::updates() {
     return;
   }
   selected_ = std::clamp(selected_, 0, int(rows.size()) - 1);
-  const int first = std::max(0, selected_ - 2);
-  paint_.scrollbar(1266, 90, 480, float(first), 4, float(rows.size()));
-  for (int i = first; i < int(rows.size()) && i < first + 4; ++i) {
+  // The row at the top follows the cursor, or the finger while it glides.
+  const float top = glide("updates", 232, 90, 1048, 660 - (90), float(std::max(0, selected_ - 2)),
+                          float((int(rows.size())) - (4)), 124);
+  const int first = int(top);
+  paint_.scrollbar(1266, 90, 480, top, 4, float(rows.size()));
+  clipTo(232, 90, 1048, 660 - (90));
+  for (int i = first; i < int(rows.size()) && i <= first + 5; ++i) {
     const auto &row = rows[i];
     const auto *group = findGroup(row.baseId);
-    const int y = 90 + (i - first) * 124;
+    const float y = 90 + (i - top) * 124;
     hit(260, y, 992, 108, [this, i] {
       sidebar_ = false;
       selected_ = i;
@@ -135,6 +139,7 @@ void Application::updates() {
     const auto size = formatBytes(row.item.size);
     paint_.fonts.text(size, 1230 - paint_.fonts.measure(size, 19, true), y + 65, 19, Ink, true);
   }
+  unclip();
   paint_.fonts.text(tr("설치된 본편의 최신 업데이트와 미설치·최신 DLC만 표시합니다."), 260, 606, 18, Secondary);
 }
 void Application::installUpdates(bool all) {

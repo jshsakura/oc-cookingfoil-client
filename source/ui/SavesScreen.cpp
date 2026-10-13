@@ -134,12 +134,16 @@ void Application::savesScreen() {
   }
   const int count = int(rows.size());
   selected_ = std::clamp(selected_, 0, count - 1);
-  const int first = std::clamp(selected_ - Visible / 2, 0, std::max(0, count - Visible));
-  paint_.scrollbar(1266, Top, RowStep * Visible - 12, float(first), Visible, float(count));
+  // The row at the top follows the cursor, or the finger while it glides.
+  const float top = glide("saves", 232, Top, 1048, 660 - (Top), float(std::clamp(selected_ - Visible / 2, 0, std::max(0, count - Visible))),
+                          float((count) - (Visible)), RowStep);
+  const int first = int(top);
+  paint_.scrollbar(1266, Top, RowStep * Visible - 12, top, Visible, float(count));
   const auto backupsRoot = saves::keeperRoot(sdRoot_);
-  for (int i = first; i < count && i < first + Visible; ++i) {
+  clipTo(232, Top, 1048, 660 - (Top));
+  for (int i = first; i < count && i <= first + Visible + 1; ++i) {
     const auto &g = installed_.games[rows[i]];
-    const float y = Top + (i - first) * RowStep;
+    const float y = Top + (i - top) * RowStep;
     hit(260, y, 992, RowHeight, [this, i] {
       if (inContent() && selected_ == i) action(Action::Accept);
       sidebar_ = false;
@@ -163,6 +167,7 @@ void Application::savesScreen() {
     paint_.rect(1230 - w, y + 28, w, 28, backups ? Good : Line, 8);
     paint_.fonts.middle(state, 1230 - w + 10, y + 42, 16, backups ? Surface : Ink, true);
   }
+  unclip();
   if (managedGame_) management();
 }
 void Application::loadShopSaves() {
@@ -368,12 +373,16 @@ void Application::shopSavesList() {
   const auto groups = shopSaveGroups();
   const int count = int(groups.size());
   shopSaveRow_ = std::clamp(shopSaveRow_, 0, count - 1);
-  const int first = std::clamp(shopSaveRow_ - Visible / 2, 0, std::max(0, count - Visible));
-  paint_.scrollbar(1266, Top, RowStep * Visible - 12, float(first), Visible, float(count));
-  for (int i = first; i < count && i < first + Visible; ++i) {
+  // The row at the top follows the cursor, or the finger while it glides.
+  const float top = glide("shopSaves", 232, Top, 1048, 660 - (Top), float(std::clamp(shopSaveRow_ - Visible / 2, 0, std::max(0, count - Visible))),
+                          float((count) - (Visible)), RowStep);
+  const int first = int(top);
+  paint_.scrollbar(1266, Top, RowStep * Visible - 12, top, Visible, float(count));
+  clipTo(232, Top, 1048, 660 - (Top));
+  for (int i = first; i < count && i <= first + Visible + 1; ++i) {
     const auto [start, saves] = groups[i];
     const auto &save = shopSaves_[start];
-    const float y = Top + (i - first) * RowStep;
+    const float y = Top + (i - top) * RowStep;
     hit(260, y, 992, RowHeight, [this, i] {
       if (inContent() && shopSaveRow_ == i) action(Action::Accept);
       sidebar_ = false;
@@ -409,6 +418,7 @@ void Application::shopSavesList() {
     // The same grey label as every list's state, at the right end.
     paint_.pill(state, 1230 - paint_.fonts.measure(state, 15, true) - 18, y + 14);
   }
+  unclip();
 }
 // Several saves for one game: pick one, as 유저 패치 picks a patch.
 void Application::savePickDialog() {
@@ -423,10 +433,14 @@ void Application::savePickDialog() {
                           tr("적용하기"), 36);
   const float x = body.x + 32, w = body.w - 64;
   savePickRow_ = std::clamp(savePickRow_, 0, count - 1);
-  const int top = std::clamp(savePickRow_ - Shown / 2, 0, std::max(0, count - Shown));
-  for (int n = top; n < top + rows; ++n) {
+  // The row at the top follows the cursor, or the finger while it glides.
+  const float topRow = glide("savePick", x, body.y + 24, w, rows * (Row + Gap), float(std::clamp(savePickRow_ - Shown / 2, 0, std::max(0, count - Shown))),
+                          float((count) - (Shown)), (Row + Gap));
+  const int top = int(topRow);
+  clipTo(x, body.y + 24, w, rows * (Row + Gap));
+  for (int n = top; n < count && n <= top + rows; ++n) {
     const auto &save = shopSaves_[start + n];
-    const float y = body.y + 24 + (n - top) * (Row + Gap);
+    const float y = body.y + 24 + (n - topRow) * (Row + Gap);
     hit(x, y, w, Row, [this, n] {
       savePickRow_ = n;
       action(Action::Accept);
@@ -450,6 +464,7 @@ void Application::savePickDialog() {
     const auto size = formatBytes(save.size);
     paint_.fonts.middle(size, x + w - 20 - paint_.fonts.measure(size, 17, true), y + Row / 2, 17, Ink, true);
   }
+  unclip();
 }
 void Application::saveNeedsGameDialog() {
   if (!saveNeedsGame_ || shopSaves_.empty()) return;

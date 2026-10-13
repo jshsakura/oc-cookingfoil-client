@@ -45,7 +45,9 @@ void Application::retroHome() {
   // The focused shelf rides at the top once past the first; the banner
   // scrolls away with the rest.
   const float base = 90 + BannerHeight + 24;
-  const float scroll = inContent() && retroRow_ >= 1 ? base - 90 + retroRow_ * ShelfHeight : 0;
+  const float scroll = glide("retroHome", 232, 84, 1048, 576,
+                             inContent() && retroRow_ >= 1 ? base - 90 + retroRow_ * ShelfHeight : 0,
+                             base + rows * ShelfHeight + 16 - 660, 1);
   // Everything under the title scrolls; the title stays.
   SDL_Rect page;
   SDL_RenderGetClipRect(paint_.renderer, &page);

@@ -24,13 +24,16 @@ void Application::settings() {
   if (focusTop - settingsScroll_ < ViewTop) settingsScroll_ = focusTop - ViewTop + (selected_ == 0 ? 0 : 8);
   if (focusTop + focusHeight - settingsScroll_ > ViewBottom) settingsScroll_ = focusTop + focusHeight - ViewBottom + 8;
   settingsScroll_ = std::clamp(settingsScroll_, 0.f, std::max(0.f, contentBottom - ViewBottom));
-  const float oy = -settingsScroll_;
+  // The cursor keeps its card in view; a finger moves the page freely.
+  const float pageTop = glide("settings", 232, ViewTop, 1048, ViewBottom - ViewTop, settingsScroll_,
+                            contentBottom - ViewBottom, 1);
+  const float oy = -pageTop;
   const SDL_Rect clip{int(Left - 8), int(ViewTop - 8), int(Width + 16), int(ViewBottom - ViewTop + 16)};
   SDL_RenderSetClipRect(paint_.renderer, &clip);
   // Taps only on what shows.
   const auto shown = [&](float y, float h) { return y >= ViewTop - 8 && y + h <= ViewBottom + 8; };
   if (contentBottom > ViewBottom)
-    paint_.scrollbar(1266, ViewTop, ViewBottom - ViewTop, settingsScroll_, ViewBottom - ViewTop, contentBottom - ViewTop);
+    paint_.scrollbar(1266, ViewTop, ViewBottom - ViewTop, pageTop, ViewBottom - ViewTop, contentBottom - ViewTop);
 
   // Servers: a card each, or one with the empty line.
   if (!count) {

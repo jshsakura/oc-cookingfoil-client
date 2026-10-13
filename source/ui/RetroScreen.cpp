@@ -656,12 +656,16 @@ void Application::retroList() {
   const int count = int(retroGames_.size());
   selected_ = std::clamp(selected_, 0, count - 1);
   // The focus rides the middle row once past it, the list scrolling under it.
-  const int first = std::clamp(selected_ - Visible / 2, 0, std::max(0, count - Visible));
-  paint_.scrollbar(1266, Top, RowStep * Visible - 12, float(first), Visible, float(std::max(retroTotal_, count)));
+  // The row at the top follows the cursor, or the finger while it glides.
+  const float top = glide("retro", 232, Top, 1048, 660 - (Top), float(std::clamp(selected_ - Visible / 2, 0, std::max(0, count - Visible))),
+                          float((count) - (Visible)), RowStep);
+  const int first = int(top);
+  paint_.scrollbar(1266, Top, RowStep * Visible - 12, top, Visible, float(std::max(retroTotal_, count)));
   // One row past the footer so a long list looks like it goes on.
-  for (int i = first; i < count && i <= first + Visible; ++i) {
+  clipTo(232, Top, 1048, 660 - (Top));
+  for (int i = first; i < count && i <= first + Visible + 1; ++i) {
     const auto &game = retroGames_[i];
-    const float y = Top + (i - first) * RowStep;
+    const float y = Top + (i - top) * RowStep;
     hit(260, y, 992, RowHeight, [this, i] {
       if (inContent() && selected_ == i) action(Action::Accept);
       sidebar_ = false;
@@ -692,6 +696,7 @@ void Application::retroList() {
       paint_.fonts.text(size, right - paint_.fonts.measure(size, 17, true), y + 50, 17, Ink, true);
     }
   }
+  unclip();
 }
 // A focused name too long for its row scrolls: a pause, then left at a
 // steady pace, a pause at the end, and back to the start.

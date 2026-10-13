@@ -335,6 +335,7 @@ void Application::screen(Screen screen) {
   if (screen_ == Screen::Patches && screen != Screen::Patches)
     patchCheckStop_ = true;
   screen_ = screen;
+  unglide();
   nav_ = menuIndex(screen);
   selected_ = 0;
   row_ = 1;
@@ -777,6 +778,12 @@ std::string Application::selectedName() const {
 }
 void Application::action(Action a) {
   poll();
+  // A button brings the view back to the cursor. Text read by finger stays
+  // where it was read to: its scroll steps take the glide's place.
+  if (glide_.active && glide_.id == "description")
+    descriptionScroll_ = std::clamp(int(std::lround(glide_.pos / ScrollStep)), 0,
+                                    (descriptionHeight_ + ScrollStep - 1) / ScrollStep);
+  unglide();
   if (cleanupBusy_) // the progress modal is up until it finishes
     return;
   if (galleryOpen_ && screen_ == Screen::Detail) {
@@ -1456,6 +1463,8 @@ float Application::statusBar() {
 void Application::render() {
   poll();
   hits_.clear();
+  glideAreas_.clear();
+  glideStep();
   header_.clear();
   // Asked once a launch, as soon as a server answers; 설정's badge shows it.
   if (connected_ && appUpdate_ == AppUpdate::Unknown && !updateWorker_.joinable())
