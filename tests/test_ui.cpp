@@ -65,6 +65,12 @@ int runUiTests(SDL_Renderer *renderer) {
     app.render();
     app.touch(120, app.menuRowTop(foil::ui::MenuItems - 1) + foil::ui::MenuRowHeight / 2);
     CHECK(app.current() == foil::ui::Screen::Settings);
+    // The touched item keeps the focus; the screen's content does not take it.
+    CHECK(app.onMenu());
+    app.render();
+    app.touch(120, app.menuRowTop(1) + foil::ui::MenuRowHeight / 2);
+    CHECK(app.current() == foil::ui::Screen::Library);
+    CHECK(app.onMenu());
     app.screen(foil::ui::Screen::Library);
     app.render();
     app.touch(330, 250);

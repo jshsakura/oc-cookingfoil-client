@@ -1352,10 +1352,15 @@ void Application::shell() {
     const int height = MenuRowHeight;
     const bool active = i == nav_, open = menuOpen(i);
     if (open)
+      // A touched item opens its screen and keeps the focus: what was
+      // touched is what is selected, as on every other screen.
       hit(16, y, 200, height, [this, i] {
-        sidebar_ = true;
+        if (MenuScreens[i] != screen_)
+          openMenuScreen(MenuScreens[i]);
         nav_ = i;
-        action(Action::Accept);
+        menuPending_ = false;
+        sidebar_ = true;
+        autoSidebar_ = false;
       });
     if (sidebar_ && active)
       paint_.ring(16, y, 200, height, 12);
