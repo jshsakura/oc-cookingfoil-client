@@ -51,13 +51,16 @@ img.onpointerdown=e=>{start=at(e);last=start[1];moved=false;img.setPointerCaptur
 img.onpointermove=e=>{if(!start)return;const p=at(e);if(Math.abs(p[1]-start[1])>14)moved=true;
   if(moved){send('/drag?dy='+(p[1]-last).toFixed(1));last=p[1];}};
 img.onpointerup=e=>{if(start&&!moved){const p=at(e);send('/tap?x='+p[0].toFixed(1)+'&y='+p[1].toFixed(1));}start=null;};
+let shown='';
 async function loop(){
-  try{const r=await fetch('/frame.png?'+Date.now());
+  try{const r=await fetch('/frame.png?h='+shown+'&t='+Date.now());
     if(r.headers.get('X-Search')){const q=prompt('게임 이름으로 찾기','');if(q!==null)send('/search?q='+encodeURIComponent(q));}
     const g=r.headers.get('X-Text-Guide');
     if(g!==null){const hidden=r.headers.get('X-Text-Password');
       const v=prompt(decodeURIComponent(g),hidden?'':decodeURIComponent(r.headers.get('X-Text-Initial')||''));
       if(v!==null&&!(hidden&&v===''))send('/text?v='+encodeURIComponent(v));}
+    if(r.status===204)throw 0;
+    shown=r.headers.get('X-Frame')||'';
     const u=URL.createObjectURL(await r.blob());
     const old=img.src;img.src=u;if(old)URL.revokeObjectURL(old);}catch(e){}
   setTimeout(loop,15);
@@ -104,8 +107,8 @@ std::map<std::string, std::string> query(const std::string &target) {
   return result;
 }
 void reply(int client, const std::string &type, const std::string &body,
-           const std::string &extra = "") {
-  const auto head = "HTTP/1.1 200 OK\r\nContent-Type: " + type + "\r\n" + extra +
+           const std::string &extra = "", const std::string &status = "200 OK") {
+  const auto head = "HTTP/1.1 " + status + "\r\nContent-Type: " + type + "\r\n" + extra +
                     "Cache-Control: no-store\r\nContent-Length: " +
                     std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n";
   for (const auto *part : {&head, &body}) {
@@ -118,7 +121,10 @@ void reply(int client, const std::string &type, const std::string &body,
     }
   }
 }
-std::string frame(SDL_Renderer *renderer) {
+// The frame and a hash of its pixels. The page sends back the hash it
+// shows, so an unchanged screen costs a few bytes instead of a JPEG.
+// Through the tunnel the full frames crowded out the key presses.
+std::string frame(SDL_Renderer *renderer, const std::string &shown, std::string &hash) {
   int w = 0, h = 0;
   SDL_GetRendererOutputSize(renderer, &w, &h);
   auto *shot = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_RGBA32);
@@ -126,11 +132,20 @@ std::string frame(SDL_Renderer *renderer) {
     return {};
   std::string png;
   if (SDL_RenderReadPixels(renderer, nullptr, shot->format->format, shot->pixels, shot->pitch) == 0) {
+    uint64_t sum = 1469598103934665603ull;
+    const auto *pixels = static_cast<const uint64_t *>(shot->pixels);
+    for (size_t i = 0, n = size_t(shot->pitch) * size_t(h) / 8; i < n; ++i)
+      sum = (sum ^ pixels[i]) * 1099511628211ull;
+    hash = std::to_string(sum);
+    if (hash == shown) {
+      SDL_FreeSurface(shot);
+      return {};
+    }
     std::vector<char> buffer(MaxPng);
     auto *rw = SDL_RWFromMem(buffer.data(), int(buffer.size()));
     // JPEG encodes several times faster than PNG, so the page keeps up
     // with motion (a running name, a filling bar).
-    if (rw && IMG_SaveJPG_RW(shot, rw, 0, 90) == 0)
+    if (rw && IMG_SaveJPG_RW(shot, rw, 0, 80) == 0)
       png.assign(buffer.data(), size_t(SDL_RWtell(rw)));
     if (rw)
       SDL_RWclose(rw);
@@ -208,7 +223,13 @@ int serveWeb(ui::Application &app, ui::Runtime &runtime, int port) {
         extra += "X-Text-Guide: " + encode(text->guide) + "\r\n" +
                  (text->password ? std::string("X-Text-Password: 1\r\n")
                                  : "X-Text-Initial: " + encode(text->initial) + "\r\n");
-      reply(client, "image/jpeg", frame(runtime.renderer()), extra);
+      std::string hash;
+      const auto image = frame(runtime.renderer(), args["h"], hash);
+      extra += "X-Frame: " + hash + "\r\n";
+      if (image.empty())
+        reply(client, "text/plain", "", extra, "204 No Content");
+      else
+        reply(client, "image/jpeg", image, extra);
     } else if (path == "/key") {
       input(app, args["k"]);
       reply(client, "text/plain", "ok");

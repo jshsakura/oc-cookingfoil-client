@@ -99,8 +99,11 @@ void Images::request(const std::string &url) {
   if (found != entries_.end()) {
     auto &e = found->second;
     // Asking again counts as use, so a picture loaded ahead of time (the
-    // next banner slide) is not the first one evicted.
+    // next banner slide) is kept like one on screen. Otherwise it was
+    // dropped as soon as it was decoded and fetched again every frame,
+    // and the pictures on screen waited behind it.
     e.used = ++tick_;
+    e.frame = frame_;
     // Still waiting: drawn again means on screen now, so it goes first.
     if (!e.finished) {
       if (const auto queued = std::find(jobs_.begin(), jobs_.end(), url); queued != jobs_.end() && queued != jobs_.begin()) {
@@ -114,8 +117,10 @@ void Images::request(const std::string &url) {
         SDL_GetTicks() - e.failedAt < RetryAfterMs << std::clamp(e.attempts - 1, 0, MaxAttempts))
       return;
     e.failed = e.finished = false;
-  } else
+  } else {
     entries_[url].used = ++tick_;
+    entries_[url].frame = frame_;
+  }
   // Newest first: what was just drawn is what the player is looking at.
   jobs_.push_front(url);
   while (jobs_.size() > MaxQueuedJobs) {

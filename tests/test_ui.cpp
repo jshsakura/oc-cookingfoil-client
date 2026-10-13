@@ -4,6 +4,7 @@
 #include "core/SaveBackups.hpp"
 #include "core/ShopSaves.hpp"
 #include "ui/Application.hpp"
+#include "ui/Images.hpp"
 #include <algorithm>
 #include <fstream>
 #include <filesystem>
@@ -11,6 +12,26 @@
 #include <unistd.h>
 int runUiTests(SDL_Renderer *renderer) {
   int failures = 0;
+  {
+    // A picture loaded ahead (the next banner slide) is asked for but not
+    // drawn. It must stay decoded while a full screen of others is drawn,
+    // or it is dropped and fetched again every frame.
+    foil::ui::Images images(renderer);
+    const auto bytes = foil::readFile("host/fixtures/art/0100001019F6E000.jpg");
+    CHECK(!bytes.empty());
+    images.provide("next", bytes);
+    for (int i = 0; i < 30; ++i)
+      images.provide("shown" + std::to_string(i), bytes);
+    bool kept = true;
+    for (int frame = 0; frame < 5; ++frame) {
+      images.request("next");
+      for (int i = 0; i < 30; ++i)
+        images.draw("shown" + std::to_string(i), 0, 0, 10, 10);
+      images.decode(100);
+      kept = kept && (frame == 0 || images.loaded("next"));
+    }
+    CHECK(kept);
+  }
   foil::ui::Fonts fonts(renderer);
   CHECK(fonts.open());
   CHECK(fonts.supports(0xD55C));
