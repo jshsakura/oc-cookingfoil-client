@@ -464,7 +464,7 @@ private:
   void applyShopSave();
   void applyConfirm();
   void saveNeedsGameDialog();
-  void marquee(const std::string &text, float x, float y, int size, float width);
+  void marquee(const std::string &text, float x, float y, int size, float width, bool bold = true);
   std::string marqueeText_;
   uint32_t marqueeAt_ = 0;
   static constexpr int SavesTabs = 3;

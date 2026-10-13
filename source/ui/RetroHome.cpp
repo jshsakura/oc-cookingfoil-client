@@ -114,8 +114,9 @@ void Application::retroHome() {
         paint_.rect(cx + 10, cy + Card - 18, Card - 20, 8, {22, 22, 26, 190}, 4);
         paint_.rect(cx + 10, cy + Card - 18, std::max(8.f, (Card - 20) * ratio), 8, Butter, 4);
       }
-      // Two lines under the cover, as on 홈's shelves.
-      paint_.fonts.wrapped(game.name, cx, cy + 160, 18, Ink, Card, 2);
+      // One line under the cover, as on 홈's shelves; the focused name runs.
+      if (on) marquee(game.name, cx, cy + 158, 18, Card, false);
+      else paint_.fonts.text(game.name, cx, cy + 158, 18, Ink, false, Card);
     }
   }
   SDL_RenderSetClipRect(paint_.renderer, SDL_RectEmpty(&page) ? nullptr : &page);

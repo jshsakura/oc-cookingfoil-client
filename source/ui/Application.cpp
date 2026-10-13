@@ -1271,7 +1271,8 @@ void Application::card(const Group &g, float x, float y, bool selected,
   // Review score on the poster's top right.
   scoreBadge(g.representative.score, x + 150 - 6, y + 6);
   if (badges) {
-    paint_.fonts.text(g.representative.name, x, y + 158, 18, Ink, false, 150);
+    if (selected) marquee(g.representative.name, x, y + 158, 18, 150, false);
+    else paint_.fonts.text(g.representative.name, x, y + 158, 18, Ink, false, 150);
     // Badges in priority order; one that would spill past the card is left out.
     std::vector<std::string> labels;
     if (g.base && !g.base->priceDiscount.empty())
@@ -1286,8 +1287,10 @@ void Application::card(const Group &g, float x, float y, bool selected,
         break;
       at += paint_.pill(label, at, y + 194) + 6;
     }
-  } else
-    paint_.fonts.wrapped(g.representative.name, x, y + 160, 18, Ink, 150, 2);
+  } else if (selected)
+    marquee(g.representative.name, x, y + 158, 18, 150, false);
+  else
+    paint_.fonts.text(g.representative.name, x, y + 158, 18, Ink, false, 150);
 }
 void Application::footer(
     const std::vector<std::pair<std::string, std::string>> &screenHints) {

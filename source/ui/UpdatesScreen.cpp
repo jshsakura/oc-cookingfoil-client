@@ -120,7 +120,8 @@ void Application::updates() {
     paint_.rect(260, y, 992, 108, Surface, 18);
     const auto name = group ? group->representative.name : row.item.name;
     cover(group ? group->representative.icon : row.item.icon, 282, y + 14, 80, false, name);
-    paint_.fonts.text(name, 382, y + 24, 22, Ink, true, 620);
+    if (inContent() && i == selected_) marquee(name, 382, y + 24, 22, 620);
+    else paint_.fonts.text(name, 382, y + 24, 22, Ink, true, 620);
     std::string installed = row.installedVersion ? "v" + std::to_string(*row.installedVersion) : tr("없음");
     const auto local = std::find_if(installed_.games.begin(), installed_.games.end(), [&](const auto &g) { return g.titleId == row.baseId; });
     if (row.item.type == "update" && local != installed_.games.end() && !local->displayVersion.empty())

@@ -149,7 +149,8 @@ void Application::savesScreen() {
     paint_.rect(260, y, 992, RowHeight, Surface, 16);
     const auto icon = installedIcon(g);
     cover(icon, 278, y + 10, 64, false, g.name);
-    paint_.fonts.text(g.name, 360, y + 12, 21, Ink, true, 640);
+    if (inContent() && i == selected_ && !managedGame_) marquee(g.name, 360, y + 12, 21, 640);
+    else paint_.fonts.text(g.name, 360, y + 12, 21, Ink, true, 640);
     paint_.fonts.text(g.titleId, 360, y + 46, 16, Secondary);
     // How many backups the SD card already holds (save-keeper's included),
     // counted once per visit rather than every frame.

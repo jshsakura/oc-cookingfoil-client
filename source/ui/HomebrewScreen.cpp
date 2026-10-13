@@ -449,7 +449,8 @@ void Application::homebrewScreen() {
     const bool busy = retroBusy_ == "homebrew:" + app.id;
     if (busy || state != homebrew::Status::Available)
       paint_.pill(busy ? tr("받는 중") : state == homebrew::Status::Update ? tr("업데이트|항목") : tr("설치됨"), x + 8, y + 8);
-    paint_.fonts.text(app.name, x, y + 158, 18, Ink, false, 150);
+    if (inContent() && selected_ == i) marquee(app.name, x, y + 158, 18, 150, false);
+    else paint_.fonts.text(app.name, x, y + 158, 18, Ink, false, 150);
     // Size first; the version beside it only when both fit under the icon.
     float px = x;
     if (app.size) px += paint_.pill(formatBytes(app.size), px, y + 194) + 6;
@@ -489,7 +490,7 @@ void Application::homebrewAskDialog() {
                           installed ? tr("닫기") : tr("취소"), "", accept, 22);
   const float x = body.x + 32, y = body.y + 24, textX = x + Icon + 28;
   cover(homebrewIcon(app), x, y, int(Icon), false, app.name, true);
-  paint_.fonts.text(app.name, textX, y, 24, Ink, true, textW);
+  marquee(app.name, textX, y, 24, textW);
   std::string facts = app.version.empty() ? "" : "v" + app.version;
   if (!app.author.empty()) facts += (facts.empty() ? "" : " · ") + app.author;
   if (app.size) facts += (facts.empty() ? "" : " · ") + formatBytes(app.size);

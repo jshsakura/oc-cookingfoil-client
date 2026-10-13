@@ -537,7 +537,7 @@ float Application::patchDownloadCard(float y) {
     paint_.icon(32, 308, y + 44, Ink, 32);
   } else
     cover(icon, 284, y + 20, 80, false, patch.name);
-  paint_.fonts.text(patch.name, 386, y + 20, 22, Ink, true, 700);
+  marquee(patch.name, 386, y + 20, 22, 700);
   const bool fetching = running && (patchBusyLabel_ == Getting || patchBusyLabel_ == Updating);
   const uint64_t got = fetching ? patchReceived_.load() : 0, total = patch.size, moving = patchMoving_.load();
   const double ratio = !running ? 0.0
@@ -801,7 +801,8 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
       paint_.focusRow(x, y, w, Row, Ground, 12);
     else
       paint_.rect(x, y, w, Row, Ground, 12);
-    paint_.fonts.text(row.patch.name, x + 20, y + 10, 21, Ink, true, w - 220);
+    if (n == patchPickRow_ && !managingPatch_ && !confirmPatchRemove_) marquee(row.patch.name, x + 20, y + 10, 21, w - 220);
+    else paint_.fonts.text(row.patch.name, x + 20, y + 10, 21, Ink, true, w - 220);
     std::string meta;
     if (!row.patch.version.empty()) meta = "v" + row.patch.version;
     for (const auto &kind : row.patch.kinds) meta += (meta.empty() ? "" : " · ") + std::string(patchKindLabel(kind));
@@ -875,7 +876,8 @@ void Application::patchMenu(const PatchRow &row) {
   cover(row.icon, x, y, int(Icon), false, row.game, !row.patch.homebrewApp.empty());
   const auto size = formatBytes(row.record ? row.record->bytes : row.patch.size);
   const float sizeW = paint_.fonts.measure(size, 18, true);
-  paint_.fonts.text(row.patch.name, textX, y + 4, 22, Ink, true, textW - sizeW - 16);
+  // The full name runs here, since the list cuts it short.
+  marquee(row.patch.name, textX, y + 4, 22, textW - sizeW - 16);
   paint_.fonts.text(size, x + w - sizeW, y + 8, 18, Ink, true);
   float at = textX;
   for (const auto &kind : row.patch.kinds)

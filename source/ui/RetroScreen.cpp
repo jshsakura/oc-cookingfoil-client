@@ -695,27 +695,40 @@ void Application::retroList() {
 }
 // A focused name too long for its row scrolls: a pause, then left at a
 // steady pace, a pause at the end, and back to the start.
-void Application::marquee(const std::string &text, float x, float y, int size, float width) {
-  const float full = paint_.fonts.measure(text, size, true);
+void Application::marquee(const std::string &text, float x, float y, int size, float width, bool bold) {
+  const float full = paint_.fonts.measure(text, size, bold);
   if (full <= width) {
-    paint_.fonts.text(text, x, y, size, Ink, true);
+    paint_.fonts.text(text, x, y, size, Ink, bold);
     return;
   }
-  constexpr float Speed = 60, Pause = 2000; // px per second, ms: rest first, then move
+  // A ticker: rest at the start, then slide left with the name coming
+  // round again from the right, and rest once it is whole again.
+  constexpr float Speed = 40, Pause = 1800, Gap = 56; // px per second, ms, px
   // Starts from the beginning each time the focus lands on a new name.
   if (text != marqueeText_) {
     marqueeText_ = text;
     marqueeAt_ = SDL_GetTicks();
   }
-  const float travel = full - width, run = travel / Speed * 1000;
-  const float t = float((SDL_GetTicks() - marqueeAt_) % uint32_t(Pause * 2 + run));
-  const float shift = t < Pause ? 0 : t < Pause + run ? (t - Pause) / 1000 * Speed : travel;
+  // It eases into its speed and eases out as the name comes whole again,
+  // so it never jumps off or stops dead.
+  constexpr float Ramp = .8f; // s
+  const float loop = full + Gap, run = loop / Speed + Ramp;
+  const float t = float((SDL_GetTicks() - marqueeAt_) % uint32_t(Pause + run * 1000)) / 1000;
+  const float m = std::max(0.f, t - Pause / 1000);
+  const float shift = m < Ramp         ? Speed * m * m / (2 * Ramp)
+                      : m < run - Ramp ? Speed * (m - Ramp / 2)
+                                       : loop - Speed * (run - m) * (run - m) / (2 * Ramp);
   SDL_Rect outer;
   SDL_RenderGetClipRect(paint_.renderer, &outer);
   const bool clipped = SDL_RenderIsClipEnabled(paint_.renderer);
-  const SDL_Rect inner{int(x), int(y - 4), int(width), size * 2};
+  SDL_Rect inner{int(x), int(y - 4), int(width), size * 2};
+  // Stay inside a scrolling area's clip as well.
+  if (clipped && !SDL_IntersectRect(&inner, &outer, &inner))
+    return;
   SDL_RenderSetClipRect(paint_.renderer, &inner);
-  paint_.fonts.text(text, x - shift, y, size, Ink, true);
+  paint_.fonts.text(text, x - shift, y, size, Ink, bold);
+  if (shift > 0)
+    paint_.fonts.text(text, x - shift + loop, y, size, Ink, bold);
   SDL_RenderSetClipRect(paint_.renderer, clipped ? &outer : nullptr);
 }
 } // namespace foil::ui

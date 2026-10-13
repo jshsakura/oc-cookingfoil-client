@@ -439,7 +439,8 @@ void Application::dropboxTab() {
     cover(icon, 278, y + 10, 64, false, g.name);
     // A game the shop does not know is named by its title id, shown once.
     const bool named = g.name != g.titleId;
-    paint_.fonts.text(g.name, 360, named ? y + 12 : y + 28, 21, Ink, true, 500);
+    if (inContent() && n == focus && !dropboxModal()) marquee(g.name, 360, named ? y + 12 : y + 28, 21, 500);
+    else paint_.fonts.text(g.name, 360, named ? y + 12 : y + 28, 21, Ink, true, 500);
     if (named) paint_.fonts.text(g.titleId, 360, y + 46, 16, Secondary);
     auto counted = backupCounts_.find(id);
     if (counted == backupCounts_.end()) counted = backupCounts_.emplace(id, saves::countBackups(root, id)).first;

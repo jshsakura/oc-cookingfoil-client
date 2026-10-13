@@ -217,7 +217,8 @@ void Application::installedScreen() {
       openManagement();
     });
     cover(icon, x, y, 150, inContent() && selected_ == first + n && !managedGame_, g.name);
-    paint_.fonts.text(g.name, x, y + 158, 18, Ink, false, 150);
+    if (inContent() && selected_ == first + n && !managedGame_) marquee(g.name, x, y + 158, 18, 150, false);
+    else paint_.fonts.text(g.name, x, y + 158, 18, Ink, false, 150);
     if (updatable(g.titleId)) paint_.pill(tr("업데이트|항목"), x + 8, y + 8);
     const float pill = paint_.pill(g.storage.size() > 1 ? tr("SD · 본체") : g.storage.empty() ? tr("설치됨") : g.storage.front(), x, y + 194);
     if (g.bytes)
