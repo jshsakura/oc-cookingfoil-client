@@ -15,6 +15,45 @@ index beb8363..8bba534 100755
  
              // The current segment to which further data will be appended
              u64 m_currentFreeSegment = 0;
+diff --git a/include/nx/nca_writer.h b/include/nx/nca_writer.h
+index 8e5b7e5..c4fb307 100755
+--- a/include/nx/nca_writer.h
++++ b/include/nx/nca_writer.h
+@@ -21,6 +21,11 @@ SOFTWARE.
+ */
+ 
+ #pragma once
++#include <exception>
++#include <deque>
++#include <condition_variable>
++#include <mutex>
++#include <thread>
+ #include <functional>
+ #include <switch.h>
+ #include <vector>
+@@ -86,6 +91,22 @@ protected:
+ 	NcmContentId m_ncaId;
+ 
+ 	u64 m_offset;
++
++private:
++	// CookingFoil: a full buffer goes to the card on a thread of its own while
++	// the next one is decompressed and encrypted, so the card and the CPU work
++	// at once. At most one buffer waits; a write error comes back on the next
++	// flush or at close.
++	struct Pending { u64 offset; std::vector<u8> data; };
++	void startFlusher();
++	void drainFlusher(); // waits for the card, then ends the thread
++	std::thread m_flusher;
++	std::mutex m_flushLock;
++	std::condition_variable m_flushChanged;
++	std::deque<Pending> m_pending;
++	std::vector<u8> m_spare;
++	bool m_flushing = false, m_flushStop = false;
++	std::exception_ptr m_flushError;
+ };
+ 
+ class NcaWriter : public CloseableWriter
 diff --git a/source/install/http_nsp.cpp b/source/install/http_nsp.cpp
 index 50d2f4a..ab86040 100755
 --- a/source/install/http_nsp.cpp
@@ -241,6 +280,110 @@ index 325c6b9..bd3759f 100755
          }
  
          writer.close();
+diff --git a/source/nx/nca_writer.cpp b/source/nx/nca_writer.cpp
+index 0ba55bd..c19531f 100755
+--- a/source/nx/nca_writer.cpp
++++ b/source/nx/nca_writer.cpp
+@@ -200,7 +200,60 @@ NcaBodyWriter::NcaBodyWriter(const NcmContentId& ncaId, u64 offset, std::shared_
+ 
+ NcaBodyWriter::~NcaBodyWriter()
+ {
+-     NcaBodyWriter::close();
++     // A destructor must not throw: a failed write already surfaced, or the
++     // install is being torn down anyway.
++     try { NcaBodyWriter::close(); } catch (...) {}
++     {
++          std::lock_guard<std::mutex> held(m_flushLock);
++          m_flushStop = true;
++     }
++     m_flushChanged.notify_all();
++     if (m_flusher.joinable()) m_flusher.join();
++}
++
++void NcaBodyWriter::startFlusher()
++{
++     m_flusher = std::thread([this] {
++          std::unique_lock<std::mutex> held(m_flushLock);
++          while (true)
++          {
++               m_flushChanged.wait(held, [this] { return !m_pending.empty() || m_flushStop; });
++               if (m_pending.empty()) return;
++               Pending next = std::move(m_pending.front());
++               m_pending.pop_front();
++               m_flushing = true;
++               held.unlock();
++               std::exception_ptr error;
++               try {
++                    m_contentStorage->WritePlaceholder(*(NcmPlaceHolderId*)&m_ncaId, next.offset, next.data.data(), next.data.size());
++               } catch (...) {
++                    error = std::current_exception();
++               }
++               next.data.clear();
++               held.lock();
++               if (error && !m_flushError) m_flushError = error;
++               if (m_spare.capacity() == 0) m_spare = std::move(next.data);
++               m_flushing = false;
++               m_flushChanged.notify_all();
++          }
++     });
++}
++
++void NcaBodyWriter::drainFlusher()
++{
++     {
++          std::unique_lock<std::mutex> held(m_flushLock);
++          m_flushChanged.wait(held, [this] { return m_pending.empty() && !m_flushing; });
++          m_flushStop = true;
++     }
++     m_flushChanged.notify_all();
++     if (m_flusher.joinable()) m_flusher.join();
++     if (m_flushError)
++     {
++          auto error = m_flushError;
++          m_flushError = nullptr;
++          std::rethrow_exception(error);
++     }
+ }
+ 
+ void NcaBodyWriter::close()
+@@ -210,6 +263,7 @@ void NcaBodyWriter::close()
+      doBeforeClose(); // Derived close/flush delegates so content buffer is complete
+ 
+      flushContentBuffer(); // Virtual dispatch - overrides expected to invoke parent
++     drainFlusher(); // everything handed to the card thread is on the card
+ 
+      doClose(); // Derived cleanup before finalizing close
+ 
+@@ -274,8 +328,27 @@ void NcaBodyWriter::flushContentBuffer()
+ 
+      if (m_contentStorage)
+      {
+-          m_contentStorage->WritePlaceholder(*(NcmPlaceHolderId*)&m_ncaId, m_offset, m_contentBuffer.data(), m_contentBuffer.size());
+-          m_offset += m_contentBuffer.size();
++          // Hand the full buffer to the card thread and carry on with an empty
++          // one (the one it finished with, when it has).
++          std::unique_lock<std::mutex> held(m_flushLock);
++          m_flushChanged.wait(held, [this] { return m_pending.empty() || m_flushError; });
++          if (m_flushError)
++          {
++               auto error = m_flushError;
++               m_flushError = nullptr;
++               std::rethrow_exception(error);
++          }
++          if (!m_flusher.joinable())
++               startFlusher();
++          const u64 size = m_contentBuffer.size();
++          std::vector<u8> next = std::move(m_spare);
++          m_spare = std::vector<u8>();
++          if (next.capacity() < CONTENT_BUFFER_SIZE) next.reserve(CONTENT_BUFFER_SIZE);
++          std::swap(next, m_contentBuffer);
++          m_pending.push_back({m_offset, std::move(next)});
++          m_offset += size;
++          m_flushChanged.notify_all();
++          return;
+      }
+ 
+      m_contentBuffer.resize(0);
 diff --git a/source/util/network_util.cpp b/source/util/network_util.cpp
 index ea0dad8..1fabe8f 100755
 --- a/source/util/network_util.cpp

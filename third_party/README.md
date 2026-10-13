@@ -60,6 +60,10 @@ applied as a series rather than checked one by one.
 - XCI/XCZ: one connection streams each NCA on a fetch thread into at most three 4 MB chunks
   while the install thread writes them. Before, it fetched 4 MB, wrote it, and opened a new
   connection for the next 4 MB.
+- Every NCA body writer hands each full 8 MB buffer to a card thread of its own and fills the
+  next one meanwhile, so zstd and AES run while the card is written instead of between writes.
+  At most one buffer waits; a write error comes back on the next flush or at close, and close
+  waits for the card.
 
 ### Limits
 
