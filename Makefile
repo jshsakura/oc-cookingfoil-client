@@ -3,11 +3,15 @@
 JOBS := $(shell nproc 2>/dev/null || echo 4)
 MAKEFLAGS += -j$(JOBS)
 HOST_CXX ?= g++
+HOST_CC ?= gcc
 HOST_PACKAGES := sdl2 SDL2_ttf SDL2_image json-c libcurl
 HOST_FLAGS := -std=c++17 -O2 -g -Wall -Wextra -Wpedantic -Iinclude $(shell pkg-config --cflags $(HOST_PACKAGES))
 HOST_LIBS := $(shell pkg-config --libs $(HOST_PACKAGES)) -pthread
 QR_ROOT := third_party/QR-Code-generator/cpp
-HOST_FLAGS += -I$(QR_ROOT)
+HOST_FLAGS += -I$(QR_ROOT) -Ithird_party/sqlite
+# SQLite (third_party/sqlite, the amalgamation): built once as C with its own
+# warnings off; no extensions, so nothing loads code at run time.
+SQLITE_FLAGS := -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_OMIT_DEPRECATED
 # makefiles/switch.mk holds major.minor; the last number is the commit
 # count, so every build reads newer than the one before and 설정 > 앱
 # 업데이트 can tell them apart (the server reads it from the NACP).
@@ -53,7 +57,7 @@ $(QR_ROOT)/qrcodegen.hpp: $(QR_ROOT)/qrcodegen.cpp
 # share the app's objects instead of compiling everything twice.
 HOST_OBJ := build-host/obj
 host_obj = $(addprefix $(HOST_OBJ)/,$(patsubst %.cpp,%.o,$(1)))
-SHARED_OBJ := $(call host_obj,$(SHARED))
+SHARED_OBJ := $(call host_obj,$(SHARED)) $(HOST_OBJ)/third_party/sqlite/sqlite3.o
 HOST_APP_OBJ := $(call host_obj,$(wildcard host/*.cpp))
 TEST_OBJ := $(call host_obj,$(wildcard tests/*.cpp))
 # The version is a -D flag, which make does not see change: the files that
@@ -64,6 +68,9 @@ $(call host_obj,$(shell grep -rl 'core/Version.hpp' source host tests 2>/dev/nul
 $(HOST_OBJ)/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(HOST_CXX) $(HOST_FLAGS) -I. -MMD -MP -c $< -o $@
+$(HOST_OBJ)/third_party/sqlite/sqlite3.o: third_party/sqlite/sqlite3.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -O2 -w $(SQLITE_FLAGS) -DSQLITE_THREADSAFE=0 -c $< -o $@
 -include $(SHARED_OBJ:.o=.d) $(HOST_APP_OBJ:.o=.d) $(TEST_OBJ:.o=.d)
 build-host/cookingfoil-host: $(HOST_APP_OBJ) $(SHARED_OBJ)
 	$(HOST_CXX) $^ -o $@ $(HOST_LIBS)

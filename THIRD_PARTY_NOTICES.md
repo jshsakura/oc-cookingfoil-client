@@ -21,6 +21,14 @@ It includes or links the components below. Each remains under its own license.
 | `lib.LICENSE` | CyberFoil library code | MIT | Copyright (c) 2026 luketanti |
 | `libusbhsfs.LICENSE` | libusbhsfs (USB code, not compiled into CookingFoil) | ISC | Copyright (c) 2020, DarkMatterCore; Copyright (c) 2020, XorTroll |
 
+### SQLite
+
+- Source: https://www.sqlite.org/ amalgamation 3.46.1 (`third_party/sqlite`, unmodified),
+  SHA3-256 of `sqlite-amalgamation-3460100.zip`
+  af6aae8d3eccc608857c63cf56efbadc70da48b5c719446b353ed88dded1e288
+- License: public domain (https://www.sqlite.org/copyright.html)
+- Holds the download queue, history and resume points.
+
 ### QR Code generator library
 
 - Source: https://github.com/nayuki/QR-Code-generator (submodule `third_party/QR-Code-generator`,

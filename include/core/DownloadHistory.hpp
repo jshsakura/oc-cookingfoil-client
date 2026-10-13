@@ -16,6 +16,11 @@ struct Entry {
   // "retroarch" RetroArch's files.
   std::string kind, payload;
   int group = 0; // one pick of files (base game, update, DLC) shares it
+  // What a finished install took: bytes received, when it started, the
+  // download and the install after it (seconds).
+  uint64_t bytes = 0;
+  int64_t startedAt = 0;
+  double downloadSeconds = 0, installSeconds = 0;
 };
 std::vector<Entry> parse(const std::string &json);
 std::string serialize(const std::vector<Entry> &entries);

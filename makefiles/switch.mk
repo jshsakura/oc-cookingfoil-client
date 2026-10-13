@@ -12,7 +12,8 @@ ENGINE_DIRS := $(ENGINE_ROOT)/source/install $(ENGINE_ROOT)/source/nx $(ENGINE_R
 ENGINE_CPP := $(filter-out %/usb_nsp.cpp %/usb_xci.cpp %/sdmc_nsp.cpp %/sdmc_xci.cpp %/usbhdd.cpp,$(wildcard $(ENGINE_ROOT)/source/install/*.cpp $(ENGINE_ROOT)/source/nx/*.cpp $(ENGINE_ROOT)/source/data/*.cpp)) $(addprefix $(ENGINE_ROOT)/source/util/,crypto.cpp file_util.cpp title_util.cpp network_util.cpp)
 ENGINE_C := $(wildcard $(ENGINE_ROOT)/source/nx/ipc/*.c) $(ENGINE_ROOT)/source/util/debug.c
 QR_ROOT := third_party/QR-Code-generator/cpp
-INCLUDES := engine-shim include $(ENGINE_ROOT)/include $(ENGINE_ROOT)/include/util $(QR_ROOT)
+SQLITE_ROOT := third_party/sqlite
+INCLUDES := engine-shim include $(ENGINE_ROOT)/include $(ENGINE_ROOT)/include/util $(QR_ROOT) $(SQLITE_ROOT)
 APP_TITLE := CookingFoil
 APP_AUTHOR := OpenCourse
 # The one place the version lives: the NACP, the HTTP Version header and the
@@ -28,9 +29,9 @@ LIBDIRS := $(PORTLIBS) $(LIBNX)
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 export OUTPUT := $(CURDIR)/$(TARGET)
 export TOPDIR := $(CURDIR)
-export VPATH := $(foreach dir,$(SOURCES) $(ENGINE_DIRS) $(QR_ROOT),$(CURDIR)/$(dir))
+export VPATH := $(foreach dir,$(SOURCES) $(ENGINE_DIRS) $(QR_ROOT) $(SQLITE_ROOT),$(CURDIR)/$(dir))
 export DEPSDIR := $(CURDIR)/$(BUILD)
-export OFILES := $(foreach dir,$(SOURCES),$(notdir $(patsubst %.cpp,%.o,$(wildcard $(dir)/*.cpp)))) $(notdir $(ENGINE_CPP:.cpp=.o) $(ENGINE_C:.c=.o)) qrcodegen.o
+export OFILES := $(foreach dir,$(SOURCES),$(notdir $(patsubst %.cpp,%.o,$(wildcard $(dir)/*.cpp)))) $(notdir $(ENGINE_CPP:.cpp=.o) $(ENGINE_C:.c=.o)) qrcodegen.o sqlite3.o
 export INCLUDE := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) $(foreach dir,$(LIBDIRS),-I$(dir)/include) -I$(CURDIR)/$(BUILD)
 export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export LD := $(CXX)
@@ -61,5 +62,8 @@ else
 all: $(OUTPUT).nro
 $(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp $(TOPDIR)/assets/icon.jpg $(wildcard $(TOPDIR)/romfs/fonts/*) $(TOPDIR)/romfs/forwarder/main $(TOPDIR)/romfs/forwarder/main.npdm
 $(OUTPUT).elf: $(OFILES)
+# SQLite: its own warnings off; one thread uses it; no extensions, no WAL
+# (it needs shared memory the console does not have).
+sqlite3.o: CFLAGS += -w -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_OMIT_WAL -DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_OMIT_DEPRECATED
 -include $(OFILES:.o=.d)
 endif

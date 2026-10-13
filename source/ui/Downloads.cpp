@@ -28,10 +28,10 @@ void Application::downloads() {
     failed += e.outcome == history::Outcome::Failed;
     cancelled += e.outcome == history::Outcome::Cancelled;
   }
-  headerTabs({tr("Running"), tr("Done"), tr("Failed"), tr("Canceled")}, downloadsTab_, [this](int n) {
+  headerTabs({tr("Running"), tr("Failed"), tr("Canceled"), tr("Done")}, downloadsTab_, [this](int n) {
                downloadsTab_ = n;
                downloadsRow_ = 0;
-             }, 1252, 0, {running, done, failed, cancelled});
+             }, 1252, 0, {running, failed, cancelled, done});
   if (downloadsTab_ != 0) {
     downloadsHistory();
     return;
@@ -248,26 +248,35 @@ std::vector<int> Application::downloadsList() const {
   std::vector<int> out;
   for (int i = 0; i < int(history_.size()); ++i) {
     const auto o = history_[i].outcome;
-    if (o == (downloadsTab_ == 1   ? history::Outcome::Done
-              : downloadsTab_ == 2 ? history::Outcome::Failed
-                                   : history::Outcome::Cancelled))
+    if (o == (downloadsTab_ == 1   ? history::Outcome::Failed
+              : downloadsTab_ == 2 ? history::Outcome::Cancelled
+                                   : history::Outcome::Done))
       out.push_back(i);
   }
   return out;
 }
-// 완료 and 실패: what was installed and how it ended, newest first.
+// "42초", "5분 32초", "1시간 25분".
+static std::string durationText(double seconds) {
+  const auto s = std::max<int64_t>(1, std::llround(seconds));
+  if (s < 60)
+    return trf("{0} s", {std::to_string(s)});
+  if (s < 3600)
+    return trf("{0} min {1} s", {std::to_string(s / 60), std::to_string(s % 60)});
+  return trf("{0} h {1} min", {std::to_string(s / 3600), std::to_string(s % 3600 / 60)});
+}
+// 실패, 취소 and 완료: what ran and how it ended, newest first.
 void Application::downloadsHistory() {
   constexpr float Top = 90, Row = 96, Step = 108;
   constexpr int Visible = 5;
   const auto list = downloadsList();
   if (list.empty()) {
-    notice(downloadsTab_ == 1   ? tr("No finished downloads.")
-           : downloadsTab_ == 2 ? tr("No failed downloads.")
-                                : tr("No canceled downloads."),
-           downloadsTab_ == 1   ? tr("Finished installs stay here.")
-           : downloadsTab_ == 2 ? tr("Failed installs can be tried again here.")
-                                : tr("Canceled downloads can be downloaded again here, in case one was canceled by mistake."),
-           downloadsTab_ == 1 ? 24 : downloadsTab_ == 2 ? 25 : 33);
+    notice(downloadsTab_ == 1   ? tr("No failed downloads.")
+           : downloadsTab_ == 2 ? tr("No canceled downloads.")
+                                : tr("No finished downloads."),
+           downloadsTab_ == 1   ? tr("Failed installs can be tried again here.")
+           : downloadsTab_ == 2 ? tr("Canceled downloads can be downloaded again here, in case one was canceled by mistake.")
+                                : tr("Finished installs stay here."),
+           downloadsTab_ == 1 ? 25 : downloadsTab_ == 2 ? 33 : 24);
     return;
   }
   const int count = int(list.size());
@@ -282,7 +291,7 @@ void Application::downloadsHistory() {
     const auto &e = history_[list[n]];
     const float y = Top + (n - top) * Step;
     hit(260, y, 992, Row, [this, n] {
-      if (inContent() && downloadsRow_ == n && downloadsTab_ == 2) action(Action::Accept);
+      if (inContent() && downloadsRow_ == n && (downloadsTab_ == 1 || downloadsTab_ == 2)) action(Action::Accept);
       sidebar_ = false;
       downloadsRow_ = n;
     });
@@ -299,6 +308,13 @@ void Application::downloadsHistory() {
     if (e.kind == "retro") meta = std::string(tr("Retro game")) + " · " + meta;
     if (e.kind == "homebrew") meta = std::string(tr("Homebrew")) + " · " + meta;
     if (!e.error.empty()) meta += " · " + e.error;
+    // What a finished install took: average speed, the download, the install.
+    if (e.outcome == history::Outcome::Done && e.downloadSeconds > 0) {
+      char speed[32];
+      std::snprintf(speed, sizeof(speed), "%.1f", double(e.bytes) / (1024 * 1024) / e.downloadSeconds);
+      meta += " · " + trf("Average {0} MB/s", {speed}) + " · " + trf("Download time {0}", {durationText(e.downloadSeconds)}) +
+              " · " + trf("Install time {0}", {durationText(e.installSeconds)});
+    }
     paint_.fonts.text(meta, 372, y + 52, 16, Secondary, false, 640);
     const std::string state = e.outcome == history::Outcome::Done        ? tr("Done")
                               : e.outcome == history::Outcome::Cancelled ? tr("Cancelled")
@@ -326,7 +342,7 @@ void Application::downloadsAction(Action a) {
   if (a == Action::Up) downloadsRow_ = std::max(0, downloadsRow_ - 1);
   if (a == Action::Down) downloadsRow_ = std::min(count - 1, downloadsRow_ + 1);
   const int index = list[std::clamp(downloadsRow_, 0, count - 1)];
-  if (a == Action::Accept && (downloadsTab_ == 2 || downloadsTab_ == 3)) {
+  if (a == Action::Accept && (downloadsTab_ == 1 || downloadsTab_ == 2)) {
     // Retro downloads start again in the retro worker; the old entry goes
     // only once the new one is under way.
     if (!history_[index].kind.empty()) {

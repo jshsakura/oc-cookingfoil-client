@@ -13,6 +13,7 @@
 #include "core/SaveBackups.hpp"
 #include "core/Retro.hpp"
 #include "core/DownloadHistory.hpp"
+#include "core/DownloadStore.hpp"
 #include "core/ShopSaves.hpp"
 #include "core/ClientUpdate.hpp"
 #include "core/Patches.hpp"
@@ -1001,6 +1002,10 @@ private:
   void dropGroup(int group, const std::string &why);
   std::deque<QueuedInstall> installQueue_;
   int installGroups_ = 0, runningGroup_ = -1;
+  // The running install's clock and byte count, for what 완료 keeps.
+  uint32_t jobStartMs_ = 0, lastByteMs_ = 0;
+  uint64_t jobStartBytes_ = 0, lastBytes_ = 0;
+  int64_t jobStartedAt_ = 0;
   // Starts the next entry while the installer is free.
   Error launchQueued();
   void runningAction(Action a);
@@ -1009,6 +1014,8 @@ private:
   uint64_t queuedBytes() const;
   std::vector<history::Entry> history_;
   void saveHistory();
+  void openDownloads(const std::string &sd);
+  DownloadStore store_;
   // 다운로드's tabs: 0 진행 중, 1 완료, 2 실패 (and cancelled).
   int downloadsTab_ = 0, downloadsRow_ = 0;
   std::vector<int> downloadsList() const; // history_ indices in the tab

@@ -1,4 +1,5 @@
 #include "ui/Application.hpp"
+#include "net/Socket.hpp"
 #include "core/Config.hpp"
 #include "platform/Storage.hpp"
 #include "platform/Installed.hpp"
@@ -133,8 +134,7 @@ void Application::usePatchFolder(const std::string &sd) {
   homebrewLedger_ = homebrew::parseLedger(readFile(sd + "/switch/cookingfoil/homebrew.json"));
   // An app that closed mid-install left that one running: it goes back in
   // the queue, which picks up again once the shop is reachable.
-  history_ = history::parse(readFile(sd + "/switch/cookingfoil/downloads.json"));
-  history::settle(history_);
+  openDownloads(sd);
   installQueue_.clear();
   for (const auto &e : history_)
     if (e.outcome == history::Outcome::Queued && e.kind.empty() && e.install.files.size() == 1) {
@@ -507,11 +507,29 @@ void Application::poll() {
     platform::keepAwake(awake_);
   }
   const auto installStatus = installer_.progress().status;
+  if (installStatus == install::Status::Running) {
+    const auto bytes = net::receivedBytes();
+    if (bytes != lastBytes_) {
+      lastBytes_ = bytes;
+      lastByteMs_ = SDL_GetTicks();
+    }
+  }
   if (observedInstall_ == install::Status::Running && installStatus == install::Status::Succeeded)
     refreshInstalled();
   // 다운로드 keeps how it ended.
   if (observedInstall_ == install::Status::Running && installStatus != install::Status::Running &&
       installStatus != install::Status::Idle) {
+    // A finished install keeps what it took: bytes, the download (to the
+    // last byte), the install after it.
+    if (installStatus == install::Status::Succeeded)
+      for (auto &e : history_)
+        if (e.outcome == history::Outcome::Running && e.kind.empty()) {
+          e.bytes = lastBytes_ - jobStartBytes_;
+          e.startedAt = jobStartedAt_;
+          e.downloadSeconds = (lastByteMs_ - jobStartMs_) / 1000.0;
+          e.installSeconds = (SDL_GetTicks() - lastByteMs_) / 1000.0;
+          break;
+        }
     const auto outcome = installStatus == install::Status::Succeeded ? history::Outcome::Done
                          : installStatus == install::Status::Cancelled ? history::Outcome::Cancelled
                                                                        : history::Outcome::Failed;
@@ -1577,7 +1595,7 @@ void Application::render() {
       footer(Hints{{"Y", tr("Cancel")}, {"B", tr("Back")}});
     else if (downloadsTab_ == 0 || sidebar_ || downloadsList().empty())
       footer({{"B", tr("Back")}});
-    else if (downloadsTab_ == 2 || downloadsTab_ == 3)
+    else if (downloadsTab_ == 1 || downloadsTab_ == 2)
       footer(Hints{{"A", tr("Try again")}, {"X", tr("Remove")}, {"Y", tr("Clear all")}, {"B", tr("Back")}});
     else
       footer(Hints{{"X", tr("Remove")}, {"Y", tr("Clear all")}, {"B", tr("Back")}});
@@ -1882,6 +1900,9 @@ Error Application::launchQueued() {
     return error;
   }
   runningGroup_ = next.group;
+  jobStartMs_ = lastByteMs_ = SDL_GetTicks();
+  jobStartBytes_ = lastBytes_ = net::receivedBytes();
+  jobStartedAt_ = int64_t(std::time(nullptr));
   if (row != history_.end()) {
     row->outcome = history::Outcome::Running;
     row->at = int64_t(std::time(nullptr));
@@ -1897,12 +1918,31 @@ Error Application::launchQueued() {
     queuePatches(std::move(next.patches), true);
   return {};
 }
-void Application::saveHistory() {
-  if (sdRoot_.empty()) return;
-  std::error_code ec;
-  makeDirectories(std::filesystem::path(sdRoot_ + "/switch/cookingfoil").string());
+// 다운로드's records live in cookingfoil.db; the downloads.json of earlier
+// versions moves in once and goes.
+void Application::openDownloads(const std::string &sd) {
+  makeDirectories(std::filesystem::path(sd + "/switch/cookingfoil").string());
   std::string error;
-  if (!atomicWrite(sdRoot_ + "/switch/cookingfoil/downloads.json", history::serialize(history_), error))
+  if (!store_.open(sd + "/switch/cookingfoil/cookingfoil.db", error)) {
+    logLine("downloads: " + error);
+    history_.clear();
+    return;
+  }
+  history_ = store_.load();
+  const auto old = sd + "/switch/cookingfoil/downloads.json";
+  if (history_.empty() && std::filesystem::exists(old)) {
+    history_ = history::parse(readFile(old));
+    if (store_.save(history_, error))
+      std::filesystem::remove(old);
+    else
+      logLine("downloads: " + error);
+  }
+  history::settle(history_);
+  saveHistory();
+}
+void Application::saveHistory() {
+  std::string error;
+  if (store_.isOpen() && !store_.save(history_, error))
     logLine("downloads: " + error);
 }
 void Application::forgetInstall() {
