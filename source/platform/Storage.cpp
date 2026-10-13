@@ -118,6 +118,10 @@ void keepAwake(bool on) {
   appletSetMediaPlaybackState(on);
   if (appletGetAppletType() == AppletType_Application)
     appletSetAutoSleepDisabled(on);
+  // The system's own boost (CPU 1785 MHz) while downloading, as sphaira,
+  // Awoo and TinWoo do: decompressing and re-encrypting a compressed game
+  // runs on the CPU.
+  appletSetCpuBoostMode(on ? ApmCpuBoostMode_FastLoad : ApmCpuBoostMode_Normal);
 #else
   (void)on;
 #endif
