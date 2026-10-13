@@ -792,13 +792,13 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
   constexpr int Visible = 4;
   const int count = int(game.rows.size()), shown = std::min(count, Visible);
   const float textW = Width - 64 - Icon - 20;
-  const float gameH = paint_.fonts.wrapped(game.game, -10000, -10000, 16, Secondary, textW, 2);
+  const float gameH = paint_.fonts.wrapped(game.game, -10000, -10000, 18, Ink, textW, 2, true);
   const float head = std::max(Icon, gameH + 4 + 24);
   const auto body = modal(Width, 24 + head + 16 + shown * (Row + Gap) - Gap + 24, tr("상세 정보"), tr("닫기"), "", "", 32);
   const float x = body.x + 32, w = body.w - 64;
   cover(game.icon, x, body.y + 24, int(Icon), false, game.game, game.app);
-  paint_.fonts.wrapped(game.game, x + Icon + 20, body.y + 24, 16, Secondary, textW, 2);
-  paint_.fonts.text(trf("패치 {0}개", {std::to_string(count)}), x + Icon + 20, body.y + 24 + gameH + 4, 18, Ink, true);
+  paint_.fonts.wrapped(game.game, x + Icon + 20, body.y + 24, 18, Ink, textW, 2, true);
+  paint_.fonts.text(trf("패치 {0}개", {std::to_string(count)}), x + Icon + 20, body.y + 24 + gameH + 4, 16, Secondary);
   const float listTop = body.y + 24 + head + 16;
   const int first = std::clamp(patchPickRow_ - Visible / 2, 0, std::max(0, count - Visible));
   for (int n = first; n < count && n < first + Visible; ++n) {
@@ -881,13 +881,13 @@ void Application::patchMenu(const PatchRow &row) {
   const bool described = !row.patch.description.empty();
   // The whole description, as many lines as the screen leaves room for
   // (header, footer and the rows below); measured off screen first.
-  // Beside the icon: the game in small type, the patch name, then its kinds.
+  // Beside the icon: the game in bold, the patch under it in light type, then its kinds.
   // Both names show whole (up to two lines) instead of running.
   const float textW = Width - 64 - Icon - 20;
   const auto size = formatBytes(row.record ? row.record->bytes : row.patch.size);
   const float sizeW = paint_.fonts.measure(size, 17, true), nameW = textW - sizeW - 16;
-  const float gameH = paint_.fonts.wrapped(row.game, -10000, -10000, 16, Secondary, nameW, 2);
-  const float nameH = paint_.fonts.wrapped(row.patch.name, -10000, -10000, 18, Ink, nameW, 2, true);
+  const float gameH = paint_.fonts.wrapped(row.game, -10000, -10000, 18, Ink, nameW, 2, true);
+  const float nameH = paint_.fonts.wrapped(row.patch.name, -10000, -10000, 16, Secondary, nameW, 2);
   const float head = std::max(Icon, gameH + 4 + nameH + 10 + 26);
   const float fixed = 24 + head + 16 + 8 + choices.size() * (ChoiceHeight + ChoiceGap) + 14;
   const int room = std::max(2, int((720 - 48 - 60 - 60 - fixed) / (17 * 1.3f)));
@@ -898,10 +898,10 @@ void Application::patchMenu(const PatchRow &row) {
   const float x = body.x + 32, w = body.w - 64, textX = x + Icon + 20;
   float y = body.y + 24;
   cover(row.icon, x, y, int(Icon), false, row.game, !row.patch.homebrewApp.empty());
-  paint_.fonts.wrapped(row.game, textX, y, 16, Secondary, nameW, 2);
+  paint_.fonts.wrapped(row.game, textX, y, 18, Ink, nameW, 2, true);
   const float nameY = y + gameH + 4;
-  paint_.fonts.wrapped(row.patch.name, textX, nameY, 18, Ink, nameW, 2, true);
-  paint_.fonts.text(size, x + w - sizeW, nameY + 1, 17, Ink, true);
+  paint_.fonts.wrapped(row.patch.name, textX, nameY, 16, Secondary, nameW, 2);
+  paint_.fonts.text(size, x + w - sizeW, y + 1, 17, Ink, true);
   const float pillY = nameY + nameH + 10;
   float at = textX;
   for (const auto &kind : row.patch.kinds)
