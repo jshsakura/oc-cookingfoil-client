@@ -47,12 +47,13 @@ void Application::downloads() {
                     106, 26, Ink, true);
   paint_.rect(418, 146, 810, 14, Line, 7);
   const auto filled = 810 * std::clamp(p.percent, 0., 100.) / 100.;
+  const bool paused = p.status == install::Status::Running && installer_.paused();
   paint_.rect(418, 146, filled, 14,
-              p.status == install::Status::Succeeded ? Okay : Butter, 7);
+              p.status == install::Status::Succeeded ? Okay : paused ? Secondary : Butter, 7);
   if (filled > 0 && filled < 810)
     paint_.rect(418 + filled - 1, 146, 2, 14, Ink);
   std::string status = p.phase;
-  if (p.speed > 0 && p.status == install::Status::Running) {
+  if (p.speed > 0 && p.status == install::Status::Running && !paused) {
     char speed[64];
     std::snprintf(speed, sizeof(speed), " · %.1f MB/s", p.speed);
     const auto seconds =
@@ -101,6 +102,15 @@ void Application::downloads() {
                                : Secondary,
                       true);
     x += width + 10;
+  }
+  // Pause or resume, bottom right of the card (A does the same).
+  if (p.status == install::Status::Running) {
+    const std::string label = paused ? tr("이어받기") : tr("일시정지");
+    const float w = paint_.fonts.measure(label, 16, true) + 32;
+    const float bx = 1228 - w;
+    hit(bx, 204, w, 40, [this] { installer_.setPaused(!installer_.paused()); });
+    paint_.rect(bx, 208, w, 32, paused ? Butter : Ground, 8);
+    paint_.fonts.middle(label, bx + 16, 224, 16, Ink, true);
   }
   // How it ended, in one strip under the card; 완료 and 실패 keep the rest.
   int y = 286;

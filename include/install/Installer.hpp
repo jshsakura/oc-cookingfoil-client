@@ -30,6 +30,10 @@ public:
   Error start(std::vector<Item> files, std::string name, std::string icon,
               std::string target, Server server, State state);
   void cancel() { cancel_ = true; }
+  // Pause at any moment: the download stops and resumes at the same byte.
+  // What is already downloaded keeps being written meanwhile.
+  void setPaused(bool paused);
+  bool paused() const { return pause_; }
   bool cancellationRequested() const { return cancel_; }
   // Set from 설정 when the install starts; the engine reads it per file.
   bool skipSignatureCheck() const { return skipSignature_; }
@@ -49,7 +53,7 @@ private:
   void run(std::vector<Item> files, Server server, State state);
   mutable std::mutex mutex_;
   std::thread thread_;
-  std::atomic<bool> cancel_{false}, skipSignature_{false}, skipFirmware_{false};
+  std::atomic<bool> cancel_{false}, pause_{false}, skipSignature_{false}, skipFirmware_{false};
   Progress progress_;
   uint64_t completed_ = 0;
   std::map<std::string, uint64_t> contents_;

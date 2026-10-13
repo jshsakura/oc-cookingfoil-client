@@ -50,5 +50,23 @@ int runInstallerTests() {
   CHECK(installer.progress().percent == 50);
   installer.cancel();
   CHECK(installer.cancellationRequested());
+  {
+    // A paused install says so, and the engine's own progress lines do not
+    // cover it until it resumes; it comes back to downloading.
+    foil::install::Installer installer;
+    foil::install::Progress running;
+    running.status = foil::install::Status::Running;
+    running.speed = 12.5;
+    installer.preview(running);
+    installer.setPaused(true);
+    CHECK(installer.paused());
+    CHECK(installer.progress().phase == "일시정지했습니다.");
+    CHECK(installer.progress().speed == 0);
+    installer.phase("다운로드하고 있습니다.");
+    CHECK(installer.progress().phase == "일시정지했습니다.");
+    installer.setPaused(false);
+    CHECK(!installer.paused());
+    CHECK(installer.progress().phase == "다운로드하고 있습니다.");
+  }
   return failures;
 }

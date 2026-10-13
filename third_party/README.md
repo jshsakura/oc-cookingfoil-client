@@ -69,6 +69,10 @@ applied as a series rather than checked one by one.
   handed on strictly in order. A failed chunk is asked for again from where it stopped, up to
   three times; after that, or on 401/403/404/416, the rest goes on the single stream with its
   own retries. Every range request shares one handle setup.
+- Pause: when the install manager is paused (`instPage::isInstallPaused`), every connection is
+  dropped and the fetch waits; on resume each piece asks for the rest from the byte it stopped
+  at. A pause never spends a retry. Busy (503), rate-limited (429/1015) and tunnel timeouts (524)
+  wait 5 seconds before asking again, other failures 1 to 2 seconds.
 
 ### Limits
 

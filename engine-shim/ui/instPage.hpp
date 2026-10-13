@@ -6,6 +6,11 @@ struct instPage {
     auto *sink = foil::install::engineSink();
     return sink && sink->cancellationRequested();
   }
+  // Paused from 다운로드: the engine drops its connections and waits.
+  static bool isInstallPaused() {
+    auto *sink = foil::install::engineSink();
+    return sink && sink->paused();
+  }
   static void setInstBarPerc(double percent) {
     if (auto *sink = foil::install::engineSink())
       sink->stagePercent(percent);

@@ -104,6 +104,7 @@ Error Installer::start(std::vector<Item> files, std::string name,
   if (thread_.joinable())
     thread_.join();
   cancel_ = false;
+  pause_ = false;
   skipSignature_ = state.skipSignatureCheck;
   skipFirmware_ = state.skipFirmwareCheck;
   {
@@ -124,8 +125,18 @@ Error Installer::start(std::vector<Item> files, std::string name,
                         std::move(server), std::move(state));
   return {};
 }
+void Installer::setPaused(bool paused) {
+  pause_ = paused;
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (progress_.status != Status::Running)
+    return;
+  progress_.speed = 0;
+  progress_.phase = paused ? tr("일시정지했습니다.") : tr("다운로드하고 있습니다.");
+}
 void Installer::phase(const std::string &text) {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (pause_)
+    return; // 일시정지했습니다 stays until it resumes
   progress_.phase = text;
 }
 void Installer::stagePercent(double value) {
@@ -168,7 +179,6 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
       // A failed item is tried again from the start: the engine skips the
       // content files it already finished, so this picks up where it broke.
       constexpr int Attempts = 3;
-      const auto began = std::chrono::steady_clock::now();
       for (int attempt = 1;; ++attempt) {
         try {
           nativeInstall(files[i], target, net::authHeaders(server, state, files[i].url));
@@ -182,16 +192,6 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
           if (cancel_)
             throw;
         }
-      }
-      // The item's average speed, so a slow install can be told apart in the
-      // log: the network, the server or the console.
-      {
-        const double seconds =
-            std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
-        char line[160];
-        std::snprintf(line, sizeof(line), "install %s %.1f MB in %.1f s, %.2f MB/s", files[i].type.c_str(),
-                      files[i].size / 1048576.0, seconds, seconds > 0 ? files[i].size / 1048576.0 / seconds : 0.0);
-        logLine(line);
       }
       {
         std::lock_guard<std::mutex> lock(mutex_);

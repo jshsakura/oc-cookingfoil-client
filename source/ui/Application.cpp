@@ -976,6 +976,11 @@ void Application::action(Action a) {
     dialogFocus_ = 0;
     return;
   }
+  // A on 진행 중 pauses the install, or resumes it at the byte it stopped at.
+  if (screen_ == Screen::Downloads && a == Action::Accept && downloadsTab_ == 0 && installer_.running()) {
+    installer_.setPaused(!installer_.paused());
+    return;
+  }
   if (screen_ == Screen::Downloads &&
       (a == Action::Previous || a == Action::Next ||
        (!sidebar_ && downloadsTab_ != 0 &&
@@ -1558,8 +1563,10 @@ void Application::render() {
   }
   else if (screen_ == Screen::Downloads) {
     using Hints = std::vector<std::pair<std::string, std::string>>;
-    if (downloadsTab_ == 0 || sidebar_ || downloadsList().empty())
-      footer({{"B", (installer_.running() || retroDownloading()) && downloadsTab_ == 0 ? tr("취소") : tr("뒤로")}});
+    if (downloadsTab_ == 0 && installer_.running())
+      footer(Hints{{"A", installer_.paused() ? tr("이어받기") : tr("일시정지")}, {"B", tr("취소")}});
+    else if (downloadsTab_ == 0 || sidebar_ || downloadsList().empty())
+      footer({{"B", retroDownloading() && downloadsTab_ == 0 ? tr("취소") : tr("뒤로")}});
     else if (downloadsTab_ == 2)
       footer(Hints{{"A", tr("다시 시도")}, {"X", tr("목록에서 삭제")}, {"Y", tr("모두 삭제")}, {"B", tr("뒤로")}});
     else

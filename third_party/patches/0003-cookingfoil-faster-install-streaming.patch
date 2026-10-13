@@ -400,7 +400,7 @@ index 0ba55bd..c19531f 100755
  
       m_contentBuffer.resize(0);
 diff --git a/source/util/network_util.cpp b/source/util/network_util.cpp
-index ea0dad8..65921a8 100755
+index ea0dad8..e5d78a9 100755
 --- a/source/util/network_util.cpp
 +++ b/source/util/network_util.cpp
 @@ -20,6 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
@@ -412,10 +412,20 @@ index ea0dad8..65921a8 100755
  #include "util/network_util.hpp"
  #include "core/Config.hpp"
  
-@@ -207,6 +209,159 @@ namespace tin::network
+@@ -207,6 +209,188 @@ namespace tin::network
          }
      }
  
++    // CookingFoil: a paused install drops its connections and waits here;
++    // nothing is lost, the next request starts at the byte it stopped at.
++    static bool Paused() { return inst::ui::instPage::isInstallPaused(); }
++    static bool Stopping() { return inst::ui::instPage::isInstallCancelRequested(); }
++    static void WaitWhilePaused()
++    {
++        while (Paused() && !Stopping())
++            svcSleepThread(100 * 1000 * 1000ULL);
++    }
++
 +    // CookingFoil: how many range requests a large file is fetched with at
 +    // once, and how big each is. 1 keeps the engine's single stream.
 +    static int g_parallelConnections = 1;
@@ -441,7 +451,7 @@ index ea0dad8..65921a8 100755
 +        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
 +        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
 +        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, +[](void*,curl_off_t,curl_off_t,curl_off_t,curl_off_t)->int{return inst::ui::instPage::isInstallCancelRequested()?1:0;});
++        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, +[](void*,curl_off_t,curl_off_t,curl_off_t,curl_off_t)->int{return inst::ui::instPage::isInstallCancelRequested()||inst::ui::instPage::isInstallPaused()?1:0;});
 +        curl_easy_setopt(curl, CURLOPT_USERAGENT, inst::curl::getUserAgent().c_str());
 +        curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "identity");
 +        curl_easy_setopt(curl, CURLOPT_RANGE, range.c_str());
@@ -475,6 +485,7 @@ index ea0dad8..65921a8 100755
 +            std::vector<u8> data;
 +            int attempts = 0;
 +            bool done = false;
++            u64 retryAt = 0; // a failed piece waits until this tick before asking again
 +        };
 +        const std::string requestUrl = TrimCopy(StripUrlFragment(url));
 +        CURLM* multi = curl_multi_init();
@@ -529,6 +540,18 @@ index ea0dad8..65921a8 100755
 +                if (!issue(*part)) { failed = true; break; }
 +                window.push_back(std::move(part));
 +            }
++            // Paused: every connection goes; the pieces keep what they got
++            // and ask for the rest once it resumes.
++            if (Paused())
++            {
++                for (auto& part : window)
++                    if (!part->done) drop(*part);
++                WaitWhilePaused();
++                if (Stopping()) { failed = true; break; }
++            }
++            const u64 now = armGetSystemTick();
++            for (auto& part : window)
++                if (!part->done && !part->curl && part->retryAt <= now && !issue(*part)) failed = true;
 +            int running = 0;
 +            curl_multi_perform(multi, &running);
 +            int left = 0;
@@ -542,11 +565,17 @@ index ea0dad8..65921a8 100755
 +                if (msg->data.result == CURLE_OK && code == 206 && part->data.size() == part->length) {
 +                    part->done = true;
 +                    drop(*part);
++                } else if (Paused() && !Stopping()) {
++                    drop(*part); // asked again after the pause
 +                } else if (code == 401 || code == 403 || code == 404 || code == 416 ||
-+                           inst::ui::instPage::isInstallCancelRequested() || ++part->attempts > 3) {
++                           Stopping() || ++part->attempts > 3) {
 +                    failed = true;
-+                } else if (!issue(*part)) {
-+                    failed = true;
++                } else {
++                    // Asked again after a pause: longer when the server is busy
++                    // (503), rate limited (429) or the tunnel timed out (524).
++                    drop(*part);
++                    const bool busy = code == 503 || code == 429 || code == 524;
++                    part->retryAt = armGetSystemTick() + armGetSystemTickFreq() * (busy ? 5 : 1);
 +                }
 +            }
 +            // Whatever is complete at the front goes on, in order.
@@ -572,7 +601,13 @@ index ea0dad8..65921a8 100755
      static int StreamHttpRangeForUrl(const std::string& url, size_t offset, size_t size,
          const std::function<size_t (u8* bytes, size_t size)>& streamFunc)
      {
-@@ -238,6 +393,13 @@ namespace tin::network
+@@ -233,11 +417,18 @@ namespace tin::network
+         curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+         curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
+         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, +[](void*,curl_off_t,curl_off_t,curl_off_t,curl_off_t)->int{return inst::ui::instPage::isInstallCancelRequested()?1:0;});
++        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, +[](void*,curl_off_t,curl_off_t,curl_off_t,curl_off_t)->int{return inst::ui::instPage::isInstallCancelRequested()||inst::ui::instPage::isInstallPaused()?1:0;});
+         const std::string& userAgent = inst::curl::getUserAgent();
          curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.c_str());
          curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "identity");
          curl_easy_setopt(curl, CURLOPT_RANGE, range.c_str());
@@ -586,7 +621,54 @@ index ea0dad8..65921a8 100755
          curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
          curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 8L);
          curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callbackCtx);
-@@ -547,7 +709,21 @@ namespace tin::network
+@@ -325,7 +516,7 @@ namespace tin::network
+         curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+         curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
+         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, +[](void*,curl_off_t,curl_off_t,curl_off_t,curl_off_t)->int{return inst::ui::instPage::isInstallCancelRequested()?1:0;});
++        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, +[](void*,curl_off_t,curl_off_t,curl_off_t,curl_off_t)->int{return inst::ui::instPage::isInstallCancelRequested()||inst::ui::instPage::isInstallPaused()?1:0;});
+         const std::string& userAgent = inst::curl::getUserAgent();
+         curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.c_str());
+         curl_easy_setopt(curl, CURLOPT_HEADERDATA, this);
+@@ -496,14 +687,18 @@ namespace tin::network
+ 
+             while (true)
+             {
++                long waitNs = 0;
+                 for (int attempt = 0; attempt <= kMaxRetries; attempt++)
+                 {
+                     if (attempt > 0)
+                     {
+                         LOG_DEBUG("StreamDataRange: retry %d/%d, resuming at offset %zu+%zu\n",
+                             attempt, kMaxRetries, requestOffset, bytesReceived);
+-                        svcSleepThread(kRetryDelayNs);
++                        svcSleepThread(waitNs ? waitNs : kRetryDelayNs);
+                     }
++                    WaitWhilePaused();
++                    if (Stopping())
++                        return 1;
+ 
+                     const size_t currentOffset = requestOffset + bytesReceived;
+                     const size_t remaining = requestSize - bytesReceived;
+@@ -514,6 +709,17 @@ namespace tin::network
+                     const int rc = StreamHttpRangeForUrl(url, currentOffset, remaining, trackingFunc);
+                     if (rc == 0)
+                         return 0;
++                    // Paused mid-transfer: not a failure; wait, then go on
++                    // from the byte it stopped at without spending a retry.
++                    if (Paused() && !Stopping())
++                    {
++                        attempt--;
++                        waitNs = 1;
++                        continue;
++                    }
++                    // Busy (503), rate limited (429, Cloudflare's 1015) or a
++                    // slow first byte through the tunnel (524): wait longer.
++                    waitNs = rc == 503 || rc == 429 || rc == 1015 || rc == 524 ? 5000000000L : 0;
+ 
+                     const bool fatal =
+                         rc == 1999 ||
+@@ -547,7 +753,21 @@ namespace tin::network
          };
  
          if (!m_isJbod)
@@ -608,3 +690,12 @@ index ea0dad8..65921a8 100755
  
          size_t globalOffset = offset;
          size_t remaining = size;
+@@ -679,7 +899,7 @@ namespace tin::network
+         curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+         curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
+         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, +[](void*,curl_off_t,curl_off_t,curl_off_t,curl_off_t)->int{return inst::ui::instPage::isInstallCancelRequested()?1:0;});
++        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, +[](void*,curl_off_t,curl_off_t,curl_off_t,curl_off_t)->int{return inst::ui::instPage::isInstallCancelRequested()||inst::ui::instPage::isInstallPaused()?1:0;});
+         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 50);
+ 
+         curl_easy_perform(curl);
