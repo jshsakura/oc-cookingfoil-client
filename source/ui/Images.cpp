@@ -1,4 +1,5 @@
 #include "ui/Images.hpp"
+#include "platform/Storage.hpp"
 #include "core/Json.hpp"
 #include "net/Api.hpp"
 #include "core/Log.hpp"
@@ -9,7 +10,15 @@
 #include <sstream>
 namespace foil::ui {
 namespace {
-constexpr int MaxImageSide = 1280;
+// From the album the whole process has about 400 MB, so decoded pictures are
+// kept fewer and smaller there than as an application (gigabytes).
+bool roomy() {
+  static const bool application = platform::applicationMode();
+  return application;
+}
+int maxImageSide() { return roomy() ? 1280 : 960; }
+size_t keptSurfaces() { return roomy() ? 24 : 10; } // decoded, beyond those on screen
+size_t keptTextures() { return roomy() ? 48 : 24; } // about two screens of covers
 constexpr int Workers = 4;
 constexpr size_t MaxQueuedJobs = 64;
 constexpr uint64_t MaxCacheBytes = 64ull << 20; // pictures kept on the SD card
@@ -17,9 +26,9 @@ constexpr int MaxAttempts = 3; // then it stays blank until the list is refreshe
 constexpr uint32_t RetryAfterMs = 10000;
 // Large art is kept at screen size; a 4K banner would otherwise hold 64MB.
 SDL_Surface *shrink(SDL_Surface *surface) {
-  if (!surface || std::max(surface->w, surface->h) <= MaxImageSide)
+  if (!surface || std::max(surface->w, surface->h) <= maxImageSide())
     return surface;
-  const float scale = float(MaxImageSide) / std::max(surface->w, surface->h);
+  const float scale = float(maxImageSide()) / std::max(surface->w, surface->h);
   auto *small = SDL_CreateRGBSurfaceWithFormat(
       0, std::max(1, int(surface->w * scale)), std::max(1, int(surface->h * scale)), 32,
       SDL_PIXELFORMAT_RGBA32);
@@ -295,7 +304,7 @@ void Images::decode(int budget) {
   for (const auto &pair : entries_)
     if (pair.second.surface)
       ++count;
-  while (count > 24) { // decoded pictures kept for quick redraw, beyond those on screen
+  while (count > keptSurfaces()) { // decoded pictures kept for quick redraw
     auto oldest = entries_.end();
     for (auto it = entries_.begin(); it != entries_.end(); ++it)
       if (it->second.surface && it->second.frame + 2 < frame_ &&
@@ -327,7 +336,7 @@ void Images::draw(const std::string &url, float x, float y, int w, int h,
                    ":" + std::to_string(radius) + ":" + std::to_string(blurred) + ":" + std::to_string(contain);
   auto found = textures_.find(key);
   if (found == textures_.end()) {
-    if (textures_.size() > 48) { // about two screens of covers; on-screen ones stay
+    if (textures_.size() > keptTextures()) { // on-screen ones stay
       for (auto it = textures_.begin(); it != textures_.end();)
         if (it->second.frame + 2 < frame_) {
           SDL_DestroyTexture(it->second.texture);
