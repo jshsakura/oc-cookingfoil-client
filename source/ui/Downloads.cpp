@@ -5,16 +5,22 @@
 #include <cstdio>
 #include <ctime>
 namespace foil::ui {
+uint64_t Application::queuedBytes() const {
+  uint64_t sum = 0;
+  for (const auto &q : installQueue_)
+    sum += q.file.size;
+  return sum;
+}
 void Application::downloads() {
   const auto p = installer_.progress();
   const auto queued = p.status == install::Status::Idle
                           ? std::string()
                           : trf("{0} left · {1} total",
-                                {std::to_string(p.waiting.size() + (installer_.running() ? 1 : 0)),
-                                 formatBytes(p.total)});
+                                {std::to_string(installQueue_.size() + (installer_.running() ? 1 : 0)),
+                                 formatBytes(p.total + queuedBytes())});
   pageTitle(tr("Downloads"), downloadsTab_ == 0 ? queued : std::string());
   // Tabs with their counts: what runs now, what finished, what did not.
-  const int running = (installer_.running() ? int(p.waiting.size()) + 1 : 0) + (retroDownloading() ? 1 : 0) +
+  const int running = int(installQueue_.size()) + (installer_.running() ? 1 : 0) + (retroDownloading() ? 1 : 0) +
                       int(patchQueue_.size()) + (patchWorker_.joinable() && !patchBusy_.empty() ? 1 : 0);
   int done = 0, failed = 0;
   for (const auto &e : history_) {
@@ -116,7 +122,7 @@ void Application::downloads() {
                       true);
     x += width + 10;
   }
-  // Pause or resume, bottom right of the card (A does the same).
+  // Pause or resume, and cancel, bottom right of the card (A and B do the same).
   if (p.status == install::Status::Running) {
     const std::string label = paused ? tr("Resume") : tr("Pause");
     const float w = paint_.fonts.measure(label, 16, true) + 32;
@@ -124,6 +130,16 @@ void Application::downloads() {
     hit(bx, 212, w, 40, [this] { installer_.setPaused(!installer_.paused()); });
     paint_.rect(bx, 216, w, 32, paused ? Butter : Ground, 8);
     paint_.fonts.middle(label, bx + 16, 232, 16, Ink, true);
+    const std::string stop = tr("Cancel");
+    const float cw = paint_.fonts.measure(stop, 16, true) + 32;
+    const float cx = bx - 10 - cw;
+    hit(cx, 212, cw, 40, [this] {
+      cancelRetro_ = false;
+      confirmExit_ = false;
+      confirmCancel_ = true;
+    });
+    paint_.rect(cx, 216, cw, 32, Ground, 8);
+    paint_.fonts.middle(stop, cx + 16, 232, 16, Ink, true);
   }
   // How it ended, in one strip under the card; 완료 and 실패 keep the rest.
   int y = 294;
@@ -143,21 +159,29 @@ void Application::downloads() {
   }
   if (retroDownloading()) y += int(retroDownloadCard(float(y))) + 30;
   if (patchDownloading()) y += int(patchDownloadCard(float(y))) + 30;
-  if (!p.waiting.empty()) {
+  if (!installQueue_.empty()) {
     paint_.fonts.text(tr("Queued"), 260, y, 26, Ink, true);
     y += 40;
-    for (size_t i = 0; i < p.waiting.size() && i < 2; ++i) {
-      const auto &q = p.waiting[i];
-      paint_.rect(260, y, 992, 104, Surface, 16);
-      cover(q.icon, 284, y + 16, 72, false, q.name);
-      paint_.fonts.text(q.name, 376, y + 22, 22, Ink, true, 690);
-      paint_.fonts.text(trf("{0} · Queued", {target}), 376, y + 60, 18,
-                        Secondary);
-      const auto size = formatBytes(q.size);
-      paint_.fonts.text(size, 1228 - paint_.fonts.measure(size, 20, true),
-                        y + 39, 20, Ink, true);
-      y += 134;
+    // As many as fit above the footer; the count says the rest.
+    size_t shown = 0;
+    for (const auto &q : installQueue_) {
+      if (y + 88 > 660)
+        break;
+      paint_.rect(260, y, 992, 76, Surface, 16);
+      cover(q.icon, 280, y + 10, 56, false, q.name);
+      paint_.fonts.text(q.name, 356, y + 12, 20, Ink, true, 700);
+      const auto part = q.file.type == "update" ? std::string(tr("Update|item"))
+                        : q.file.type == "dlc"  ? std::string("DLC")
+                                                : std::string(tr("Base game"));
+      const auto where = q.target == "nand" ? tr("Console") : tr("SD card");
+      paint_.fonts.text(part + " · " + where, 356, y + 44, 16, Secondary);
+      const auto size = formatBytes(q.file.size);
+      paint_.fonts.text(size, 1228 - paint_.fonts.measure(size, 18, true), y + 28, 18, Ink, true);
+      y += 88;
+      ++shown;
     }
+    if (shown < installQueue_.size())
+      paint_.fonts.text(trf("and {0} more", {std::to_string(installQueue_.size() - shown)}), 260, y, 18, Secondary);
   }
 }
 // A retro game, RetroArch or a homebrew app coming down beside the installer: what it is,

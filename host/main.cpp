@@ -233,7 +233,8 @@ int main(int argc, char **argv) {
         if (group.representative.name == p.name)
           p.parts = foil::Selection(group).files();
         if (group.representative.name == "Sky Farm")
-          p.waiting.push_back(group.representative);
+          for (const auto &file : foil::Selection(group).files())
+            ui.previewQueued(file, group.representative.name, group.representative.icon);
         if (group.representative.name == "Circuit Garden")
           p.completed.push_back(group.representative);
       }

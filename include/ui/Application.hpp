@@ -146,6 +146,9 @@ public:
   size_t installedCount() const { return installed_.games.size(); }
 #ifndef __SWITCH__
   void previewInstall(install::Progress p) { installer_.preview(std::move(p)); }
+  void previewQueued(Item file, std::string name, std::string icon) {
+    installQueue_.push_back({std::move(file), std::move(name), std::move(icon), "sd", {}, 0, 0});
+  }
   void previewStorage(uint64_t sd, uint64_t nand, uint64_t sdTotal = 476ULL << 30,
                       uint64_t nandTotal = 26ULL << 30) {
     sdFree_ = sd;
@@ -982,8 +985,25 @@ private:
   bool awake_ = false; // the console is kept from dimming while downloading
   // Unfinished installs are kept in state.json so they can be resumed.
   // Every install starts here: the installer, the resume record and 다운로드's history.
+  // Each file goes in the queue as its own entry (base game, update, DLC,
+  // in the order picked), behind whatever is already there; patches start
+  // with the game's last file.
   Error startInstall(const std::vector<Item> &files, const std::string &name, const std::string &icon,
-                     const std::string &target);
+                     const std::string &target, std::vector<UserPatch> patches = {});
+  struct QueuedInstall {
+    Item file;
+    std::string name, icon, target;
+    std::vector<UserPatch> patches;
+    int group = 0; // one pick: a base game that fails takes its update and DLC with it
+    uint64_t entry = 0; // its row in 다운로드's history, which keeps the queue across launches
+  };
+  // The rest of a pick leaves the queue (its rows read as cancelled).
+  void dropGroup(int group, const std::string &why);
+  std::deque<QueuedInstall> installQueue_;
+  int installGroups_ = 0, runningGroup_ = -1;
+  // Starts the next entry while the installer is free.
+  Error launchQueued();
+  uint64_t queuedBytes() const;
   std::vector<history::Entry> history_;
   void saveHistory();
   // 다운로드's tabs: 0 진행 중, 1 완료, 2 실패 (and cancelled).
@@ -991,14 +1011,10 @@ private:
   std::vector<int> downloadsList() const; // history_ indices in the tab
   void downloadsAction(Action action);
   void downloadsHistory();
-  void rememberInstall(const std::vector<Item> &files, const std::string &name,
-                       const std::string &icon, const std::string &target);
   void forgetInstall();
   void saveStateQuietly();
   void offerResume();
-  void resumeDialog();
-  void resumeInstall();
-  bool resumeOffered_ = false, confirmResume_ = false;
+  bool resumeOffered_ = false;
   // Home rows are built once per catalog load, not every frame.
   size_t hero_ = 0;
   // Home banner slides; the first is the admin's pick when featured has one.

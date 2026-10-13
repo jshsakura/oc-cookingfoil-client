@@ -8,12 +8,14 @@ const char *name(Outcome outcome) {
   case Outcome::Done: return "done";
   case Outcome::Failed: return "failed";
   case Outcome::Cancelled: return "cancelled";
+  case Outcome::Queued: return "queued";
   default: return "running";
   }
 }
 Outcome outcomeOf(const std::string &text) {
   return text == "done" ? Outcome::Done : text == "failed" ? Outcome::Failed
          : text == "cancelled"                             ? Outcome::Cancelled
+         : text == "queued"                                ? Outcome::Queued
                                                            : Outcome::Running;
 }
 } // namespace
@@ -34,6 +36,7 @@ std::vector<Entry> parse(const std::string &json) {
     e.at = integerField(object, "at");
     e.kind = stringField(object, "kind");
     e.payload = stringField(object, "payload");
+    e.group = int(integerField(object, "group"));
     out.push_back(std::move(e));
   }
   return out;
@@ -47,6 +50,8 @@ std::string serialize(const std::vector<Entry> &entries) {
     json_object_object_add(object, "outcome", json_object_new_string(name(e.outcome)));
     json_object_object_add(object, "error", json_object_new_string(e.error.c_str()));
     json_object_object_add(object, "at", json_object_new_int64(e.at));
+    if (e.group)
+      json_object_object_add(object, "group", json_object_new_int(e.group));
     if (!e.kind.empty()) {
       json_object_object_add(object, "kind", json_object_new_string(e.kind.c_str()));
       json_object_object_add(object, "payload", json_object_new_string(e.payload.c_str()));
@@ -60,7 +65,13 @@ uint64_t add(std::vector<Entry> &entries, Entry entry, size_t cap) {
   for (const auto &e : entries) top = std::max(top, e.id);
   entry.id = top + 1;
   entries.insert(entries.begin(), std::move(entry));
-  if (entries.size() > cap) entries.resize(cap);
+  size_t finished = 0;
+  entries.erase(std::remove_if(entries.begin(), entries.end(),
+                               [&](const Entry &e) {
+                                 const bool ended = e.outcome != Outcome::Running && e.outcome != Outcome::Queued;
+                                 return ended && ++finished > cap;
+                               }),
+                entries.end());
   return top + 1;
 }
 bool finish(std::vector<Entry> &entries, Outcome outcome, const std::string &error, int64_t at,
@@ -76,6 +87,6 @@ bool finish(std::vector<Entry> &entries, Outcome outcome, const std::string &err
 }
 void settle(std::vector<Entry> &entries) {
   for (auto &e : entries)
-    if (e.outcome == Outcome::Running) e.outcome = Outcome::Failed;
+    if (e.outcome == Outcome::Running) e.outcome = e.kind.empty() ? Outcome::Queued : Outcome::Failed;
 }
 } // namespace foil::history

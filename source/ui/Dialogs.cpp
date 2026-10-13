@@ -181,7 +181,7 @@ void Application::viewPopup() {
 }
 void Application::dialogs() {
   if (!confirmInstall_ && alert_.empty() && !serverForm_ && !confirmCancel_ && !viewPopup_ &&
-      !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !confirmCleanup_ && !confirmResume_ &&
+      !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !confirmCleanup_ &&
       !languagePopup_ && !cleanupBusy_ && !retroAsking_ && !retroArchAsking_ && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
       !homebrewRemoveAsk_ && !homebrewAsk_ && !shortcutRemoveAsk_ && !selfShortcutAsk_)
@@ -191,7 +191,7 @@ void Application::dialogs() {
   blockTouch();
   // When the popup on top changed, for the double-press guard (settled()).
   const int which = confirmCancel_ * 1 + confirmCleanup_ * 2 + confirmPatchRemove_ * 4 + confirmInstall_ * 8 +
-                    confirmResume_ * 16 + dropboxUnlinkAsk_ * 32 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + homebrewAsk_ * 256 +
+                    dropboxUnlinkAsk_ * 32 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + homebrewAsk_ * 256 +
                     (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + shopAppSaveAsk_ * 2048 +
                     (serverForm_ && serverForm_->confirmDelete) * 4096 + shortcutRemoveAsk_ * 8192 +
                     selfShortcutAsk_ * 16384;
@@ -220,8 +220,6 @@ void Application::dialogs() {
     else appSaveConfirm(shopSaves_[std::clamp(shopSavePick_, 0, int(shopSaves_.size()) - 1)]);
   } else if (cleanupBusy_) {
     cleanupProgressDialog();
-  } else if (confirmResume_) {
-    resumeDialog();
   } else if (confirmCleanup_) {
     cleanupDialog();
   } else if (confirmPatchRemove_ || managingPatch_ || pickingPatch_) {

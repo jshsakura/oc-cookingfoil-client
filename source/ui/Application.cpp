@@ -131,9 +131,17 @@ void Application::usePatchFolder(const std::string &sd) {
     return;
   sdRoot_ = sd;
   homebrewLedger_ = homebrew::parseLedger(readFile(sd + "/switch/cookingfoil/homebrew.json"));
-  // An app that closed mid-install left that one running: it reads as failed.
+  // An app that closed mid-install left that one running: it goes back in
+  // the queue, which picks up again once the shop is reachable.
   history_ = history::parse(readFile(sd + "/switch/cookingfoil/downloads.json"));
   history::settle(history_);
+  installQueue_.clear();
+  for (auto e = history_.rbegin(); e != history_.rend(); ++e) // oldest first
+    if (e->outcome == history::Outcome::Queued && e->kind.empty() && e->install.files.size() == 1) {
+      installQueue_.push_back({e->install.files[0], e->install.name, e->install.icon, e->install.target, {}, e->group,
+                               e->id});
+      installGroups_ = std::max(installGroups_, e->group);
+    }
   // A check of the old card stops first; it holds only a copy of the ledger.
   patchCheckStop_ = true;
   if (patchCheckWorker_.joinable())
@@ -521,7 +529,21 @@ void Application::poll() {
   if (observedInstall_ == install::Status::Running &&
       (installStatus == install::Status::Succeeded || installStatus == install::Status::Cancelled))
     forgetInstall();
+  const bool ended = observedInstall_ == install::Status::Running && installStatus != install::Status::Running;
   observedInstall_ = installStatus;
+  if (ended) {
+    // A base game that did not install takes the rest of its pick with it.
+    if (installStatus != install::Status::Succeeded) {
+      const auto before = installQueue_.size();
+      const std::string why = tr("It did not install, so the rest picked with it was taken off the queue.");
+      dropGroup(runningGroup_, why);
+      if (installQueue_.size() != before && installStatus == install::Status::Failed)
+        message(why);
+    }
+    runningGroup_ = -1;
+    if (auto error = launchQueued())
+      alert_ = error.message;
+  }
   if (!done_.exchange(false)) {
     // Waiting for approval: asked every 5 seconds for 5 minutes, then - asks again.
     constexpr uint32_t PairWaitMs = 5 * 60 * 1000;
@@ -911,18 +933,7 @@ void Application::action(Action a) {
     retroAction(a);
     return;
   }
-  if (confirmResume_) {
-    if (a == Action::Back)
-      confirmResume_ = false; // asked again next launch
-    else if (a == Action::Accept) {
-      confirmResume_ = false;
-      resumeInstall();
-    } else if (a == Action::Queue && settled()) {
-      confirmResume_ = false;
-      forgetInstall();
-    }
-    return;
-  }
+
   if (languagePopup_) {
     if (a == Action::Up) languageRow_ = std::max(0, languageRow_ - 1);
     if (a == Action::Down) languageRow_ = std::min(LanguageCount - 1, languageRow_ + 1);
@@ -1400,7 +1411,7 @@ void Application::shell() {
     if (open && (updates || downloads)) {
       const auto progress = installer_.progress();
       const auto count = updates ? pendingUpdates().size()
-          : progress.waiting.size() + (installer_.running() ? 1 : 0) + (retroDownloading() ? 1 : 0);
+          : installQueue_.size() + (installer_.running() ? 1 : 0) + (retroDownloading() ? 1 : 0);
       if (count) {
         paint_.rect(171, y + height / 2 - 14, 28, 28, Butter, 14);
         const auto text = count > 99 ? "99+" : std::to_string(count);
@@ -1726,12 +1737,13 @@ void Application::installSelected() {
   // for the install and never hold it up.
   const auto files = selection_->files();
   if (!files.empty()) {
-    if (auto error = startInstall(files, g.representative.name, g.representative.icon, selection_->target)) {
+    if (auto error = startInstall(files, g.representative.name, g.representative.icon, selection_->target,
+                                  selection_->patchesOn())) {
       alert_ = error.message;
       return;
     }
-  }
-  queuePatches(selection_->patchesOn(), !files.empty());
+  } else
+    queuePatches(selection_->patchesOn(), false);
   notice_.clear();
   downloadsTab_ = 0;
   screen_ = Screen::Downloads;
@@ -1745,16 +1757,75 @@ void Application::saveStateQuietly() {
     logLine("state: " + error.message);
 }
 Error Application::startInstall(const std::vector<Item> &files, const std::string &name, const std::string &icon,
-                                const std::string &target) {
-  if (auto error = installer_.start(files, name, icon, target, session_ ? session_->server() : Server{}, state_))
+                                const std::string &target, std::vector<UserPatch> patches) {
+  if (files.empty())
+    return {};
+  const int group = ++installGroups_;
+  for (size_t i = 0; i < files.size(); ++i) {
+    history::Entry row;
+    row.install = {name, icon, target, {files[i]}};
+    row.outcome = history::Outcome::Queued;
+    row.group = group;
+    row.at = int64_t(std::time(nullptr));
+    const auto id = history::add(history_, std::move(row));
+    installQueue_.push_back({files[i], name, icon, target,
+                             i + 1 == files.size() ? std::move(patches) : std::vector<UserPatch>{}, group, id});
+  }
+  saveHistory();
+  if (installer_.running()) {
+    message(tr("Added to the download queue."));
+    return {};
+  }
+  return launchQueued();
+}
+void Application::dropGroup(int group, const std::string &why) {
+  bool dropped = false;
+  for (auto &e : history_)
+    if (e.outcome == history::Outcome::Queued && e.group == group) {
+      e.outcome = history::Outcome::Cancelled;
+      e.error = why;
+      e.at = int64_t(std::time(nullptr));
+      dropped = true;
+    }
+  installQueue_.erase(std::remove_if(installQueue_.begin(), installQueue_.end(),
+                                     [&](const QueuedInstall &q) { return q.group == group; }),
+                      installQueue_.end());
+  if (dropped)
+    saveHistory();
+}
+Error Application::launchQueued() {
+  if (installer_.running() || installQueue_.empty())
+    return {};
+  auto next = std::move(installQueue_.front());
+  installQueue_.pop_front();
+  const std::vector<Item> files{next.file};
+  const auto row = std::find_if(history_.begin(), history_.end(),
+                               [&](const history::Entry &e) { return e.id == next.entry; });
+  if (auto error = installer_.start(files, next.name, next.icon, next.target,
+                                    session_ ? session_->server() : Server{}, state_)) {
+    // It cannot start (no room, firmware): the rest of its pick goes too.
+    if (row != history_.end()) {
+      row->outcome = history::Outcome::Failed;
+      row->error = error.message;
+      row->at = int64_t(std::time(nullptr));
+    }
+    dropGroup(next.group, error.message);
     return error;
-  rememberInstall(files, name, icon, target);
-  history::Entry entry;
-  entry.install = {name, icon, target, files};
-  entry.at = int64_t(std::time(nullptr));
-  history::add(history_, std::move(entry));
+  }
+  runningGroup_ = next.group;
+  if (row != history_.end()) {
+    row->outcome = history::Outcome::Running;
+    row->at = int64_t(std::time(nullptr));
+  } else {
+    history::Entry entry;
+    entry.install = {next.name, next.icon, next.target, files};
+    entry.at = int64_t(std::time(nullptr));
+    history::add(history_, std::move(entry));
+  }
   saveHistory();
   observedInstall_ = install::Status::Running;
+  if (!next.patches.empty())
+    queuePatches(std::move(next.patches), true);
   return {};
 }
 void Application::saveHistory() {
@@ -1764,11 +1835,6 @@ void Application::saveHistory() {
   std::string error;
   if (!atomicWrite(sdRoot_ + "/switch/cookingfoil/downloads.json", history::serialize(history_), error))
     logLine("downloads: " + error);
-}
-void Application::rememberInstall(const std::vector<Item> &files, const std::string &name,
-                                  const std::string &icon, const std::string &target) {
-  state_.queueJson = serializePending({name, icon, target, files});
-  saveStateQuietly();
 }
 void Application::forgetInstall() {
   if (state_.queueJson == "[]")
@@ -1782,41 +1848,18 @@ void Application::offerResume() {
   if (resumeOffered_ || installer_.running() || !connected_)
     return;
   resumeOffered_ = true;
-  if (parsePending(state_.queueJson)) {
-    confirmResume_ = true;
-    dialogFocus_ = 0;
+  // A record from before the queue was kept in 다운로드: into the queue.
+  if (const auto pending = parsePending(state_.queueJson)) {
+    forgetInstall();
+    if (installQueue_.empty())
+      startInstall(pending->files, pending->name, pending->icon, pending->target);
   }
-}
-void Application::resumeInstall() {
-  const auto pending = parsePending(state_.queueJson);
-  if (!pending)
+  if (installQueue_.empty())
     return;
-  if (auto error = startInstall(pending->files, pending->name, pending->icon, pending->target)) {
+  // Said, not asked: the queue picks up where it stopped.
+  message(trf("Continuing {0} stopped downloads.", {std::to_string(installQueue_.size())}));
+  if (auto error = launchQueued())
     alert_ = error.message;
-    return;
-  }
-  downloadsTab_ = 0;
-  screen_ = Screen::Downloads;
-  nav_ = menuIndex(Screen::Downloads);
-  sidebar_ = true;
-}
-void Application::resumeDialog() {
-  const auto pending = parsePending(state_.queueJson);
-  if (!pending) {
-    confirmResume_ = false;
-    return;
-  }
-  uint64_t bytes = 0;
-  for (const auto &f : pending->files)
-    bytes += f.size;
-  // A picks it up, Y drops it, B asks again next launch.
-  const auto body = modal(700, 24 + 90 + 16, tr("An install was cut off"), tr("Close"), tr("Delete"), tr("Resume|download"), 4);
-  const float x = body.x + 32, y = body.y + 24;
-  paint_.fonts.text(pending->name, x, y, 22, Ink, true, body.w - 64);
-  paint_.fonts.text(trf("{0} items · {1}", {std::to_string(pending->files.size()), formatBytes(bytes)}), x, y + 36, 18,
-                    Secondary, false, body.w - 64);
-  paint_.fonts.text(tr("Resuming skips what was already downloaded."), x, y + 64, 18, Secondary, false, body.w - 64);
-
 }
 } // namespace foil::ui
 namespace foil::ui {

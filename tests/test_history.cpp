@@ -33,15 +33,35 @@ int runHistoryTests() {
     CHECK(back[0].install.files.size() == 1 && back[0].install.files[0].url == "https://shop.example/f/b");
     CHECK(back[1].outcome == Outcome::Running);
   }
-  // Left running by a closed app: reads as failed.
+  // Left running by a closed app: an install goes back in the queue to
+  // pick up where it stopped.
   auto loaded = back;
   settle(loaded);
-  CHECK(loaded[1].outcome == Outcome::Failed);
+  CHECK(loaded[1].outcome == Outcome::Queued);
   // Capped, oldest dropped; ids keep growing.
   std::vector<Entry> many;
-  for (int i = 0; i < 5; ++i) add(many, entry(std::to_string(i)), 3);
+  for (int i = 0; i < 5; ++i) {
+    auto done = entry(std::to_string(i));
+    done.outcome = Outcome::Done;
+    add(many, done, 3);
+  }
   CHECK(many.size() == 3 && many.front().id == 5 && many.back().install.name == "2");
   CHECK(parse("not json").empty());
+  // The queue lives in the same list: a queued entry keeps its pick (group)
+  // through a round trip, and the cap never drops it, only finished ones.
+  std::vector<Entry> queue;
+  auto waiting = entry("q");
+  waiting.outcome = Outcome::Queued;
+  waiting.group = 7;
+  add(queue, waiting, 2);
+  for (int i = 0; i < 4; ++i) {
+    auto done = entry("d" + std::to_string(i));
+    done.outcome = Outcome::Done;
+    add(queue, done, 2);
+  }
+  CHECK(queue.size() == 3 && queue.back().outcome == Outcome::Queued);
+  const auto queuedBack = parse(serialize(queue));
+  CHECK(queuedBack.size() == 3 && queuedBack.back().outcome == Outcome::Queued && queuedBack.back().group == 7);
   // Retro downloads share the list; each kind finishes only its own entry.
   std::vector<Entry> mixed;
   add(mixed, entry("install"));
