@@ -651,6 +651,40 @@ Parsed<PairingInfo> parsePairingInfo(const std::string& json, const Server& serv
     result.value = {url, code, std::max<int64_t>(0, integerField(root.get(), "expiresAt"))};
     return result;
 }
+std::string cleanPairMessage(const std::string& text) {
+    // Line breaks and other control characters read as spaces, and a run of
+    // spaces as one.
+    std::string line;
+    for (const char c : text) {
+        const bool space = static_cast<unsigned char>(c) <= 0x20 || c == 0x7f;
+        if (!space) line += c;
+        else if (!line.empty() && line.back() != ' ') line += ' ';
+    }
+    const auto first = line.find_first_not_of(' ');
+    if (first == std::string::npos) return "";
+    line = line.substr(first, line.find_last_not_of(' ') - first + 1);
+    size_t characters = 0, end = 0;
+    while (end < line.size() && characters < PairMessageLimit) {
+        ++end;
+        while (end < line.size() && (static_cast<unsigned char>(line[end]) & 0xC0) == 0x80) ++end;
+        ++characters;
+    }
+    line.resize(end);
+    return line.substr(0, line.find_last_not_of(' ') + 1);
+}
+std::string pairRequestBody(const std::string& deviceKey, const std::string& message) {
+    const auto note = cleanPairMessage(message);
+    if (note.empty()) return "";
+    Json body(json_object_new_object());
+    json_object_object_add(body.get(), "deviceKey", json_object_new_string(deviceKey.c_str()));
+    json_object_object_add(body.get(), "message", json_object_new_string(note.c_str()));
+    return json_object_to_json_string_ext(body.get(), JSON_C_TO_STRING_PLAIN | JSON_C_TO_STRING_NOSLASHESCAPE);
+}
+void Session::setPairMessage(const std::string& message) {
+    const auto note = cleanPairMessage(message);
+    if (note.empty()) state_.pairMessages.erase(server_.url);
+    else state_.pairMessages[server_.url] = note;
+}
 bool Session::pair(Error& error) {
     const auto url = server_.url + "/api/pair/status";
     const auto response = get(url, authHeaders(server_, state_, url), "", cancel_);
@@ -658,7 +692,11 @@ bool Session::pair(Error& error) {
     if (!response.error.empty() || response.status != 200) { error.message = response.error.empty() ? tr("기기 승인 상태를 확인하지 못했습니다.") : response.error; return false; }
     auto root = parseJson(response.body, error); if (error) return false;
     const auto status = stringField(root.get(), "status");
-    if (status == "pending") { pairingPending_ = true; pairingInfo_ = parsePairingInfo(response.body, server_).value; error.message = tr("서버 웹페이지에서 이 기기를 승인하면 연결합니다."); return false; }
+    if (status == "pending") {
+        pairingPending_ = true; pairingInfo_ = parsePairingInfo(response.body, server_).value;
+        sendPairMessage();
+        error.message = tr("서버 웹페이지에서 이 기기를 승인하면 연결합니다."); return false;
+    }
     if (status != "approved") { error.message = tr("기기 승인 응답을 확인해 주세요."); return false; }
     const auto key = stringField(root.get(), "accessKey");
     if (!key.empty()) {
@@ -670,6 +708,24 @@ bool Session::pair(Error& error) {
         state_ = std::move(updated);
     }
     pairingPending_ = false; pairingInfo_ = {}; return true;
+}
+void Session::sendPairMessage() {
+    // The status poll already knocks; the request goes out only to carry a
+    // note the player typed, once, and again when it changes.
+    const auto note = state_.pairMessages.find(server_.url);
+    const auto body = pairRequestBody(state_.deviceKey, note == state_.pairMessages.end() ? "" : note->second);
+    if (body.empty()) { pairMessageSent_.clear(); return; }
+    if (body == pairMessageSent_) return;
+    const auto url = server_.url + "/api/pair/request";
+    auto headers = authHeaders(server_, state_, url);
+    headers.push_back("Content-Type: application/json");
+    PostOptions options;
+    options.body = body;
+    options.timeout = 15;
+    const auto sent = post(url, headers, options, cancel_);
+    // A failure is tried again on the next poll; approval works without it.
+    if (sent.error.empty() && sent.status >= 200 && sent.status < 300) pairMessageSent_ = body;
+    else logLine("pair message not sent: " + (sent.error.empty() ? "HTTP " + std::to_string(sent.status) : sent.error));
 }
 std::set<std::string> parseFeatures(const std::string& json) {
     std::set<std::string> out;

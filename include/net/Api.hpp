@@ -90,6 +90,14 @@ struct PairingInfo {
     int64_t expiresAt = 0;
 };
 Parsed<PairingInfo> parsePairingInfo(const std::string& json, const Server& server);
+// The note sent with an approval request, read as the server reads it: line
+// breaks and control characters become spaces, runs of spaces one, trimmed,
+// at most PairMessageLimit characters (code points). Empty for none.
+constexpr size_t PairMessageLimit = 100;
+std::string cleanPairMessage(const std::string& text);
+// POST /api/pair/request's JSON body, {"deviceKey": ..., "message": ...};
+// empty when there is no message, and then nothing is sent.
+std::string pairRequestBody(const std::string& deviceKey, const std::string& message);
 // /api/shop/info's "features": what this server offers beyond the catalog
 // (retro, homebrew, ...). Empty for a reply without them.
 std::set<std::string> parseFeatures(const std::string& json);
@@ -119,8 +127,12 @@ public:
     const Server& server() const { return server_; }
     bool pairingPending() const { return pairingPending_; }
     const PairingInfo& pairingInfo() const { return pairingInfo_; }
+    // The note for this server's approval request, from the app; a changed
+    // one goes out with the next refresh while approval is pending.
+    void setPairMessage(const std::string& message);
 private:
     bool pair(Error& error);
+    void sendPairMessage();
     Server server_;
     State state_;
     std::string path_, etag_, patchesEtag_;
@@ -133,6 +145,7 @@ private:
     NameTable genres_, scoreLabels_;
     bool pairingPending_ = false;
     PairingInfo pairingInfo_;
+    std::string pairMessageSent_; // the body the server last took
     const std::atomic<bool>* cancel_ = nullptr;
 };
 }
