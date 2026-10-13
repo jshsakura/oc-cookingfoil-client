@@ -29,6 +29,15 @@ It includes or links the components below. Each remains under its own license.
 - License: public domain (https://www.sqlite.org/copyright.html)
 - Holds the download queue, history and resume points.
 
+### Zstandard (zstd)
+
+- Source: https://github.com/facebook/zstd v1.5.7 (`third_party/zstd`, the decompression sources only,
+  unmodified), SHA-256 of `zstd-1.5.7.tar.gz`
+  eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
+- License: BSD (`third_party/zstd/LICENSE`)
+- Copyright (c) Meta Platforms, Inc. and affiliates.
+- Kept at a fixed version because `source/zstd/ZstdSnapshot.c` saves and restores the decoder's state.
+
 ### QR Code generator library
 
 - Source: https://github.com/nayuki/QR-Code-generator (submodule `third_party/QR-Code-generator`,
