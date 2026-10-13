@@ -28,12 +28,11 @@ bool Application::homebrewHasShortcut(const homebrew::App &app) const {
 bool Application::makeShortcutFromNro(const std::string &file, const std::string &launch, const std::string &name,
                                       const std::string &extra, const std::string &nameOverride,
                                       const std::string &authorOverride, bool justDownloaded) {
-  // NCM and NS are the installer's while it runs.
+  // NCM and NS are the installer's while it runs. Every caller comes in its
+  // queue turn (or with nothing downloading), so this does not happen; if
+  // it did, nothing is half made.
   if (installer_.running()) {
-    // A retro game (another .nro started) is got again; an app has its card.
-    message(!justDownloaded ? std::string(tr("Try again once the current install ends."))
-            : launch.empty() ? trf("Got {0}. Once the current install ends, make its shortcut from the app's card in Homebrew.", {name})
-                             : trf("Got {0}. Once the current install ends, get it again to make its HOME Menu shortcut.", {name}));
+    logLine("shortcut: the installer holds NCM; " + name + " not made");
     return true;
   }
   homebrew::NroInfo info;
@@ -152,7 +151,48 @@ void Application::selfShortcutAction(Action a) {
   if (a != Action::Back && !(a == Action::Accept && settled())) return;
   selfShortcutAsk_ = false;
   selfShortcutClosed_ = true; // not again this run; the next start from the album asks again
-  if (a == Action::Accept) makeShortcutFromNro(forwarder::loaderPath(selfPath_).substr(1), "", "CookingFoil", "", "", "", false);
+  if (a != Action::Accept) return;
+  // A download (a resumed one) holds NCM: it is made in its turn.
+  if (downloadRunning() || !installQueue_.empty()) {
+    queueJob("shortcut", trf("{0} shortcut", {"CookingFoil"}), "", "", 0, "self");
+    return;
+  }
+  makeShortcutFromNro(forwarder::loaderPath(selfPath_).substr(1), "", "CookingFoil", "", "", "", false);
+}
+// Possible here (made from the app's file) or from the server (its
+// forwarder, installed like a game).
+bool Application::homebrewShortcutPossible(const homebrew::App &app) const {
+  return (platform::canMakeShortcuts() && homebrew::cardNroPath(homebrewFile(app))) ||
+         (!app.cardOnly && !app.forwarderUrl.empty() && session_);
+}
+// 바로가기 on the app's card: made now when nothing downloads, else queued
+// to be made in its turn; the server's forwarder when none can be made here.
+void Application::requestHomebrewShortcut(const homebrew::App &app) {
+  if (platform::canMakeShortcuts() && homebrew::cardNroPath(homebrewFile(app))) {
+    if (downloadRunning() || !installQueue_.empty())
+      queueJob("shortcut", trf("{0} shortcut", {app.name}), homebrewIcon(app), "", 0, homebrew::serialize(app));
+    else
+      makeHomebrewShortcut(app, false);
+    return;
+  }
+  if (!app.cardOnly && !app.forwarderUrl.empty() && session_) {
+    Item shortcut;
+    shortcut.url = app.forwarderUrl;
+    shortcut.name = app.name;
+    shortcut.titleId = shortcut.baseId = app.forwarderTitleId;
+    shortcut.size = app.forwarderSize;
+    shortcut.icon = app.iconUrl;
+    const bool waits = downloadRunning() || !installQueue_.empty();
+    if (auto error = startInstall({shortcut}, trf("{0} shortcut", {app.name}), app.iconUrl, "sd")) {
+      alertTitle_ = tr("Could not make the shortcut");
+      alert_ = error.message;
+    } else if (!waits)
+      message(trf("Installing the {0} HOME Menu shortcut.", {app.name}));
+    return;
+  }
+  alertTitle_ = tr("A shortcut can't be made here");
+  const auto reason = platform::shortcutBlocker();
+  alert_ = reason.empty() ? std::string(tr("The server has no shortcut for this app.")) : reason;
 }
 void Application::selfShortcutDialog() {
   const bool patches = forwarder::signaturePatchesFound(sdRoot_);

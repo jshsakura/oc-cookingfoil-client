@@ -409,6 +409,45 @@ std::vector<UserPatch> parsePatches(const std::string& json) {
     auto root = parseJson(json, error);
     return error ? std::vector<UserPatch>{} : parsePatches(field(root.get(), "patches"));
 }
+std::string serializePatch(const UserPatch& p) {
+    Json root(json_object_new_object());
+    auto* list = json_object_new_array();
+    auto* object = json_object_new_object();
+    const auto text = [&](json_object* into, const char* key, const std::string& value) {
+        json_object_object_add(into, key, json_object_new_string(value.c_str()));
+    };
+    text(object, "id", p.id);
+    if (p.titleId.empty()) {
+        json_object_object_add(object, "title_id", nullptr);
+        text(object, "homebrew", p.homebrewApp);
+    } else
+        text(object, "title_id", p.titleId);
+    text(object, "name", p.name);
+    text(object, "version", p.version);
+    text(object, "game_version", p.gameVersion);
+    text(object, "author", p.author);
+    text(object, "description", p.description);
+    text(object, "hash", p.hash);
+    json_object_object_add(object, "required", json_object_new_boolean(p.required));
+    json_object_object_add(object, "size", json_object_new_int64(int64_t(p.size)));
+    json_object_object_add(object, "files", json_object_new_int64(p.files));
+    json_object_object_add(object, "updated_at", json_object_new_int64(p.updatedAt));
+    auto* game = json_object_new_object();
+    text(game, "name", p.gameName);
+    text(game, "icon", p.gameIcon);
+    auto* names = json_object_new_object();
+    static const char* codes[] = {"ko", "en", "ja", "zh"};
+    for (size_t k = 0; k < p.gameNames.size() && k < 4; ++k)
+        if (!p.gameNames[k].empty()) text(names, codes[k], p.gameNames[k]);
+    json_object_object_add(game, "names", names);
+    json_object_object_add(object, "game", game);
+    auto* kinds = json_object_new_array();
+    for (const auto& kind : p.kinds) json_object_array_add(kinds, json_object_new_string(kind.c_str()));
+    json_object_object_add(object, "kinds", kinds);
+    json_object_array_add(list, object);
+    json_object_object_add(root.get(), "patches", list);
+    return json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PLAIN);
+}
 std::string fileTitle(const std::string& url) {
     auto name = url.substr(0, url.find_first_of("?#"));
     name = name.substr(name.find_last_of('/') + 1);

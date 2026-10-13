@@ -115,6 +115,48 @@ bool finish(std::vector<Entry> &entries, Outcome outcome, const std::string &err
 }
 void settle(std::vector<Entry> &entries) {
   for (auto &e : entries)
-    if (e.outcome == Outcome::Running) e.outcome = e.kind.empty() ? Outcome::Queued : Outcome::Failed;
+    if (e.outcome == Outcome::Running) e.outcome = Outcome::Queued;
+}
+std::vector<uint64_t> queueOrder(const std::vector<Entry> &entries) {
+  std::vector<uint64_t> out;
+  for (const auto &e : entries)
+    if (e.outcome == Outcome::Queued) out.push_back(e.id);
+  std::sort(out.begin(), out.end());
+  return out;
+}
+bool swapTurns(std::vector<Entry> &entries, uint64_t a, uint64_t b) {
+  const auto find = [&](uint64_t id) {
+    return std::find_if(entries.begin(), entries.end(),
+                        [&](const Entry &e) { return e.id == id && e.outcome == Outcome::Queued; });
+  };
+  auto rowA = find(a), rowB = find(b);
+  if (a == b || rowA == entries.end() || rowB == entries.end())
+    return false;
+  // Each keeps the other's turn and the other's place in the list.
+  std::swap(rowA->id, rowB->id);
+  std::iter_swap(rowA, rowB);
+  return true;
+}
+uint64_t takeFirstTurn(std::vector<Entry> &entries, uint64_t id) {
+  const auto order = queueOrder(entries);
+  const auto at = std::find(order.begin(), order.end(), id);
+  if (at == order.end())
+    return 0;
+  // One turn sooner at a time (it holds order[i] before each step): the
+  // ones it passes keep their order.
+  for (auto i = size_t(at - order.begin()); i > 0; --i)
+    swapTurns(entries, order[i - 1], order[i]);
+  return order.front();
+}
+bool pending(const std::vector<Entry> &entries, const Entry &job) {
+  return std::any_of(entries.begin(), entries.end(), [&](const Entry &e) {
+    return (e.outcome == Outcome::Queued || e.outcome == Outcome::Running) && sameDownload(e, job);
+  });
+}
+std::string catalogId(const Entry &entry) {
+  if (!entry.kind.empty() || entry.install.files.empty())
+    return "";
+  const auto &file = entry.install.files.front();
+  return !file.baseId.empty() ? file.baseId : !file.titleId.empty() ? file.titleId : file.url;
 }
 } // namespace foil::history

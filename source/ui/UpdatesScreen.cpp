@@ -1,6 +1,7 @@
 #include "ui/Application.hpp"
 #include <algorithm>
 #include <limits>
+#include <map>
 namespace foil::ui {
 // 내 게임: 설치됨 is the installed screen, 업데이트 and DLC this one. Moving
 // between them keeps the console's list (no rereading) and the cursor's place:
@@ -147,12 +148,25 @@ void Application::installUpdates(bool all) {
   const auto rows = updateRows();
   if (rows.empty()) return;
   const auto &selected = rows[std::clamp(selected_, 0, int(rows.size()) - 1)];
-  std::vector<Item> files;
-  for (const auto &row : rows) if (all || row.baseId == selected.baseId) files.push_back(row.item);
-  const auto name = all ? std::string(updatesTab_ == 2 ? tr("Install all") : tr("Update all")) : selected.item.name;
-  if (const auto result = startInstall(files, name, selected.item.icon, installTarget())) {
-    message(result.message);
-    return;
+  // One pick a game, under that game's name and cover, in the list's
+  // order: 다운로드 then shows which game each row is, and one that fails
+  // takes only its own game's rows off the queue.
+  std::vector<std::string> order;
+  std::map<std::string, std::vector<Item>> files;
+  for (const auto &row : rows) {
+    if (!all && row.baseId != selected.baseId) continue;
+    if (!files.count(row.baseId)) order.push_back(row.baseId);
+    files[row.baseId].push_back(row.item);
+  }
+  for (const auto &base : order) {
+    const auto *group = findGroup(base);
+    const auto &first = files[base].front();
+    const auto name = group ? group->representative.name : first.name;
+    const auto icon = group ? group->representative.icon : first.icon;
+    if (const auto result = startInstall(files[base], name, icon, installTarget())) {
+      message(result.message);
+      return;
+    }
   }
   downloadsTab_ = 0;
   screen_ = Screen::Downloads; nav_ = menuIndex(Screen::Downloads);

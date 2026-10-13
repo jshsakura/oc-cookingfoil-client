@@ -222,10 +222,6 @@ void Application::askRetroGame(const retro::Game &game) {
 }
 bool Application::getRetroGame(const retro::Game &game, bool again) {
   if (game.bundleUrl.empty()) return false;
-  if (retroWorker_.joinable() && retroBusy_ != "list") {
-    message(tr("Try again once the retro task finishes."));
-    return false;
-  }
   if (!again && retroInstalled(game) && !retroBezelMissing(game)) {
     message(retroArchPresent() ? tr("Already on the card. Start it from RetroArch.")
                                : tr("You already have this game. Press Y to get RetroArch and play it."));
@@ -236,6 +232,11 @@ bool Application::getRetroGame(const retro::Game &game, bool again) {
     alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(game.size)});
     return false;
   }
+  // Its turn comes in 다운로드's queue, behind whatever downloads now.
+  return queueJob("retro", game.name, game.iconUrl, game.bundleUrl, game.size, retro::serializeGame(game));
+}
+bool Application::runRetroGame(const retro::Game &game) {
+  if (game.bundleUrl.empty()) return false;
   const auto server = session_ ? session_->server() : Server{};
   const auto state = state_;
   const auto sd = sdRoot_;
@@ -270,36 +271,16 @@ bool Application::getRetroGame(const retro::Game &game, bool again) {
             alert_ = error.message;
             return;
           }
-          // Its core missing: the RetroArch files come next, only what is
-          // missing or changed.
-          if (retroCoreMissing(game)) syncRetroArch();
+          // Its core missing: the RetroArch files come next, ahead of what
+          // waits, only what is missing or changed.
+          if (retroCoreMissing(game)) syncRetroArch(false, true);
           if (installRetroShortcut(game)) return; // 다운로드 shows the shortcut going in
           message(retroArchPresent() ? trf("Got {0}. Start it from RetroArch.", {game.name})
                                      : trf("Got {0}. Press Y to get RetroArch too.", {game.name}));
         };
-      })) {
-    message(tr("Try again once the retro task finishes."));
+      }))
     return false;
-  }
-  startRetroEntry("retro", game.name, game.iconUrl, game.bundleUrl, game.size, retro::serializeGame(game));
   return true;
-}
-// 다운로드 lists retro downloads beside installs: one entry while it runs,
-// ended by finishRetroEntry.
-void Application::startRetroEntry(const std::string &kind, const std::string &name, const std::string &icon,
-                                  const std::string &url, uint64_t size, const std::string &payload) {
-  Item file;
-  file.url = url;
-  file.name = name;
-  file.icon = icon;
-  file.size = size;
-  history::Entry entry;
-  entry.install = {name, icon, "sd", {file}};
-  entry.kind = kind;
-  entry.payload = payload;
-  entry.at = int64_t(std::time(nullptr));
-  history::add(history_, std::move(entry));
-  saveHistory();
 }
 void Application::finishRetroEntry(const std::string &kind, history::Outcome outcome, const std::string &error,
                                    uint64_t bytes) {
@@ -321,27 +302,28 @@ void Application::finishRetroEntry(const std::string &kind, history::Outcome out
 bool Application::installShortcut(const std::string &name, const std::string &icon, const std::string &url,
                                   const std::string &titleId, uint64_t size, bool justDownloaded) {
   if (url.empty() || !session_ || !state_.makeShortcuts) return false;
-  if (installer_.running()) {
-    if (!justDownloaded) return false;
-    message(trf("Got {0}. Once the current install ends, get it again to make its HOME Menu shortcut.", {name}));
-    return true;
-  }
   Item shortcut;
   shortcut.url = url;
   shortcut.name = name;
   shortcut.titleId = shortcut.baseId = titleId;
   shortcut.size = size;
   shortcut.icon = icon;
-  if (auto error = startInstall({shortcut}, trf("{0} shortcut", {name}), icon, "sd")) {
+  // Next in the queue, ahead of what waits: it belongs to what just came down.
+  const bool waits = downloadRunning();
+  if (auto error = startInstall({shortcut}, trf("{0} shortcut", {name}), icon, "sd", {}, true)) {
     alertTitle_ = tr("Could not make the shortcut");
     alert_ = error.message;
     return true;
   }
-  message(justDownloaded ? trf("Got {0}. Installing its HOME Menu shortcut.", {name})
-                         : trf("Installing the {0} HOME Menu shortcut.", {name}));
+  if (!waits)
+    message(justDownloaded ? trf("Got {0}. Installing its HOME Menu shortcut.", {name})
+                           : trf("Installing the {0} HOME Menu shortcut.", {name}));
   return true;
 }
-bool Application::syncRetroArch(bool full) {
+bool Application::syncRetroArch(bool full, bool first) {
+  return queueJob("retroarch", "RetroArch", "", "retroarch", 0, full ? "full" : "", 0, first);
+}
+bool Application::runRetroArch(bool full) {
   const auto server = session_ ? session_->server() : Server{};
   const auto state = state_;
   const auto sd = sdRoot_;
@@ -411,11 +393,8 @@ bool Application::syncRetroArch(bool full) {
             message(total ? trf("Got {0} RetroArch files.", {std::to_string(total)})
                           : std::string(tr("RetroArch is up to date.")));
         };
-      })) {
-    message(tr("Try again once the retro task finishes."));
+      }))
     return false;
-  }
-  startRetroEntry("retroarch", "RetroArch", "", "retroarch", 0, "");
   return true;
 }
 void Application::retroAction(Action a) {

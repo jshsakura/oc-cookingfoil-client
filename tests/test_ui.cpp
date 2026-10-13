@@ -11,6 +11,15 @@
 #include <filesystem>
 #include <thread>
 #include <unistd.h>
+#include <atomic>
+#include <mutex>
+#include <set>
+namespace foil::install {
+void setHostInstall(std::function<void(const Item &)> run);
+}
+namespace foil::platform {
+void setHostSpace(uint64_t bytes);
+}
 int runUiTests(SDL_Renderer *renderer) {
   int failures = 0;
   {
@@ -678,6 +687,167 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(!form.serverFormOpen());
     CHECK(foil::readFile(configPath) == kept);
     std::filesystem::remove_all(formRoot);
+  }
+  {
+    // One download at a time, in the order things were added, whatever they
+    // are; a finished install leaves 진행 중 and the next one starts.
+    std::mutex gateLock;
+    std::set<std::string> allowed;
+    std::atomic<bool> giveUp{false};
+    foil::install::setHostInstall([&](const foil::Item &item) {
+      for (int waited = 0; waited < 500 && !giveUp; ++waited) {
+        {
+          std::lock_guard<std::mutex> held(gateLock);
+          if (allowed.count(item.name)) return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+    });
+    const auto allow = [&](const std::string &name) {
+      std::lock_guard<std::mutex> held(gateLock);
+      allowed.insert(name);
+    };
+    const auto file = [](const std::string &name) {
+      foil::Item item;
+      item.name = name;
+      item.url = "https://shop.example/" + name + ".nsp";
+      item.titleId = item.baseId = "01000000000" + std::to_string(10000 + name.size()) + "0";
+      item.size = 1000;
+      return item;
+    };
+    const auto waitFor = [&](foil::ui::Application &on, const std::function<bool()> &done) {
+      for (int i = 0; i < 300 && !done(); ++i) {
+        on.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      return done();
+    };
+    using foil::history::Outcome;
+    foil::platform::setHostSpace(64ull << 30);
+    foil::ui::Application queue(renderer, "", "", "host/fixtures/art");
+    CHECK(queue.open());
+    queue.previewQueueOpen();
+    CHECK(!queue.previewPick({file("A")}, "A"));
+    CHECK(!queue.previewPick({file("B")}, "B"));
+    CHECK(!queue.previewPick({file("C")}, "C"));
+    CHECK(queue.installingName() == "A");
+    CHECK((queue.queuedNames() == std::vector<std::string>{"B", "C"}));
+    // A homebrew app and a patch asked for meanwhile wait their turn behind
+    // what was there; nothing else starts beside the install.
+    foil::homebrew::App app;
+    app.id = "hb";
+    app.name = "HB";
+    app.downloadUrl = "https://shop.example/hb.nro";
+    app.size = 10;
+    CHECK(queue.previewGetHomebrew(app));
+    CHECK(!queue.otherDownloadRunning());
+    foil::UserPatch patch;
+    patch.id = "p-1";
+    patch.titleId = "0100000000010000";
+    patch.name = "D patch";
+    CHECK(!queue.previewPick({file("D")}, "D", {patch}));
+    CHECK((queue.queuedNames() == std::vector<std::string>{"B", "C", "HB", "D", "D patch"}));
+    CHECK(!queue.previewGetHomebrew(app)); // the same app is not queued twice
+    queue.screen(foil::ui::Screen::Downloads);
+    queue.render();
+    // A ends: it is 완료, B runs (its card on 진행 중), C waits.
+    allow("A");
+    CHECK(waitFor(queue, [&] { return queue.installingName() == "B"; }));
+    CHECK(queue.outcomeOf("A") == Outcome::Done);
+    CHECK(queue.outcomeOf("B") == Outcome::Running);
+    CHECK(queue.outcomeOf("C") == Outcome::Queued);
+    CHECK((queue.queuedNames() == std::vector<std::string>{"C", "HB", "D", "D patch"}));
+    queue.render();
+    // B and C end; the app's turn comes before D's (it cannot start here,
+    // with no server, so it reads as failed and D goes on).
+    allow("B");
+    allow("C");
+    CHECK(waitFor(queue, [&] { return queue.installingName() == "D"; }));
+    CHECK(queue.outcomeOf("C") == Outcome::Done);
+    CHECK(queue.outcomeOf("HB") == Outcome::Failed);
+    CHECK(queue.outcomeOf("D patch") == Outcome::Queued);
+    queue.render();
+    giveUp = true;
+    allow("D");
+    CHECK(waitFor(queue, [&] { return queue.installingName().empty(); }));
+    foil::install::setHostInstall(nullptr);
+    foil::platform::setHostSpace(0);
+  }
+  {
+    // 다운로드's lists glide under the right stick (and a finger): the queue
+    // on 진행 중 and each history tab.
+    foil::ui::Application lists(renderer, "", "", "host/fixtures/art");
+    CHECK(lists.open());
+    std::vector<foil::history::Entry> rows;
+    for (int i = 0; i < 20; ++i) {
+      foil::history::Entry e;
+      e.id = uint64_t(i + 1);
+      e.install.name = "Done " + std::to_string(i);
+      e.install.target = "sd";
+      foil::Item f;
+      f.url = "https://shop.example/gone" + std::to_string(i) + ".nsp";
+      e.install.files = {f};
+      e.outcome = foil::history::Outcome::Done;
+      rows.push_back(e);
+    }
+    lists.previewHistory(rows);
+    lists.screen(foil::ui::Screen::Downloads);
+    lists.action(foil::ui::Action::Previous); // 완료 is the last tab
+    CHECK(lists.downloadsTab() == 3);
+    lists.render();
+    lists.stick(1, 0.5f);
+    lists.render();
+    CHECK(lists.glidePos() > 0);
+    for (int i = 0; i < 12; ++i) {
+      foil::Item f;
+      f.name = "Q" + std::to_string(i);
+      f.url = "https://shop.example/q" + std::to_string(i) + ".nsp";
+      f.size = 10;
+      lists.previewQueued(f, f.name, "");
+    }
+    lists.action(foil::ui::Action::Next); // back to 진행 중
+    CHECK(lists.downloadsTab() == 0);
+    lists.render();
+    lists.stick(1, 0.5f);
+    lists.render();
+    CHECK(lists.glidePos() > 0);
+  }
+  {
+    // A row of 완료 opens the game's page; one the server no longer lists
+    // says so.
+    foil::ui::Application done(renderer, "", "", "host/fixtures/art");
+    CHECK(done.open());
+    done.setItems(parsed.value);
+    done.previewQueueOpen();
+    const auto &known = parsed.value.front();
+    foil::history::Entry there, gone;
+    there.id = 2;
+    there.install.name = "there";
+    there.install.files = {known};
+    there.outcome = foil::history::Outcome::Done;
+    gone.id = 1;
+    gone.install.name = "gone";
+    foil::Item missing;
+    missing.url = "https://shop.example/removed.nsp";
+    missing.titleId = missing.baseId = "01FFFFFFFFFF0000";
+    gone.install.files = {missing};
+    gone.outcome = foil::history::Outcome::Done;
+    done.previewHistory({there, gone});
+    done.screen(foil::ui::Screen::Downloads);
+    done.action(foil::ui::Action::Previous);
+    done.render();
+    done.action(foil::ui::Action::Right); // into the list
+    done.action(foil::ui::Action::Accept);
+    CHECK(done.current() == foil::ui::Screen::Detail);
+    CHECK(done.detailId() == foil::history::catalogId(there));
+    done.screen(foil::ui::Screen::Downloads);
+    CHECK(done.downloadsTab() == 3); // the tab stays
+    done.render();
+    done.action(foil::ui::Action::Right);
+    done.action(foil::ui::Action::Down);
+    done.action(foil::ui::Action::Accept);
+    CHECK(done.current() == foil::ui::Screen::Downloads);
+    CHECK(done.alert() == std::string(foil::tr("The file no longer exists on the server.")));
   }
   return failures;
 }

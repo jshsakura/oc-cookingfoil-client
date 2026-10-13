@@ -92,5 +92,83 @@ int runHistoryTests() {
   const auto kept = parse(serialize(mixed));
   CHECK(kept.size() == 2 && kept[0].kind == "retro" && kept[0].payload == R"j({"id":"nes-1"})j");
   CHECK(kept.size() == 2 && kept[1].kind.empty());
+  {
+    // The queue runs in the order things were added, whatever the kind: a
+    // game's files, then a homebrew app, then another game.
+    std::vector<Entry> list;
+    std::vector<uint64_t> ids;
+    for (const auto *name : {"g1-base", "g1-update", "hb", "g2-base"}) {
+      auto row = entry(name);
+      row.outcome = Outcome::Queued;
+      if (std::string(name) == "hb") {
+        row.kind = "homebrew";
+        row.payload = R"j({"id":"hb"})j";
+      }
+      ids.push_back(add(list, row));
+    }
+    // Finished rows in between (added later, ended) do not change it.
+    auto done = entry("old");
+    done.outcome = Outcome::Done;
+    add(list, done);
+    CHECK(queueOrder(list) == ids);
+    // Moved: the homebrew app goes one sooner; the list remembers it
+    // through a round trip, as the card does.
+    CHECK(swapTurns(list, ids[1], ids[2]));
+    auto order = queueOrder(list);
+    auto names = [&](const std::vector<Entry> &from, const std::vector<uint64_t> &turns) {
+      std::vector<std::string> out;
+      for (const auto id : turns)
+        for (const auto &e : from)
+          if (e.id == id) out.push_back(e.install.name);
+      return out;
+    };
+    CHECK((names(list, order) == std::vector<std::string>{"g1-base", "hb", "g1-update", "g2-base"}));
+    const auto back = parse(serialize(list));
+    CHECK((names(back, queueOrder(back)) == std::vector<std::string>{"g1-base", "hb", "g1-update", "g2-base"}));
+    // Ids stay unique after a swap.
+    std::vector<uint64_t> all;
+    for (const auto &e : list) all.push_back(e.id);
+    std::sort(all.begin(), all.end());
+    CHECK(std::adjacent_find(all.begin(), all.end()) == all.end());
+    CHECK(!swapTurns(list, ids[0], 999));
+    // A shortcut for what just came down goes first; the rest keep order.
+    auto shortcut = entry("hb shortcut");
+    shortcut.outcome = Outcome::Queued;
+    const auto late = add(list, shortcut);
+    const auto now = takeFirstTurn(list, late);
+    CHECK(now != 0);
+    CHECK((names(list, queueOrder(list)) == std::vector<std::string>{"hb shortcut", "g1-base", "hb", "g1-update", "g2-base"}));
+    CHECK(takeFirstTurn(list, 999) == 0);
+    // A closed app's running job (any kind) waits first again.
+    std::vector<Entry> closed;
+    auto first = entry("first");
+    first.kind = "homebrew";
+    first.payload = "{}";
+    add(closed, first); // running
+    auto second = entry("second");
+    second.outcome = Outcome::Queued;
+    add(closed, second);
+    settle(closed);
+    CHECK((names(closed, queueOrder(closed)) == std::vector<std::string>{"first", "second"}));
+    // The same job is not queued twice; a finished one is no obstacle.
+    auto again = entry("second");
+    CHECK(pending(closed, again));
+    auto other = entry("third");
+    CHECK(!pending(closed, other));
+    auto hb = entry("x");
+    hb.kind = "homebrew";
+    hb.payload = "{}";
+    CHECK(pending(closed, hb));
+    hb.payload = R"j({"id":"y"})j";
+    CHECK(!pending(closed, hb));
+    // The page a row opens: the base game's catalog group.
+    auto update = entry("upd");
+    update.install.files[0].titleId = "0100ABCD00010800";
+    update.install.files[0].baseId = "0100ABCD00010000";
+    CHECK(catalogId(update) == "0100ABCD00010000");
+    update.install.files[0].baseId.clear();
+    CHECK(catalogId(update) == "0100ABCD00010800");
+    CHECK(catalogId(hb).empty());
+  }
   return failures;
 }

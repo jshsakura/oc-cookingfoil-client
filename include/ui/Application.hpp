@@ -148,8 +148,33 @@ public:
 #ifndef __SWITCH__
   void previewInstall(install::Progress p) { installer_.preview(std::move(p)); }
   void previewQueued(Item file, std::string name, std::string icon) {
-    installQueue_.push_back({std::move(file), std::move(name), std::move(icon), "sd", {}, 0, 0});
+    installQueue_.push_back({std::move(file), std::move(name), std::move(icon), "sd", 0, 0, "", ""});
   }
+  // The queue as tests drive it: picks go in as from a game's page, and the
+  // installer's work on the host is whatever setHostInstall() says.
+  Error previewPick(const std::vector<Item> &files, const std::string &name, std::vector<UserPatch> patches = {}) {
+    return startInstall(files, name, "", "sd", std::move(patches));
+  }
+  void previewQueueOpen() {
+    resumeOffered_ = true;
+    connected_ = true;
+  }
+  bool previewGetHomebrew(const homebrew::App &app) { return getHomebrew(app); }
+  // The queue's rows in their turn, by name; what runs now; how a row ended.
+  std::vector<std::string> queuedNames() const {
+    std::vector<std::string> out;
+    for (const auto &q : installQueue_) out.push_back(q.name);
+    return out;
+  }
+  std::string installingName() const { return installer_.running() ? installer_.progress().name : ""; }
+  bool otherDownloadRunning() const { return retroDownloading() || (patchWorker_.joinable() && !patchBusy_.empty()); }
+  std::optional<history::Outcome> outcomeOf(const std::string &name) const {
+    for (const auto &e : history_)
+      if (e.install.name == name) return e.outcome;
+    return std::nullopt;
+  }
+  void previewHistory(std::vector<history::Entry> entries) { history_ = std::move(entries); }
+  int downloadsTab() const { return downloadsTab_; }
   void previewStorage(uint64_t sd, uint64_t nand, uint64_t sdTotal = 476ULL << 30,
                       uint64_t nandTotal = 26ULL << 30) {
     sdFree_ = sd;
@@ -387,6 +412,11 @@ private:
   homebrew::Status homebrewStatus(const homebrew::App &app) const;
   std::vector<int> homebrewRows() const; // homebrewAt() indexes in this tab and search
   bool getHomebrew(const homebrew::App &app);
+  bool runHomebrew(const homebrew::App &app);
+  // The app's HOME Menu shortcut: made now, or queued behind a download
+  // (NCM is the installer's while it runs); false when none can be made.
+  bool homebrewShortcutPossible(const homebrew::App &app) const;
+  void requestHomebrewShortcut(const homebrew::App &app);
   void removeHomebrew(const homebrew::App &app);
   void settleHomebrew(const homebrew::App &app);
   void saveHomebrewLedger();
@@ -446,8 +476,8 @@ private:
   void askRetroGame(const retro::Game &game);
   // false when it did not start (another retro job runs, no room, already there).
   bool getRetroGame(const retro::Game &game, bool again = false);
-  void startRetroEntry(const std::string &kind, const std::string &name, const std::string &icon,
-                       const std::string &url, uint64_t size, const std::string &payload);
+  // Its turn in the queue came: the download itself, on the retro worker.
+  bool runRetroGame(const retro::Game &game);
   void finishRetroEntry(const std::string &kind, history::Outcome outcome, const std::string &error, uint64_t bytes);
   // A retro game or RetroArch downloading (not a list loading).
   bool retroDownloading() const { return !retroBusy_.empty() && retroBusy_ != "list"; }
@@ -459,7 +489,9 @@ private:
                        const std::string &titleId, uint64_t size, bool justDownloaded = true);
   const retro::Game *retroFocused() const;
   void scoreBadge(int score, float right, float y);
-  bool syncRetroArch(bool full = false); // full: every file again, settings kept
+  // Into the queue; `first` puts it ahead of what waits (a game's core).
+  bool syncRetroArch(bool full = false, bool first = false); // full: every file again, settings kept
+  bool runRetroArch(bool full);
   bool retroCoreMissing(const retro::Game &game) const;
   void pollRetro();
   // Runs `job` on the retro worker; what it returns runs on the UI thread.
@@ -563,14 +595,12 @@ private:
   int notesCard(int y);           // the operator's notes; returns the y below it
   // The detail's patches for its game, as rows of the selection.
   void syncDetailPatches();
-  // Patches picked with an install; they start once the install ends well.
-  void queuePatches(std::vector<UserPatch> patches, bool afterInstall);
+  // The patch whose turn came in the queue goes to the patch worker.
   void pumpPatchQueue();
   float patchDownloadCard(float y);
   // A patch job or patches still queued: 다운로드 shows them while they run.
   bool patchDownloading() const { return !patchQueue_.empty() || (patchWorker_.joinable() && !patchBusy_.empty()); }
   std::deque<UserPatch> patchQueue_;
-  bool patchQueueWaits_ = false;
   UserPatch patchQueueNow_; // the queued patch the worker has
   void gallery();
   void downloads();
@@ -857,6 +887,7 @@ private:
   install::SpeedWindow downloadSpeed_;
   install::TimeLeft timeLeft_;
   double downloadSeen_ = -1;
+  double shownPercent_ = -1, shownPercentAt_ = 0; // the bar as drawn, gliding
   std::optional<uint64_t> sdFree_, nandFree_, sdTotal_, nandTotal_;
   bool storageChecked_ = false;
   uint32_t storageAt_ = 0, noticeAt_ = 0;
@@ -983,15 +1014,34 @@ private:
   // Each file goes in the queue as its own entry (base game, update, DLC,
   // in the order picked), behind whatever is already there; patches start
   // with the game's last file.
+  // `first`: ahead of what waits (a shortcut for what just came down).
   Error startInstall(const std::vector<Item> &files, const std::string &name, const std::string &icon,
-                     const std::string &target, std::vector<UserPatch> patches = {});
+                     const std::string &target, std::vector<UserPatch> patches = {}, bool first = false);
+  // Everything that downloads waits its turn in one queue and runs alone:
+  // a game's files, its patches, homebrew, retro games, RetroArch and
+  // shortcuts. `kind` is "" for an install, else the history row's kind.
   struct QueuedInstall {
     Item file;
     std::string name, icon, target;
-    std::vector<UserPatch> patches;
-    int group = 0; // one pick: a base game that fails takes its update and DLC with it
+    int group = 0; // one pick: a base game that fails takes the rest of it (update, DLC, patches) along
     uint64_t entry = 0; // its row in 다운로드's history, which keeps the queue across launches
+    std::string kind, payload;
   };
+  // A job other than an install goes in behind the rest (or `first`); false
+  // when the same one already waits or runs.
+  bool queueJob(const std::string &kind, const std::string &name, const std::string &icon, const std::string &url,
+                uint64_t size, const std::string &payload, int group = 0, bool first = false);
+  void queuePatchJobs(const std::vector<UserPatch> &patches, int group);
+  Error launchJob(const QueuedInstall &next);
+  // Whether a download (of any kind) runs now; the next one waits for it.
+  bool downloadRunning() const;
+  // The installer, the queue and the screens see the order the rows run in.
+  void rebuildQueue();
+  // A patch job's row ends once the patch worker is done with it.
+  void settlePatchJob(bool failed, const std::string &error);
+  // 다운로드's history rows open what they were: the game's page, the app,
+  // the retro game; or say the server has it no longer.
+  void openHistoryRow(const history::Entry &entry);
   // The rest of a pick leaves the queue (its rows read as cancelled).
   void dropGroup(int group, const std::string &why);
   std::deque<QueuedInstall> installQueue_;
@@ -1005,7 +1055,13 @@ private:
   void runningAction(Action a);
   void unqueue(size_t index);
   void moveUp(size_t index);
-  void queueList(float y);
+  // 대기 중's rows from `y`; rows above `viewTop` are scrolled away.
+  void queueList(float y, float viewTop);
+  float queueHeight() const;
+  static constexpr float QueueTitle = 40, QueueStep = 88;
+  // 진행 중 below the installer's card: the retro and patch cards and the
+  // queue, gliding as one under a finger.
+  void runningList(float y);
   uint64_t queuedBytes() const;
   std::vector<history::Entry> history_;
   void saveHistory();

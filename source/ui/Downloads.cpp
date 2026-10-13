@@ -37,14 +37,12 @@ void Application::downloads() {
     return;
   }
   const auto target = p.target == "nand" ? tr("Console") : tr("SD card");
-  if (p.status == install::Status::Idle) {
-    // A retro game or RetroArch can run with no install beside it.
-    float y = 90;
-    if (retroDownloading()) y += retroDownloadCard(y) + 30;
-    if (patchDownloading()) y += patchDownloadCard(y) + 30;
-    if (!installQueue_.empty())
-      queueList(y);
-    else if (!retroDownloading() && !patchDownloading())
+  // The installer's card shows only while it runs: a finished install goes
+  // to 완료 (or 실패, 취소) at once, and what is next takes its place.
+  if (p.status != install::Status::Running) {
+    if (!installQueue_.empty() || retroDownloading() || patchDownloading())
+      runningList(90);
+    else
       notice(tr("Nothing is downloading."), tr("Pick items on a game's page, then press A to install."), 4);
     return;
   }
@@ -59,11 +57,20 @@ void Application::downloads() {
   paint_.rect(260, 90, 992, 180, Surface, 20);
   cover(p.icon, 284, 112, 112, false, p.name);
   paint_.fonts.text(p.name, 418, 112, 26, Ink, true, 680);
-  const auto percent = std::to_string(int(std::round(p.percent))) + "%";
+  // The bar glides toward the engine's figure, which a compressed file moves
+  // a whole piece at a time; going back (the next file) or ending it jumps.
+  const double frameAt = SDL_GetTicks() / 1000.;
+  const double goal = std::clamp(p.percent, 0., 100.);
+  if (shownPercent_ < 0 || goal < shownPercent_ - 1 || p.status != install::Status::Running)
+    shownPercent_ = goal;
+  else
+    shownPercent_ += (goal - shownPercent_) * (1 - std::exp(-std::max(0., frameAt - shownPercentAt_) / 0.8));
+  shownPercentAt_ = frameAt;
+  const auto percent = std::to_string(int(std::floor(shownPercent_))) + "%";
   paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 26, true),
                     114, 26, Ink, true);
   paint_.rect(418, 154, 810, 14, Line, 7);
-  const auto filled = 810 * std::clamp(p.percent, 0., 100.) / 100.;
+  const auto filled = 810 * shownPercent_ / 100.;
   const bool paused = p.status == install::Status::Running && installer_.paused();
   paint_.rect(418, 154, filled, 14,
               p.status == install::Status::Succeeded ? Okay : paused ? Secondary : Butter, 7);
@@ -80,12 +87,13 @@ void Application::downloads() {
   if (p.status == install::Status::Running && !paused) {
     downloadSpeed_.add(now, net::receivedBytes());
     const double steady = downloadSpeed_.speed(now);
-    const double shown = steady >= 0 ? steady : p.speed;
-    if (shown > 0 || steady >= 0) {
+    if (steady < 0) {
+      status += std::string(" · ") + tr("Measuring speed");
+    } else {
       char speed[64];
-      std::snprintf(speed, sizeof(speed), " · %.1f MB/s", shown);
+      std::snprintf(speed, sizeof(speed), " · %.1f MB/s", steady);
       status += speed;
-      const double left = steady >= 0 ? timeLeft_.update(now, p.total > p.received ? p.total - p.received : 0, steady) : -1;
+      const double left = timeLeft_.update(now, p.total > p.received ? p.total - p.received : 0, steady);
       status += " · " + install::timeLeftText(left);
     }
   } else {
@@ -116,16 +124,20 @@ void Application::downloads() {
     const bool done = last < p.index || p.status == install::Status::Succeeded;
     const bool active =
         p.index >= i && p.index <= last && p.status == install::Status::Running;
-    const auto label = done     ? std::string("✓ ") + type
+    const auto label = done     ? type
                        : active ? trf("{0} in progress", {type})
                                 : trf("{0} queued", {type});
-    const auto width = paint_.fonts.measure(label, 15, true) + 24;
+    // A finished part leads with the check mark icon (the font has no ✓).
+    const float mark = done ? 22 : 0;
+    const auto width = paint_.fonts.measure(label, 15, true) + 24 + mark;
     paint_.rect(x, 216, width, 32,
                 done     ? SDL_Color{227, 242, 234, 255}
                 : active ? Ink
                          : Ground,
                 8);
-    paint_.fonts.text(label, x + 12, 220, 15,
+    if (done)
+      paint_.icon(8, x + 10, 223, Okay, 18);
+    paint_.fonts.text(label, x + 12 + mark, 220, 15,
                       done     ? Okay
                       : active ? Surface
                                : Secondary,
@@ -151,45 +163,47 @@ void Application::downloads() {
     paint_.rect(cx, 216, cw, 32, Ground, 8);
     paint_.fonts.middle(stop, cx + 16, 232, 16, Ink, true);
   }
-  // How it ended, in one strip under the card; 완료 and 실패 keep the rest.
-  int y = 294;
-  if (p.status == install::Status::Succeeded || p.status == install::Status::Cancelled ||
-      p.status == install::Status::Failed) {
-    const bool ok = p.status == install::Status::Succeeded, failed = p.status == install::Status::Failed;
-    const std::string text = ok       ? std::string(tr("Installed. You can launch it from the HOME Menu."))
-                             : failed ? p.error
-                                      : std::string(tr("Install canceled."));
-    const bool twoLines = paint_.fonts.measure(text, 18, true) > 900;
-    const float h = twoLines ? 80 : 56;
-    paint_.rect(260, y, 992, h, ok ? SDL_Color{227, 242, 234, 255} : Surface, 14);
-    paint_.icon(ok ? 24 : failed ? 25 : 33, 282, y + h / 2 - 12, ok ? Okay : failed ? Bad : Secondary, 24);
-    if (twoLines) paint_.fonts.wrapped(text, 320, y + 14, 18, ok ? Okay : Ink, 910, 2, true);
-    else paint_.fonts.middle(text, 320, y + h / 2, 18, ok ? Okay : Ink, true, 910);
-    y += int(h) + 24;
+  runningList(294);
+}
+// Under the installer's card (or from the top): the retro and patch cards
+// and 대기 중, one area that glides under a finger or the right stick.
+void Application::runningList(float y) {
+  constexpr float Bottom = 660, Card = 120, Gap = 30;
+  if (retroDownloading() || patchDownloading() || !installQueue_.empty()) {
+    const float cards = (retroDownloading() ? Card + Gap : 0) + (patchDownloading() ? Card + Gap : 0);
+    const float content = cards + queueHeight();
+    // The picked queue row stays in view; the cards come first.
+    const int picked = downloadsRow_ - 1;
+    const float focus = picked < 0 ? 0 : cards + QueueTitle + picked * QueueStep - (Bottom - y) / 2 + QueueStep / 2;
+    const float max = std::max(0.f, content - (Bottom - y));
+    const float top = glide("running", 232, y, 1048, Bottom - y, std::clamp(focus, 0.f, max), max, 1);
+    if (max > 0) paint_.scrollbar(1266, y, Bottom - y - 12, top, Bottom - y, content);
+    clipTo(232, y - 8, 1048, Bottom - y + 8);
+    float at = y - top;
+    if (retroDownloading()) at += retroDownloadCard(at) + Gap;
+    if (patchDownloading()) at += patchDownloadCard(at) + Gap;
+    queueList(at, y);
+    unclip();
   }
-  if (retroDownloading()) y += int(retroDownloadCard(float(y))) + 30;
-  if (patchDownloading()) y += int(patchDownloadCard(float(y))) + 30;
-  queueList(float(y));
+}
+float Application::queueHeight() const {
+  return installQueue_.empty() ? 0 : QueueTitle + float(installQueue_.size()) * QueueStep;
 }
 // 대기 중: what comes next, in order, scrolling under the title. On a row A
 // moves it sooner, X later and Y takes it off; the row's buttons do the same.
-void Application::queueList(float y) {
+void Application::queueList(float y, float viewTop) {
   if (installQueue_.empty())
     return;
-  constexpr float Row = 76, Step = 88, Bottom = 660;
+  constexpr float Row = 76, Step = QueueStep, Bottom = 660;
   paint_.fonts.text(tr("Queued"), 260, y, 26, Ink, true);
-  y += 40;
+  y += QueueTitle;
   const int count = int(installQueue_.size());
-  const int visible = std::max(1, int((Bottom - y) / Step));
-  const int picked = std::clamp(downloadsRow_ - 1, -1, count - 1);
-  // The row at the top follows the cursor, or the finger while it glides.
-  const float top = glide("queue", 232, y, 1048, Bottom - y, float(std::clamp(picked - visible / 2, 0, std::max(0, count - visible))),
-                          float(count - visible), Step);
-  paint_.scrollbar(1266, y, Step * visible - 12, top, float(visible), float(count));
-  clipTo(232, y - 8, 1048, Bottom - y + 8);
-  for (int i = int(top); i < count && i <= int(top) + visible + 1; ++i) {
+  for (int i = 0; i < count; ++i) {
+    const float ry = y + i * Step;
+    // Out of view: neither drawn nor answering a tap (the card above is there).
+    if (ry < viewTop - 8 || ry > Bottom)
+      continue;
     const auto &q = installQueue_[size_t(i)];
-    const float ry = y + (i - top) * Step;
     hit(260, ry, 992, Row, [this, i] {
       sidebar_ = false;
       headerFocus_.clear();
@@ -199,9 +213,14 @@ void Application::queueList(float y) {
     paint_.rect(260, ry, 992, Row, Surface, 16);
     cover(q.icon, 280, ry + 10, 56, false, q.name);
     paint_.fonts.text(q.name, 356, ry + 12, 20, Ink, true, 560);
-    const auto part = q.file.type == "update" ? std::string(tr("Update|item"))
-                      : q.file.type == "dlc"  ? std::string("DLC")
-                                              : std::string(tr("Base game"));
+    const auto part = q.kind == "homebrew"    ? std::string(tr("Homebrew"))
+                      : q.kind == "retro"     ? std::string(tr("Retro game"))
+                      : q.kind == "retroarch" ? std::string("RetroArch")
+                      : q.kind == "patch"     ? std::string(tr("Patch"))
+                      : q.kind == "shortcut"  ? std::string(tr("HOME Menu shortcut"))
+                      : q.file.type == "update" ? std::string(tr("Update|item"))
+                      : q.file.type == "dlc"    ? std::string("DLC")
+                                                : std::string(tr("Base game"));
     const auto where = q.target == "nand" ? tr("Console") : tr("SD card");
     paint_.fonts.text(part + " · " + where + " · " + formatBytes(q.file.size), 356, ry + 44, 16, Secondary, false, 560);
     // Buttons right to left: 취소, 뒤로 (not on the last), 앞으로 (not on the first).
@@ -225,14 +244,13 @@ void Application::queueList(float y) {
         downloadsRow_ = i;
       });
   }
-  unclip();
 }
 // A retro game, RetroArch or a homebrew app coming down beside the installer: what it is,
 // how far, and B to stop it.
 float Application::retroDownloadCard(float y) {
   constexpr float Height = 120;
   const auto running = std::find_if(history_.begin(), history_.end(), [](const history::Entry &e) {
-    return !e.kind.empty() && e.outcome == history::Outcome::Running;
+    return !e.kind.empty() && e.kind != "patch" && e.outcome == history::Outcome::Running;
   });
   const bool pack = retroBusy_ == "pack";
   const std::string name = running != history_.end() ? running->install.name : pack ? "RetroArch" : "";
@@ -298,14 +316,16 @@ void Application::downloadsHistory() {
   // The row at the top follows the cursor, or the finger while it glides.
   const float top = glide("downloads", 232, Top, 1048, 660 - (Top), float(std::clamp(downloadsRow_ - Visible / 2, 0, std::max(0, count - Visible))),
                           float((count) - (Visible)), Step);
-  const int first = int(top);
+  // Stretched past the top while it springs back: no row before the first.
+  const int first = std::max(0, int(std::floor(top)));
   paint_.scrollbar(1266, Top, Step * Visible - 12, top, Visible, float(count));
   clipTo(232, Top - 8, 1048, 660 - Top + 8);
   for (int n = first; n < count && n <= first + Visible + 1; ++n) {
     const auto &e = history_[list[n]];
     const float y = Top + (n - top) * Step;
     hit(260, y, 992, Row, [this, n] {
-      if (inContent() && downloadsRow_ == n && (downloadsTab_ == 1 || downloadsTab_ == 2)) action(Action::Accept);
+      // A second tap opens it, as A does.
+      if (inContent() && downloadsRow_ == n) action(Action::Accept);
       sidebar_ = false;
       downloadsRow_ = n;
     });
@@ -321,6 +341,7 @@ void Application::downloadsHistory() {
     std::string meta = std::string(e.install.target == "nand" ? tr("Console") : tr("SD card")) + " · " + when;
     if (e.kind == "retro") meta = std::string(tr("Retro game")) + " · " + meta;
     if (e.kind == "homebrew") meta = std::string(tr("Homebrew")) + " · " + meta;
+    if (e.kind == "patch") meta = std::string(tr("Patch")) + " · " + meta;
     if (!e.error.empty()) meta += " · " + e.error;
     // What a finished install took: average speed, the download, the install.
     if (e.outcome == history::Outcome::Done && e.downloadSeconds > 0) {
@@ -356,32 +377,9 @@ void Application::downloadsAction(Action a) {
   if (a == Action::Up) downloadsRow_ = std::max(0, downloadsRow_ - 1);
   if (a == Action::Down) downloadsRow_ = std::min(count - 1, downloadsRow_ + 1);
   const int index = list[std::clamp(downloadsRow_, 0, count - 1)];
-  if (a == Action::Accept && (downloadsTab_ == 1 || downloadsTab_ == 2)) {
-    // Retro downloads start again in the retro worker; the old entry goes
-    // only once the new one is under way.
-    if (!history_[index].kind.empty()) {
-      const auto entry = history_[index];
-      const auto apps = entry.kind == "homebrew" ? homebrew::parse("{\"homebrew\":[" + entry.payload + "]}", "")
-                                                 : std::vector<homebrew::App>{};
-      const bool started = entry.kind == "retro"      ? getRetroGame(retro::parseGameJson(entry.payload), true)
-                           : entry.kind == "homebrew" ? !apps.empty() && getHomebrew(apps.front())
-                                                      : syncRetroArch();
-      if (!started) return;
-      const auto old = std::find_if(history_.begin(), history_.end(), [&](const history::Entry &e) { return e.id == entry.id; });
-      if (old != history_.end()) history_.erase(old);
-      saveHistory();
-      downloadsTab_ = 0;
-      return;
-    }
-    // Into the queue again; the old row gives way to the new one.
-    const auto install = history_[index].install;
-    history_.erase(history_.begin() + index);
-    if (auto error = startInstall(install.files, install.name, install.icon, install.target)) {
-      alert_ = error.message;
-      saveHistory();
-      return;
-    }
-    downloadsTab_ = 0;
+  // A row opens what it was; from there it can be got again.
+  if (a == Action::Accept) {
+    openHistoryRow(history_[index]);
     return;
   }
   if (a == Action::Search) {
@@ -394,5 +392,105 @@ void Application::downloadsAction(Action a) {
     downloadsRow_ = 0;
     saveHistory();
   }
+}
+} // namespace foil::ui
+namespace foil::ui {
+// A row of 실패, 취소 or 완료 opens what it was: the game's page (from there
+// it installs again), the app's card, the retro game. One the server no
+// longer lists says so instead.
+void Application::openHistoryRow(const history::Entry &entry) {
+  const auto gone = [this] {
+    alertTitle_.clear();
+    alert_ = tr("The file no longer exists on the server.");
+  };
+  if (!connected_) {
+    message(tr("Not connected to a server."));
+    return;
+  }
+  const auto openGame = [&](const std::string &id) {
+    const auto *group = id.empty() ? nullptr : findGroup(id);
+    if (!group)
+      return false;
+    sidebar_ = false;
+    openDetail(size_t(group - groups_.data()));
+    return true;
+  };
+  const auto openApp = [&](const std::string &payload) {
+    const auto apps = homebrew::parse("{\"homebrew\":[" + payload + "]}", "");
+    if (apps.empty()) {
+      gone();
+      return;
+    }
+    if (!homebrewLoaded_) { // the list comes when the screen shows
+      screen(Screen::Homebrew);
+      sidebar_ = false;
+      return;
+    }
+    const auto found = std::find_if(homebrew_.begin(), homebrew_.end(),
+                                    [&](const homebrew::App &app) { return app.id == apps.front().id; });
+    if (found == homebrew_.end()) {
+      gone();
+      return;
+    }
+    screen(Screen::Homebrew);
+    sidebar_ = false;
+    homebrewQuery_.clear();
+    // The tab that lists it: 설치됨 when it is on the card, else its kind's.
+    const int index = int(found - homebrew_.begin());
+    for (const int tab : {0, found->kind == homebrew::Kind::Port ? 2 : 1}) {
+      homebrewTab_ = tab;
+      const auto rows = homebrewRows();
+      const auto at = std::find(rows.begin(), rows.end(), index);
+      if (at == rows.end())
+        continue;
+      selected_ = int(at - rows.begin());
+      homebrewAsk_ = true;
+      homebrewAskRow_ = homebrewStatus(*found) == homebrew::Status::Installed ? 0 : -1;
+      homebrewExtras_ = 0;
+      homebrewSaveAsk_ = false;
+      return;
+    }
+  };
+  if (entry.kind.empty()) {
+    if (!openGame(history::catalogId(entry)))
+      gone();
+    return;
+  }
+  if (entry.kind == "homebrew" || entry.kind == "shortcut") {
+    openApp(entry.payload);
+    return;
+  }
+  if (entry.kind == "retro") {
+    const auto game = retro::parseGameJson(entry.payload);
+    if (game.bundleUrl.empty()) {
+      gone();
+      return;
+    }
+    screen(Screen::Retro);
+    sidebar_ = false;
+    askRetroGame(game);
+    return;
+  }
+  if (entry.kind == "patch") {
+    const auto patches = net::parsePatches(entry.payload);
+    if (patches.empty()) {
+      gone();
+      return;
+    }
+    const auto &patch = patches.front();
+    if (patchesLoaded_ && std::none_of(serverPatches_.begin(), serverPatches_.end(),
+                                       [&](const UserPatch &p) { return p.id == patch.id; })) {
+      gone();
+      return;
+    }
+    if (!patch.titleId.empty() && openGame(baseTitleId(patch.titleId)))
+      return;
+    screen(Screen::Patches);
+    sidebar_ = false;
+    return;
+  }
+  // RetroArch: the retro screen, where Y gets it again.
+  screen(Screen::Retro);
+  sidebar_ = false;
 }
 } // namespace foil::ui

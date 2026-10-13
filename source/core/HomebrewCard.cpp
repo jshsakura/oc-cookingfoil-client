@@ -185,6 +185,10 @@ const App *matchCard(const std::vector<App> &apps, const std::string &path) {
     if (!app.fileName.empty() && at == "switch/" + lower(app.fileName)) return &app;
   return nullptr;
 }
+std::string tileIcon(const App &app, bool serverFailed, const std::string &cardKey) {
+  if (!app.cardOnly && !app.iconUrl.empty() && !serverFailed) return app.iconUrl;
+  return cardKey.empty() ? app.iconUrl : cardKey;
+}
 Status cardStatus(const std::string &appVersion, const std::string &cardVersion) {
   const auto a = bare(appVersion), c = bare(cardVersion);
   return a.empty() || c.empty() || a == c ? Status::Installed : Status::Update;

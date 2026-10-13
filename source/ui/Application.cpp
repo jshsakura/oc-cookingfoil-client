@@ -5,6 +5,8 @@
 #include "platform/Installed.hpp"
 #include "core/Log.hpp"
 #include "core/Json.hpp"
+#include "core/Forwarder.hpp"
+#include "core/Homebrew.hpp"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -133,15 +135,7 @@ void Application::usePatchFolder(const std::string &sd) {
   // An app that closed mid-install left that one running: it goes back in
   // the queue, which picks up again once the shop is reachable.
   openDownloads(sd);
-  installQueue_.clear();
-  for (const auto &e : history_)
-    if (e.outcome == history::Outcome::Queued && e.kind.empty() && e.install.files.size() == 1) {
-      installQueue_.push_back({e.install.files[0], e.install.name, e.install.icon, e.install.target, {}, e.group, e.id});
-      installGroups_ = std::max(installGroups_, e.group);
-    }
-  // In the order they were queued (or moved to): by id.
-  std::sort(installQueue_.begin(), installQueue_.end(),
-            [](const QueuedInstall &a, const QueuedInstall &b) { return a.entry < b.entry; });
+  rebuildQueue();
   // A check of the old card stops first; it holds only a copy of the ledger.
   patchCheckStop_ = true;
   if (patchCheckWorker_.joinable())
@@ -390,7 +384,7 @@ bool Application::hasFocusable() const {
   case Screen::Updates:
     return connected_ && !deviceBusy_ && !updateRows().empty();
   case Screen::Downloads:
-    return downloadsTab_ == 0 ? installer_.running() || !installQueue_.empty() || retroDownloading()
+    return downloadsTab_ == 0 ? installer_.running() || !installQueue_.empty() || retroDownloading() || patchDownloading()
                               : !downloadsList().empty();
   case Screen::Patches:
     return !patchRows().empty();
@@ -541,15 +535,6 @@ void Application::poll() {
                                                                        : history::Outcome::Failed;
     if (history::finish(history_, outcome, installer_.progress().error, int64_t(std::time(nullptr)))) saveHistory();
   }
-  // Patches picked with the game wait for its install: they start once it
-  // succeeds and are dropped when it does not.
-  if (patchQueueWaits_ && observedInstall_ == install::Status::Running && installStatus != install::Status::Running) {
-    patchQueueWaits_ = false;
-    if (installStatus != install::Status::Succeeded && !patchQueue_.empty()) {
-      patchQueue_.clear();
-      message(tr("The game did not install, so the patches picked with it were not downloaded."));
-    }
-  }
   pumpPatchQueue();
   // Done or cancelled on purpose: nothing left to resume. A failure keeps it.
   if (observedInstall_ == install::Status::Running &&
@@ -567,9 +552,21 @@ void Application::poll() {
         message(why);
     }
     runningGroup_ = -1;
+    // The card leaves 진행 중 at once; how it ended is said here and kept
+    // in 완료 or 실패.
+    if (installStatus == install::Status::Succeeded)
+      message(installer_.progress().name + " · " + tr("Installed. You can launch it from the HOME Menu."));
+    else if (installStatus == install::Status::Failed)
+      message(installer_.progress().name + " · " + installer_.progress().error);
+  }
+  // A patch job whose patch the worker finished (or skipped) ends its row.
+  if (!patchWorker_.joinable() && patchQueue_.empty())
+    settlePatchJob(false, "");
+  // The next one starts once nothing downloads. At launch the queue waits
+  // until the shop answers (offerResume), so what was left resumes in order.
+  if (resumeOffered_ || ended)
     if (auto error = launchQueued())
       alert_ = error.message;
-  }
   if (!done_.exchange(false)) {
     // Waiting for approval: asked every 5 seconds for 5 minutes, then - asks again.
     constexpr uint32_t PairWaitMs = 5 * 60 * 1000;
@@ -1605,10 +1602,8 @@ void Application::render() {
       footer(Hints{{"Y", tr("Cancel")}, {"B", tr("Back")}});
     else if (downloadsTab_ == 0 || sidebar_ || downloadsList().empty())
       footer({{"B", tr("Back")}});
-    else if (downloadsTab_ == 1 || downloadsTab_ == 2)
-      footer(Hints{{"A", tr("Try again")}, {"X", tr("Remove")}, {"Y", tr("Clear all")}, {"B", tr("Back")}});
     else
-      footer(Hints{{"X", tr("Remove")}, {"Y", tr("Clear all")}, {"B", tr("Back")}});
+      footer(Hints{{"A", tr("Details")}, {"X", tr("Remove")}, {"Y", tr("Clear all")}, {"B", tr("Back")}});
   }
   else if (screen_ == Screen::Settings)
     footer({{"A", tr("Select")}, {"B", tr("Back")}}); // Y still rereads config.json; - shows as 새로고침
@@ -1760,8 +1755,8 @@ void Application::installSelected() {
   if (!selection_ || detailGroup_ >= groups_.size())
     return;
   const auto &g = groups_[detailGroup_];
-  // Patches alone (every file off) start right away; with files they wait
-  // for the install and never hold it up.
+  // Patches alone (every file off) go in as one pick; with files they come
+  // right after the game's files and go with them if the game fails.
   const auto files = selection_->files();
   if (!files.empty()) {
     if (auto error = startInstall(files, g.representative.name, g.representative.icon, selection_->target,
@@ -1769,8 +1764,14 @@ void Application::installSelected() {
       alert_ = error.message;
       return;
     }
-  } else
-    queuePatches(selection_->patchesOn(), false);
+  } else {
+    queuePatchJobs(selection_->patchesOn(), ++installGroups_);
+    const bool waits = downloadRunning() || installQueue_.size() > 1;
+    if (auto error = launchQueued())
+      alert_ = error.message;
+    else if (waits)
+      message(tr("Added to the download queue."));
+  }
   notice_.clear();
   downloadsTab_ = 0;
   screen_ = Screen::Downloads;
@@ -1784,7 +1785,7 @@ void Application::saveStateQuietly() {
     logLine("state: " + error.message);
 }
 Error Application::startInstall(const std::vector<Item> &files, const std::string &name, const std::string &icon,
-                                const std::string &target, std::vector<UserPatch> patches) {
+                                const std::string &target, std::vector<UserPatch> patches, bool first) {
   // A file already queued or installing is not added twice; one that failed
   // or was canceled before leaves 실패 and 취소 as it goes in again.
   std::vector<Item> fresh;
@@ -1814,22 +1815,101 @@ Error Application::startInstall(const std::vector<Item> &files, const std::strin
                                 }),
                  history_.end());
   const int group = ++installGroups_;
-  for (size_t i = 0; i < fresh.size(); ++i) {
+  std::vector<uint64_t> ids;
+  for (const auto &file : fresh) {
     history::Entry row;
-    row.install = {name, icon, target, {fresh[i]}};
+    row.install = {name, icon, target, {file}};
     row.outcome = history::Outcome::Queued;
     row.group = group;
     row.at = int64_t(std::time(nullptr));
-    const auto id = history::add(history_, std::move(row));
-    installQueue_.push_back({fresh[i], name, icon, target,
-                             i + 1 == fresh.size() ? std::move(patches) : std::vector<UserPatch>{}, group, id});
+    ids.push_back(history::add(history_, std::move(row)));
   }
+  // Its patches come right after its files, in the same pick: a game that
+  // does not install takes them off the queue with the rest.
+  queuePatchJobs(patches, group);
+  // Ahead of what waits: from the last file to the first each takes the
+  // first turn, so they end up in front in the order picked.
+  if (first)
+    for (auto it = ids.rbegin(); it != ids.rend(); ++it) history::takeFirstTurn(history_, *it);
   saveHistory();
-  if (installer_.running()) {
+  rebuildQueue();
+  const bool waits = downloadRunning();
+  if (auto error = launchQueued())
+    return error;
+  if (waits)
     message(tr("Added to the download queue."));
-    return {};
+  return {};
+}
+// The rows of 다운로드 that wait, in their turn, as the queue the screens and
+// the launcher use.
+void Application::rebuildQueue() {
+  installQueue_.clear();
+  for (const auto id : history::queueOrder(history_)) {
+    const auto e = std::find_if(history_.begin(), history_.end(), [&](const history::Entry &r) { return r.id == id; });
+    if (e == history_.end() || e->install.files.empty())
+      continue;
+    // An install row is one file; a row of more is from an older build.
+    if (e->kind.empty() && e->install.files.size() != 1)
+      continue;
+    installQueue_.push_back(
+        {e->install.files[0], e->install.name, e->install.icon, e->install.target, e->group, e->id, e->kind, e->payload});
+    installGroups_ = std::max(installGroups_, e->group);
   }
-  return launchQueued();
+}
+bool Application::queueJob(const std::string &kind, const std::string &name, const std::string &icon,
+                           const std::string &url, uint64_t size, const std::string &payload, int group, bool first) {
+  Item file;
+  file.url = url;
+  file.name = name;
+  file.icon = icon;
+  file.size = size;
+  history::Entry row;
+  row.install = {name, icon, "sd", {file}};
+  row.kind = kind;
+  row.payload = payload;
+  row.outcome = history::Outcome::Queued;
+  row.group = group ? group : ++installGroups_;
+  row.at = int64_t(std::time(nullptr));
+  // RetroArch is one job whatever was asked (all files or what changed).
+  const bool waiting = kind == "retroarch" ? std::any_of(history_.begin(), history_.end(), [](const history::Entry &e) {
+    return e.kind == "retroarch" && (e.outcome == history::Outcome::Queued || e.outcome == history::Outcome::Running);
+  }) : history::pending(history_, row);
+  if (waiting) {
+    message(tr("Already in the download queue."));
+    return false;
+  }
+  // An older failed or cancelled row of it gives way to this one.
+  history_.erase(std::remove_if(history_.begin(), history_.end(),
+                                [&](const history::Entry &e) {
+                                  return e.kind == kind && e.payload == payload &&
+                                         (e.outcome == history::Outcome::Failed || e.outcome == history::Outcome::Cancelled);
+                                }),
+                 history_.end());
+  const auto id = history::add(history_, std::move(row));
+  if (first)
+    history::takeFirstTurn(history_, id);
+  saveHistory();
+  rebuildQueue();
+  // Patches picked with a game are queued as part of it, before it runs.
+  if (group)
+    return true;
+  const bool waits = downloadRunning() || installQueue_.size() > 1;
+  if (auto error = launchQueued())
+    alert_ = error.message;
+  if (waits)
+    message(tr("Added to the download queue."));
+  return true;
+}
+void Application::queuePatchJobs(const std::vector<UserPatch> &patches, int group) {
+  for (const auto &patch : patches) {
+    // The game's cover, as the patch card shows it.
+    std::string icon;
+    if (const auto *game = findGroup(baseTitleId(patch.titleId))) icon = game->representative.icon;
+    queueJob("patch", patch.name, icon, "", patch.size, net::serializePatch(patch), group);
+  }
+}
+bool Application::downloadRunning() const {
+  return installer_.running() || retroDownloading() || patchDownloading();
 }
 void Application::dropGroup(int group, const std::string &why) {
   bool dropped = false;
@@ -1873,20 +1953,15 @@ void Application::runningAction(Action a) {
     dialogFocus_ = 0;
   }
 }
-// One place sooner. The rows trade ids, which keep the order on the card.
+// One place sooner. The rows trade turns (ids), which keep the order on the card.
 void Application::moveUp(size_t index) {
   if (index == 0 || index >= installQueue_.size())
     return;
-  auto &a = installQueue_[index - 1], &b = installQueue_[index];
-  auto rowA = std::find_if(history_.begin(), history_.end(), [&](const history::Entry &e) { return e.id == a.entry; });
-  auto rowB = std::find_if(history_.begin(), history_.end(), [&](const history::Entry &e) { return e.id == b.entry; });
-  if (rowA != history_.end() && rowB != history_.end()) {
-    std::swap(rowA->id, rowB->id);
-    std::swap(a.entry, b.entry);
-    std::iter_swap(rowA, rowB);
+  if (history::swapTurns(history_, installQueue_[index - 1].entry, installQueue_[index].entry)) {
     saveHistory();
-  }
-  std::swap(a, b);
+    rebuildQueue();
+  } else
+    std::swap(installQueue_[index - 1], installQueue_[index]); // a preview row with no history
 }
 void Application::unqueue(size_t index) {
   if (index >= installQueue_.size())
@@ -1899,10 +1974,17 @@ void Application::unqueue(size_t index) {
   message(trf("Took {0} off the queue.", {gone.name}));
 }
 Error Application::launchQueued() {
-  if (installer_.running() || installQueue_.empty())
+  // One download at a time, whatever it is.
+  if (installQueue_.empty() || downloadRunning())
+    return {};
+  // A retro list loading holds the worker a retro job needs; it is next once
+  // the list is in.
+  if (!installQueue_.front().kind.empty() && installQueue_.front().kind != "patch" && retroWorker_.joinable())
     return {};
   auto next = std::move(installQueue_.front());
   installQueue_.pop_front();
+  if (!next.kind.empty())
+    return launchJob(next);
   const std::vector<Item> files{next.file};
   const auto row = std::find_if(history_.begin(), history_.end(),
                                [&](const history::Entry &e) { return e.id == next.entry; });
@@ -1928,9 +2010,65 @@ Error Application::launchQueued() {
   }
   saveHistory();
   observedInstall_ = install::Status::Running;
-  if (!next.patches.empty())
-    queuePatches(std::move(next.patches), true);
   return {};
+}
+// Its turn came: a homebrew app, a retro game, RetroArch, a patch or a
+// shortcut starts, and its row reads as running until it ends.
+Error Application::launchJob(const QueuedInstall &next) {
+  const auto row = [&] {
+    return std::find_if(history_.begin(), history_.end(), [&](const history::Entry &e) { return e.id == next.entry; });
+  };
+  const auto failed = [&](const std::string &why) {
+    history::end(history_, next.entry, history::Outcome::Failed, why, int64_t(std::time(nullptr)));
+    saveHistory();
+    return Error{why};
+  };
+  if (row() == history_.end())
+    return {};
+  // Running first: the worker finds its row by kind when it ends.
+  row()->outcome = history::Outcome::Running;
+  row()->at = int64_t(std::time(nullptr));
+  bool started = false;
+  if (next.kind == "homebrew") {
+    const auto apps = homebrew::parse("{\"homebrew\":[" + next.payload + "]}", "");
+    started = !apps.empty() && runHomebrew(apps.front());
+  } else if (next.kind == "retro") {
+    started = runRetroGame(retro::parseGameJson(next.payload));
+  } else if (next.kind == "retroarch") {
+    started = runRetroArch(next.payload == "full");
+  } else if (next.kind == "patch") {
+    const auto patches = net::parsePatches(next.payload);
+    if (!patches.empty() && patchStore_ && session_) {
+      patchQueue_.push_back(patches.front());
+      started = true;
+      pumpPatchQueue();
+    }
+  } else if (next.kind == "shortcut") {
+    // Made here from the app's file (or this app's own): no download, only
+    // NCM, which is free now.
+    const auto apps = homebrew::parse("{\"homebrew\":[" + next.payload + "]}", "");
+    if (next.payload == "self")
+      makeShortcutFromNro(forwarder::loaderPath(selfPath_).substr(1), "", "CookingFoil", "", "", "", false);
+    else if (!apps.empty())
+      makeHomebrewShortcut(apps.front(), false);
+    started = next.payload == "self" || !apps.empty();
+    if (started)
+      history::end(history_, next.entry, history::Outcome::Done, "", int64_t(std::time(nullptr)));
+  }
+  if (!started)
+    return failed(tr("Could not start the download."));
+  saveHistory();
+  return {};
+}
+void Application::settlePatchJob(bool failed, const std::string &error) {
+  const auto running = std::find_if(history_.begin(), history_.end(), [](const history::Entry &e) {
+    return e.kind == "patch" && e.outcome == history::Outcome::Running;
+  });
+  if (running == history_.end())
+    return;
+  history::end(history_, running->id, failed ? history::Outcome::Failed : history::Outcome::Done, error,
+               int64_t(std::time(nullptr)));
+  saveHistory();
 }
 // 다운로드's records live in cookingfoil.db; the downloads.json of earlier
 // versions moves in once and goes.

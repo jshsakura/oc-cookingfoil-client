@@ -36,6 +36,10 @@ public:
     uint64_t consumed = 0, produced = 0, window = 0;
   };
   static bool pointOf(const std::string &saved, Point &point);
+  // The last point.window bytes of output at this boundary, copied out of the
+  // ring in order: what restore() takes. False when not at a boundary, or
+  // when the window reaches back past this frame's start.
+  bool window(std::vector<uint8_t> &out) const;
   // A decoder at a saved point. `window` holds the last point.window bytes of
   // output (the decoded bytes just before point.produced).
   static std::unique_ptr<ZstdBlockDecoder> restore(const std::string &saved, const uint8_t *window, size_t windowSize,
@@ -51,6 +55,7 @@ private:
   std::vector<uint8_t> header_;  // the frame header, read for its window size
   std::vector<uint8_t> ring_;    // output, kept for the window blocks refer back to
   size_t pos_ = 0;               // where the next block's output goes in ring_
+  size_t lapEnd_ = 0;            // where the lap before ended (0 until the ring wraps)
   uint64_t windowSize_ = 0, consumed_ = 0, produced_ = 0;
   bool frameStarted_ = false;
 };

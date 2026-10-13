@@ -1,4 +1,5 @@
 #include "platform/Storage.hpp"
+#include <atomic>
 #include <cstdio>
 #include <filesystem>
 #include <string>
@@ -22,6 +23,13 @@ std::string firmwareVersion() {
   return "";
 #endif
 }
+#ifndef __SWITCH__
+namespace {
+std::atomic<uint64_t> hostSpace{0};
+} // namespace
+// Off the console the storage has no size unless a test gives it one.
+void setHostSpace(uint64_t bytes) { hostSpace = bytes; }
+#endif
 namespace {
 std::optional<uint64_t> space(const std::string &target, bool total) {
 #ifdef __SWITCH__
@@ -41,6 +49,8 @@ std::optional<uint64_t> space(const std::string &target, bool total) {
 #else
   (void)target;
   (void)total;
+  if (const uint64_t bytes = hostSpace)
+    return bytes;
 #endif
   return std::nullopt;
 }

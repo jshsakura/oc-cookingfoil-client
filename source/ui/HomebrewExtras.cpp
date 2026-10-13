@@ -92,6 +92,14 @@ void Application::homebrewExtrasAction(Action a) {
   if (a == Action::Up) homebrewExtraRow_ = std::max(0, homebrewExtraRow_ - 1);
   if (a == Action::Down) homebrewExtraRow_ = std::min(count - 1, homebrewExtraRow_ + 1);
   if (a != Action::Accept || !settled()) return;
+  // A download waits its turn in 다운로드's queue, as everything does.
+  if (homebrewExtras_ != Saves) {
+    const auto &row = patches[homebrewExtraRow_];
+    if (!row.record || updateAvailable(row)) {
+      queuePatchJobs({row.patch}, 0);
+      return;
+    }
+  }
   if (patchWorker_.joinable()) {
     message(tr("Try again when the patch task is done."));
     return;
@@ -101,9 +109,7 @@ void Application::homebrewExtrasAction(Action a) {
     return;
   }
   const auto &row = patches[homebrewExtraRow_];
-  if (!row.record) startPatchGet(row.patch, true);
-  else if (updateAvailable(row)) startPatchGet(row.patch, false);
-  else if (row.record->on) startPatchDisable(row.patch);
+  if (row.record->on) startPatchDisable(row.patch);
   else startPatchEnable(row.patch);
 }
 // The app's patches or saves, one row each; A does what the row allows.

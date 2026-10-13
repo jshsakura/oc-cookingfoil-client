@@ -117,16 +117,18 @@ void Application::matchHomebrewCard() {
 const homebrew::App &Application::homebrewAt(int index) const {
   return index < int(homebrew_.size()) ? homebrew_[index] : homebrewLocal_[index - homebrew_.size()];
 }
-// The server's icon, else the one in the app's file on the card.
+// The server's icon, else the one in the app's file on the card: the server
+// answers 404 for an app whose release has no icon or that it has not
+// fetched yet, and a timeout leaves the tile blank until the next refresh.
 std::string Application::homebrewIcon(const homebrew::App &app) {
-  if (!app.cardOnly && !app.iconUrl.empty()) return app.iconUrl;
+  const bool serverFailed = !app.iconUrl.empty() && images_->failed(app.iconUrl);
   const auto file = homebrewFile(app);
   const auto nro = std::find_if(homebrewCard_.begin(), homebrewCard_.end(),
                                 [&](const homebrew::CardNro &entry) { return entry.path == file; });
-  if (nro == homebrewCard_.end() || nro->icon.empty()) return app.iconUrl;
-  const auto key = "card:" + nro->path;
-  images_->provide(key, nro->icon);
-  return key;
+  const auto key = nro == homebrewCard_.end() || nro->icon.empty() ? std::string() : "card:" + nro->path;
+  const auto icon = homebrew::tileIcon(app, serverFailed, key);
+  if (icon == key && !key.empty()) images_->provide(key, nro->icon);
+  return icon;
 }
 homebrew::Status Application::homebrewStatus(const homebrew::App &app) const {
   if (app.cardOnly) return homebrew::Status::Installed;
@@ -174,13 +176,10 @@ void Application::saveHomebrewLedger() {
   if (!atomicWrite(sdRoot_ + LedgerPath, homebrew::serializeLedger(homebrewLedger_), error))
     logLine("homebrew ledger: " + error);
 }
-// Through the retro worker, so 다운로드 shows it running and keeps how it ended.
+// Into 다운로드's queue; its turn runs it on the retro worker, so 다운로드
+// shows it running and keeps how it ended.
 bool Application::getHomebrew(const homebrew::App &app) {
   if (app.cardOnly) return false; // nothing on the server to get
-  if (retroWorker_.joinable()) {
-    message(tr("Try again once the current download ends."));
-    return false;
-  }
   uint64_t bytes = app.files.empty() ? app.size : 0;
   for (const auto &file : app.files) bytes += file.size;
   if (bytes && sdFree_ && *sdFree_ < bytes + (8u << 20)) {
@@ -188,6 +187,12 @@ bool Application::getHomebrew(const homebrew::App &app) {
     alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(bytes)});
     return false;
   }
+  return queueJob("homebrew", app.name, app.iconUrl, app.downloadUrl, bytes ? bytes : app.size, homebrew::serialize(app));
+}
+bool Application::runHomebrew(const homebrew::App &app) {
+  if (app.cardOnly) return false;
+  uint64_t bytes = app.files.empty() ? app.size : 0;
+  for (const auto &file : app.files) bytes += file.size;
   const auto server = session_ ? session_->server() : Server{};
   const auto state = state_;
   const auto sd = sdRoot_;
@@ -215,11 +220,8 @@ bool Application::getHomebrew(const homebrew::App &app) {
           if (autoHomebrewShortcut(app)) return;
           message(trf("Downloaded {0}. Open it from hbmenu.", {app.name}));
         };
-      })) {
-    message(tr("Try again once the current download ends."));
+      }))
     return false;
-  }
-  startRetroEntry("homebrew", app.name, app.iconUrl, app.downloadUrl, app.size, homebrew::serialize(app));
   return true;
 }
 // After a download: the ledger points at the new place, and an older copy
@@ -347,12 +349,8 @@ void Application::homebrewAction(Action a) {
         if (homebrewHasShortcut(*picked)) {
           homebrewAsk_ = false;
           shortcutRemoveAsk_ = true;
-        } else if (const auto reason = platform::shortcutBlocker(); !reason.empty()) {
-          // Known before trying: the reason, and nothing half made.
-          alertTitle_ = tr("A shortcut can't be made here");
-          alert_ = reason;
         } else
-          makeHomebrewShortcut(*picked, false); // the card stays, its row now says 있음
+          requestHomebrewShortcut(*picked); // the card stays, its row says 있음 or 대기 중
       } else if (homebrewAskRow_ >= 0) {
         homebrewExtras_ = kinds[homebrewAskRow_];
         homebrewExtraRow_ = 0;
@@ -522,12 +520,22 @@ void Application::homebrewAskDialog() {
     if (i == homebrewAskRow_ && !homebrewExtras_) paint_.focusRow(x, rowY, rowW, Row, Ground, 12);
     else paint_.rect(x, rowY, rowW, Row, Ground, 12);
     if (extras[i] == 4) { // the HOME Menu shortcut, and whether there is one
-      paint_.icon(0, x + 20, rowY + 15, Ink, 26);
-      paint_.fonts.middle(tr("HOME Menu shortcut"), x + 62, rowY + Row / 2, 20, Ink, true);
+      // Dimmed when A cannot do anything with it.
+      const auto ink = !hasShortcut && !homebrewShortcutPossible(app) ? Secondary : Ink;
+      paint_.icon(0, x + 20, rowY + 15, ink, 26);
+      paint_.fonts.middle(tr("HOME Menu shortcut"), x + 62, rowY + Row / 2, 20, ink, true);
       // Judged ahead: whether one can be made here, and whether it would open.
-      const bool blocked = !hasShortcut && !platform::canMakeShortcuts();
-      const bool unsigned_ = !hasShortcut && !blocked && !signaturePatches_;
-      const std::string state = hasShortcut ? tr("Made") : blocked ? tr("Unavailable") : unsigned_ ? tr("Needs sig patches") : tr("None");
+      // Unavailable only when neither this console nor the server can make
+      // one; one waiting in 다운로드 says so.
+      const bool blocked = !hasShortcut && !homebrewShortcutPossible(app);
+      const bool local = platform::canMakeShortcuts() && homebrew::cardNroPath(homebrewFile(app));
+      const bool unsigned_ = !hasShortcut && !blocked && local && !signaturePatches_;
+      const bool queued = std::any_of(installQueue_.begin(), installQueue_.end(), [&](const QueuedInstall &q) {
+        return (q.kind == "shortcut" && q.name == trf("{0} shortcut", {app.name})) ||
+               (!app.forwarderUrl.empty() && q.file.url == app.forwarderUrl);
+      });
+      const std::string state = hasShortcut ? tr("Made") : queued ? tr("Queued") : blocked ? tr("Unavailable")
+                                : unsigned_ ? tr("Needs sig patches") : tr("None");
       paint_.fonts.middle(state, x + rowW - 20 - paint_.fonts.measure(state, 17, true), rowY + Row / 2, 17,
                           hasShortcut ? Good : unsigned_ ? Pending : Secondary, true);
       continue;

@@ -174,38 +174,53 @@ void SpeedWindow::add(double seconds, uint64_t total) {
     return;
   }
   advance(seconds);
-  if (total > last_)
+  if (total > last_) {
     slots_[slot_] += total - last_;
+    gathered_ += total - last_;
+  }
   last_ = total;
 }
-double SpeedWindow::speed(double seconds) {
-  constexpr double Least = 2;
-  if (tick_ < 0 || seconds - first_ < Least)
-    return -1;
-  advance(seconds);
+double SpeedWindow::average(double seconds) const {
   uint64_t sum = 0;
   for (const auto bytes : slots_)
     sum += bytes;
   const double span = std::min(seconds - first_, Slots * SlotSeconds);
-  return double(sum) / span / (1024 * 1024);
+  return span > 0 ? double(sum) / span / (1024 * 1024) : 0;
+}
+double SpeedWindow::speed(double seconds) {
+  constexpr double Least = 5, Most = 15, Every = 2;
+  constexpr uint64_t Enough = 4ull << 20;
+  if (tick_ < 0)
+    return -1;
+  const double since = seconds - first_;
+  if (since < Least || (gathered_ < Enough && since < Most))
+    return -1;
+  advance(seconds);
+  if (shown_ < 0) {
+    shown_ = average(seconds);
+    shownAt_ = seconds;
+  } else if (seconds - shownAt_ >= Every) {
+    shown_ = shown_ * 0.5 + average(seconds) * 0.5;
+    if (shown_ < 0.05)
+      shown_ = 0;
+    shownAt_ = seconds;
+  }
+  return shown_;
 }
 double TimeLeft::update(double seconds, uint64_t left, double speed) {
+  constexpr double Every = 5, Stall = 10;
   if (speed <= 0) {
     if (stalled_ < 0)
       stalled_ = seconds;
-    if (seconds - stalled_ >= 4)
+    if (seconds - stalled_ >= Stall)
       reset();
-    return left_ >= 0 ? std::max(0., left_ - (seconds - at_)) : -1;
+    return left_;
   }
   stalled_ = -1;
-  if (at_ >= 0 && seconds - at_ < 1)
+  if (at_ >= 0 && seconds - at_ < Every)
     return left_;
-  speed_ = speed_ > 0 ? (speed_ * 4 + speed) / 5 : speed;
-  const double estimate = speed_ > 0 ? double(left) / (speed_ * 1024 * 1024) : -1;
-  if (estimate < 0 || left_ < 0)
-    left_ = estimate;
-  else
-    left_ = std::max(0., (left_ - (seconds - at_)) * 0.8 + estimate * 0.2);
+  const double estimate = double(left) / (speed * 1024 * 1024);
+  left_ = left_ < 0 ? estimate : std::max(0., (left_ - (seconds - at_)) * 0.8 + estimate * 0.2);
   at_ = seconds;
   return left_;
 }
@@ -214,12 +229,10 @@ std::string timeLeftText(double seconds) {
     return tr("Estimating time left");
   const auto s = std::max<int64_t>(1, std::llround(seconds));
   if (s < 60)
-    return trf("About {0} s left", {std::to_string(s)});
-  if (s < 600)
-    return trf("About {0} min {1} s left", {std::to_string(s / 60), std::to_string(s % 60)});
-  if (s < 3600)
-    return trf("About {0} min left", {std::to_string((s + 30) / 60)});
+    return trf("About {0} s left", {std::to_string(std::max<int64_t>(10, (s + 9) / 10 * 10))});
   const auto minutes = (s + 30) / 60;
+  if (minutes < 60)
+    return trf("About {0} min left", {std::to_string(minutes)});
   return trf("About {0} h {1} min left", {std::to_string(minutes / 60), std::to_string(minutes % 60)});
 }
 void Installer::setPaused(bool paused) {

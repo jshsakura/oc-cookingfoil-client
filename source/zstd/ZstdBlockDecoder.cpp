@@ -35,6 +35,7 @@ bool ZstdBlockDecoder::ensureRing(std::string &error) {
   }
   ring_.resize(ZSTD_decodingBufferSize_min(windowSize_, ZSTD_CONTENTSIZE_UNKNOWN));
   pos_ = 0;
+  lapEnd_ = 0;
   return true;
 }
 // One step of the buffer-less decoder: a frame header, a block header, a
@@ -53,8 +54,10 @@ bool ZstdBlockDecoder::step(std::string &error) {
       return false;
     // The ring wraps when a block might not fit; zstd keeps track of the
     // two stretches (decodingBufferSize_min leaves room for a full window).
-    if (pos_ + ZSTD_BLOCKSIZE_MAX > ring_.size())
+    if (pos_ + ZSTD_BLOCKSIZE_MAX > ring_.size()) {
+      lapEnd_ = pos_;
       pos_ = 0;
+    }
     dst = ring_.data() + pos_;
     room = ring_.size() - pos_;
   }
@@ -131,6 +134,23 @@ bool ZstdBlockDecoder::pointOf(const std::string &saved, Point &point) {
       size != saved.size() - at || window == 0 || window > MaxWindow)
     return false;
   point.window = std::min(window, point.produced);
+  return true;
+}
+bool ZstdBlockDecoder::window(std::vector<uint8_t> &out) const {
+  out.clear();
+  if (!atBoundary())
+    return false;
+  const uint64_t want = std::min(windowSize_, produced_);
+  // The newest output sits just before pos_; once the ring has wrapped, the
+  // older part is the end of the lap before, which stopped at lapEnd_ (the
+  // ring's tail past it holds nothing of this frame).
+  const size_t held = lapEnd_ ? lapEnd_ : pos_;
+  if (want > held)
+    return false;
+  const size_t recent = std::min<size_t>(size_t(want), pos_), older = size_t(want) - recent;
+  out.reserve(size_t(want));
+  out.insert(out.end(), ring_.begin() + long(lapEnd_ - older), ring_.begin() + long(lapEnd_));
+  out.insert(out.end(), ring_.begin() + long(pos_ - recent), ring_.begin() + long(pos_));
   return true;
 }
 std::unique_ptr<ZstdBlockDecoder> ZstdBlockDecoder::restore(const std::string &saved, const uint8_t *window,

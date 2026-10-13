@@ -34,7 +34,23 @@ bool end(std::vector<Entry> &entries, uint64_t id, Outcome outcome, const std::s
 // The newest running entry of `kind` ends with `outcome`; false when none runs.
 bool finish(std::vector<Entry> &entries, Outcome outcome, const std::string &error, int64_t at,
             const std::string &kind = "");
-// An app that closed mid-download leaves a running entry: an install goes
-// back in the queue, a retro download reads as failed.
+// An app that closed mid-download leaves a running entry: it goes back in
+// the queue (installs, retro games, homebrew, RetroArch alike) and picks up
+// in its turn.
 void settle(std::vector<Entry> &entries);
+// The queued rows in the order they run: the first added first, as moved
+// since. The id is the turn, so the order holds across launches.
+std::vector<uint64_t> queueOrder(const std::vector<Entry> &entries);
+// Two queued rows trade turns (their ids, and their places in the list).
+// False when either is missing or not queued.
+bool swapTurns(std::vector<Entry> &entries, uint64_t a, uint64_t b);
+// The queued row `id` goes first; the others keep their order behind it.
+// Returns its id now (its turn changed), or 0 when it is not queued.
+uint64_t takeFirstTurn(std::vector<Entry> &entries, uint64_t id);
+// A row of the same job waits or runs already: an install of the same file,
+// or a job of the same kind and payload.
+bool pending(const std::vector<Entry> &entries, const Entry &job);
+// The catalog group an install row belongs to (the base game's id, as the
+// catalog groups it); "" for retro games, homebrew and RetroArch.
+std::string catalogId(const Entry &entry);
 } // namespace foil::history

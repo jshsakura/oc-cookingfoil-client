@@ -1,14 +1,16 @@
 #pragma once
-// The TCP receive window every download asks for, set once at start from the
-// socket driver's configuration. One connection carries at most its window
-// per round trip, so this caps a single download over a distant edge.
+// The TCP receive window. One connection carries at most its window per
+// round trip, so it caps a download over a distant edge. The system's stack
+// is BSD's: a socket that sets SO_RCVBUF itself stays at that size for good,
+// while one that leaves it grows its window as the transfer needs, up to
+// tcp_rx_buf_max_size (main.cpp). So downloads leave it.
 #include <cstddef>
 #include <cstdint>
 namespace foil::net {
 void setReceiveWindow(int bytes);
 int receiveWindow();
-// For CURLOPT_SOCKOPTFUNCTION: asks the socket for the window, and logs (the
-// first time only) what the system actually granted, which is the real cap.
+// For CURLOPT_SOCKOPTFUNCTION: leaves the window to grow on its own and logs
+// (the first time only) the size it starts from and the most it may reach.
 int tuneSocket(void *user, int socket, int purpose);
 // Every byte a download's connections take in, counted as curl hands it
 // over: the download screen's speed reads this, so it moves while pieces

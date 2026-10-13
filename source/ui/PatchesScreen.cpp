@@ -231,6 +231,7 @@ void Application::pollPatches() {
   } else if (incomingPatchError_) {
     alertTitle_ = patchFailTitle_.empty() ? std::string(tr("Patch failed")) : patchFailTitle_;
     alert_ = incomingPatchError_.message;
+    settlePatchJob(true, incomingPatchError_.message);
   } else if (!patchMessage_.empty())
     message(patchMessage_);
   patchBusy_.clear();
@@ -441,8 +442,9 @@ void Application::runPatchOp(int opIndex) {
     return;
   }
   managingPatch_ = false;
+  // A download waits its turn in 다운로드's queue, as everything does.
   if (op == PatchOp::Get || op == PatchOp::Update) {
-    startPatchGet(row.patch, op == PatchOp::Get);
+    queuePatchJobs({row.patch}, 0);
     return;
   }
   if (op == PatchOp::Reapply) {
@@ -461,6 +463,7 @@ void Application::startPatchGet(const UserPatch &patch, bool fresh) {
   if (sdFree_ && *sdFree_ < patch.size + patch.size / 10 + (1 << 20)) {
     alertTitle_ = tr("Cannot download patch");
     alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(patch.size)});
+    settlePatchJob(true, alert_);
     return;
   }
   runPatchJob(patch.id, fresh ? Getting : Updating,
@@ -489,16 +492,6 @@ void Application::startPatchGet(const UserPatch &patch, bool fresh) {
                                                    : tr("Patch downloaded and on. Applies when the app restarts.");
               });
 }
-void Application::queuePatches(std::vector<UserPatch> patches, bool afterInstall) {
-  for (auto &patch : patches) {
-    // Picked again before it ran: once in the queue is enough.
-    const bool queued = std::any_of(patchQueue_.begin(), patchQueue_.end(),
-                                    [&](const UserPatch &p) { return p.id == patch.id; });
-    if (!queued && patchBusy_ != patch.id) patchQueue_.push_back(std::move(patch));
-  }
-  if (afterInstall && !patchQueue_.empty()) patchQueueWaits_ = true;
-  pumpPatchQueue();
-}
 // The next queued patch goes to the worker the 패치 screen uses, once it is
 // free and no alert (a failed patch's among them) waits to be read.
 void Application::pumpPatchQueue() {
@@ -506,7 +499,8 @@ void Application::pumpPatchQueue() {
     patchQueue_.clear();
     return;
   }
-  while (!patchQueue_.empty() && !patchQueueWaits_ && !patchWorker_.joinable() && alert_.empty()) {
+  while (!patchQueue_.empty() && !patchWorker_.joinable() && !installer_.running() && !retroDownloading() &&
+         alert_.empty()) {
     auto patch = patchQueue_.front();
     patchQueue_.pop_front();
     const auto found = patchRecords_.find(patch.id);

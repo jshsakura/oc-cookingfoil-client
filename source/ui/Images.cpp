@@ -183,6 +183,7 @@ void Images::worker() {
       state = state_;
     }
     std::string bytes;
+    bool missing = false; // the server has no such picture
     guarded("image", [&] {
     if (!fixture_.empty()) {
       auto filename = url.substr(0, url.find('?'));
@@ -194,13 +195,16 @@ void Images::worker() {
     const auto path = cache_.empty() ? "" : cache_ + "/" + hash(url) + ".image";
     if (bytes.empty() && !path.empty())
       bytes = readFile(path);
-    if (bytes.empty() && fixture_.empty()) {
+    // Pictures handed over by provide() (the card's "card:" keys) are never
+    // fetched; there is nothing on the server under that name.
+    if (bytes.empty() && fixture_.empty() && url.rfind("http", 0) == 0) {
       // WebP when the server has it (a third smaller), JPEG otherwise.
       auto headers = net::authHeaders(server_, state, url);
       headers.push_back("Accept: image/webp,image/*;q=0.8");
       const auto result = net::get(url, headers, "", &stop_);
       if (result.status == 200 && result.error.empty())
         bytes = result.body;
+      missing = result.status == 404;
       if (!bytes.empty() && !path.empty()) {
         std::string ignored;
         atomicWrite(path, bytes, ignored);
@@ -228,7 +232,8 @@ void Images::worker() {
       entry.failed = !decoded;
       if (entry.failed) {
         entry.failedAt = SDL_GetTicks();
-        ++entry.attempts;
+        // A 404 answers the same on every try; only a refresh asks again.
+        entry.attempts = missing ? MaxAttempts : entry.attempts + 1;
       }
       if (entry.surface)
         SDL_FreeSurface(entry.surface);

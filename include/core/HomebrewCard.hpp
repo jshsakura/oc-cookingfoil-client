@@ -43,6 +43,11 @@ std::vector<CardNro> scanCard(const std::string &sdRoot, const std::vector<int> 
 // else the one whose folder holds it (switch/<app>/), else the one whose file
 // it is straight under switch/ (switch/<fileName>); nullptr when none.
 const App *matchCard(const std::vector<App> &apps, const std::string &path);
+// The picture an app's tile shows: the server's icon until it failed to
+// load (a 404, a timeout), then `cardKey`, the icon in the app's file on the
+// card, when there is one; else the server's, whose failure draws the
+// name's initial. A card-only app goes straight to its file's icon.
+std::string tileIcon(const App &app, bool serverFailed, const std::string &cardKey);
 // For a listed app with no ledger entry but a file on the card: Installed
 // when the versions agree ("v" in front ignored) or either is unknown.
 Status cardStatus(const std::string &appVersion, const std::string &cardVersion);

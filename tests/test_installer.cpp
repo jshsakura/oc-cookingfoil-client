@@ -70,53 +70,73 @@ int runInstallerTests() {
     CHECK(installer.progress().phase == "다운로드하고 있습니다.");
   }
   {
-    // The speed shown is the last four seconds' bytes (eight half-second
-    // slots): the card's write pauses, bursts then nothing, average out.
+    // The speed shown waits until it has measured (five seconds and 4 MB),
+    // averages ten seconds and changes only every two: bursts from the card
+    // do not make the number jump.
     constexpr uint64_t MiB = 1 << 20;
     foil::install::SpeedWindow window;
     window.add(0, 0);
-    CHECK(window.speed(1) < 0); // too soon to say
-    uint64_t bytes = 0;
-    double low = 1e9, high = 0;
-    for (int step = 1; step <= 60; ++step) {
-      bytes += (step % 2 ? 8 : 0) * MiB; // 8 MB in half a second, then nothing
+    CHECK(window.speed(1) < 0);
+    window.add(4, 12 * MiB);
+    CHECK(window.speed(4) < 0); // enough bytes, too soon
+    uint64_t bytes = 12 * MiB;
+    double low = 1e9, high = 0, previous = -1, at = -1;
+    bool heldBetween = true;
+    for (int step = 10; step <= 120; ++step) {
+      bytes += (step % 2 ? 6 : 0) * MiB; // 6 MB in half a second, then nothing
       const double now = step * 0.5;
       window.add(now, bytes);
-      if (now >= 5) {
-        low = std::min(low, window.speed(now));
-        high = std::max(high, window.speed(now));
+      const double shown = window.speed(now);
+      CHECK(shown >= 0);
+      if (previous >= 0 && shown != previous && now - at < 2)
+        heldBetween = false;
+      if (shown != previous)
+        at = now;
+      previous = shown;
+      if (now >= 20) {
+        low = std::min(low, shown);
+        high = std::max(high, shown);
       }
     }
-    CHECK(low > 7 && high < 9.5);
-    // Nothing more arrives: it falls to zero instead of holding the last value.
-    CHECK(window.speed(36) == 0);
+    CHECK(heldBetween);
+    CHECK(low > 5.2 && high < 6.8);
+    // A slow start (little data) still shows after fifteen seconds.
+    foil::install::SpeedWindow slow;
+    slow.add(0, 0);
+    slow.add(10, 1 * MiB);
+    CHECK(slow.speed(10) < 0);
+    slow.add(15, 2 * MiB);
+    CHECK(slow.speed(15) >= 0);
+    // Nothing more arrives: it eases down toward zero.
+    double later = window.speed(61);
+    for (double t = 62; t < 90; t += 0.5)
+      later = window.speed(t);
+    CHECK(later == 0);
     // A smaller total is the next file starting: no negative or huge jump.
-    window.add(36.5, 4 * MiB);
-    CHECK(window.speed(36.5) >= 0 && window.speed(36.5) < 9.5);
+    window.add(90.5, 4 * MiB);
+    CHECK(window.speed(90.5) >= 0 && window.speed(90.5) < 6.8);
     window.reset();
-    CHECK(window.speed(40) < 0);
+    CHECK(window.speed(100) < 0);
   }
   {
-    // The time left follows a slow speed and counts down like a clock.
+    // The time left changes once every five seconds and holds between.
     constexpr uint64_t MiB = 1 << 20;
     foil::install::TimeLeft left;
     CHECK(left.update(0, 600 * MiB, 0) < 0); // no speed yet
     const double first = left.update(1, 600 * MiB, 10);
     CHECK(first > 59 && first < 61);
-    // A slow second (0.1 MB/s) moves it only a little.
-    const double next = left.update(2, 590 * MiB, 0.1);
-    CHECK(next > first - 20 && next < first + 20);
-    // Within the same second it holds still.
-    CHECK(left.update(2.5, 585 * MiB, 50) == next);
-    // Nothing arriving keeps counting down instead of growing to hours...
-    const double stalled = left.update(4, 580 * MiB, 0);
-    CHECK(stalled > 0 && stalled <= next);
-    // ...and after four seconds of nothing it is unknown again.
-    CHECK(left.update(8, 580 * MiB, 0) < 0);
-    CHECK(left.update(9, 580 * MiB, 10) > 0);
+    CHECK(left.update(3, 580 * MiB, 50) == first); // held
+    // A slow moment moves it only a little.
+    const double next = left.update(6, 550 * MiB, 1);
+    CHECK(next > first - 20 && next < first + 120);
+    // A short stall holds it; ten seconds of nothing make it unknown.
+    CHECK(left.update(8, 550 * MiB, 0) == next);
+    CHECK(left.update(18, 550 * MiB, 0) < 0);
+    CHECK(left.update(19, 550 * MiB, 10) > 0);
     CHECK(foil::install::timeLeftText(-1) == "남은 시간 계산 중");
-    CHECK(foil::install::timeLeftText(42) == "약 42초 남음");
-    CHECK(foil::install::timeLeftText(200) == "약 3분 20초 남음");
+    CHECK(foil::install::timeLeftText(42) == "약 50초 남음");
+    CHECK(foil::install::timeLeftText(3) == "약 10초 남음");
+    CHECK(foil::install::timeLeftText(200) == "약 3분 남음");
     CHECK(foil::install::timeLeftText(1500) == "약 25분 남음");
     CHECK(foil::install::timeLeftText(5100) == "약 1시간 25분 남음");
   }

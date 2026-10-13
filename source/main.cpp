@@ -44,18 +44,19 @@ static void openTextKeyboard(foil::ui::Application &ui, const foil::ui::Applicat
 }
 int main(int argc, char **argv) {
   // TCP receive windows above libnx's defaults (64 KB growing to 256 KB).
-  // The system grants a socket no more than tcp_rx_buf_size whatever it
-  // asks (16 MB asked, 1 MB granted), and with 4 MB as that size it made no
-  // sockets at all as an application (every request failed with curl 7).
-  // So 1 MB in both modes, known to work; one connection carries about
-  // 4 MB/s to a distant edge and downloads use four. The transfer memory is
-  // sb_efficiency times the largest buffers, taken from the heap.
+  // A socket starts at tcp_rx_buf_size and the stack grows it as a transfer
+  // needs, up to tcp_rx_buf_max_size, as long as nobody sets SO_RCVBUF
+  // (that pins it; it pinned every download at 1 MB until 0.2.171). With 4
+  // MB as the starting size it made no sockets at all as an application
+  // (every request failed with curl 7), so the start stays at 1 MB, the
+  // values 0.2.155 ran with. The transfer memory is sb_efficiency times the
+  // largest buffers, taken from the heap.
   SocketInitConfig sockets = *socketGetDefaultInitConfig();
   const bool application = appletGetAppletType() == AppletType_Application;
   sockets.tcp_rx_buf_size = 0x100000;
   sockets.tcp_rx_buf_max_size = application ? 0x1000000 : 0x400000;
   sockets.sb_efficiency = application ? 4 : 2;
-  foil::net::setReceiveWindow(int(sockets.tcp_rx_buf_size));
+  foil::net::setReceiveWindow(int(sockets.tcp_rx_buf_max_size));
   if (R_FAILED(socketInitialize(&sockets)))
     return 1;
   const bool nifm = R_SUCCEEDED(nifmInitialize(NifmServiceType_User));

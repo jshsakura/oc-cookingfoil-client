@@ -140,6 +140,24 @@ int runHomebrewCardTests() {
     CHECK(status(app, ledger, there, &older) == Status::Installed);
     CHECK(status(app, ledger, gone, &older) == Status::Update);
   }
+  {
+    // The tile's picture: the server's icon, the card file's once the
+    // server's failed (a 404, a timeout), the server's again when the card
+    // has none (the tile then draws the name's initial).
+    App listed;
+    listed.iconUrl = "https://shop.example/api/homebrew/gh-1/icon";
+    CHECK(tileIcon(listed, false, "card:switch/a.nro") == listed.iconUrl);
+    CHECK(tileIcon(listed, true, "card:switch/a.nro") == "card:switch/a.nro");
+    CHECK(tileIcon(listed, true, "") == listed.iconUrl);
+    App bare = listed;
+    bare.iconUrl.clear();
+    CHECK(tileIcon(bare, false, "card:switch/a.nro") == "card:switch/a.nro");
+    CHECK(tileIcon(bare, false, "").empty());
+    // A card-only app has no server icon to try.
+    App local = listed;
+    local.cardOnly = true;
+    CHECK(tileIcon(local, false, "card:switch/a.nro") == "card:switch/a.nro");
+  }
   // The scan on a real folder: depth, exclusions, files that are no .nro.
   namespace fs = std::filesystem;
   const auto sd = fs::temp_directory_path() / ("cf-card-" + std::to_string(getpid()));

@@ -1,5 +1,6 @@
 #include "ui/Application.hpp"
 #include "core/Config.hpp"
+#include "platform/Shortcut.hpp"
 #include <algorithm>
 namespace foil::ui {
 void Application::settings() {
@@ -128,7 +129,11 @@ void Application::settings() {
   // A HOME Menu shortcut with each retro game and homebrew app (and this
   // app's own), when the server builds one.
   option(6, 0, tr("Make HOME Menu shortcuts"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
-  note(6, state_.makeShortcuts ? tr("Creates a shortcut when a retro game or homebrew app downloads") : tr("Not made"));
+  // Said as it is: made here, or only from the server's shortcuts when this
+  // console cannot make them.
+  note(6, !state_.makeShortcuts            ? tr("Not made")
+          : platform::canMakeShortcuts() ? tr("Creates a shortcut when a retro game or homebrew app downloads")
+                                         : tr("Only for items the server has a shortcut for"));
   // Leftover cleanup: content no installed game uses, found first and only
   // deleted after a confirmation.
   option(3, 14, tr("Clean up leftovers"),

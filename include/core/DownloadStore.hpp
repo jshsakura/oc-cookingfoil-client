@@ -1,12 +1,28 @@
 #pragma once
 // 다운로드's records in SQLite (cookingfoil.db on the SD card): the queue and
 // every download that ran, in list order, and where a file that was cut off
-// stands so it picks up at that byte. One connection; the UI and the install
-// thread both use it, one at a time.
+// stands so it picks up at that byte.
+//
+// Two instances can share the file (the app suspended in the background and
+// a second one started from the Album), and the console has no file locks
+// SQLite can use. So no connection stays open: each call takes a lock file
+// next to the database (cookingfoil.db.lock), opens, does its work in one
+// transaction, closes and lets go. A lock that cannot be had within about
+// two seconds fails the call (the caller's list stays as it is and the next
+// save tries again); one older than ten seconds is taken over. Every method
+// also takes the mutex, so any thread may call it.
+//
+// It never takes the app down and never drops what was committed: a file
+// that is not a database or fails its check is set aside as ".broken" and a
+// fresh one made; a journal left by a cut-off write rolls back on open; every
+// write is one transaction that rolls back whole on any error; a file from a
+// newer build is read but never written.
 #include "core/DownloadHistory.hpp"
+#include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 struct sqlite3;
@@ -17,14 +33,22 @@ public:
   DownloadStore(const DownloadStore &) = delete;
   DownloadStore &operator=(const DownloadStore &) = delete;
   ~DownloadStore();
-  // Opens (or creates) the database and brings its tables up to date.
+  // Checks (or creates) the database, sets a damaged one aside and brings its
+  // tables up to date; later calls open it by this path. False only when no
+  // file can be opened or made there at all, or another instance holds it.
   bool open(const std::string &path, std::string &error);
-  bool isOpen() const { return db_ != nullptr; }
+  bool isOpen() const;
+  // A file from a newer build: it loads, but writes are refused so that
+  // build finds it unchanged.
+  bool readOnly() const;
   void close();
-  // The list, top row first.
+  // The name SQLite opens: "sdmc:/" is the card's root, which is "/" there.
+  static std::string fileName(const std::string &path);
+  // The list, top row first (empty when the file cannot be read now).
   std::vector<history::Entry> load();
-  // The list as it is now, in one transaction: changed rows are written,
-  // rows no longer there deleted, the rest left alone.
+  // The list as it is now, in one transaction: rows that differ from the
+  // file are written, rows this instance loaded or wrote and that are no
+  // longer in the list are deleted, rows it never knew are left alone.
   bool save(const std::vector<history::Entry> &entries, std::string &error);
   struct ResumePoint {
     std::string url, etag;
@@ -34,12 +58,16 @@ public:
   std::optional<ResumePoint> resumePoint(const std::string &key);
   std::map<std::string, ResumePoint> resumePoints();
   bool saveResumePoint(const std::string &key, const ResumePoint &point);
-  void forgetResumePoint(const std::string &key);
+  bool forgetResumePoint(const std::string &key);
 
 private:
-  bool exec(const char *sql, std::string &error);
-  std::mutex lock_;
-  sqlite3 *db_ = nullptr;
-  std::map<uint64_t, std::string> written_; // each row as last written, to skip the unchanged
+  enum class Opened { Ok, Broken, Failed };
+  Opened connect(const std::string &file, sqlite3 *&db, bool check, bool &newer, std::string &error);
+  // One call's work: lock, open, one transaction, close, unlock.
+  bool run(bool writes, std::string &error, const std::function<bool(sqlite3 *, std::string &)> &work);
+  mutable std::mutex lock_;
+  std::string file_; // empty while closed
+  bool readOnly_ = false;
+  std::set<uint64_t> known_; // rows this instance loaded or wrote: the only ones its saves delete
 };
 } // namespace foil

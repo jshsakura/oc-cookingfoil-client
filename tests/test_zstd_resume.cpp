@@ -2,9 +2,12 @@
 #include "core/ZstdBlockDecoder.hpp"
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
 #include <filesystem>
+#include <memory>
 #include <random>
 #include <string>
+#include <unistd.h>
 #include <vector>
 using foil::ZstdBlockDecoder;
 namespace {
@@ -55,7 +58,8 @@ int runZstdResumeTests() {
     std::cerr << "zstd resume tests skipped: no zstd command\n";
     return 0;
   }
-  const auto dir = std::filesystem::temp_directory_path() / "cookingfoil-zstd-test";
+  // One per run: two test binaries at once must not share plain.zst.
+  const auto dir = std::filesystem::temp_directory_path() / ("cookingfoil-zstd-test-" + std::to_string(::getpid()));
   std::filesystem::create_directories(dir);
   // NSZ's level (18), a fast one, and a long window past the usual 8 MB.
   for (const std::string level : {"-18", "-3", "--long=25 -19"}) {
@@ -95,6 +99,63 @@ int runZstdResumeTests() {
                         std::equal(rest.begin(), rest.end(), plain.begin() + long(point.produced));
       if (!same) std::cerr << "zstd " << level << " resume at " << point.produced << " differs: " << error << '\n';
       CHECK(same);
+    }
+    // The decoder hands out its own window: a second pass keeps save() and
+    // window() at a spread of boundaries (the ring has wrapped by the later
+    // ones), and each restores into a decoder that finishes the stream.
+    struct Kept {
+      std::string state;
+      std::vector<uint8_t> window;
+    };
+    std::vector<Kept> kept;
+    size_t seen = 0;
+    ZstdBlockDecoder again([](const uint8_t *, size_t) {});
+    again.onBoundary([&] {
+      if (seen++ % 37 != 1) return;
+      Kept k{again.save(), {}};
+      CHECK(again.window(k.window));
+      kept.push_back(std::move(k));
+    });
+    CHECK(again.write(packed.data(), packed.size(), error));
+    CHECK(kept.size() > 3);
+    std::vector<uint8_t> none;
+    CHECK(!again.window(none)); // past the last block: not a boundary
+    for (const auto &k : kept) {
+      ZstdBlockDecoder::Point point;
+      CHECK(ZstdBlockDecoder::pointOf(k.state, point));
+      CHECK(k.window.size() == point.window);
+      CHECK(std::equal(k.window.begin(), k.window.end(), plain.begin() + long(point.produced - point.window)));
+      // Resume from it, and from that resumed decoder resume once more.
+      std::vector<uint8_t> rest;
+      std::vector<Kept> hop;
+      std::unique_ptr<ZstdBlockDecoder> resumed;
+      resumed = ZstdBlockDecoder::restore(k.state, k.window.data(), k.window.size(),
+                                          [&](const uint8_t *d, size_t n) { rest.insert(rest.end(), d, d + n); }, error);
+      CHECK(resumed != nullptr);
+      if (!resumed) continue;
+      size_t hopSeen = 0;
+      resumed->onBoundary([&] {
+        if (hopSeen++ != 20) return;
+        Kept h{resumed->save(), {}};
+        CHECK(resumed->window(h.window));
+        hop.push_back(std::move(h));
+      });
+      CHECK(resumed->write(packed.data() + point.consumed, packed.size() - point.consumed, error));
+      CHECK(rest.size() == plain.size() - point.produced &&
+            std::equal(rest.begin(), rest.end(), plain.begin() + long(point.produced)));
+      for (const auto &h : hop) {
+        ZstdBlockDecoder::Point second;
+        CHECK(ZstdBlockDecoder::pointOf(h.state, second));
+        CHECK(h.window.size() == second.window);
+        std::vector<uint8_t> tail;
+        auto again2 = ZstdBlockDecoder::restore(h.state, h.window.data(), h.window.size(),
+                                                [&](const uint8_t *d, size_t n) { tail.insert(tail.end(), d, d + n); }, error);
+        CHECK(again2 && again2->write(packed.data() + second.consumed, packed.size() - second.consumed, error));
+        const bool same = tail.size() == plain.size() - second.produced &&
+                          std::equal(tail.begin(), tail.end(), plain.begin() + long(second.produced));
+        if (!same) std::cerr << "zstd " << level << " second resume at " << second.produced << " differs\n";
+        CHECK(same);
+      }
     }
     if (points.size() < 2) continue;
     // A damaged block after a resume is caught, not passed on.

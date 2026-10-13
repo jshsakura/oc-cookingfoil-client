@@ -46,6 +46,8 @@ Response post(const std::string& url, const std::vector<std::string>& headers, c
 // `patches` of GET /api/patches or of a title's detail.
 std::vector<UserPatch> parsePatches(json_object* array);
 std::vector<UserPatch> parsePatches(const std::string& json);
+// One patch as parsePatches() reads it back, for a queued patch kept in 다운로드.
+std::string serializePatch(const UserPatch& patch);
 // Readable title from a file URL: decoded, without [tags] or extension.
 std::string fileTitle(const std::string& url);
 // Admin-picked shelf: base title ids in the admin's order (feature: featured).

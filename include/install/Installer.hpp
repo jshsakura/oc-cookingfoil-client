@@ -26,31 +26,33 @@ int compareVersions(const std::string &a, const std::string &b);
 // The highest firmware the files need when the console is older, else "".
 // Unknown versions on either side never block.
 std::string missingFirmware(const std::vector<Item> &files, const std::string &console);
-// The speed shown: the bytes of the last four seconds, in eight half-second
-// slots. The card writes in pauses (a burst, then nothing while a block
-// goes down), which a four-second sum flattens; when nothing arrives the
-// slots empty and it falls to zero.
+// The speed shown, calm enough to read: the bytes of the last ten seconds
+// (twenty half-second slots), with the number on screen moving toward that
+// average once every two seconds instead of every frame. Nothing is shown
+// for the first five seconds and the first 4 MB (or fifteen seconds at
+// most), while it is still measuring. When nothing arrives the slots empty
+// and it falls toward zero.
 class SpeedWindow {
 public:
   // The bytes so far at `seconds`; a smaller total is the next file.
   void add(double seconds, uint64_t total);
-  // MB/s, or negative until two seconds have been seen.
+  // MB/s, or negative while it is still measuring.
   double speed(double seconds);
   void reset() { *this = SpeedWindow(); }
 
 private:
-  static constexpr int Slots = 8;
+  static constexpr int Slots = 20;
   static constexpr double SlotSeconds = 0.5;
   void advance(double seconds);
+  double average(double seconds) const;
   uint64_t slots_[Slots] = {};
   int slot_ = 0;
-  double tick_ = -1, first_ = -1;
-  uint64_t last_ = 0;
+  double tick_ = -1, first_ = -1, shownAt_ = -1, shown_ = -1;
+  uint64_t last_ = 0, gathered_ = 0;
 };
-// The time left as a clock shows it: from a speed that follows slowly
-// (four parts the old, one the new, once a second), counting down between.
-// A moment with nothing arriving does not pull the speed down; after four
-// seconds of it the time left is unknown again.
+// The time left from that speed, changed once every five seconds and held
+// in between (four parts the old estimate, one the new). Ten seconds with
+// nothing arriving make it unknown again.
 class TimeLeft {
 public:
   // Seconds, or negative while there is no speed to tell it by.
@@ -58,9 +60,9 @@ public:
   void reset() { *this = TimeLeft(); }
 
 private:
-  double speed_ = 0, left_ = -1, at_ = -1, stalled_ = -1;
+  double left_ = -1, at_ = -1, stalled_ = -1;
 };
-// "약 42초 남음", "약 3분 20초 남음", "약 25분 남음", "약 1시간 25분 남음".
+// "약 40초 남음" (in tens of seconds), "약 25분 남음", "약 1시간 25분 남음".
 std::string timeLeftText(double seconds);
 class Installer {
 public:

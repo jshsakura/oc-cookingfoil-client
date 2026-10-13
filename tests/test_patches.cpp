@@ -598,6 +598,40 @@ int runPatchTests() {
       CHECK(list[1].required && !list[0].required);
     }
   }
+  // A patch waiting in 다운로드's queue is kept as text and read back whole,
+  // a game's and an app's alike.
+  {
+    foil::UserPatch game;
+    game.id = "font-1";
+    game.titleId = "01001730144DA000";
+    game.name = "한글 글꼴";
+    game.version = "1.2";
+    game.gameVersion = "1.0.3";
+    game.hash = "abc";
+    game.size = 12345;
+    game.files = 3;
+    game.updatedAt = 1700000000;
+    game.required = true;
+    game.kinds = {"romfs", "cheats"};
+    game.gameName = "Base";
+    game.gameNames = {"한국어", "", "日本語", ""};
+    game.gameIcon = "/api/icon/01001730144DA000";
+    const auto back = foil::net::parsePatches(foil::net::serializePatch(game));
+    CHECK(back.size() == 1);
+    if (back.size() == 1) {
+      CHECK(back[0].id == game.id && back[0].titleId == game.titleId && back[0].name == game.name);
+      CHECK(back[0].version == "1.2" && back[0].gameVersion == "1.0.3" && back[0].hash == "abc");
+      CHECK(back[0].size == 12345 && back[0].files == 3 && back[0].updatedAt == 1700000000 && back[0].required);
+      CHECK(back[0].kinds == game.kinds && back[0].gameName == "Base" && back[0].gameIcon == game.gameIcon);
+      CHECK(back[0].gameNames.size() == 4 && back[0].gameNames[0] == "한국어" && back[0].gameNames[2] == "日本語");
+    }
+    foil::UserPatch app;
+    app.id = "hb-1";
+    app.homebrewApp = "sm64";
+    app.kinds = {"homebrew"};
+    const auto appBack = foil::net::parsePatches(foil::net::serializePatch(app));
+    CHECK(appBack.size() == 1 && appBack[0].titleId.empty() && appBack[0].homebrewApp == "sm64");
+  }
   {
     foil::UserPatch app;
     app.id = "hb-1";
