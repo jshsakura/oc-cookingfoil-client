@@ -165,6 +165,7 @@ bool Application::runPatchJob(
   patchBusyLabel_ = label;
   patchFailTitle_ = failTitle;
   patchReceived_ = 0;
+  patchMoving_ = 0;
   incomingPatchError_ = {};
   patchMessage_.clear();
   auto session = std::make_shared<net::Session>(session_->server(), state_, "", &stop_);
@@ -468,8 +469,11 @@ float Application::patchDownloadCard(float y) {
     cover(icon, 284, y + 20, 80, false, patch.name);
   paint_.fonts.text(patch.name, 386, y + 20, 22, Ink, true, 700);
   const bool fetching = running && (patchBusyLabel_ == Getting || patchBusyLabel_ == Updating);
-  const uint64_t got = fetching ? patchReceived_.load() : 0, total = patch.size;
-  const double ratio = !running ? 0.0 : !fetching ? 1.0 : total ? std::min(1.0, double(got) / double(total)) : 0.0;
+  const uint64_t got = fetching ? patchReceived_.load() : 0, total = patch.size, moving = patchMoving_.load();
+  const double ratio = !running ? 0.0
+                       : !fetching ? (moving ? std::min(1.0, double(patchReceived_.load()) / double(moving)) : 1.0)
+                       : total     ? std::min(1.0, double(got) / double(total))
+                                   : 0.0;
   const auto percent = std::to_string(int(ratio * 100 + 0.5)) + "%";
   paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 22, true), y + 20, 22, Ink, true);
   paint_.rect(386, y + 60, 842, 10, Line, 5);
@@ -482,20 +486,33 @@ float Application::patchDownloadCard(float y) {
   paint_.fonts.text(line, 386, y + 82, 17, Secondary, false, 842);
   return Height;
 }
+// Files moved so far, for the busy row's bar.
+static void trackMoves(PatchStore &store, std::atomic<uint64_t> &done, std::atomic<uint64_t> &total) {
+  store.progress([&done, &total](size_t moved, size_t all) {
+    done = moved;
+    total = all;
+  });
+}
 void Application::startPatchDisable(const UserPatch &patch) {
-  runPatchJob(patch.id, Disabling, [id = patch.id, app = !patch.homebrewApp.empty()](
+  runPatchJob(patch.id, Disabling, [this, id = patch.id, app = !patch.homebrewApp.empty()](
                                        net::Session &, PatchStore &store, Error &error, std::string &done) {
-    if (store.disable(id, error))
+    trackMoves(store, patchReceived_, patchMoving_);
+    const bool ok = store.disable(id, error);
+    store.progress(nullptr);
+    if (ok)
       done = app ? tr("패치를 껐습니다. 앱을 다시 켜면 원래대로 돌아옵니다.")
                  : tr("패치를 껐습니다. 게임을 다시 켜면 원래대로 돌아옵니다.");
   });
 }
 void Application::startPatchEnable(const UserPatch &patch) {
   // Files it shares with patches already on come from this one from now on.
-  runPatchJob(patch.id, Enabling, [id = patch.id, app = !patch.homebrewApp.empty()](
+  runPatchJob(patch.id, Enabling, [this, id = patch.id, app = !patch.homebrewApp.empty()](
                                       net::Session &, PatchStore &store, Error &error, std::string &done) {
     const auto over = overlapNames(store, id);
-    if (!store.enable(id, error))
+    trackMoves(store, patchReceived_, patchMoving_);
+    const bool ok = store.enable(id, error);
+    store.progress(nullptr);
+    if (!ok)
       return;
     done = !over.empty() ? trf("패치를 켰습니다. '{0}' 패치와 겹치는 파일은 이 패치 것을 씁니다.", {over})
            : app         ? tr("패치를 켰습니다. 앱을 다시 켜면 적용됩니다.")
@@ -634,8 +651,10 @@ void Application::patchesScreen() {
     const float w = paint_.fonts.measure(state, 16, true) + 20;
     paint_.rect(right - w, y + 16, w, 30, fill, 8);
     paint_.fonts.middle(state, right - w + 10, y + 31, 16, ink, true);
-    if (busy && busy->patch.size > 0 && patchBusyLabel_ != Enabling && patchBusyLabel_ != Disabling) {
-      const float ratio = std::min(1.f, float(patchReceived_.load()) / float(busy->patch.size));
+    const bool switching = patchBusyLabel_ == Enabling || patchBusyLabel_ == Disabling;
+    const uint64_t of = switching ? patchMoving_.load() : busy ? busy->patch.size : 0;
+    if (busy && of > 0) {
+      const float ratio = std::min(1.f, float(patchReceived_.load()) / float(of));
       paint_.rect(right - 180, y + 76, 180, 8, Line, 4);
       paint_.rect(right - 180, y + 76, std::max(8.f, 180 * ratio), 8, Butter, 4);
     } else {

@@ -812,6 +812,8 @@ private:
   std::thread patchWorker_;
   std::atomic<bool> patchDone_{false};
   std::atomic<uint64_t> patchReceived_{0};
+  // Files an enable or disable moves; patchReceived_ counts the ones done.
+  std::atomic<uint64_t> patchMoving_{0};
   Qr qr_;
   bool pairingPending_ = false;
   net::PairingInfo pairingInfo_;
