@@ -43,6 +43,9 @@ Application::~Application() {
     network_.join();
   if (deviceWorker_.joinable())
     deviceWorker_.join();
+  patchCheckStop_ = true;
+  if (patchCheckWorker_.joinable())
+    patchCheckWorker_.join();
   if (patchWorker_.joinable())
     patchWorker_.join();
   if (cleanupWorker_.joinable())
@@ -131,11 +134,20 @@ void Application::usePatchFolder(const std::string &sd) {
   // An app that closed mid-install left that one running: it reads as failed.
   history_ = history::parse(readFile(sd + "/switch/cookingfoil/downloads.json"));
   history::settle(history_);
+  // A check of the old card stops first; it holds only a copy of the ledger.
+  patchCheckStop_ = true;
+  if (patchCheckWorker_.joinable())
+    patchCheckWorker_.join();
+  patchCheckDone_ = false;
+  patchChecker_.reset();
+  patchHealth_.clear();
   patchStore_ = std::make_unique<PatchStore>(sd, sd + "/switch/cookingfoil/patches");
   Error error;
   if (!patchStore_->load(error))
     logLine("patches: " + error.message);
   patchRecords_ = patchStore_->records();
+  ++patchLedgerGen_;
+  patchCheckWanted_ = true; // once after the app starts
 }
 void Application::applyStartupLanguage() {
   auto code = state_.language;
@@ -319,6 +331,9 @@ void Application::screen(Screen screen) {
   headerFocus_.clear();
   header_.clear();
   headerHome_.clear();
+  // Leaving 패치 stops its check; the next visit goes on from there.
+  if (screen_ == Screen::Patches && screen != Screen::Patches)
+    patchCheckStop_ = true;
   screen_ = screen;
   nav_ = menuIndex(screen);
   selected_ = 0;
@@ -329,8 +344,10 @@ void Application::screen(Screen screen) {
   if ((screen == Screen::Installed || screen == Screen::Updates || screen == Screen::Patches) &&
       (!installed_.installed.complete || SDL_GetTicks() - installedAt_ > InstalledFreshMs))
     refreshInstalled();
-  if (screen == Screen::Patches)
+  if (screen == Screen::Patches) {
     fetchPatches();
+    patchCheckWanted_ = true;
+  }
   // 홈브류 asks the card which apps are still there; the list loads as it draws.
   if (screen == Screen::Homebrew)
     checkHomebrewCard();
@@ -465,6 +482,7 @@ void Application::poll() {
   pollShopSaves();
   pollDropbox();
   pollPatches();
+  pollPatchCheck();
   pollCleanup();
   pollAppUpdate();
   pollLog();

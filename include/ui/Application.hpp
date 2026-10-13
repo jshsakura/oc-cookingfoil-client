@@ -95,6 +95,11 @@ public:
   std::string detailId() const { return detailGroup_ < groups_.size() ? groups_[detailGroup_].id : ""; }
   // Patches picked with a game install that have not started yet.
   size_t queuedPatches() const { return patchQueue_.size(); }
+  // The light check of the card: whether its thread runs, and what it found.
+  bool patchChecking() const { return patchCheckWorker_.joinable(); }
+  const std::map<std::string, PatchHealth> &patchHealth() const { return patchHealth_; }
+  // Whether a patch job shows as busy anywhere (its row, 다운로드).
+  bool patchJobShown() const { return !patchBusy_.empty() || patchDownloading(); }
   uint64_t selectedBytes() const {
     return selection_ ? selection_->total() : 0;
   }
@@ -591,6 +596,9 @@ private:
   void startPatchGet(const UserPatch &patch, bool fresh);
   void startPatchEnable(const UserPatch &patch);
   void startPatchDisable(const UserPatch &patch);
+  // Puts back an enabled patch's missing files, downloading it again when
+  // its store lacks them too.
+  void startPatchReapply(const UserPatch &patch, bool onServer);
   void patchDialog();
   // 설정 > 남은 파일 정리: scan, confirm, then delete on a worker thread.
   void startCleanup(bool remove);
@@ -814,6 +822,18 @@ private:
   std::atomic<uint64_t> patchReceived_{0};
   // Files an enable or disable moves; patchReceived_ counts the ones done.
   std::atomic<uint64_t> patchMoving_{0};
+  // The light check of enabled patches' files on the card. It runs on its
+  // own thread from a copy of the ledger, within a budget, and gives way to
+  // any patch job; the list draws from the ledger meanwhile.
+  void startPatchCheck();
+  void pollPatchCheck();
+  std::unique_ptr<PatchChecker> patchChecker_; // the check's thread has it while it runs
+  std::thread patchCheckWorker_;
+  std::atomic<bool> patchCheckDone_{false}, patchCheckStop_{false};
+  bool patchCheckWanted_ = false;
+  // Bumped whenever the ledger copy changes; a check of an older copy is dropped.
+  uint64_t patchLedgerGen_ = 0, patchCheckGen_ = 0;
+  std::map<std::string, PatchHealth> patchHealth_; // per patch id, what the check found
   Qr qr_;
   bool pairingPending_ = false;
   net::PairingInfo pairingInfo_;

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <fstream>
 #include <filesystem>
+#include <thread>
 #include <unistd.h>
 int runUiTests(SDL_Renderer *renderer) {
   int failures = 0;
@@ -410,6 +411,43 @@ int runUiTests(SDL_Renderer *renderer) {
       app.action(foil::ui::Action::Back);
       app.action(foil::ui::Action::Back);
       CHECK(!app.managingGame());
+      std::filesystem::remove_all(sd);
+    }
+  }
+  {
+    // The card check runs on its own and ends: an enabled patch with a file
+    // gone from the card reads as missing, and nothing shows as busy for it.
+    char sdDir[] = "/tmp/cookingfoil-patchcheck-XXXXXX";
+    const char *sd = mkdtemp(sdDir);
+    CHECK(sd != nullptr);
+    if (sd) {
+      const std::string storeRoot = std::string(sd) + "/switch/cookingfoil/patches";
+      const std::string file = "atmosphere/contents/0100F2C0115B6000/romfs/a.bin";
+      {
+        foil::PatchStore store(sd, storeRoot);
+        foil::Error error;
+        std::string ignored;
+        CHECK(store.load(error) && foil::makeDirectories(store.staging("chk") + "/atmosphere/contents/0100F2C0115B6000/romfs"));
+        foil::atomicWrite(store.staging("chk") + "/" + file, "a", ignored);
+        foil::UserPatch patch;
+        patch.id = "chk";
+        patch.titleId = "0100F2C0115B6000";
+        CHECK(store.commit(patch, error) && store.enable("chk", error));
+      }
+      std::filesystem::remove(std::string(sd) + "/" + file);
+      app.usePatchFolder(sd);
+      app.screen(foil::ui::Screen::Patches);
+      bool busyShown = false;
+      // Bounded: the check has a time budget, so it ends well within this.
+      for (int frame = 0; frame < 3000 && (app.patchChecking() || !app.patchHealth().count("chk")); ++frame) {
+        app.poll();
+        app.render();
+        busyShown |= app.patchJobShown();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      CHECK(!app.patchChecking() && !busyShown);
+      CHECK(app.patchHealth().count("chk") && app.patchHealth().at("chk").missing == 1);
+      app.screen(foil::ui::Screen::Home);
       std::filesystem::remove_all(sd);
     }
   }

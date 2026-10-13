@@ -11,6 +11,21 @@ constexpr float RowTop = 90, RowHeight = 108, RowStep = 124;
 bool versionMismatch(const std::string &wanted, const std::string &installed) {
   return !wanted.empty() && wanted != "any" && !installed.empty() && wanted != installed;
 }
+bool missingFiles(const std::map<std::string, PatchHealth> &health, const std::string &id) {
+  const auto found = health.find(id);
+  return found != health.end() && found->second.missing > 0;
+}
+bool changedFiles(const std::map<std::string, PatchHealth> &health, const std::string &id) {
+  const auto found = health.find(id);
+  return found != health.end() && found->second.changed > 0;
+}
+// What the check found, for a patch that is on: missing files first.
+const char *healthNote(const std::map<std::string, PatchHealth> &health, const Application::PatchRow &row) {
+  if (!row.record || !row.record->on) return nullptr;
+  if (missingFiles(health, row.patch.id)) return tr("파일 일부 없음");
+  if (changedFiles(health, row.patch.id)) return tr("일부 파일이 바뀜");
+  return nullptr;
+}
 bool updateAvailable(const Application::PatchRow &row) {
   return row.record && row.onServer && !row.patch.hash.empty() && row.record->hash != row.patch.hash;
 }
@@ -28,6 +43,11 @@ constexpr const char *Updating = "업데이트 중";   // i18n: keep
 constexpr const char *Getting = "받는 중";        // i18n: keep
 constexpr const char *Disabling = "끄는 중";      // i18n: keep
 constexpr const char *Enabling = "켜는 중";       // i18n: keep
+constexpr const char *Reapplying = "다시 적용 중"; // i18n: keep
+// One run of the light check: the lookups and the time it may take before
+// it stops and goes on at the next visit.
+constexpr size_t CheckLooks = 4000;
+constexpr std::chrono::milliseconds CheckBudget{1500};
 } // namespace
 bool Application::patchFilterMatches(PatchFilter filter, const PatchRow &row) {
   switch (filter) {
@@ -161,6 +181,9 @@ bool Application::runPatchJob(
     std::function<void(net::Session &, PatchStore &, Error &, std::string &)> job, const std::string &failTitle) {
   if (patchWorker_.joinable() || !patchStore_ || !session_)
     return false;
+  // A job that moves files comes first: the light check stops where it is.
+  if (!id.empty())
+    patchCheckStop_ = true;
   patchBusy_ = id;
   patchBusyLabel_ = label;
   patchFailTitle_ = failTitle;
@@ -182,6 +205,12 @@ void Application::pollPatches() {
     return;
   patchWorker_.join();
   patchRecords_ = patchStore_->records();
+  if (!patchBusy_.empty()) {
+    // The job moved files: what the check knew of this patch is old now.
+    patchHealth_.erase(patchBusy_);
+    ++patchLedgerGen_;
+    patchCheckWanted_ = screen_ == Screen::Patches;
+  }
   if (patchFetching_) {
     patchFetching_ = false;
     patchError_ = incomingPatchError_;
@@ -208,8 +237,40 @@ void Application::pollPatches() {
   if (screen_ == Screen::Patches && !hasFocusable())
     sidebar_ = true;
 }
+void Application::startPatchCheck() {
+  // A copy of an older ledger is dropped; one cut short goes on.
+  if (!patchChecker_ || patchCheckGen_ != patchLedgerGen_) {
+    patchChecker_ = std::make_unique<PatchChecker>(patchStore_->sdRoot(), patchStore_->storeRoot(), patchRecords_);
+    patchCheckGen_ = patchLedgerGen_;
+  }
+  patchCheckStop_ = false;
+  auto *checker = patchChecker_.get();
+  patchCheckWorker_ = std::thread([this, checker] {
+    guarded("patch check", [&] { checker->run(CheckLooks, CheckBudget, &patchCheckStop_); });
+    patchCheckDone_ = true;
+  });
+}
+// Polled every frame; never waits on the check's thread.
+void Application::pollPatchCheck() {
+  if (patchCheckDone_.exchange(false)) {
+    patchCheckWorker_.join();
+    if (patchCheckGen_ == patchLedgerGen_) {
+      for (const auto &[id, health] : patchChecker_->health())
+        patchHealth_[id] = health;
+      if (patchChecker_->finished())
+        patchChecker_.reset(); // the next visit looks again from the start
+    } else
+      patchChecker_.reset();
+  }
+  // Not while a patch job moves files; a list fetch does not touch the card.
+  const bool jobRunning = patchWorker_.joinable() && !patchBusy_.empty();
+  if (patchCheckWanted_ && patchStore_ && !patchCheckWorker_.joinable() && !jobRunning) {
+    patchCheckWanted_ = false;
+    startPatchCheck();
+  }
+}
 namespace {
-enum class PatchOp { Get, Update, Enable, Disable, Remove, Game };
+enum class PatchOp { Get, Update, Enable, Disable, Remove, Game, Reapply };
 struct PatchChoice {
   PatchOp op;
   std::string title, body;
@@ -218,13 +279,15 @@ int patchOpIcon(PatchOp op) {
   switch (op) {
   case PatchOp::Game: return 27;   // gamepad
   case PatchOp::Get: return 4;     // download
-  case PatchOp::Update: return 3;  // refresh
+  case PatchOp::Update:
+  case PatchOp::Reapply: return 3; // refresh
   case PatchOp::Remove: return 37; // trash
   default: return 38;              // power, for on and off
   }
 }
-// What the management popup offers for a row, most likely first.
-std::vector<PatchChoice> patchChoices(const Application::PatchRow &row) {
+// What the management popup offers for a row, most likely first. `missing`:
+// files the check found gone from the card while the patch is on.
+std::vector<PatchChoice> patchChoices(const Application::PatchRow &row, bool missing) {
   std::vector<PatchChoice> out;
   const bool app = !row.patch.homebrewApp.empty();
   // A patch is no use without its game: when the shop has it, getting the
@@ -236,6 +299,9 @@ std::vector<PatchChoice> patchChoices(const Application::PatchRow &row) {
       out.push_back({PatchOp::Get, tr("다운로드 및 적용"), tr("SD 카드에 받아 바로 적용합니다. 다른 패치와 겹치는 파일은 나중에 켠 패치 것을 씁니다.")});
     return out;
   }
+  if (missing && row.record->on)
+    out.push_back({PatchOp::Reapply, tr("다시 적용"),
+                   tr("SD 카드에서 없어진 파일을 다시 넣습니다. 받아 둔 파일이 없으면 서버에서 다시 받습니다.")});
   if (updateAvailable(row))
     out.push_back({PatchOp::Update, tr("업데이트|동작"), tr("켜져 있던 패치는 바꾼 뒤 다시 켭니다.")});
   if (row.record->on)
@@ -285,7 +351,7 @@ void Application::patchAction(Action a) {
       managingPatch_ = false;
       return;
     }
-    const auto choices = patchChoices(*picked);
+    const auto choices = patchChoices(*picked, missingFiles(patchHealth_, picked->patch.id));
     if (a == Action::Up)
       patchMenuRow_ = std::max(0, patchMenuRow_ - 1);
     if (a == Action::Down)
@@ -299,7 +365,7 @@ void Application::patchAction(Action a) {
       message(tr("패치 작업이 끝난 뒤 다시 시도합니다."));
       return;
     }
-    if (patchChoices(row).empty())
+    if (patchChoices(row, missingFiles(patchHealth_, row.patch.id)).empty())
       return;
     patchPickId_ = row.patch.id;
     managingPatch_ = true;
@@ -375,6 +441,10 @@ void Application::runPatchOp(int opIndex) {
   managingPatch_ = false;
   if (op == PatchOp::Get || op == PatchOp::Update) {
     startPatchGet(row.patch, op == PatchOp::Get);
+    return;
+  }
+  if (op == PatchOp::Reapply) {
+    startPatchReapply(row.patch, row.onServer);
     return;
   }
   if (op == PatchOp::Disable)
@@ -504,6 +574,36 @@ void Application::startPatchDisable(const UserPatch &patch) {
                  : tr("패치를 껐습니다. 게임을 다시 켜면 원래대로 돌아옵니다.");
   });
 }
+// The store's copies go back first; only when it lacks some does the patch
+// come down again, through the same download and commit as an update, which
+// turns it back on in its place in the order.
+void Application::startPatchReapply(const UserPatch &patch, bool onServer) {
+  runPatchJob(patch.id, Reapplying, [this, patch, onServer](net::Session &session, PatchStore &store, Error &error,
+                                                            std::string &done) {
+    size_t left = 0;
+    trackMoves(store, patchReceived_, patchMoving_);
+    const bool ok = store.reapply(patch.id, left, error);
+    store.progress(nullptr);
+    if (!ok)
+      return;
+    if (left && onServer) {
+      patchReceived_ = 0;
+      patchMoving_ = 0;
+      if (!session.downloadPatch(patch, store.staging(patch.id), patchReceived_, error))
+        return;
+      if (!store.commit(patch, error)) {
+        std::error_code ec;
+        std::filesystem::remove_all(store.staging(patch.id), ec);
+        return;
+      }
+      left = 0;
+    }
+    const bool app = !patch.homebrewApp.empty();
+    done = left ? trf("서버에 없는 패치라 파일 {0}개를 되돌리지 못했습니다.", {std::to_string(left)})
+           : app ? tr("패치를 다시 적용했습니다. 앱을 다시 켜면 적용됩니다.")
+                 : tr("패치를 다시 적용했습니다. 게임을 다시 켜면 적용됩니다.");
+  });
+}
 void Application::startPatchEnable(const UserPatch &patch) {
   // Files it shares with patches already on come from this one from now on.
   runPatchJob(patch.id, Enabling, [this, id = patch.id, app = !patch.homebrewApp.empty()](
@@ -619,7 +719,13 @@ void Application::patchesScreen() {
     for (const auto &kind : kinds)
       at += paint_.pill(patchKindLabel(kind), at, y + 74) + 6;
     std::string warning;
-    if (!game.installed && game.app)
+    const char *note = nullptr;
+    for (const int r : game.rows)
+      if (const char *n = healthNote(patchHealth_, rows[r]); n && (!note || missingFiles(patchHealth_, rows[r].patch.id)))
+        note = n;
+    if (note)
+      warning = note;
+    else if (!game.installed && game.app)
       warning = tr("앱 미설치 · 홈브류에 있음");
     else if (!game.installed)
       warning = lead.shopGroup >= 0 ? tr("게임 미설치 · 서버에 있음") : tr("게임 미설치");
@@ -689,6 +795,8 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
     if (!row.onServer) meta += (meta.empty() ? "" : " · ") + std::string(tr("서버에서 사라짐"));
     if (row.record && !row.record->shadowed.empty())
       meta += (meta.empty() ? "" : " · ") + std::string(tr("다른 패치에 일부 가려짐"));
+    if (const char *note = healthNote(patchHealth_, row))
+      meta += (meta.empty() ? "" : " · ") + std::string(note);
     paint_.fonts.text(meta, x + 20, y + 42, 17, Secondary, false, w - 220);
     const bool busy = patchBusy_ == row.patch.id && !row.patch.id.empty();
     const bool update = updateAvailable(row);
@@ -737,7 +845,7 @@ void Application::patchDialog() {
 }
 // Like 게임 관리: what the patch is, then one row per thing to do with it.
 void Application::patchMenu(const PatchRow &row) {
-  const auto choices = patchChoices(row);
+  const auto choices = patchChoices(row, missingFiles(patchHealth_, row.patch.id));
   constexpr float Width = 760, ChoiceHeight = 64, ChoiceGap = 10, Icon = 80;
   const bool described = !row.patch.description.empty();
   // The whole description, as many lines as the screen leaves room for
@@ -764,6 +872,8 @@ void Application::patchMenu(const PatchRow &row) {
   if (!row.patch.author.empty()) meta += (meta.empty() ? "" : " · ") + row.patch.author;
   if (row.record && !row.record->shadowed.empty())
     meta += (meta.empty() ? "" : " · ") + std::string(tr("다른 패치에 일부 가려짐"));
+  if (const char *note = healthNote(patchHealth_, row))
+    meta += (meta.empty() ? "" : " · ") + std::string(note);
   if (!meta.empty())
     paint_.fonts.middle(meta, at + (at > textX ? 6 : 0), y + 57, 17, Secondary, false, x + w - at);
   y += Icon + 16;
