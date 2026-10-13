@@ -87,7 +87,7 @@ float Application::headerTabs(const std::vector<std::string> &labels, int curren
                           chosen ? Surface : Ink, true);
     }
     const auto run = [pick, n] { pick(n); };
-    hit(x, 24, w, 48, run);
+    headerHit("tab" + std::to_string(n), x, 24, w, 48, run);
     header_.push_back({"tab" + std::to_string(n), {x, 24, w, 48}, run, true});
     if (n == current) headerHome_ = "tab" + std::to_string(n);
     if (n == current && headerFocus_.rfind("tab", 0) == 0) headerFocus_ = "tab" + std::to_string(n);

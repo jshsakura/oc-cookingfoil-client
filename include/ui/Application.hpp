@@ -712,6 +712,7 @@ private:
   std::vector<HeaderItem> header_;
   std::string headerFocus_, headerHome_; // the item with the cursor ("" none); where it lands first
   // Touch area and d-pad stop at once; draws the focus ring when it has the cursor.
+  void headerHit(const std::string &id, float x, float y, float w, float h, const std::function<void()> &run);
   void headerItem(const std::string &id, float x, float y, float w, float h, std::function<void()> run,
                   bool home = false);
   bool enterHeader();

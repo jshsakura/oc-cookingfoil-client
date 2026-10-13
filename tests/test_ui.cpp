@@ -71,6 +71,17 @@ int runUiTests(SDL_Renderer *renderer) {
     app.touch(120, app.menuRowTop(1) + foil::ui::MenuRowHeight / 2);
     CHECK(app.current() == foil::ui::Screen::Library);
     CHECK(app.onMenu());
+    // A touched header tab takes the cursor from the menu, like anything
+    // else touched: 내 게임's 업데이트 tab.
+    app.render();
+    app.touch(120, app.menuRowTop(foil::ui::menuIndex(foil::ui::Screen::Installed)) + foil::ui::MenuRowHeight / 2);
+    CHECK(app.current() == foil::ui::Screen::Installed);
+    CHECK(app.onMenu());
+    app.render();
+    app.touch(640, 48);
+    CHECK(app.current() == foil::ui::Screen::Updates);
+    CHECK(!app.onMenu());
+    CHECK(app.headerFocus() == "tab1");
     app.screen(foil::ui::Screen::Library);
     app.render();
     app.touch(330, 250);

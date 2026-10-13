@@ -5,9 +5,20 @@ namespace foil::ui {
 void Application::hit(float x, float y, float w, float h, std::function<void()> run) {
   hits_.push_back({{x, y, w, h}, std::move(run)});
 }
+// A touched header item takes the cursor, as a touched card or menu item
+// does. 내 게임's tabs open sibling screens that draw the same tabs, so
+// the cursor lands on the touched tab there too.
+void Application::headerHit(const std::string &id, float x, float y, float w, float h,
+                            const std::function<void()> &run) {
+  hit(x, y, w, h, [this, id, run] {
+    run();
+    headerFocus_ = id;
+    sidebar_ = autoSidebar_ = false;
+  });
+}
 void Application::headerItem(const std::string &id, float x, float y, float w, float h, std::function<void()> run,
                              bool home) {
-  hit(x, y, w, h, run);
+  headerHit(id, x, y, w, h, run);
   header_.push_back({id, {x, y, w, h}, std::move(run), false});
   if (home || headerHome_.empty()) headerHome_ = id;
   if (headerFocus_ == id) paint_.ring(x, y, w, h, 12);
