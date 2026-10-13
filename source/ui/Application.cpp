@@ -1207,13 +1207,13 @@ void Application::action(Action a) {
     sidebar_ = true;
 }
 void Application::cover(const std::string &url, float x, float y, int size,
-                        bool selected, const std::string &name, bool exact) {
+                        bool selected, const std::string &name, bool exact, bool dark) {
   if (selected)
     paint_.ring(x, y, size, size);
   // Covers never exceed 184pt, so the 256px server thumbnail is enough.
   const auto thumb = exact ? url : thumbnailUrl(url);
   if (!thumb.empty() && !images_->failed(thumb) && !images_->loaded(thumb)) {
-    paint_.skeleton(x, y, size, size, 14);
+    paint_.skeleton(x, y, size, size, 14, dark);
   } else if (thumb.empty() || images_->failed(thumb)) {
     // No art: a tinted tile with the title's first letter.
     static const SDL_Color tints[] = {{226, 221, 207, 255}, {214, 223, 216, 255},

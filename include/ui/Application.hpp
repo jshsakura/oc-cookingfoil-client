@@ -684,8 +684,10 @@ private:
             bool badges = true);
   // `exact`: the URL as given (no thumbnail size asked) and the picture
   // fitted whole, for art the server already made square (retro tiles).
+  // `dark`: the cover sits on a dark backdrop (a banner), so its waiting
+  // skeleton breathes in dark shades.
   void cover(const std::string &url, float x, float y, int size,
-             bool selected = false, const std::string &name = "", bool exact = false);
+             bool selected = false, const std::string &name = "", bool exact = false, bool dark = false);
   void footer(const std::vector<std::pair<std::string, std::string>> &hints);
   void hit(float x, float y, float w, float h, std::function<void()> run);
   void blockTouch() { hit(0, 0, 1280, 720, [] {}); }

@@ -17,7 +17,9 @@ public:
   void line(float x, float y, float xx, float yy, SDL_Color color,
             int width = 2);
   // Placeholder block that pulses while content loads.
-  void skeleton(float x, float y, float w, float h, int radius = 10);
+  // A waiting place that breathes in the shades of what it sits on: light
+  // greys on the page, dark ones on a dark backdrop (gallery, banners).
+  void skeleton(float x, float y, float w, float h, int radius = 10, bool dark = false);
   void skeletonCards(float x, float y, int count, int columns = 6);
   // Vertical position hint: appears when the list moves (or the screen
   // opens) and fades out shortly after; never shown when everything fits.

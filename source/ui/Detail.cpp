@@ -124,15 +124,18 @@ void Application::detail() {
   if (publisher == "CookingFoil")
     publisher.clear();
   paint_.rect(0, 0, 1280, 212, {10, 10, 14, 255});
-  images_->draw(detail_.banner.empty() ? thumbnailUrl(item.icon) : thumbnailUrl(detail_.banner, "xl"), 0, 0, 1280,
-                212, 0, true);
+  const auto banner = detail_.banner.empty() ? thumbnailUrl(item.icon) : thumbnailUrl(detail_.banner, "xl");
+  // Only while it is really on its way; a picture already here draws at once.
+  if (!banner.empty() && !images_->loaded(banner) && !images_->failed(banner))
+    paint_.skeleton(0, 0, 1280, 212, 0, true);
+  images_->draw(banner, 0, 0, 1280, 212, 0, true);
   // Back link names the screen it returns to, with room before the cover.
   const auto back = screenLabel(previous_);
   paint_.icon(7, 32, 14, Surface, 20);
   paint_.fonts.middle(back, 56, 24, 17, Surface);
   hit(24, 4, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
-  cover(item.icon, 40, Top, 140, false, item.name);
+  cover(item.icon, 40, Top, 140, false, item.name, false, true);
   paint_.fonts.text(name, 208, Top + 4, 38, Surface, true, 1010);
   paint_.fonts.text(publisher, 208, Top + 62, 19, {228, 228, 234, 255}, false, 960);
   // Pills stop before the install panel; one that would reach it is left

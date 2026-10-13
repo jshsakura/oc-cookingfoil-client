@@ -114,14 +114,16 @@ void Painter::line(float x, float y, float xx, float yy, SDL_Color color,
   if (clipped)
     SDL_RenderSetClipRect(renderer, &clip);
 }
-void Painter::skeleton(float x, float y, float w, float h, int radius) {
-  // A slow, soft breath between two close greys: it reads as loading
-  // without flashing.
+void Painter::skeleton(float x, float y, float w, float h, int radius, bool dark) {
+  // A slow, soft breath between two close shades of the backdrop: it reads
+  // as loading without flashing. On a dark backdrop a light grey would.
   constexpr float PulseMs = 2000;
+  constexpr SDL_Color LightBase{226, 223, 216, 255}, DarkBase{28, 28, 34, 255}, DarkLift{44, 44, 52, 255};
   const float phase = std::fmod(SDL_GetTicks(), PulseMs) / PulseMs;
-  const auto shade = Uint8(110 * (0.5f + 0.5f * std::sin(phase * 6.283185f)));
-  rect(x, y, w, h, {226, 223, 216, 255}, radius);
-  rect(x, y, w, h, {Surface.r, Surface.g, Surface.b, shade}, radius);
+  const float breath = 0.5f + 0.5f * std::sin(phase * 6.283185f);
+  const SDL_Color lift = dark ? DarkLift : Surface;
+  rect(x, y, w, h, dark ? DarkBase : LightBase, radius);
+  rect(x, y, w, h, {lift.r, lift.g, lift.b, Uint8((dark ? 255 : 110) * breath)}, radius);
 }
 void Painter::skeletonCards(float x, float y, int count, int columns) {
   for (int n = 0; n < count; ++n) {

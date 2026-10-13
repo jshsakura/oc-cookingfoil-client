@@ -83,6 +83,10 @@ void Application::home() {
   if (row_ == 0 && !sidebar_)
     paint_.ring(260, 24 - scroll, 992, 248, 20);
   paint_.rect(260, 24 - scroll, 992, 248, {10, 10, 14, 255}, 20);
+  // The backdrop breathes in dark shades only while its picture is on its way.
+  if (const auto backdrop = slideImages(heroSlide_)[0];
+      !backdrop.empty() && !images_->loaded(backdrop) && !images_->failed(backdrop))
+    paint_.skeleton(260, 24 - scroll, 992, 248, 20, true);
   // An admin banner shows as is under a dark wash; otherwise the cover blurs.
   if (!heroBanner_.empty() && heroFeatured_ && heroSlide_ == 0) {
     images_->draw(thumbnailUrl(heroBanner_, "xl"), 260, 24 - scroll, 992, 248, 20);
@@ -90,7 +94,7 @@ void Application::home() {
   } else {
     images_->draw(thumbnailUrl(g.representative.icon), 260, 24 - scroll, 992, 248, 20, true);
   }
-  cover(thumbnailUrl(g.representative.icon, "md"), 296, 56 - scroll, 184, false, g.representative.name);
+  cover(thumbnailUrl(g.representative.icon, "md"), 296, 56 - scroll, 184, false, g.representative.name, false, true);
   paint_.fonts.text(heroes_.empty() ? tr("추천 게임") : heroes_[heroSlide_].label, 512,
                     61 - scroll, 18, Butter, true);
   paint_.fonts.text(g.representative.name, 512, 98 - scroll, 40, Surface, true,

@@ -22,7 +22,7 @@ void Application::gallery() {
     if (images_->loaded(small))
       images_->draw(small, 40, 78, 1200, 558, 10, false, true);
     else
-      paint_.rect(40, 78, 1200, 558, {28, 28, 34, 255}, 10);
+      paint_.skeleton(40, 78, 1200, 558, 10, true);
   }
   images_->draw(url, 40, 78, 1200, 558, 10, false, true);
   // Page dots under the photo: the current one long and butter.
