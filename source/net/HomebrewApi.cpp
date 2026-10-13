@@ -3,6 +3,11 @@
 #include "core/Json.hpp"
 #include "net/Api.hpp"
 #include "net/Ranged.hpp"
+#include <vector>
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include "core/Sha256.hpp"
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -59,15 +64,57 @@ bool fetchFile(const Server &server, const State &state, const std::string &url,
   std::filesystem::remove(partInfoPath(part), ec);
   return true;
 }
+// A file already on the card with the listed size and hash: nothing to fetch.
+bool alreadyThere(const std::string &target, uint64_t size, const std::string &sha256) {
+  std::error_code ec;
+  if (sha256.empty() || !size || std::filesystem::file_size(target, ec) != size || ec) return false;
+  std::unique_ptr<FILE, int (*)(FILE *)> in(std::fopen(target.c_str(), "rb"), std::fclose);
+  if (!in) return false;
+  Sha256 hash;
+  std::vector<char> chunk(256 * 1024);
+  size_t n;
+  while ((n = std::fread(chunk.data(), 1, chunk.size(), in.get())) > 0) hash.update(chunk.data(), n);
+  return hash.hex() == sha256;
+}
 } // namespace
 bool homebrewDownload(const Server &server, const State &state, const homebrew::App &app, const std::string &sd,
                       std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel) {
   if (app.files.empty())
     return fetchFile(server, state, app.downloadUrl, sd, app.installPath, "", 0, received, error, cancel);
-  // A folder install: every file, each checked; one failing stops the rest.
-  for (const auto &file : app.files)
-    if (!fetchFile(server, state, file.url, sd, file.path, file.sha256, file.size, received, error, cancel))
-      return false;
-  return true;
+  // A folder install: thousands of small files, each its own request, so
+  // most of the time is the round trip; eight at a time, each checked. One
+  // already on the card as the server lists it (size and hash) is kept.
+  // One failing stops the rest (those in flight finish their file).
+  constexpr size_t Workers = 8;
+  std::atomic<size_t> next{0};
+  std::atomic<bool> failed{false};
+  std::mutex firstLock;
+  Error first;
+  const auto work = [&] {
+    while (!failed && !(cancel && *cancel)) {
+      const size_t i = next++;
+      if (i >= app.files.size()) return;
+      const auto &file = app.files[i];
+      if (alreadyThere(sd + "/" + file.path, file.size, file.sha256)) {
+        received += file.size;
+        continue;
+      }
+      Error mine;
+      if (!fetchFile(server, state, file.url, sd, file.path, file.sha256, file.size, received, mine, cancel)) {
+        std::lock_guard<std::mutex> held(firstLock);
+        if (!failed.exchange(true)) first = mine;
+        return;
+      }
+    }
+  };
+  std::vector<std::thread> threads;
+  for (size_t n = 1; n < std::min(Workers, app.files.size()); ++n) threads.emplace_back(work);
+  work();
+  for (auto &t : threads) t.join();
+  if (failed) {
+    error = first;
+    return false;
+  }
+  return !(cancel && *cancel); // cancelled: the caller says so
 }
 } // namespace foil::net
