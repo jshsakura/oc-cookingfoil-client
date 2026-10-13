@@ -4,6 +4,8 @@
 #include "core/Resume.hpp"
 #include "net/Api.hpp"
 #include "net/Ranged.hpp"
+#include "net/HomebrewApi.hpp"
+#include "core/Homebrew.hpp"
 #include "platform/Storage.hpp"
 #include <arpa/inet.h>
 #include <cstring>
@@ -377,6 +379,66 @@ int runResumeTests() {
     for (const auto &f : files)
       CHECK(foil::readFile(second + "/" + f.path) == f.body);
     CHECK(received == data.size());
+  }
+  {
+    // A folder homebrew app as one tar (bundle_url): cut after its first
+    // file, the next request asks from that file's end, and every file lands
+    // where the list puts it ('+', spaces and Hangul in names too).
+    const auto sd = fs::temp_directory_path() / ("cf-bundle-" + std::to_string(getpid()));
+    fs::remove_all(sd);
+    fs::create_directories(sd);
+    const std::vector<File> files{{"switch/pk/pk.nro", body(70000, 'a')},
+                                  {"switch/pk/Graphics/Scratch + Shadow Claw.png", body(5000, 'b')},
+                                  {"switch/pk/data/설치-스위치.md", body(123, 'c')}};
+    Mock mock;
+    mock.body = archive(files);
+    mock.drop = [](int i) { return i == 0 ? size_t(72000) : std::string::npos; }; // inside the second file
+    mock.start(2);
+    foil::homebrew::App app;
+    app.id = "pk";
+    app.bundleUrl = mock.url + "/api/homebrew/pk/bundle";
+    for (const auto &f : files) {
+      foil::homebrew::File file;
+      file.path = f.path;
+      file.size = f.body.size();
+      file.sha256 = std::string(64, 'a');
+      app.files.push_back(file);
+    }
+    foil::Server server;
+    server.url = mock.url;
+    foil::State state;
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(foil::net::homebrewDownload(server, state, app, sd.string(), received, error, nullptr));
+    for (const auto &f : files)
+      CHECK(foil::readFile((sd / f.path).string()) == f.body);
+    CHECK(mock.requests.size() == 2 && rangeOf(mock.requests[1]) == std::to_string(512 + 70144) + "-");
+    CHECK(!fs::exists(sd / "switch/cookingfoil/resume/homebrew-pk.json"));
+    fs::remove_all(sd);
+  }
+  {
+    // A bundle holding a path the list does not name is refused, unwritten.
+    const auto sd = fs::temp_directory_path() / ("cf-bundle-bad-" + std::to_string(getpid()));
+    fs::remove_all(sd);
+    fs::create_directories(sd);
+    Mock mock;
+    mock.body = archive({{"switch/pk/pk.nro", body(100, 'a')}, {"switch/other/evil.nro", body(100, 'e')}});
+    mock.start(1);
+    foil::homebrew::App app;
+    app.id = "pk";
+    app.bundleUrl = mock.url + "/bundle";
+    foil::homebrew::File file;
+    file.path = "switch/pk/pk.nro";
+    file.size = 100;
+    file.sha256 = std::string(64, 'a');
+    app.files.push_back(file);
+    foil::Server server;
+    server.url = mock.url;
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(!foil::net::homebrewDownload(server, foil::State{}, app, sd.string(), received, error, nullptr) && error);
+    CHECK(!fs::exists(sd / "switch/other/evil.nro"));
+    fs::remove_all(sd);
   }
   fs::remove_all(root);
   return failures;
