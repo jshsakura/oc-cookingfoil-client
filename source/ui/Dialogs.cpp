@@ -119,13 +119,18 @@ void Application::notice(const std::string &title, const std::string &body, int 
   constexpr float IconSize = 44;
   const float iconSpace = icon >= 0 ? IconSize + 16 : 0;
   const float height = 48 + iconSpace + 30 + (lines ? 14 + bodyHeight : 0) + 44;
-  const float Top = (BodyTop + BodyBottom - height) / 2;
+  // An empty page still answers a finger as a list would: it stretches and
+  // springs back (nothing to scroll, so its end is its start).
+  const float pulled = glide("empty", 232, 84, 1048, BodyBottom - 84, 0, 0, 1);
+  const float Top = (BodyTop + BodyBottom - height) / 2 - pulled;
+  clipTo(232, 84, 1048, BodyBottom - 84);
   paint_.rect(Left, Top, Width, height, Surface, 20);
   if (icon >= 0)
     paint_.icon(icon, Center - IconSize / 2, Top + 40, Secondary, int(IconSize));
   paint_.fonts.centered(title, Center, Top + 44 + iconSpace, 24, Ink, TextWidth, 2, true);
   if (lines)
     paint_.fonts.centered(body, Center, Top + 92 + iconSpace, 19, Secondary, TextWidth, lines);
+  unclip();
 }
 void Application::viewPopup() {
   // Wide enough that every filter fits: a two-column checkbox grid on the left,

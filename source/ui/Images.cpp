@@ -207,16 +207,32 @@ void Images::worker() {
       }
     }
     });
+    // Decoded here, off the drawing thread: unpacking a picture as a row
+    // scrolled in held up that frame.
+    SDL_Surface *decoded = nullptr;
+    if (!bytes.empty()) {
+      decoded = shrink(IMG_Load_RW(SDL_RWFromConstMem(bytes.data(), int(bytes.size())), 1));
+      if (!decoded) {
+        logLine("image decode failed " + url.substr(0, url.find('?')) + ": " + IMG_GetError());
+        // A broken cache file (an HTML error page, a cut download) would fail
+        // the same way on every retry, so drop it and fetch again next time.
+        std::error_code ignored;
+        if (!cache_.empty())
+          std::filesystem::remove(cache_ + "/" + hash(url) + ".image", ignored);
+      }
+    }
     {
       std::lock_guard<std::mutex> lock(mutex_);
       auto &entry = entries_[url];
       entry.finished = true;
-      entry.failed = bytes.empty();
+      entry.failed = !decoded;
       if (entry.failed) {
         entry.failedAt = SDL_GetTicks();
         ++entry.attempts;
       }
-      entry.bytes = std::move(bytes);
+      if (entry.surface)
+        SDL_FreeSurface(entry.surface);
+      entry.surface = decoded;
     }
   }
 }
@@ -375,24 +391,25 @@ void Images::draw(const std::string &url, float x, float y, int w, int h,
       }
       SDL_BlitScaled(source, &crop, surface, nullptr);
     }
+    // Rounded corners: only the four corner squares are touched, and the
+    // alpha byte directly (RGBA32 keeps it last in memory). Going over every
+    // pixel of every new cover was most of a scrolled-in row's cost.
     const float rr = radius * scale_;
-    auto *pixels = static_cast<Uint32 *>(surface->pixels);
-    for (int yy = 0; yy < ph; ++yy)
-      for (int xx = 0; xx < pw; ++xx) {
-        const float dx = xx < rr         ? rr - xx - .5f
-                         : xx >= pw - rr ? xx - (pw - rr) + .5f
-                                         : 0,
-                    dy = yy < rr         ? rr - yy - .5f
-                         : yy >= ph - rr ? yy - (ph - rr) + .5f
-                                         : 0;
-        if (dx && dy) {
-          const float coverage =
-              std::clamp(rr + .5f - std::sqrt(dx * dx + dy * dy), 0.f, 1.f);
-          Uint8 r, g, b, a;
-          SDL_GetRGBA(pixels[yy * pw + xx], surface->format, &r, &g, &b, &a);
-          pixels[yy * pw + xx] =
-              SDL_MapRGBA(surface->format, r, g, b, Uint8(a * coverage));
-        }
+    const int corner = std::min({int(std::ceil(rr)), pw / 2, ph / 2});
+    auto *bytes = static_cast<Uint8 *>(surface->pixels);
+    for (int yy = 0; yy < corner; ++yy)
+      for (int xx = 0; xx < corner; ++xx) {
+        const float dx = rr - xx - .5f, dy = rr - yy - .5f;
+        if (dx <= 0 || dy <= 0)
+          continue;
+        const float coverage = std::clamp(rr + .5f - std::sqrt(dx * dx + dy * dy), 0.f, 1.f);
+        if (coverage >= 1)
+          continue;
+        for (const int y : {yy, ph - 1 - yy})
+          for (const int x : {xx, pw - 1 - xx}) {
+            auto &alpha = bytes[y * surface->pitch + x * 4 + 3];
+            alpha = Uint8(alpha * coverage);
+          }
       }
     auto *texture = SDL_CreateTextureFromSurface(renderer_, surface);
     SDL_FreeSurface(surface);
