@@ -2,7 +2,9 @@
 #include <algorithm>
 namespace foil::ui {
 namespace {
-constexpr float ShelfHeight = 283, BannerHeight = 64, CardStep = 170, Card = 150;
+// A shelf: the system line, the covers and one line of name (no second line
+// as on 홈), then room before the next system.
+constexpr float ShelfHeight = 262, BannerHeight = 64, CardStep = 170, Card = 150;
 constexpr int Columns = 6;
 } // namespace
 // The retro home: RetroArch first while it is missing, then one shelf per
