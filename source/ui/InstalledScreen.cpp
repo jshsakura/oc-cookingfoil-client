@@ -169,7 +169,6 @@ void Application::installedScreen() {
   const auto rows = gameRows(installedQuery_);
   // A first read pulses; a reread keeps the list it already has.
   const bool firstRead = deviceBusy_ && !installed_.installed.complete;
-  paint_.fonts.text(firstRead && !managedGame_ ? tr("설치 목록을 읽고 있습니다.") : tr("본체에 설치된 게임을 관리합니다."), 260, 88, 19, Secondary);
   // Search at the right end, the order (Y, as 모든 게임's filter) left of
   // it, then 내 게임's tabs; - reloads the list.
   const auto sort = installedSortLabel(installedSort_);
@@ -184,7 +183,7 @@ void Application::installedScreen() {
   pageTitle(tr("내 게임"), !firstRead || managedGame_ ? std::to_string(rows.size()) : std::string(),
             tabsLeft);
   if (firstRead && !managedGame_) {
-    paint_.skeletonCards(260, 146, 12);
+    paint_.skeletonCards(260, 104, 12);
     return;
   }
   if (deviceError_ && !managedGame_) {
@@ -207,14 +206,14 @@ void Application::installedScreen() {
   };
   // The row at the top follows the cursor, or the finger while it glides.
   const int rowCount = int((rows.size() + 5) / 6);
-  const float top = glide("installed", 232, 146 - 8, 1048, 660 - 146 + 8, float(std::max(0, selected_ / 6 - 1)),
+  const float top = glide("installed", 232, 104 - 8, 1048, 660 - 104 + 8, float(std::max(0, selected_ / 6 - 1)),
                           float(rowCount - 2), 240);
   const int first = int(top) * 6;
-  paint_.scrollbar(1266, 146, 500, top, 2.1f, float(rowCount));
-  clipTo(232, 146 - 8, 1048, 660 - 146 + 8);
+  paint_.scrollbar(1266, 104, 500, top, 2.1f, float(rowCount));
+  clipTo(232, 104 - 8, 1048, 660 - 104 + 8);
   for (int n = 0; n < 24 && first + n < int(rows.size()); ++n) {
     const auto &g = installed_.games[rows[first + n]];
-    const float x = 260 + n % 6 * 170, y = 146 + (n / 6 + int(top) - top) * 240;
+    const float x = 260 + n % 6 * 170, y = 104 + (n / 6 + int(top) - top) * 240;
     const auto icon = installedIcon(g);
     hit(x, y, 150, 220, [this, index = first + n] {
       sidebar_ = false;

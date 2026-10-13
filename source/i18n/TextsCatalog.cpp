@@ -61,8 +61,6 @@ const Translation rows[] = {
     {"세이브 목록을 읽다 오류가 났습니다.", "Error reading saves.", "セーブ一覧の読み込み中にエラーが発生しました。", "读取存档列表时出错。"},
     {"설치가 끝난 뒤 삭제합니다.", "Delete after the install finishes.", "インストール完了後に削除します。", "安装完成后再删除。"},
     {"삭제 중 오류가 났습니다. 설치 목록을 새로고침합니다.", "Error while deleting. Refreshing the installed list.", "削除中にエラーが発生しました。インストール一覧を更新します。", "删除时出错。正在刷新已安装列表。"},
-    {"설치 목록을 읽고 있습니다.", "Reading installed games.", "インストール一覧を読み込んでいます。", "正在读取已安装列表。"},
-    {"본체에 설치된 게임을 관리합니다.", "Manage games installed on this console.", "本体にインストールされたゲームを管理します。", "管理主机上已安装的游戏。"},
     {"설치된 게임이 없습니다.", "No games installed.", "インストールされたゲームはありません。", "没有已安装的游戏。"},
     {"서버에서 게임을 설치하면 여기에 보입니다.", "Games you install from the server appear here.", "サーバーでインストールしたゲームがここに表示されます。", "从服务器安装的游戏会显示在这里。"},
     {"SD · 본체", "SD · Console", "SD · 本体", "SD · 主机"},
