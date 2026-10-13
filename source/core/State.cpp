@@ -27,6 +27,10 @@ bool saveState(const std::string& path, const State& state, Error& error) {
     auto* keys = json_object_new_object();
     for (const auto& [url, key] : state.accessKeys) json_object_object_add(keys, url.c_str(), json_object_new_string(key.c_str()));
     json_object_object_add(object.get(), "accessKeys", keys);
+    auto* notes = json_object_new_object();
+    for (const auto& [url, note] : state.pairMessages)
+        if (!note.empty()) json_object_object_add(notes, url.c_str(), json_object_new_string(note.c_str()));
+    json_object_object_add(object.get(), "pairMessages", notes);
     Error ignored;
     auto queue = parseJson(state.queueJson, ignored);
     json_object_object_add(object.get(), "queue", queue && json_object_is_type(queue.get(), json_type_array) ? queue.release() : json_object_new_array());
@@ -62,6 +66,13 @@ Parsed<State> loadState(const std::string& path) {
         if (json_object_is_type(keys, json_type_object)) {
             json_object_object_foreach(keys, url, value) {
                 if (json_object_is_type(value, json_type_string) && !normalizeUrl(url).empty()) result.value.accessKeys[url] = json_object_get_string(value);
+            }
+        }
+        auto* notes = field(root.get(), "pairMessages");
+        if (json_object_is_type(notes, json_type_object)) {
+            json_object_object_foreach(notes, url, value) {
+                if (json_object_is_type(value, json_type_string) && *json_object_get_string(value) && !normalizeUrl(url).empty())
+                    result.value.pairMessages[url] = json_object_get_string(value);
             }
         }
         auto* queue = field(root.get(), "queue");

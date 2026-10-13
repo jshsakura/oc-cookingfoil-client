@@ -20,6 +20,9 @@ struct State {
     // "sd" or "nand", chosen in 설정; empty follows config.json's installTarget.
     std::string installTarget;
     std::map<std::string, std::string> accessKeys;
+    // Per server: the note sent with the approval request so the admin knows
+    // which device asks. Absent until the player types one.
+    std::map<std::string, std::string> pairMessages;
     std::string queueJson = "[]";
 };
 Parsed<State> loadState(const std::string& path);

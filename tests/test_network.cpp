@@ -124,6 +124,16 @@ int runNetworkTests() {
         changed.installTarget = "nand";
         CHECK(foil::saveState(path, changed, error));
         CHECK(foil::loadState(path).value.installTarget == "nand");
+        // The approval note, per server; none until one is typed.
+        CHECK(fresh.value.pairMessages.empty());
+        changed.pairMessages[s.url] = "철수 거실 기기";
+        CHECK(foil::saveState(path, changed, error));
+        const auto noted = foil::loadState(path).value;
+        CHECK(noted.pairMessages.size() == 1 && noted.pairMessages.at(s.url) == "철수 거실 기기");
+        CHECK(noted.accessKeys.at(s.url) == "issued-key");
+        changed.pairMessages.clear();
+        CHECK(foil::saveState(path, changed, error));
+        CHECK(foil::loadState(path).value.pairMessages.empty());
         std::filesystem::remove_all(root);
     }
     return failures;
