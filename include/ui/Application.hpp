@@ -1003,6 +1003,9 @@ private:
   int installGroups_ = 0, runningGroup_ = -1;
   // Starts the next entry while the installer is free.
   Error launchQueued();
+  void runningAction(Action a);
+  void unqueue(size_t index);
+  void moveUp(size_t index);
   uint64_t queuedBytes() const;
   std::vector<history::Entry> history_;
   void saveHistory();

@@ -1,5 +1,6 @@
 #include "Test.hpp"
 #include "core/DownloadHistory.hpp"
+#include <algorithm>
 using namespace foil::history;
 namespace {
 Entry entry(const std::string &name) {
@@ -47,6 +48,20 @@ int runHistoryTests() {
   }
   CHECK(many.size() == 3 && many.front().id == 5 && many.back().install.name == "2");
   CHECK(parse("not json").empty());
+  // Kept for years, but one row a file: the same file ending again goes to
+  // the top and its older rows go.
+  std::vector<Entry> years;
+  for (int i = 0; i < 300; ++i) {
+    auto done = entry("g" + std::to_string(i));
+    done.outcome = Outcome::Done;
+    add(years, done);
+  }
+  CHECK(parse(serialize(years)).size() == 300); // no cap, read back whole
+  auto again = entry("g10");
+  const auto againId = add(years, again);
+  CHECK(end(years, againId, Outcome::Cancelled, "", 300));
+  CHECK(years.size() == 300 && years.front().id == againId && years.front().outcome == Outcome::Cancelled);
+  CHECK(std::count_if(years.begin(), years.end(), [](const Entry &e) { return e.install.name == "g10"; }) == 1);
   // The queue lives in the same list: a queued entry keeps its pick (group)
   // through a round trip, and the cap never drops it, only finished ones.
   std::vector<Entry> queue;
@@ -70,7 +85,7 @@ int runHistoryTests() {
   game.payload = R"j({"id":"nes-1"})j";
   add(mixed, game);
   CHECK(finish(mixed, Outcome::Done, "", 300));
-  CHECK(mixed[0].outcome == Outcome::Running && mixed[1].outcome == Outcome::Done);
+  CHECK(mixed[0].outcome == Outcome::Done && mixed[1].outcome == Outcome::Running); // the ended one goes on top
   CHECK(finish(mixed, Outcome::Cancelled, "", 300, "retro"));
   CHECK(mixed[0].outcome == Outcome::Cancelled);
   CHECK(!finish(mixed, Outcome::Done, "", 300, "retroarch"));

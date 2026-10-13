@@ -22,15 +22,16 @@ void Application::downloads() {
   // Tabs with their counts: what runs now, what finished, what did not.
   const int running = int(installQueue_.size()) + (installer_.running() ? 1 : 0) + (retroDownloading() ? 1 : 0) +
                       int(patchQueue_.size()) + (patchWorker_.joinable() && !patchBusy_.empty() ? 1 : 0);
-  int done = 0, failed = 0;
+  int done = 0, failed = 0, cancelled = 0;
   for (const auto &e : history_) {
     done += e.outcome == history::Outcome::Done;
-    failed += e.outcome == history::Outcome::Failed || e.outcome == history::Outcome::Cancelled;
+    failed += e.outcome == history::Outcome::Failed;
+    cancelled += e.outcome == history::Outcome::Cancelled;
   }
-  headerTabs({tr("Running"), tr("Done"), tr("Failed")}, downloadsTab_, [this](int n) {
+  headerTabs({tr("Running"), tr("Done"), tr("Failed"), tr("Canceled")}, downloadsTab_, [this](int n) {
                downloadsTab_ = n;
                downloadsRow_ = 0;
-             }, 1252, 0, {running, done, failed});
+             }, 1252, 0, {running, done, failed, cancelled});
   if (downloadsTab_ != 0) {
     downloadsHistory();
     return;
@@ -44,7 +45,7 @@ void Application::downloads() {
     else if (!retroDownloading()) notice(tr("Nothing is downloading."), tr("Pick items on a game's page, then press A to install."), 4);
     return;
   }
-  if (p.status == install::Status::Running)
+  if (p.status == install::Status::Running && inContent() && downloadsRow_ == 0)
     paint_.ring(260, 90, 992, 180, 20);
   paint_.rect(260, 90, 992, 180, Surface, 20);
   cover(p.icon, 284, 112, 112, false, p.name);
@@ -163,10 +164,21 @@ void Application::downloads() {
     paint_.fonts.text(tr("Queued"), 260, y, 26, Ink, true);
     y += 40;
     // As many as fit above the footer; the count says the rest.
+    // The picked row stays in view: the list starts late enough to show it.
+    const int fits = std::max(1, (660 - y) / 88);
+    const size_t first = size_t(std::max(0, downloadsRow_ - fits));
     size_t shown = 0;
-    for (const auto &q : installQueue_) {
+    for (size_t i = first; i < installQueue_.size(); ++i) {
+      const auto &q = installQueue_[i];
       if (y + 88 > 660)
         break;
+      const bool picked = inContent() && downloadsRow_ == int(i) + 1;
+      hit(260, y, 992, 76, [this, i] {
+        sidebar_ = false;
+        headerFocus_.clear();
+        downloadsRow_ = int(i) + 1;
+      });
+      if (picked) paint_.ring(260, y, 992, 76, 16);
       paint_.rect(260, y, 992, 76, Surface, 16);
       cover(q.icon, 280, y + 10, 56, false, q.name);
       paint_.fonts.text(q.name, 356, y + 12, 20, Ink, true, 700);
@@ -176,12 +188,29 @@ void Application::downloads() {
       const auto where = q.target == "nand" ? tr("Console") : tr("SD card");
       paint_.fonts.text(part + " · " + where, 356, y + 44, 16, Secondary);
       const auto size = formatBytes(q.file.size);
-      paint_.fonts.text(size, 1228 - paint_.fonts.measure(size, 18, true), y + 28, 18, Ink, true);
+      const std::string stop = tr("Cancel");
+      const float cw = paint_.fonts.measure(stop, 16, true) + 32, cx = 1228 - cw;
+      hit(cx, y + 18, cw, 40, [this, i] { unqueue(i); });
+      paint_.rect(cx, y + 22, cw, 32, Ground, 8);
+      paint_.fonts.middle(stop, cx + 16, y + 38, 16, Ink, true);
+      float sizeRight = cx - 20;
+      if (i > 0) { // one place sooner
+        const std::string up = tr("Move up");
+        const float uw = paint_.fonts.measure(up, 16, true) + 32, ux = cx - 10 - uw;
+        hit(ux, y + 18, uw, 40, [this, i] {
+          moveUp(i);
+          downloadsRow_ = int(i);
+        });
+        paint_.rect(ux, y + 22, uw, 32, Ground, 8);
+        paint_.fonts.middle(up, ux + 16, y + 38, 16, Ink, true);
+        sizeRight = ux - 20;
+      }
+      paint_.fonts.text(size, sizeRight - paint_.fonts.measure(size, 18, true), y + 28, 18, Ink, true);
       y += 88;
       ++shown;
     }
-    if (shown < installQueue_.size())
-      paint_.fonts.text(trf("and {0} more", {std::to_string(installQueue_.size() - shown)}), 260, y, 18, Secondary);
+    if (first + shown < installQueue_.size())
+      paint_.fonts.text(trf("and {0} more", {std::to_string(installQueue_.size() - first - shown)}), 260, y, 18, Secondary);
   }
 }
 // A retro game, RetroArch or a homebrew app coming down beside the installer: what it is,
@@ -219,8 +248,9 @@ std::vector<int> Application::downloadsList() const {
   std::vector<int> out;
   for (int i = 0; i < int(history_.size()); ++i) {
     const auto o = history_[i].outcome;
-    if (downloadsTab_ == 1 ? o == history::Outcome::Done
-                           : o == history::Outcome::Failed || o == history::Outcome::Cancelled)
+    if (o == (downloadsTab_ == 1   ? history::Outcome::Done
+              : downloadsTab_ == 2 ? history::Outcome::Failed
+                                   : history::Outcome::Cancelled))
       out.push_back(i);
   }
   return out;
@@ -231,9 +261,13 @@ void Application::downloadsHistory() {
   constexpr int Visible = 5;
   const auto list = downloadsList();
   if (list.empty()) {
-    notice(downloadsTab_ == 1 ? tr("No finished downloads.") : tr("No failed downloads."),
-           downloadsTab_ == 1 ? tr("Finished installs stay here.") : tr("Failed or cancelled installs can be tried again here."),
-           downloadsTab_ == 1 ? 24 : 25);
+    notice(downloadsTab_ == 1   ? tr("No finished downloads.")
+           : downloadsTab_ == 2 ? tr("No failed downloads.")
+                                : tr("No canceled downloads."),
+           downloadsTab_ == 1   ? tr("Finished installs stay here.")
+           : downloadsTab_ == 2 ? tr("Failed installs can be tried again here.")
+                                : tr("Canceled downloads can be downloaded again here, in case one was canceled by mistake."),
+           downloadsTab_ == 1 ? 24 : downloadsTab_ == 2 ? 25 : 33);
     return;
   }
   const int count = int(list.size());
@@ -282,7 +316,7 @@ void Application::downloadsHistory() {
 }
 void Application::downloadsAction(Action a) {
   if (a == Action::Previous || a == Action::Next) {
-    downloadsTab_ = (downloadsTab_ + (a == Action::Next ? 1 : 2)) % 3;
+    downloadsTab_ = (downloadsTab_ + (a == Action::Next ? 1 : 3)) % 4;
     downloadsRow_ = 0;
     return;
   }
@@ -292,7 +326,7 @@ void Application::downloadsAction(Action a) {
   if (a == Action::Up) downloadsRow_ = std::max(0, downloadsRow_ - 1);
   if (a == Action::Down) downloadsRow_ = std::min(count - 1, downloadsRow_ + 1);
   const int index = list[std::clamp(downloadsRow_, 0, count - 1)];
-  if (a == Action::Accept && downloadsTab_ == 2) {
+  if (a == Action::Accept && (downloadsTab_ == 2 || downloadsTab_ == 3)) {
     // Retro downloads start again in the retro worker; the old entry goes
     // only once the new one is under way.
     if (!history_[index].kind.empty()) {
@@ -309,11 +343,7 @@ void Application::downloadsAction(Action a) {
       downloadsTab_ = 0;
       return;
     }
-    // Again from the start; the old entry gives way to the new one.
-    if (installer_.running()) {
-      message(tr("Try again once the current install ends."));
-      return;
-    }
+    // Into the queue again; the old row gives way to the new one.
     const auto install = history_[index].install;
     history_.erase(history_.begin() + index);
     if (auto error = startInstall(install.files, install.name, install.icon, install.target)) {

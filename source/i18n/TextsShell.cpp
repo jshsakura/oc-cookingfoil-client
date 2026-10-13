@@ -109,6 +109,7 @@ const Translation rows[] = {
     {"{0} in progress", "{0} 진행 중", "{0} 処理中", "{0} 进行中"},
     {"{0} queued", "{0} 대기", "{0} 待機", "{0} 等待中"},
     {"Continuing {0} stopped downloads.", "멈춘 다운로드 {0}개를 이어서 받습니다.", "止まっていたダウンロード{0}件を続きから再開します。", "继续下载 {0} 个已中断的项目。"},
+    {"Took {0} off the queue.", "{0}을(를) 대기열에서 뺐습니다.", "{0}を順番待ちから外しました。", "已将 {0} 移出队列。"},
     {"Added to the download queue.", "다운로드 대기열에 추가했습니다.", "ダウンロードの順番待ちに追加しました。", "已加入下载队列。"},
     {"It did not install, so the rest picked with it was taken off the queue.", "설치하지 못해 함께 고른 항목을 대기열에서 뺐습니다.", "インストールできなかったため、一緒に選んだ項目を順番待ちから外しました。", "安装失败，已将一起选择的项目移出队列。"},
     {"Installed. You can launch it from the HOME Menu.", "설치했습니다. 홈 메뉴에서 실행할 수 있습니다.", "インストールしました。HOMEメニューから起動できます。", "已安装。可从 HOME 菜单启动。"},

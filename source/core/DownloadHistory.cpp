@@ -24,7 +24,7 @@ std::vector<Entry> parse(const std::string &json) {
   Error error;
   auto root = parseJson(json, error);
   if (!root || !json_object_is_type(root.get(), json_type_array)) return out;
-  for (size_t i = 0; i < json_object_array_length(root.get()) && out.size() < 200; ++i) {
+  for (size_t i = 0; i < json_object_array_length(root.get()); ++i) {
     auto *object = json_object_array_get_idx(root.get(), i);
     auto install = parsePending(stringField(object, "install"));
     if (!install) continue;
@@ -74,15 +74,43 @@ uint64_t add(std::vector<Entry> &entries, Entry entry, size_t cap) {
                 entries.end());
   return top + 1;
 }
+namespace {
+bool sameDownload(const Entry &a, const Entry &b) {
+  if (a.kind != b.kind)
+    return false;
+  if (!a.kind.empty())
+    return a.payload == b.payload;
+  if (a.install.files.size() != b.install.files.size())
+    return false;
+  for (size_t i = 0; i < a.install.files.size(); ++i)
+    if (a.install.files[i].url != b.install.files[i].url)
+      return false;
+  return true;
+}
+} // namespace
+bool end(std::vector<Entry> &entries, uint64_t id, Outcome outcome, const std::string &error, int64_t at) {
+  auto found = std::find_if(entries.begin(), entries.end(), [&](const Entry &e) { return e.id == id; });
+  if (found == entries.end())
+    return false;
+  Entry ended = std::move(*found);
+  entries.erase(found);
+  ended.outcome = outcome;
+  ended.error = error;
+  ended.at = at;
+  entries.erase(std::remove_if(entries.begin(), entries.end(),
+                               [&](const Entry &e) {
+                                 return e.outcome != Outcome::Running && e.outcome != Outcome::Queued &&
+                                        sameDownload(e, ended);
+                               }),
+                entries.end());
+  entries.insert(entries.begin(), std::move(ended));
+  return true;
+}
 bool finish(std::vector<Entry> &entries, Outcome outcome, const std::string &error, int64_t at,
             const std::string &kind) {
-  for (auto &e : entries)
-    if (e.outcome == Outcome::Running && e.kind == kind) {
-      e.outcome = outcome;
-      e.error = error;
-      e.at = at;
-      return true;
-    }
+  for (const auto &e : entries)
+    if (e.outcome == Outcome::Running && e.kind == kind)
+      return end(entries, e.id, outcome, error, at);
   return false;
 }
 void settle(std::vector<Entry> &entries) {

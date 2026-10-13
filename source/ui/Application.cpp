@@ -136,12 +136,14 @@ void Application::usePatchFolder(const std::string &sd) {
   history_ = history::parse(readFile(sd + "/switch/cookingfoil/downloads.json"));
   history::settle(history_);
   installQueue_.clear();
-  for (auto e = history_.rbegin(); e != history_.rend(); ++e) // oldest first
-    if (e->outcome == history::Outcome::Queued && e->kind.empty() && e->install.files.size() == 1) {
-      installQueue_.push_back({e->install.files[0], e->install.name, e->install.icon, e->install.target, {}, e->group,
-                               e->id});
-      installGroups_ = std::max(installGroups_, e->group);
+  for (const auto &e : history_)
+    if (e.outcome == history::Outcome::Queued && e.kind.empty() && e.install.files.size() == 1) {
+      installQueue_.push_back({e.install.files[0], e.install.name, e.install.icon, e.install.target, {}, e.group, e.id});
+      installGroups_ = std::max(installGroups_, e.group);
     }
+  // In the order they were queued (or moved to): by id.
+  std::sort(installQueue_.begin(), installQueue_.end(),
+            [](const QueuedInstall &a, const QueuedInstall &b) { return a.entry < b.entry; });
   // A check of the old card stops first; it holds only a copy of the ledger.
   patchCheckStop_ = true;
   if (patchCheckWorker_.joinable())
@@ -978,18 +980,10 @@ void Application::action(Action a) {
       confirmCancel_ = false;
     return;
   }
-  // B on 진행 중 stops what runs: the install first, else a retro download.
-  if (screen_ == Screen::Downloads && a == Action::Back && downloadsTab_ == 0 &&
-      (installer_.running() || retroDownloading())) {
-    cancelRetro_ = !installer_.running();
-    confirmCancel_ = true;
-    confirmExit_ = false;
-    dialogFocus_ = 0;
-    return;
-  }
-  // A on 진행 중 pauses the install, or resumes it at the byte it stopped at.
-  if (screen_ == Screen::Downloads && a == Action::Accept && downloadsTab_ == 0 && installer_.running()) {
-    installer_.setPaused(!installer_.paused());
+  // 진행 중: the card, then the queue, picked with up and down.
+  if (screen_ == Screen::Downloads && downloadsTab_ == 0 && !sidebar_ &&
+      (a == Action::Up || a == Action::Down || a == Action::Accept || a == Action::Queue)) {
+    runningAction(a);
     return;
   }
   if (screen_ == Screen::Downloads &&
@@ -1574,11 +1568,16 @@ void Application::render() {
   }
   else if (screen_ == Screen::Downloads) {
     using Hints = std::vector<std::pair<std::string, std::string>>;
-    if (downloadsTab_ == 0 && installer_.running())
-      footer(Hints{{"A", installer_.paused() ? tr("Resume") : tr("Pause")}, {"B", tr("Cancel")}});
+    if (downloadsTab_ == 0 && !sidebar_ && downloadsRow_ > 0 && downloadsRow_ <= int(installQueue_.size()))
+      footer(downloadsRow_ > 1 ? Hints{{"A", tr("Move up")}, {"Y", tr("Cancel")}, {"B", tr("Back")}}
+                               : Hints{{"Y", tr("Cancel")}, {"B", tr("Back")}});
+    else if (downloadsTab_ == 0 && !sidebar_ && installer_.running())
+      footer(Hints{{"A", installer_.paused() ? tr("Resume") : tr("Pause")}, {"Y", tr("Cancel")}, {"B", tr("Back")}});
+    else if (downloadsTab_ == 0 && !sidebar_ && retroDownloading())
+      footer(Hints{{"Y", tr("Cancel")}, {"B", tr("Back")}});
     else if (downloadsTab_ == 0 || sidebar_ || downloadsList().empty())
-      footer({{"B", retroDownloading() && downloadsTab_ == 0 ? tr("Cancel") : tr("Back")}});
-    else if (downloadsTab_ == 2)
+      footer({{"B", tr("Back")}});
+    else if (downloadsTab_ == 2 || downloadsTab_ == 3)
       footer(Hints{{"A", tr("Try again")}, {"X", tr("Remove")}, {"Y", tr("Clear all")}, {"B", tr("Back")}});
     else
       footer(Hints{{"X", tr("Remove")}, {"Y", tr("Clear all")}, {"B", tr("Back")}});
@@ -1758,18 +1757,44 @@ void Application::saveStateQuietly() {
 }
 Error Application::startInstall(const std::vector<Item> &files, const std::string &name, const std::string &icon,
                                 const std::string &target, std::vector<UserPatch> patches) {
-  if (files.empty())
+  // A file already queued or installing is not added twice; one that failed
+  // or was canceled before leaves 실패 and 취소 as it goes in again.
+  std::vector<Item> fresh;
+  for (const auto &f : files) {
+    const bool waiting = std::any_of(installQueue_.begin(), installQueue_.end(),
+                                     [&](const QueuedInstall &q) { return q.file.url == f.url; }) ||
+                         (installer_.running() && std::any_of(history_.begin(), history_.end(), [&](const history::Entry &e) {
+                            return e.outcome == history::Outcome::Running && e.kind.empty() && e.install.files.size() == 1 &&
+                                   e.install.files[0].url == f.url;
+                          }));
+    if (!waiting)
+      fresh.push_back(f);
+  }
+  if (fresh.empty()) {
+    if (!files.empty())
+      message(tr("Already in the download queue."));
     return {};
+  }
+  history_.erase(std::remove_if(history_.begin(), history_.end(),
+                                [&](const history::Entry &e) {
+                                  return e.kind.empty() &&
+                                         (e.outcome == history::Outcome::Failed || e.outcome == history::Outcome::Cancelled) &&
+                                         std::any_of(e.install.files.begin(), e.install.files.end(), [&](const Item &old) {
+                                           return std::any_of(fresh.begin(), fresh.end(),
+                                                              [&](const Item &f) { return f.url == old.url; });
+                                         });
+                                }),
+                 history_.end());
   const int group = ++installGroups_;
-  for (size_t i = 0; i < files.size(); ++i) {
+  for (size_t i = 0; i < fresh.size(); ++i) {
     history::Entry row;
-    row.install = {name, icon, target, {files[i]}};
+    row.install = {name, icon, target, {fresh[i]}};
     row.outcome = history::Outcome::Queued;
     row.group = group;
     row.at = int64_t(std::time(nullptr));
     const auto id = history::add(history_, std::move(row));
-    installQueue_.push_back({files[i], name, icon, target,
-                             i + 1 == files.size() ? std::move(patches) : std::vector<UserPatch>{}, group, id});
+    installQueue_.push_back({fresh[i], name, icon, target,
+                             i + 1 == fresh.size() ? std::move(patches) : std::vector<UserPatch>{}, group, id});
   }
   saveHistory();
   if (installer_.running()) {
@@ -1780,18 +1805,66 @@ Error Application::startInstall(const std::vector<Item> &files, const std::strin
 }
 void Application::dropGroup(int group, const std::string &why) {
   bool dropped = false;
-  for (auto &e : history_)
-    if (e.outcome == history::Outcome::Queued && e.group == group) {
-      e.outcome = history::Outcome::Cancelled;
-      e.error = why;
-      e.at = int64_t(std::time(nullptr));
-      dropped = true;
-    }
+  std::vector<uint64_t> ids;
+  for (const auto &e : history_)
+    if (e.outcome == history::Outcome::Queued && e.group == group)
+      ids.push_back(e.id);
+  for (const auto id : ids)
+    dropped |= history::end(history_, id, history::Outcome::Cancelled, why, int64_t(std::time(nullptr)));
   installQueue_.erase(std::remove_if(installQueue_.begin(), installQueue_.end(),
                                      [&](const QueuedInstall &q) { return q.group == group; }),
                       installQueue_.end());
   if (dropped)
     saveHistory();
+}
+// On the card A pauses or resumes and Y cancels (after asking); on a queued
+// row Y takes it off the queue.
+void Application::runningAction(Action a) {
+  const int rows = 1 + int(installQueue_.size());
+  if (a == Action::Up) downloadsRow_ = std::max(0, downloadsRow_ - 1);
+  if (a == Action::Down) downloadsRow_ = std::min(rows - 1, downloadsRow_ + 1);
+  downloadsRow_ = std::clamp(downloadsRow_, 0, rows - 1);
+  if (downloadsRow_ > 0) {
+    if (a == Action::Queue) unqueue(size_t(downloadsRow_ - 1));
+    if (a == Action::Accept && downloadsRow_ > 1) {
+      moveUp(size_t(downloadsRow_ - 1));
+      --downloadsRow_;
+    }
+    return;
+  }
+  if (a == Action::Accept && installer_.running())
+    installer_.setPaused(!installer_.paused());
+  if (a == Action::Queue && (installer_.running() || retroDownloading())) {
+    cancelRetro_ = !installer_.running();
+    confirmCancel_ = true;
+    confirmExit_ = false;
+    dialogFocus_ = 0;
+  }
+}
+// One place sooner. The rows trade ids, which keep the order on the card.
+void Application::moveUp(size_t index) {
+  if (index == 0 || index >= installQueue_.size())
+    return;
+  auto &a = installQueue_[index - 1], &b = installQueue_[index];
+  auto rowA = std::find_if(history_.begin(), history_.end(), [&](const history::Entry &e) { return e.id == a.entry; });
+  auto rowB = std::find_if(history_.begin(), history_.end(), [&](const history::Entry &e) { return e.id == b.entry; });
+  if (rowA != history_.end() && rowB != history_.end()) {
+    std::swap(rowA->id, rowB->id);
+    std::swap(a.entry, b.entry);
+    std::iter_swap(rowA, rowB);
+    saveHistory();
+  }
+  std::swap(a, b);
+}
+void Application::unqueue(size_t index) {
+  if (index >= installQueue_.size())
+    return;
+  const auto gone = installQueue_[index];
+  installQueue_.erase(installQueue_.begin() + long(index));
+  history::end(history_, gone.entry, history::Outcome::Cancelled, "", int64_t(std::time(nullptr)));
+  saveHistory();
+  downloadsRow_ = std::min(downloadsRow_, int(installQueue_.size()));
+  message(trf("Took {0} off the queue.", {gone.name}));
 }
 Error Application::launchQueued() {
   if (installer_.running() || installQueue_.empty())
@@ -1804,11 +1877,7 @@ Error Application::launchQueued() {
   if (auto error = installer_.start(files, next.name, next.icon, next.target,
                                     session_ ? session_->server() : Server{}, state_)) {
     // It cannot start (no room, firmware): the rest of its pick goes too.
-    if (row != history_.end()) {
-      row->outcome = history::Outcome::Failed;
-      row->error = error.message;
-      row->at = int64_t(std::time(nullptr));
-    }
+    history::end(history_, next.entry, history::Outcome::Failed, error.message, int64_t(std::time(nullptr)));
     dropGroup(next.group, error.message);
     return error;
   }
