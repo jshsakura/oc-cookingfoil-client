@@ -1,5 +1,6 @@
 #include "Test.hpp"
 #include "install/Installer.hpp"
+#include <algorithm>
 int runInstallerTests() {
   int failures = 0;
   foil::Item item;
@@ -67,6 +68,27 @@ int runInstallerTests() {
     installer.setPaused(false);
     CHECK(!installer.paused());
     CHECK(installer.progress().phase == "다운로드하고 있습니다.");
+  }
+  {
+    // The speed shown is the last ten seconds' average: bursts and stalls
+    // second to second leave it (and the time left) steady.
+    constexpr uint64_t MiB = 1 << 20;
+    foil::install::SpeedWindow window;
+    CHECK(window.add(0, 0) == 0);
+    CHECK(window.add(1, 30 * MiB) == 0); // too soon to say
+    uint64_t bytes = 30 * MiB;
+    double low = 1e9, high = 0;
+    for (int second = 2; second <= 30; ++second) {
+      bytes += (second % 2 ? 30 : 10) * MiB; // 30 MB, then 10 MB, ...
+      const double speed = window.add(second, bytes);
+      if (second >= 12) {
+        low = std::min(low, speed);
+        high = std::max(high, speed);
+      }
+    }
+    CHECK(low > 18 && high < 22);
+    window.reset();
+    CHECK(window.add(31, bytes) == 0);
   }
   return failures;
 }

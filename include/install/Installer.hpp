@@ -2,6 +2,7 @@
 #include "core/State.hpp"
 #include "core/I18n.hpp"
 #include <atomic>
+#include <deque>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -24,6 +25,17 @@ int compareVersions(const std::string &a, const std::string &b);
 // The highest firmware the files need when the console is older, else "".
 // Unknown versions on either side never block.
 std::string missingFirmware(const std::vector<Item> &files, const std::string &console);
+// The speed shown: bytes over the last ten seconds, so it and the time left
+// hold steady instead of following every burst and stall.
+class SpeedWindow {
+public:
+  // Bytes so far at `seconds`; MB/s, or 0 until two seconds are seen.
+  double add(double seconds, uint64_t bytes);
+  void reset() { samples_.clear(); }
+
+private:
+  std::deque<std::pair<double, uint64_t>> samples_;
+};
 class Installer {
 public:
   ~Installer();
@@ -57,6 +69,7 @@ private:
   Progress progress_;
   uint64_t completed_ = 0;
   std::map<std::string, uint64_t> contents_;
+  SpeedWindow speed_;
 };
 void nativeInstall(const Item &item, const std::string &target,
                    const std::vector<std::string> &headers);

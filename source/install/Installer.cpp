@@ -120,10 +120,24 @@ Error Installer::start(std::vector<Item> files, std::string name,
       progress_.total += f.size;
     completed_ = 0;
     contents_.clear();
+    speed_.reset();
   }
   thread_ = std::thread(&Installer::run, this, std::move(files),
                         std::move(server), std::move(state));
   return {};
+}
+double SpeedWindow::add(double seconds, uint64_t bytes) {
+  constexpr double Span = 10, Least = 2, Step = 0.25;
+  if (!samples_.empty() && bytes < samples_.back().second)
+    samples_.clear();
+  if (samples_.empty() || seconds - samples_.back().first >= Step)
+    samples_.push_back({seconds, bytes});
+  while (samples_.size() > 2 && seconds - samples_[1].first >= Span)
+    samples_.pop_front();
+  const double span = seconds - samples_.front().first;
+  if (span < Least)
+    return 0;
+  return double(bytes - samples_.front().second) / span / (1024 * 1024);
 }
 void Installer::setPaused(bool paused) {
   pause_ = paused;
@@ -131,6 +145,7 @@ void Installer::setPaused(bool paused) {
   if (progress_.status != Status::Running)
     return;
   progress_.speed = 0;
+  speed_.reset();
   progress_.phase = paused ? tr("일시정지했습니다.") : tr("다운로드하고 있습니다.");
 }
 void Installer::phase(const std::string &text) {
@@ -152,7 +167,10 @@ void Installer::bytes(const std::string &content, uint64_t received,
   for (const auto &entry : contents_)
     total += entry.second;
   progress_.received = std::min(progress_.total, total);
-  progress_.speed = speed;
+  const double seconds =
+      std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+  const double steady = speed_.add(seconds, progress_.received);
+  progress_.speed = steady > 0 ? steady : speed;
   progress_.percent =
       progress_.total
           ? std::min(99., 100. * progress_.received / progress_.total)
