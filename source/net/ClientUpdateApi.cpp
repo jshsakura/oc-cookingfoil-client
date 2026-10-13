@@ -1,6 +1,7 @@
 #include "net/ClientUpdateApi.hpp"
 #include "core/I18n.hpp"
 #include "core/Json.hpp"
+#include "core/Version.hpp"
 #include "net/Api.hpp"
 #include "net/DropboxUtil.hpp"
 #include "net/Ranged.hpp"
@@ -57,5 +58,23 @@ bool installClient(const Server &server, const State &state, const update::Relea
   std::error_code ec;
   std::filesystem::remove(partInfoPath(part), ec);
   return true;
+}
+bool sendBugReport(const Server &server, const State &state, const std::string &log, Error &error,
+                   const std::atomic<bool> *cancel) {
+  const auto url = server.url + "/api/client/log";
+  auto headers = authHeaders(server, state, url);
+  headers.push_back("Content-Type: text/plain; charset=utf-8");
+  headers.push_back("X-Log-Reason: bug%20report");
+  headers.push_back(std::string("Version: ") + COOKINGFOIL_VERSION);
+  PostOptions options;
+  options.body = log;
+  options.timeout = 30;
+  const auto response = post(url, headers, options, cancel);
+  if (!response.error.empty()) error.message = response.error;
+  else if (response.status == 404) error.message = tr("The server does not take bug reports.");
+  else if (response.status == 429) error.message = tr("Sent a lot just now. Try again in a minute.");
+  else if (response.status < 200 || response.status >= 300)
+    error.message = trf("Could not send the bug report. HTTP {0}", {std::to_string(response.status)});
+  return !error;
 }
 } // namespace foil::net

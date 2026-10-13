@@ -134,6 +134,11 @@ void Application::settings() {
   note(6, !state_.makeShortcuts            ? tr("Not made")
           : platform::canMakeShortcuts() ? tr("Creates a shortcut when a retro game or homebrew app downloads")
                                          : tr("Only for items the server has a shortcut for"));
+  // The log's tail to the server, only when pressed: what went wrong reaches
+  // whoever runs it.
+  option(7, 33, tr("Send a bug report"),
+         bugWorker_.joinable() ? std::string(tr("Sending")) : bugStatus_.empty() ? std::string(tr("Sends the end of the app's log to your server")) : bugStatus_,
+         Secondary, false);
   // Leftover cleanup: content no installed game uses, found first and only
   // deleted after a confirmation.
   option(3, 14, tr("Clean up leftovers"),

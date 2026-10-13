@@ -59,6 +59,8 @@ Application::~Application() {
     retroWorker_.join();
   if (retroListWorker_.joinable())
     retroListWorker_.join();
+  if (bugWorker_.joinable())
+    bugWorker_.join();
   if (updateWorker_.joinable())
     updateWorker_.join();
   if (homebrewWorker_.joinable())
@@ -989,6 +991,24 @@ void Application::action(Action a) {
     patchAction(a);
     return;
   }
+  if (bugAsk_) {
+    // A sends (the log goes with it), Y writes what happened, B closes.
+    if (a == Action::Accept && settled()) {
+      bugAsk_ = false;
+      sendBugReport(bugMessage_);
+    }
+    if (a == Action::Queue) {
+      TextRequest request;
+      request.guide = tr("What went wrong?");
+      request.initial = bugMessage_;
+      request.maxLength = 300;
+      textRequest_ = request;
+      textField_ = -1;
+      bugMessageField_ = true;
+    }
+    if (a == Action::Back) bugAsk_ = false;
+    return;
+  }
   if (unqueueAsk_ >= 0) {
     // A takes it off (once the popup has settled), B keeps it.
     if (a == Action::Accept && settled()) {
@@ -1244,6 +1264,11 @@ void Application::action(Action a) {
       case 4: toggleInstallCheck(state_.skipSignatureCheck); break;
       case 5: toggleInstallCheck(state_.skipFirmwareCheck); break;
       case 6: toggleInstallCheck(state_.makeShortcuts); break;
+      case 7:
+        bugAsk_ = true;
+        bugMessage_.clear();
+        dialogFocus_ = 0;
+        break;
       default:
         // A server opens its form; "+ 서버 추가" an empty one.
         openServerForm(selected_ < int(config_.servers.size()) ? std::max(0, selected_) : -1);

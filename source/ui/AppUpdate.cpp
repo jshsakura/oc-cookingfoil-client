@@ -96,7 +96,33 @@ void Application::installAppUpdate() {
     updateDone_ = true;
   });
 }
+void Application::sendBugReport(const std::string &said) {
+  if (bugWorker_.joinable()) return;
+  if (!session_ || !connected_) {
+    message(tr("Connect to a server to send a bug report."));
+    return;
+  }
+  logLine("bug report sent by the player");
+  const auto server = session_->server();
+  const auto state = state_;
+  // The server takes 64 KB at most; the end of the log is what tells.
+  // What the player wrote comes first, then the log.
+  const auto note = said.empty() ? std::string() : "message: " + said + "\n\n";
+  const auto log = note + logTail(60 * 1024 - std::min<size_t>(note.size(), 8 * 1024));
+  bugWorker_ = std::thread([this, server, state, log] {
+    Error error;
+    bool ok = false;
+    guarded("bug report", [&] { ok = net::sendBugReport(server, state, log, error, &stop_); });
+    incomingBugStatus_ = ok ? std::string(tr("Sent. Thank you.")) : error.message;
+    bugDone_ = true;
+  });
+}
 void Application::pollLog() {
+  if (bugDone_.exchange(false)) {
+    bugWorker_.join();
+    bugStatus_ = incomingBugStatus_;
+    message(bugStatus_);
+  }
   // An error popup that just appeared goes into the log on the card.
   if (!alert_.empty() && alert_ != lastAlert_) {
     lastAlert_ = alert_;

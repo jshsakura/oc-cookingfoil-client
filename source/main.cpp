@@ -202,7 +202,7 @@ int main(int argc, char **argv) {
         ui.render();
         // One line a minute; logLine appends used/total memory, so a slow leak
         // shows up in log.txt before it becomes a crash.
-        constexpr uint32_t HeartbeatMs = 60000;
+        constexpr uint32_t HeartbeatMs = 5 * 60000; // a frozen app shows as a gap
         if (SDL_GetTicks() - heartbeatAt >= HeartbeatMs) {
           heartbeatAt = SDL_GetTicks();
           foil::logLine(std::string("heartbeat ") + foil::ui::screenLabel(ui.current()));

@@ -265,7 +265,7 @@ public:
   void saveOwnState();
   // 설정's options card: 언어, 기본 저장 위치, 앱 업데이트, 남은 파일 정리,
   // then the switches: 서명 검사, 펌웨어 검사, 홈 메뉴 바로가기, 오류 로그 전송.
-  static constexpr int SettingsOptions = 7;
+  static constexpr int SettingsOptions = 8;
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).
@@ -686,6 +686,13 @@ private:
   // 설정 > 오류 기록 보내기, and on its own whenever an error popup shows:
   // the log's tail goes to the server (data/client/logs) to be read there.
   void pollLog();
+  // 설정 > 버그 리포트 보내기: the log's tail to the server, on request.
+  void sendBugReport(const std::string &said);
+  bool bugAsk_ = false, bugMessageField_ = false; // the report's popup, and its note being typed
+  std::string bugMessage_;
+  std::thread bugWorker_;
+  std::atomic<bool> bugDone_{false};
+  std::string bugStatus_, incomingBugStatus_;
   std::string lastAlert_; // the alert already written to the log
   void checkAppUpdate();
   void installAppUpdate();

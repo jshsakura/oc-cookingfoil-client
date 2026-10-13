@@ -65,6 +65,10 @@ void Application::askServerField(int field) {
   pairMessageField_ = false;
 }
 void Application::enterText(const std::string &text) {
+  if (std::exchange(bugMessageField_, false)) {
+    bugMessage_ = text;
+    return;
+  }
   if (std::exchange(pairMessageField_, false)) {
     setPairMessage(text);
     return;
