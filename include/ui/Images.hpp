@@ -9,6 +9,10 @@
 #include <thread>
 #include <vector>
 namespace foil::ui {
+// Keeps a picture cache folder under `limit` bytes, oldest files first.
+// Each file is looked at once; nothing is sorted when the folder is under
+// the limit. Stops early when `stop` turns true.
+void trimImageCache(const std::string &folder, uint64_t limit, const std::atomic<bool> *stop = nullptr);
 class Images {
 public:
   explicit Images(SDL_Renderer *renderer);

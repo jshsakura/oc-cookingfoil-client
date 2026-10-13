@@ -6,12 +6,36 @@
 #include "ui/Application.hpp"
 #include "ui/Images.hpp"
 #include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <filesystem>
 #include <thread>
 #include <unistd.h>
 int runUiTests(SDL_Renderer *renderer) {
   int failures = 0;
+  {
+    // The picture cache folder keeps the newest files under the limit and
+    // leaves other files alone.
+    const auto folder = std::filesystem::temp_directory_path() / "cookingfoil-trim-test";
+    std::filesystem::remove_all(folder);
+    std::filesystem::create_directories(folder);
+    const auto now = std::filesystem::file_time_type::clock::now();
+    for (int i = 0; i < 5; ++i) {
+      const auto path = folder / ("p" + std::to_string(i) + ".image");
+      std::ofstream(path) << std::string(1000, 'x');
+      std::filesystem::last_write_time(path, now - std::chrono::hours(10 - i));
+    }
+    std::ofstream(folder / "note.txt") << std::string(5000, 'x');
+    foil::ui::trimImageCache(folder.string(), 2500);
+    CHECK(!std::filesystem::exists(folder / "p0.image"));
+    CHECK(!std::filesystem::exists(folder / "p2.image"));
+    CHECK(std::filesystem::exists(folder / "p3.image"));
+    CHECK(std::filesystem::exists(folder / "p4.image"));
+    CHECK(std::filesystem::exists(folder / "note.txt"));
+    foil::ui::trimImageCache(folder.string(), 1ull << 30);
+    CHECK(std::filesystem::exists(folder / "p3.image"));
+    std::filesystem::remove_all(folder);
+  }
   {
     // A picture loaded ahead (the next banner slide) is asked for but not
     // drawn. It must stay decoded while a full screen of others is drawn,

@@ -12,6 +12,7 @@ namespace {
 constexpr int MaxImageSide = 1280;
 constexpr int Workers = 4;
 constexpr size_t MaxQueuedJobs = 64;
+constexpr uint64_t MaxCacheBytes = 64ull << 20; // pictures kept on the SD card
 constexpr int MaxAttempts = 3; // then it stays blank until the list is refreshed
 constexpr uint32_t RetryAfterMs = 10000;
 // Large art is kept at screen size; a 4K banner would otherwise hold 64MB.
@@ -37,6 +38,52 @@ std::string hash(const std::string &text) {
   return out.str();
 }
 } // namespace
+namespace {
+// The cache folder's cleanup thread; stopped and joined when the app ends.
+struct CacheCleanup {
+  std::thread thread;
+  std::atomic<bool> stop{false};
+  ~CacheCleanup() {
+    stop = true;
+    if (thread.joinable())
+      thread.join();
+  }
+};
+CacheCleanup &cacheCleanup() {
+  static CacheCleanup cleanup;
+  return cleanup;
+}
+} // namespace
+void trimImageCache(const std::string &folder, uint64_t limit, const std::atomic<bool> *stop) {
+  struct File {
+    std::filesystem::file_time_type at;
+    uint64_t size;
+    std::filesystem::path path;
+  };
+  std::vector<File> files;
+  uint64_t bytes = 0;
+  std::error_code error;
+  for (std::filesystem::directory_iterator it(folder, error), end; !error && it != end; it.increment(error)) {
+    if (stop && *stop)
+      return;
+    if (!it->is_regular_file(error) || it->path().extension() != ".image")
+      continue;
+    const uint64_t size = it->file_size(error);
+    if (error)
+      continue;
+    files.push_back({it->last_write_time(error), size, it->path()});
+    bytes += size;
+  }
+  if (bytes <= limit)
+    return;
+  std::sort(files.begin(), files.end(), [](const File &a, const File &b) { return a.at < b.at; });
+  for (const auto &file : files) {
+    if (bytes <= limit || (stop && *stop))
+      break;
+    if (std::filesystem::remove(file.path, error))
+      bytes -= std::min(bytes, file.size);
+  }
+}
 Images::Images(SDL_Renderer *renderer) : renderer_(renderer) {
   int w, h;
   SDL_GetRendererOutputSize(renderer, &w, &h);
@@ -62,27 +109,13 @@ void Images::source(Server server, State state, std::string cache,
   cache_ = std::move(cache);
   fixture_ = std::move(fixture);
   if (!cache_.empty()) {
-    std::error_code error;
     makeDirectories(std::filesystem::path(cache_).string());
-    std::vector<std::filesystem::directory_entry> files;
-    uint64_t bytes = 0;
-    for (std::filesystem::directory_iterator it(cache_, error), end;
-         !error && it != end; it.increment(error))
-      if (it->is_regular_file(error) && it->path().extension() == ".image") {
-        files.push_back(*it);
-        bytes += it->file_size(error);
-      }
-    // Non-throwing overloads: a file vanishing mid-scan must not abort the app.
-    std::sort(files.begin(), files.end(), [](const auto &a, const auto &b) {
-      std::error_code ignored;
-      return a.last_write_time(ignored) < b.last_write_time(ignored);
-    });
-    for (const auto &file : files) {
-      if (bytes <= 64 * 1024 * 1024)
-        break;
-      bytes -= std::min<uint64_t>(bytes, file.file_size(error));
-      std::filesystem::remove(file.path(), error);
-    }
+    // Once per run, in the background: on a full SD card the scan took up
+    // to six seconds and ran again with every server read at startup. It
+    // belongs to the run, not to this instance, which a server read replaces.
+    auto &cleanup = cacheCleanup();
+    if (!cleanup.thread.joinable())
+      cleanup.thread = std::thread([folder = cache_] { trimImageCache(folder, MaxCacheBytes, &cacheCleanup().stop); });
   }
   for (int i = 0; i < Workers; ++i)
     threads_.emplace_back(&Images::worker, this);
