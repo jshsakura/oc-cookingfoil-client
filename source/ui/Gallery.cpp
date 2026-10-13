@@ -15,10 +15,21 @@ void Application::gallery() {
   if (images_->failed(url)) {
     paint_.fonts.text(tr("사진을 불러오지 못했습니다. 잠시 뒤 다시 시도합니다."), 40, 330, 22, Surface);
   } else if (!images_->loaded(url)) {
-    paint_.rect(40, 78, 1200, 558, {28, 28, 34, 255}, 10);
-    paint_.skeleton(40, 78, 1200, 558, 10);
+    // Until the large photo arrives, the small one the detail page already
+    // holds stands in, so a turn never flashes a light loading box over
+    // the dark backdrop.
+    const auto small = thumbnailUrl(detail_.screenshots[screenshot_]);
+    if (images_->loaded(small))
+      images_->draw(small, 40, 78, 1200, 558, 10, false, true);
+    else
+      paint_.rect(40, 78, 1200, 558, {28, 28, 34, 255}, 10);
   }
   images_->draw(url, 40, 78, 1200, 558, 10, false, true);
+  // The photos either side load in the background, so the next turn is instant.
+  const size_t count = detail_.screenshots.size();
+  if (count > 1)
+    for (const size_t n : {(screenshot_ + 1) % count, (screenshot_ + count - 1) % count})
+      images_->request(thumbnailUrl(detail_.screenshots[n], "xl"));
   // Page dots under the photo: the current one long and butter.
   if (detail_.screenshots.size() > 1) {
     constexpr float Dot = 8, Gap = 10, Active = 26;
