@@ -48,6 +48,8 @@ private:
 };
 // The time left as a clock shows it: from a speed that follows slowly
 // (four parts the old, one the new, once a second), counting down between.
+// A moment with nothing arriving does not pull the speed down; after four
+// seconds of it the time left is unknown again.
 class TimeLeft {
 public:
   // Seconds, or negative while there is no speed to tell it by.
@@ -55,7 +57,7 @@ public:
   void reset() { *this = TimeLeft(); }
 
 private:
-  double speed_ = 0, left_ = -1, at_ = -1;
+  double speed_ = 0, left_ = -1, at_ = -1, stalled_ = -1;
 };
 // "약 42초 남음", "약 3분 20초 남음", "약 25분 남음", "약 1시간 25분 남음".
 std::string timeLeftText(double seconds);

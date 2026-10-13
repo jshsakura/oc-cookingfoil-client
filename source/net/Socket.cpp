@@ -7,8 +7,11 @@ namespace foil::net {
 namespace {
 std::atomic<int> window{0};
 std::atomic<bool> logged{false};
+std::atomic<uint64_t> received{0};
 } // namespace
 void setReceiveWindow(int bytes) { window = bytes; }
+void countReceived(size_t bytes) { received.fetch_add(bytes, std::memory_order_relaxed); }
+uint64_t receivedBytes() { return received.load(std::memory_order_relaxed); }
 int receiveWindow() { return window; }
 int tuneSocket(void *, int socket, int) {
   const int wanted = window;

@@ -44,18 +44,20 @@ static void openTextKeyboard(foil::ui::Application &ui, const foil::ui::Applicat
 }
 int main(int argc, char **argv) {
   // TCP receive windows far above libnx's defaults (64 KB growing to 256 KB).
-  // One connection carries at most its window per round trip: 256 KB over the
-  // 0.25 s to a distant Cloudflare edge is about 1 MB/s, what players outside
-  // saw. 16 MB as an application (about 64 MB/s a connection), 4 MB from the
-  // album. The transfer memory is sb_efficiency times the buffers, taken from
-  // the heap: about 66 MB of an application's gigabytes, about 9 MB from the
-  // album with two buffers (downloads use one connection).
+  // One connection carries at most its window per round trip, about 0.25 s
+  // to a distant Cloudflare edge. The system grants a socket no more than
+  // tcp_rx_buf_size whatever it asks (16 MB asked, 1 MB granted: about
+  // 2 MB/s a connection outside), so that size is the window: 4 MB as an
+  // application (about 16 MB/s a connection), 1 MB from the album. The
+  // transfer memory is sb_efficiency times the largest buffers, taken from
+  // the heap: about 66 MB of an application's gigabytes, about 9 MB from
+  // the album.
   SocketInitConfig sockets = *socketGetDefaultInitConfig();
   const bool application = appletGetAppletType() == AppletType_Application;
-  sockets.tcp_rx_buf_size = application ? 0x100000 : 0x40000;
+  sockets.tcp_rx_buf_size = application ? 0x400000 : 0x100000;
   sockets.tcp_rx_buf_max_size = application ? 0x1000000 : 0x400000;
   sockets.sb_efficiency = application ? 4 : 2;
-  foil::net::setReceiveWindow(int(sockets.tcp_rx_buf_max_size));
+  foil::net::setReceiveWindow(int(sockets.tcp_rx_buf_size));
   if (R_FAILED(socketInitialize(&sockets)))
     return 1;
   const bool nifm = R_SUCCEEDED(nifmInitialize(NifmServiceType_User));

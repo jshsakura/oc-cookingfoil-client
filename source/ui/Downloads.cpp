@@ -1,4 +1,5 @@
 #include "ui/Application.hpp"
+#include "net/Socket.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -31,27 +32,27 @@ void Application::downloads() {
   const auto target = p.target == "nand" ? tr("Console") : tr("SD card");
   if (p.status == install::Status::Idle) {
     // A retro game or RetroArch can run with no install beside it.
-    float y = 82;
+    float y = 90;
     if (retroDownloading()) y += retroDownloadCard(y) + 30;
     if (patchDownloading()) patchDownloadCard(y);
     else if (!retroDownloading()) notice(tr("Nothing is downloading."), tr("Pick items on a game's page, then press A to install."), 4);
     return;
   }
   if (p.status == install::Status::Running)
-    paint_.ring(260, 82, 992, 180, 20);
-  paint_.rect(260, 82, 992, 180, Surface, 20);
-  cover(p.icon, 284, 104, 112, false, p.name);
-  paint_.fonts.text(p.name, 418, 104, 26, Ink, true, 680);
+    paint_.ring(260, 90, 992, 180, 20);
+  paint_.rect(260, 90, 992, 180, Surface, 20);
+  cover(p.icon, 284, 112, 112, false, p.name);
+  paint_.fonts.text(p.name, 418, 112, 26, Ink, true, 680);
   const auto percent = std::to_string(int(std::round(p.percent))) + "%";
   paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 26, true),
-                    106, 26, Ink, true);
-  paint_.rect(418, 146, 810, 14, Line, 7);
+                    114, 26, Ink, true);
+  paint_.rect(418, 154, 810, 14, Line, 7);
   const auto filled = 810 * std::clamp(p.percent, 0., 100.) / 100.;
   const bool paused = p.status == install::Status::Running && installer_.paused();
-  paint_.rect(418, 146, filled, 14,
+  paint_.rect(418, 154, filled, 14,
               p.status == install::Status::Succeeded ? Okay : paused ? Secondary : Butter, 7);
   if (filled > 0 && filled < 810)
-    paint_.rect(418 + filled - 1, 146, 2, 14, Ink);
+    paint_.rect(418 + filled - 1, 154, 2, 14, Ink);
   std::string status = p.phase;
   const double now = SDL_GetTicks() / 1000.;
   // Away from this screen for a while: start the count again.
@@ -61,7 +62,7 @@ void Application::downloads() {
   }
   downloadSeen_ = now;
   if (p.status == install::Status::Running && !paused) {
-    downloadSpeed_.add(now, p.received);
+    downloadSpeed_.add(now, net::receivedBytes());
     const double steady = downloadSpeed_.speed(now);
     const double shown = steady >= 0 ? steady : p.speed;
     if (shown > 0 || steady >= 0) {
@@ -75,7 +76,7 @@ void Application::downloads() {
     downloadSpeed_.reset();
     timeLeft_.reset();
   }
-  paint_.fonts.text(status, 418, 173, 18, Secondary, false, 810);
+  paint_.fonts.text(status, 418, 181, 18, Secondary, false, 810);
   float x = 418;
   for (size_t i = 0; i < p.parts.size() && i < 4; ++i) {
     const auto &part = p.parts[i];
@@ -103,12 +104,12 @@ void Application::downloads() {
                        : active ? trf("{0} in progress", {type})
                                 : trf("{0} queued", {type});
     const auto width = paint_.fonts.measure(label, 15, true) + 24;
-    paint_.rect(x, 208, width, 32,
+    paint_.rect(x, 216, width, 32,
                 done     ? SDL_Color{227, 242, 234, 255}
                 : active ? Ink
                          : Ground,
                 8);
-    paint_.fonts.text(label, x + 12, 212, 15,
+    paint_.fonts.text(label, x + 12, 220, 15,
                       done     ? Okay
                       : active ? Surface
                                : Secondary,
@@ -120,12 +121,12 @@ void Application::downloads() {
     const std::string label = paused ? tr("Resume") : tr("Pause");
     const float w = paint_.fonts.measure(label, 16, true) + 32;
     const float bx = 1228 - w;
-    hit(bx, 204, w, 40, [this] { installer_.setPaused(!installer_.paused()); });
-    paint_.rect(bx, 208, w, 32, paused ? Butter : Ground, 8);
-    paint_.fonts.middle(label, bx + 16, 224, 16, Ink, true);
+    hit(bx, 212, w, 40, [this] { installer_.setPaused(!installer_.paused()); });
+    paint_.rect(bx, 216, w, 32, paused ? Butter : Ground, 8);
+    paint_.fonts.middle(label, bx + 16, 232, 16, Ink, true);
   }
   // How it ended, in one strip under the card; 완료 and 실패 keep the rest.
-  int y = 286;
+  int y = 294;
   if (p.status == install::Status::Succeeded || p.status == install::Status::Cancelled ||
       p.status == install::Status::Failed) {
     const bool ok = p.status == install::Status::Succeeded, failed = p.status == install::Status::Failed;

@@ -103,11 +103,17 @@ int runInstallerTests() {
     CHECK(left.update(0, 600 * MiB, 0) < 0); // no speed yet
     const double first = left.update(1, 600 * MiB, 10);
     CHECK(first > 59 && first < 61);
-    // A stall to 0.1 MB/s a second later moves it only a little.
+    // A slow second (0.1 MB/s) moves it only a little.
     const double next = left.update(2, 590 * MiB, 0.1);
     CHECK(next > first - 20 && next < first + 20);
     // Within the same second it holds still.
     CHECK(left.update(2.5, 585 * MiB, 50) == next);
+    // Nothing arriving keeps counting down instead of growing to hours...
+    const double stalled = left.update(4, 580 * MiB, 0);
+    CHECK(stalled > 0 && stalled <= next);
+    // ...and after four seconds of nothing it is unknown again.
+    CHECK(left.update(8, 580 * MiB, 0) < 0);
+    CHECK(left.update(9, 580 * MiB, 10) > 0);
     CHECK(foil::install::timeLeftText(-1) == "남은 시간 계산 중");
     CHECK(foil::install::timeLeftText(42) == "약 42초 남음");
     CHECK(foil::install::timeLeftText(200) == "약 3분 20초 남음");

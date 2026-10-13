@@ -13,6 +13,8 @@
 #include "util/config.hpp"
 #include "util/network_util.hpp"
 #include "net/Segmented.hpp"
+#include "net/Socket.hpp"
+#include <cstdio>
 #include "core/Log.hpp"
 #include "data/buffered_placeholder_writer.hpp"
 #include <curl/curl.h>
@@ -115,7 +117,9 @@ void nativeInstall(const Item &item, const std::string &target,
   current.headers = headers;
   current.application = appletGetAppletType() == AppletType_Application;
   current.connections = foil::net::connectionsFor(item.url, 0);
-  tin::network::SetParallelDownload(current.connections, current.application ? 0x2000000 : 0x400000);
+  // Pieces of 8 MB as an application: the next byte in order is never far
+  // off, so the bar and the card keep moving.
+  tin::network::SetParallelDownload(current.connections, current.application ? 0x800000 : 0x400000);
   // Off in 설정: the required system version is cleared so the console
   // launches the game anyway (it may still fail on firmware that is too old).
   const bool ignoreFirmware = sink && sink->skipFirmwareCheck();
@@ -129,6 +133,23 @@ void nativeInstall(const Item &item, const std::string &target,
   auto path = item.url.substr(0, item.url.find_first_of("?#"));
   for (auto &c : path)
     c = std::tolower(static_cast<unsigned char>(c));
+  // One line in the log per file once it is in: size, time, average speed,
+  // connections, compressed or not.
+  struct Summary {
+    std::string name;
+    int connections;
+    bool compressed;
+    uint64_t bytes = foil::net::receivedBytes(), tick = svcGetSystemTick();
+    ~Summary() {
+      const double seconds = double(svcGetSystemTick() - tick) / 19200000.0;
+      const double mb = double(foil::net::receivedBytes() - bytes) / (1024 * 1024);
+      char line[160];
+      std::snprintf(line, sizeof(line), "download %.0f MB in %.0f s = %.1f MB/s, %d connections, %s: ", mb, seconds,
+                    seconds > 0 ? mb / seconds : 0, connections, compressed ? "compressed" : "plain");
+      logLine(line + name);
+    }
+  } summary{item.name, current.connections,
+            path.size() >= 4 && (path.substr(path.size() - 4) == ".nsz" || path.substr(path.size() - 4) == ".xcz")};
   if (path.size() >= 4 && (path.substr(path.size() - 4) == ".xci" ||
                            path.substr(path.size() - 4) == ".xcz")) {
     auto file = std::make_shared<tin::install::xci::HTTPXCI>(item.url);

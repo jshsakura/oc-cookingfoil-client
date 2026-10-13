@@ -159,9 +159,17 @@ double SpeedWindow::speed(double seconds) {
   return double(sum) / span / (1024 * 1024);
 }
 double TimeLeft::update(double seconds, uint64_t left, double speed) {
+  if (speed <= 0) {
+    if (stalled_ < 0)
+      stalled_ = seconds;
+    if (seconds - stalled_ >= 4)
+      reset();
+    return left_ >= 0 ? std::max(0., left_ - (seconds - at_)) : -1;
+  }
+  stalled_ = -1;
   if (at_ >= 0 && seconds - at_ < 1)
     return left_;
-  speed_ = speed_ > 0 ? (speed_ * 4 + std::max(0., speed)) / 5 : std::max(0., speed);
+  speed_ = speed_ > 0 ? (speed_ * 4 + speed) / 5 : speed;
   const double estimate = speed_ > 0 ? double(left) / (speed_ * 1024 * 1024) : -1;
   if (estimate < 0 || left_ < 0)
     left_ = estimate;

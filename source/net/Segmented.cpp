@@ -217,6 +217,7 @@ size_t onBody(char *data, size_t size, size_t count, void *user) {
   const uint64_t room = c.stop > c.pos ? c.stop - c.pos : 0;
   const size_t take = size_t(std::min<uint64_t>(room, n));
   c.pending.insert(c.pending.end(), data, data + take);
+  countReceived(take);
   c.pos += take;
   {
     std::lock_guard<std::mutex> held(s.planLock);
