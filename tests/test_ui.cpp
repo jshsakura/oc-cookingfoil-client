@@ -483,8 +483,8 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(form.open());
     CHECK(form.current() == foil::ui::Screen::Settings);
     form.render();
-    // One server row, then "+ 서버 추가" under it.
-    form.touch(700, 86 + 61 + 16 + 16 + 26);
+    // One server card, then "+ 서버 추가" under it, both 52 tall with a 12 gap.
+    form.touch(700, 86 + 52 + 12 + 26);
     CHECK(form.serverFormOpen());
     CHECK(!form.takeTextRequest());
     // Y with no address stays in the form and writes nothing.

@@ -786,34 +786,49 @@ void Application::patchesScreen() {
 }
 // A game's patches, one row each; A opens the chosen one's menu.
 void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame &game) {
-  constexpr float Width = 760, Row = 76, Gap = 8;
-  constexpr int Visible = 5;
+  // Laid out like a single patch's 상세 정보: the game beside its icon, then
+  // one row per patch with its name, its kinds as pills, its state and size.
+  constexpr float Width = 760, Row = 76, Gap = 8, Icon = 64;
+  constexpr int Visible = 4;
   const int count = int(game.rows.size()), shown = std::min(count, Visible);
-  const auto body = modal(Width, 16 + shown * (Row + Gap) + 8, game.game, tr("닫기"), "", "", 32);
-  const float x = body.x + 24, w = body.w - 48;
+  const float textW = Width - 64 - Icon - 20;
+  const float gameH = paint_.fonts.wrapped(game.game, -10000, -10000, 16, Secondary, textW, 2);
+  const float head = std::max(Icon, gameH + 4 + 24);
+  const auto body = modal(Width, 24 + head + 16 + shown * (Row + Gap) - Gap + 24, tr("상세 정보"), tr("닫기"), "", "", 32);
+  const float x = body.x + 32, w = body.w - 64;
+  cover(game.icon, x, body.y + 24, int(Icon), false, game.game, game.app);
+  paint_.fonts.wrapped(game.game, x + Icon + 20, body.y + 24, 16, Secondary, textW, 2);
+  paint_.fonts.text(trf("패치 {0}개", {std::to_string(count)}), x + Icon + 20, body.y + 24 + gameH + 4, 18, Ink, true);
+  const float listTop = body.y + 24 + head + 16;
   const int first = std::clamp(patchPickRow_ - Visible / 2, 0, std::max(0, count - Visible));
   for (int n = first; n < count && n < first + Visible; ++n) {
     const auto &row = rows[game.rows[n]];
-    const float y = body.y + 16 + (n - first) * (Row + Gap);
+    const float y = listTop + (n - first) * (Row + Gap);
     hit(x, y, w, Row, [this, n] {
       patchPickRow_ = n;
       action(Action::Accept);
     });
-    if (n == patchPickRow_ && !managingPatch_ && !confirmPatchRemove_)
-      paint_.focusRow(x, y, w, Row, Ground, 12);
-    else
-      paint_.rect(x, y, w, Row, Ground, 12);
-    if (n == patchPickRow_ && !managingPatch_ && !confirmPatchRemove_) marquee(row.patch.name, x + 20, y + 10, 21, w - 220);
-    else paint_.fonts.text(row.patch.name, x + 20, y + 10, 21, Ink, true, w - 220);
+    const bool focused = n == patchPickRow_ && !managingPatch_ && !confirmPatchRemove_;
+    if (focused) paint_.focusRow(x, y, w, Row, Ground, 12);
+    else paint_.rect(x, y, w, Row, Ground, 12);
+    const float nameW = w - 200;
+    if (focused) marquee(row.patch.name, x + 20, y + 12, 18, nameW);
+    else paint_.fonts.text(row.patch.name, x + 20, y + 12, 18, Ink, true, nameW);
+    float at = x + 20;
+    for (const auto &kind : row.patch.kinds) {
+      const std::string label = patchKindLabel(kind);
+      if (at + paint_.fonts.measure(label, 15, true) + 18 > x + 20 + nameW) break;
+      at += paint_.pill(label, at, y + 40) + 6;
+    }
     std::string meta;
     if (!row.patch.version.empty()) meta = "v" + row.patch.version;
-    for (const auto &kind : row.patch.kinds) meta += (meta.empty() ? "" : " · ") + std::string(patchKindLabel(kind));
     if (!row.onServer) meta += (meta.empty() ? "" : " · ") + std::string(tr("서버에서 사라짐"));
     if (row.record && !row.record->shadowed.empty())
       meta += (meta.empty() ? "" : " · ") + std::string(tr("다른 패치에 일부 가려짐"));
     if (const char *note = healthNote(patchHealth_, row))
       meta += (meta.empty() ? "" : " · ") + std::string(note);
-    paint_.fonts.text(meta, x + 20, y + 42, 17, Secondary, false, w - 220);
+    if (!meta.empty() && at < x + 20 + nameW)
+      paint_.fonts.middle(meta, at + (at > x + 20 ? 6 : 0), y + 53, 15, Secondary, false, x + 20 + nameW - at);
     const bool busy = patchBusy_ == row.patch.id && !row.patch.id.empty();
     const bool update = updateAvailable(row);
     const std::string state = busy ? tr(patchBusyLabel_.c_str())
@@ -821,9 +836,9 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
                               : update ? tr("업데이트|항목")
                               : row.record->on ? tr("켜짐") : tr("꺼짐");
     const bool lit = row.record && row.record->on && !busy && !update;
-    const float sw = paint_.fonts.measure(state, 16, true) + 20;
-    paint_.rect(x + w - 16 - sw, y + 10, sw, 28, busy || update ? Butter : lit ? Good : Surface, 8);
-    paint_.fonts.middle(state, x + w - 16 - sw + 10, y + 24, 16, lit ? Surface : Ink, true);
+    const float sw = paint_.fonts.measure(state, 15, true) + 20;
+    paint_.rect(x + w - 16 - sw, y + 10, sw, 26, busy || update ? Butter : lit ? Good : Surface, 8);
+    paint_.fonts.middle(state, x + w - 16 - sw + 10, y + 23, 15, lit ? Surface : Ink, true);
     const auto size = formatBytes(row.record ? row.record->bytes : row.patch.size);
     paint_.fonts.text(size, x + w - 16 - paint_.fonts.measure(size, 17, true), y + 44, 17, Ink, true);
   }

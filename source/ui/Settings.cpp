@@ -6,16 +6,18 @@ void Application::settings() {
   // Full-width cards that scroll as one page between the header and the
   // footer, so any number of servers and options fit.
   constexpr float Left = 260, Width = 992, Inner = Left + 22, Right = Left + Width - 22;
-  constexpr float ViewTop = 86, ViewBottom = 650, ServerRow = 61, Row = 46;
+  constexpr float ViewTop = 86, ViewBottom = 650, Row = 46;
+  // Each server is a card of its own, like "+ 서버 추가" below them, so the
+  // cursor rings the card the same way on both.
+  constexpr float ServerCard = 52, ServerStep = ServerCard + 12;
   pageTitle(tr("설정"));
   const int count = int(config_.servers.size());
   // Where each part sits before scrolling.
-  const float cardHeight = std::max(1, count) * ServerRow + 16;
-  const float addTop = ViewTop + cardHeight + 16;
+  const float addTop = ViewTop + std::max(1, count) * ServerStep;
   const float optionsTop = addTop + 52 + 12, optionsHeight = SettingsOptions * Row + 16;
   const float contentBottom = optionsTop + optionsHeight + (error_ ? 40 : 0);
   // The cursor's row stays in view.
-  const float focusTop = selected_ < count ? 102 + selected_ * ServerRow - 3
+  const float focusTop = selected_ < count ? ViewTop + selected_ * ServerStep
                        : selected_ == count ? addTop
                                             : optionsTop + 8 + (selected_ - count - 1) * Row;
   const float focusHeight = selected_ < count ? 52 : selected_ == count ? 52 : Row;
@@ -30,21 +32,24 @@ void Application::settings() {
   if (contentBottom > ViewBottom)
     paint_.scrollbar(1266, ViewTop, ViewBottom - ViewTop, settingsScroll_, ViewBottom - ViewTop, contentBottom - ViewTop);
 
-  // Servers: one row each, or the empty line.
-  paint_.rect(Left, ViewTop + oy, Width, cardHeight, Surface, 18);
-  if (!count) paint_.fonts.text(tr("등록된 서버가 없습니다."), Inner, 108 + oy, 20, Secondary);
+  // Servers: a card each, or one with the empty line.
+  if (!count) {
+    paint_.rect(Left, ViewTop + oy, Width, ServerCard, Surface, 12);
+    paint_.fonts.middle(tr("등록된 서버가 없습니다."), Inner, ViewTop + oy + ServerCard / 2, 20, Secondary);
+  }
   for (int i = 0; i < count; ++i) {
-    const float y = 102 + i * ServerRow + oy;
-    if (shown(y - 3, 52))
-      hit(Left + 14, y - 3, Width - 28, 52, [this, i] {
+    const float top = ViewTop + i * ServerStep + oy, mid = top + ServerCard / 2;
+    if (shown(top, ServerCard))
+      hit(Left, top, Width, ServerCard, [this, i] {
         sidebar_ = false;
         selected_ = i;
         action(Action::Accept);
       });
     const auto &server = config_.servers[i];
-    if (selected_ == i && !sidebar_) paint_.focusRow(Left + 14, y - 3, Width - 28, 52, Ground, 10);
+    if (selected_ == i && !sidebar_) paint_.ring(Left, top, Width, ServerCard, 12);
+    paint_.rect(Left, top, Width, ServerCard, Surface, 12);
     const bool active = size_t(i) == serverIndex_ && connected_;
-    paint_.fonts.middle(server.title, Inner + 27, y + 23, 21, Ink, true, 640);
+    paint_.fonts.middle(server.title, Inner + 27, mid, 21, Ink, true, 640);
     const bool current = size_t(i) == serverIndex_ && session_;
     // The Korean status is a key: statusColor() reads it, tr() draws it.
     const char *status = !server.enabled                         ? "꺼 둠" // i18n: keep
@@ -55,10 +60,8 @@ void Application::settings() {
                         : current && error_                     ? "연결 실패" // i18n: keep
                                                                 : "연결 안 함"; // i18n: keep
     const char *statusText = tr(status);
-    paint_.fonts.middle(statusText, Right - paint_.fonts.measure(statusText, 17), y + 23, 17,
-                        statusColor(status));
-    paint_.rect(Inner, y + 17, 12, 12, statusColor(status), 6);
-    if (i + 1 < count) paint_.rect(Left, y + 54, Width, 1, Line);
+    paint_.fonts.middle(statusText, Right - paint_.fonts.measure(statusText, 17), mid, 17, statusColor(status));
+    paint_.rect(Inner, mid - 6, 12, 12, statusColor(status), 6);
   }
   // "+ 서버 추가" opens the server form, empty.
   if (selected_ == count && !sidebar_) paint_.ring(Left, addTop + oy, Width, 52, 12);
