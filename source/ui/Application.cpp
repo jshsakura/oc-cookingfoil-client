@@ -445,6 +445,8 @@ void Application::connect(size_t index) {
 void Application::refresh() {
   if (!session_ || network_.joinable())
     return;
+  // The approval note may have changed since the session last asked.
+  session_->setPairMessage(pairMessage());
   network_ = std::thread([this] {
     incomingError_ = {};
     const bool ok = guarded("catalog", [this] {
@@ -573,6 +575,7 @@ void Application::poll() {
     state_.makeShortcuts = mine.makeShortcuts;
     state_.selfShortcutAsked = mine.selfShortcutAsked;
     state_.installTarget = mine.installTarget;
+    state_.pairMessages = mine.pairMessages;
   }
   features_ = session_->features();
   // Same server: keep decoded covers; only the access keys may have changed.
@@ -785,6 +788,11 @@ void Application::action(Action a) {
   }
   if (serverForm_) {
     serverFormAction(a);
+    return;
+  }
+  // Y on the approval screen writes a note for the admin.
+  if (pairingPending_ && screen_ != Screen::Settings && a == Action::Queue) {
+    askPairMessage();
     return;
   }
   if (viewPopup_) {
@@ -1494,7 +1502,7 @@ void Application::render() {
     savesScreen();
   SDL_RenderSetClipRect(paint_.renderer, nullptr);
   if (pairingPending_ && screen_ != Screen::Settings)
-    footer({{"B", tr("뒤로")}});
+    footer({{"Y", tr("메시지 입력")}, {"B", tr("뒤로")}});
   else if (!headerFocus_.empty())
     footer({{"A", headerFocus_.rfind("tab", 0) == 0 ? tr("다음 탭") : tr("선택")}, {"B", tr("뒤로")}}); // on a header button
   else if (screen_ == Screen::Library)

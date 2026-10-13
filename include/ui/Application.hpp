@@ -112,7 +112,8 @@ public:
     int maxLength = 256;
   };
   std::optional<TextRequest> takeTextRequest() { return std::exchange(textRequest_, std::nullopt); }
-  // Goes to the field that asked last; nothing happens once its form closed.
+  // Goes to the field that asked last (a server form field or the approval
+  // note); nothing happens once its form closed.
   void enterText(const std::string &text);
   bool requestQuit();
   // Where this .nro runs from (argv[0]); 설정 > 앱 업데이트 replaces it.
@@ -546,6 +547,11 @@ private:
   void updates();
   void installUpdates(bool all);
   void pairing();
+  // The note for the admin on the approval screen: Y asks for it, and a
+  // changed one is saved per server and sent with a new request.
+  std::string pairMessage() const;
+  void askPairMessage();
+  void setPairMessage(const std::string &text);
   static bool patchFilterMatches(PatchFilter filter, const PatchRow &row);
   std::vector<PatchRow> allPatchRows() const;
   // One entry per game, its patches as indices into the rows given, in
@@ -646,6 +652,7 @@ private:
   std::optional<ServerForm> serverForm_;
   std::optional<TextRequest> textRequest_;
   int textField_ = -1; // the form field the keyboard types into
+  bool pairMessageField_ = false; // the keyboard types the approval note
   void openServerForm(int index);
   void serverFormAction(Action a);
   void serverFormDialog();

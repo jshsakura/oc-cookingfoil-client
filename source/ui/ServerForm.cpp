@@ -56,8 +56,13 @@ void Application::askServerField(int field) {
   request.maxLength = lengths[field];
   textRequest_ = request;
   textField_ = field;
+  pairMessageField_ = false;
 }
 void Application::enterText(const std::string &text) {
+  if (std::exchange(pairMessageField_, false)) {
+    setPairMessage(text);
+    return;
+  }
   if (!serverForm_ || textField_ < 0 || textField_ >= ServerFields) return;
   fieldOf(serverForm_->server, textField_) = text;
   serverForm_->error.clear();
