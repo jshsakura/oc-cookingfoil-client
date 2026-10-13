@@ -507,7 +507,7 @@ const Translation rows[] = {
     {"게임 {0} 전용", "Game {0} only", "ゲーム {0} 専用", "仅限游戏 {0}"},
     {"서버에서 사라짐", "Gone from server", "サーバーから削除済み", "已从服务器移除"},
     {"다른 패치에 일부 가려짐", "Partly covered by another patch", "ほかのパッチで一部上書き中", "部分被其他补丁覆盖"},
-    {"설치 안 됨", "Not installed", "未インストール", "未安装"},
+    {"미설치", "Not installed", "未インストール", "未安装"},
     {"꺼짐", "Off", "オフ", "已关闭"},
     // Patches: dialogs
     {"패치를 삭제하시겠습니까?", "Delete this patch?", "パッチを削除しますか?", "要删除此补丁吗?"},

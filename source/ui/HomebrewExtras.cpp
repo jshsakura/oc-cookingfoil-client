@@ -149,7 +149,7 @@ void Application::homebrewExtrasDialog() {
       update = updateAvailable(row);
       lit = row.record && row.record->on && !busy && !update;
       state = busy ? tr(patchBusyLabel_.c_str())
-            : !row.record ? tr("설치 안 됨")
+            : !row.record ? tr("미설치")
             : update ? tr("업데이트|항목")
             : row.record->on ? tr("켜짐") : tr("꺼짐");
       size = row.record ? row.record->bytes : row.patch.size;

@@ -30,14 +30,14 @@ void Application::dialogHints(float right, float y, const std::string &close,
 SDL_FRect Application::modal(float width, float bodyHeight, const std::string &title,
                              const std::string &close, const std::string &apply, const std::string &accept,
                              int icon, const std::string &remove) {
-  constexpr float Header = 72, Footer = 60;
+  constexpr float Header = 60, Footer = 60; // the same band above and below
   const float height = Header + bodyHeight + Footer;
   const float left = (1280 - width) / 2, top = (720 - height) / 2;
   paint_.rect(left, top, width, height, Surface, 20);
   // An icon ahead of the title says what kind of popup this is.
-  const float titleX = left + 32 + (icon >= 0 ? 36 : 0);
-  if (icon >= 0) paint_.icon(icon, left + 32, top + Header / 2 - 13, Ink, 26);
-  paint_.fonts.middle(title, titleX, top + Header / 2, 24, Ink, true, left + width - 32 - titleX);
+  const float titleX = left + 32 + (icon >= 0 ? 34 : 0);
+  if (icon >= 0) paint_.icon(icon, left + 32, top + Header / 2 - 12, Ink, 24);
+  paint_.fonts.middle(title, titleX, top + Header / 2, 22, Ink, true, left + width - 32 - titleX);
   paint_.rect(left, top + Header - 1, width, 1, Line);
   const float footerTop = top + height - Footer;
   paint_.rect(left, footerTop, width, Footer, Ground, 20);

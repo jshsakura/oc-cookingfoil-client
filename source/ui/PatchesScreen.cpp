@@ -766,7 +766,7 @@ void Application::patchesScreen() {
     const std::string state = busy ? tr(patchBusyLabel_.c_str())
                               : update ? tr("업데이트|항목")
                               : on ? tr("켜짐")
-                              : stored ? tr("꺼짐") : tr("설치 안 됨");
+                              : stored ? tr("꺼짐") : tr("미설치");
     const SDL_Color fill = busy || update ? Butter : on ? Good : Line;
     const SDL_Color ink = on && !busy && !update ? Surface : Ink;
     const float w = paint_.fonts.measure(state, 16, true) + 20;
@@ -817,7 +817,7 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
     const bool busy = patchBusy_ == row.patch.id && !row.patch.id.empty();
     const bool update = updateAvailable(row);
     const std::string state = busy ? tr(patchBusyLabel_.c_str())
-                              : !row.record ? tr("설치 안 됨")
+                              : !row.record ? tr("미설치")
                               : update ? tr("업데이트|항목")
                               : row.record->on ? tr("켜짐") : tr("꺼짐");
     const bool lit = row.record && row.record->on && !busy && !update;
@@ -875,7 +875,7 @@ void Application::patchMenu(const PatchRow &row) {
   const float nameH = paint_.fonts.wrapped(row.patch.name, -10000, -10000, 20, Ink, nameW, 2, true);
   const float head = std::max(Icon, gameH + 4 + nameH + 10 + 26);
   const float fixed = 24 + head + 16 + 8 + choices.size() * (ChoiceHeight + ChoiceGap) + 14;
-  const int room = std::max(2, int((720 - 48 - 72 - 60 - fixed) / (17 * 1.3f)));
+  const int room = std::max(2, int((720 - 48 - 60 - 60 - fixed) / (17 * 1.3f)));
   const float describedHeight =
       described ? paint_.fonts.wrapped(row.patch.description, -10000, -10000, 17, Secondary, Width - 64, room) + 10 : 0;
   const float bodyHeight = fixed + describedHeight;

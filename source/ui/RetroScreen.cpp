@@ -679,7 +679,7 @@ void Application::retroList() {
     const float right = 1230;
     const bool busy = retroBusy_ == game.id;
     const bool bezel = retroBezelMissing(game), there = retroInstalled(game) && !bezel;
-    const std::string state = busy ? tr("받는 중") : bezel ? tr("베젤 받기") : there ? tr("설치됨") : tr("설치 안 됨");
+    const std::string state = busy ? tr("받는 중") : bezel ? tr("베젤 받기") : there ? tr("설치됨") : tr("미설치");
     const float w = paint_.fonts.measure(state, 16, true) + 20;
     paint_.rect(right - w, y + 12, w, 28, busy || bezel ? Butter : there ? Good : Line, 8);
     paint_.fonts.middle(state, right - w + 10, y + 26, 16, there && !busy ? Surface : Ink, true);
