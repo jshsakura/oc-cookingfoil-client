@@ -64,6 +64,11 @@ applied as a series rather than checked one by one.
   next one meanwhile, so zstd and AES run while the card is written instead of between writes.
   At most one buffer waits; a write error comes back on the next flush or at close, and close
   waits for the card.
+- Large ranges are fetched like aria2: consecutive chunks on several connections at once
+  (`SetParallelDownload`; the app sets 8 x 4 MB as an application, 4 x 2 MB from the album),
+  handed on strictly in order. A failed chunk is asked for again from where it stopped, up to
+  three times; after that, or on 401/403/404/416, the rest goes on the single stream with its
+  own retries. Every range request shares one handle setup.
 
 ### Limits
 

@@ -94,6 +94,14 @@ void nativeInstall(const Item &item, const std::string &target,
   // Applet mode has a few hundred MB in all, so it gets a small ring.
   tin::data::NUM_BUFFER_SEGMENTS =
       appletGetAppletType() == AppletType_Application ? ApplicationSegments : AppletSegments;
+  // Large files come down on several connections at once (each a 4 MB or
+  // 2 MB piece held until its turn): 8 x 4 MB as an application, 4 x 2 MB
+  // from the album, whose heap is small. A single connection rarely fills a
+  // path with real latency, such as a player outside the server's network.
+  if (appletGetAppletType() == AppletType_Application)
+    tin::network::SetParallelDownload(8, 0x400000);
+  else
+    tin::network::SetParallelDownload(4, 0x200000);
   // Off in 설정: the required system version is cleared so the console
   // launches the game anyway (it may still fail on firmware that is too old).
   const bool ignoreFirmware = sink && sink->skipFirmwareCheck();
