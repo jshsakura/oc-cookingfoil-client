@@ -150,7 +150,6 @@ void Application::updates() {
     paint_.fonts.text(size, 1230 - paint_.fonts.measure(size, 19, true), y + 65, 19, Ink, true);
   }
   unclip();
-  paint_.fonts.text(tr("Shows only the latest updates for installed games and new or newer DLC."), 260, 606, 18, Secondary);
 }
 void Application::installUpdates(bool all) {
   if (deviceBusy_ || !installed_.installed.complete) { message(tr("Updates start after installed versions are read.")); return; }

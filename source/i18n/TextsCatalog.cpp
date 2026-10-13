@@ -47,7 +47,6 @@ const Translation rows[] = {
     {"None", "없음", "なし", "无"},
     {"DLC update", "DLC 업데이트", "DLCアップデート", "DLC 更新"},
     {"New DLC", "새 DLC", "新しいDLC", "新 DLC"},
-    {"Shows only the latest updates for installed games and new or newer DLC.", "설치된 본편의 최신 업데이트와 미설치·최신 DLC만 표시합니다.", "インストール済みゲームの最新アップデートと、未インストール・最新のDLCだけを表示します。", "仅显示已安装游戏的最新更新以及未安装或更新的 DLC。"},
     {"Updates start after installed versions are read.", "설치된 버전 조회가 끝난 뒤 업데이트합니다.", "インストール済みバージョンの確認後に更新します。", "读取已安装版本后再更新。"},
     {"Refresh the list after the install finishes.", "설치가 끝난 뒤 설치 목록을 새로고침합니다.", "インストール完了後に一覧を更新します。", "安装完成后再刷新列表。"},
     {"Error reading installed games.", "설치 목록을 읽다 오류가 났습니다.", "インストール一覧の読み込み中にエラーが発生しました。", "读取已安装列表时出错。"},
