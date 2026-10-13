@@ -96,9 +96,13 @@ bool DownloadStore::exec(const char *sql, std::string &error) {
 }
 bool DownloadStore::open(const std::string &path, std::string &error) {
   close();
+  // SQLite takes a path without "/" at its start as relative and puts the
+  // working folder in front, so "sdmc:/…" never opened on the console. There
+  // "/…" is the SD card already.
+  const std::string file = path.rfind("sdmc:/", 0) == 0 ? path.substr(5) : path;
   // One process only, so no file locks (the console's file system has none
   // that SQLite can use).
-  if (sqlite3_open_v2(path.c_str(), &db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, "unix-none") != SQLITE_OK) {
+  if (sqlite3_open_v2(file.c_str(), &db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, "unix-none") != SQLITE_OK) {
     error = db_ ? sqlite3_errmsg(db_) : "sqlite";
     close();
     return false;
