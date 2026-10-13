@@ -5,7 +5,7 @@
 namespace foil::install {
 void nativeInstall(const Item &, const std::string &,
                    const std::vector<std::string> &) {
-  throw std::runtime_error(tr("본체에서 설치할 수 있습니다."));
+  throw std::runtime_error(tr("Installing works on the console."));
 }
 } // namespace foil::install
 #endif

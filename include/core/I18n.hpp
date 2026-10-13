@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 namespace foil {
-// Interface languages. The Korean text in the source is the key; tables in
+// Interface languages. The English text in the source is the key; tables in
 // source/i18n/ give the other languages.
 enum class Language { Korean, English, Japanese, Chinese };
 constexpr int LanguageCount = 4;
@@ -17,19 +17,23 @@ inline const char *languageCode() { return languageCode(language()); }
 const char *languageName(Language language);
 Language languageFromCode(const std::string &code, Language fallback);
 
-// Screen text: Korean in, the current language out. A missing translation
-// falls back to the Korean text (tests keep the tables complete).
-const char *tr(const char *korean);
+// Screen text: the English key in, the current language out. "Name|sort":
+// the part after | only tells apart keys that read the same in English;
+// English shows the part before it. A missing translation falls back to
+// English (tests keep the tables complete).
+const char *tr(const char *key);
 // Same, then {0} {1} ... replaced by args in order.
-std::string trf(const char *korean, std::initializer_list<std::string> args);
+std::string trf(const char *key, std::initializer_list<std::string> args);
+// The English a key shows ("Name|sort" -> "Name").
+const char *english(const char *key);
 
 struct Translation {
-  const char *ko, *en, *ja, *zh;
+  const char *key, *ko, *ja, *zh;
 };
 // Each source/i18n/*.cpp registers one table with a static instance.
 struct TranslationTable {
   TranslationTable(const Translation *rows, size_t count);
 };
-const Translation *findTranslation(const std::string &korean);
+const Translation *findTranslation(const std::string &key);
 std::vector<const Translation *> allTranslations();
 } // namespace foil

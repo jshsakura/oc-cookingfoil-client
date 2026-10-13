@@ -26,21 +26,21 @@ void catchUp(Registry &r) {
   for (; r.indexed < r.tables.size(); ++r.indexed) {
     const auto &[rows, count] = r.tables[r.indexed];
     for (size_t i = 0; i < count; ++i)
-      r.index.emplace(rows[i].ko, &rows[i]);
+      r.index.emplace(rows[i].key, &rows[i]);
   }
 }
-const Translation *lookup(const std::string &korean) {
+const Translation *lookup(const std::string &key) {
   auto &r = registry();
   std::lock_guard<std::mutex> guard(r.lock);
   catchUp(r);
-  const auto found = r.index.find(korean);
+  const auto found = r.index.find(key);
   return found == r.index.end() ? nullptr : found->second;
 }
 const Translation *lookupKey(const char *key) {
   auto &r = registry();
   std::lock_guard<std::mutex> guard(r.lock);
   const auto seen = r.byAddress.find(key);
-  if (seen != r.byAddress.end() && std::strcmp(seen->second->ko, key) == 0)
+  if (seen != r.byAddress.end() && std::strcmp(seen->second->key, key) == 0)
     return seen->second;
   catchUp(r);
   const auto found = r.index.find(key);
@@ -83,7 +83,7 @@ Language languageFromCode(const std::string &code, Language fallback) {
       return Language(i);
   return fallback;
 }
-const Translation *findTranslation(const std::string &korean) { return lookup(korean); }
+const Translation *findTranslation(const std::string &key) { return lookup(key); }
 std::vector<const Translation *> allTranslations() {
   lookup("");
   auto &r = registry();
@@ -94,10 +94,8 @@ std::vector<const Translation *> allTranslations() {
       out.push_back(&rows[i]);
   return out;
 }
-// "업데이트|항목": the part after | only tells keys apart that read the same
-// in Korean but not in other languages; Korean shows the part before it.
-const char *korean(const char *key) {
-  if (!std::strchr(key, '|'))
+const char *english(const char *key) {
+  if (!key || !std::strchr(key, '|'))
     return key;
   static std::mutex lock;
   static std::unordered_map<const char *, std::string> shown;
@@ -109,20 +107,18 @@ const char *korean(const char *key) {
 }
 const char *tr(const char *key) {
   const auto lang = language();
-  if (!key)
-    return key;
-  if (lang == Language::Korean)
-    return korean(key);
+  if (!key || lang == Language::English)
+    return english(key);
   const auto *row = lookupKey(key);
   if (!row)
-    return korean(key);
-  const char *text = lang == Language::English    ? row->en
+    return english(key);
+  const char *text = lang == Language::Korean     ? row->ko
                      : lang == Language::Japanese ? row->ja
                                                   : row->zh;
-  return text && *text ? text : korean(key);
+  return text && *text ? text : english(key);
 }
-std::string trf(const char *korean, std::initializer_list<std::string> args) {
-  std::string text = tr(korean);
+std::string trf(const char *key, std::initializer_list<std::string> args) {
+  std::string text = tr(key);
   size_t n = 0;
   for (const auto &arg : args) {
     const auto mark = "{" + std::to_string(n++) + "}";

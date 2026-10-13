@@ -30,14 +30,14 @@ Response fetch(const Server &server, const State &state, const std::string &path
   auto response = get(url, authHeaders(server, state, url), "", cancel);
   if (response.status == 404) {
     reply.missing = true;
-    reply.error.message = tr("이 서버는 레트로 게임을 제공하지 않습니다.");
+    reply.error.message = tr("This server has no retro games.");
   } else if (response.status == 503) {
     Error ignored;
     const auto body = parseJson(response.body, ignored);
     reply.retryAfter = int(std::clamp<int64_t>(body ? integerField(body.get(), "retryAfter", 30) : 30, 5, 300));
-    reply.error.message = tr("서버가 레트로 파일을 읽고 있습니다. 잠시 뒤 다시 불러옵니다.");
+    reply.error.message = tr("The server is reading its retro files. Loading again shortly.");
   } else if (!response.error.empty() || response.status != 200) {
-    reply.error.message = tr("레트로 게임 목록을 불러오지 못했습니다.");
+    reply.error.message = tr("Could not load the retro games.");
   }
   return response;
 }
@@ -106,7 +106,7 @@ bool retroPackBundle(const Server &server, const State &state, const retro::Pack
 bool retroFile(const Server &server, const State &state, const retro::PackFile &file, const std::string &sd,
                std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel, long *status) {
   if (!retro::packPathAllowed(file.path)) {
-    error.message = trf("허용되지 않은 위치입니다: {0}", {file.path});
+    error.message = trf("Not an allowed place: {0}", {file.path});
     return false;
   }
   const std::filesystem::path target = sd + "/" + file.path;
@@ -125,14 +125,14 @@ bool retroFile(const Server &server, const State &state, const retro::PackFile &
     return false;
   };
   if (!got.failure.empty()) return fail(got.failure);
-  if (got.tooLong) return fail(trf("받은 파일 크기가 다릅니다: {0}", {file.path}));
+  if (got.tooLong) return fail(trf("The downloaded file has the wrong size: {0}", {file.path}));
   if (!got.response.error.empty()) return fail(got.response.error);
   if (!rangedOk(got.response))
-    return fail(trf("파일을 받지 못했습니다. HTTP {0}", {std::to_string(got.response.status)}));
-  if (file.size && got.size != file.size) return fail(trf("받은 파일 크기가 다릅니다: {0}", {file.path}));
+    return fail(trf("Could not get the file. HTTP {0}", {std::to_string(got.response.status)}));
+  if (file.size && got.size != file.size) return fail(trf("The downloaded file has the wrong size: {0}", {file.path}));
   std::filesystem::remove(target, ec);
   std::filesystem::rename(part, target, ec);
-  if (ec) return fail(trf("파일을 쓰지 못했습니다: {0}", {file.path}));
+  if (ec) return fail(trf("Could not write the file: {0}", {file.path}));
   std::filesystem::remove(partInfoPath(part), ec);
   return true;
 }

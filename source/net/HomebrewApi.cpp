@@ -17,8 +17,8 @@ bool homebrewList(const Server &server, const State &state, std::string &etag, s
   unchanged = response.status == 304;
   if (unchanged) return true;
   if (!response.error.empty()) error.message = response.error;
-  else if (response.status == 404) error.message = tr("이 서버는 홈브류를 제공하지 않습니다.");
-  else if (response.status != 200) error.message = trf("홈브류 목록을 불러오지 못했습니다. HTTP {0}", {std::to_string(response.status)});
+  else if (response.status == 404) error.message = tr("This server does not offer homebrew.");
+  else if (response.status != 200) error.message = trf("Could not load the homebrew list. HTTP {0}", {std::to_string(response.status)});
   if (error) return false;
   apps = homebrew::parse(response.body, server.url);
   etag = response.etag;
@@ -44,18 +44,18 @@ bool fetchFile(const Server &server, const State &state, const std::string &url,
     error.message = message;
     return false;
   };
-  if (got.tooLong) return fail(tr("받은 파일이 서버의 것과 다릅니다. 다시 시도합니다."));
+  if (got.tooLong) return fail(tr("The downloaded file does not match the server's. Try again."));
   if (!got.failure.empty()) return fail(got.failure);
   if (!got.response.error.empty()) return fail(got.response.error);
   if (!rangedOk(got.response))
-    return fail(trf("파일을 받지 못했습니다. HTTP {0}", {std::to_string(got.response.status)}));
+    return fail(trf("Could not get the file. HTTP {0}", {std::to_string(got.response.status)}));
   if (sha256.empty()) sha256 = homebrew::etagSha256(got.response.etag); // without one the file is kept unchecked
   if ((size && got.size != size) || (!sha256.empty() && got.sha256 != sha256))
-    return fail(tr("받은 파일이 서버의 것과 다릅니다. 다시 시도합니다."));
+    return fail(tr("The downloaded file does not match the server's. Try again."));
   std::filesystem::remove(target, ec);
   ec.clear();
   std::filesystem::rename(part, target, ec);
-  if (ec) return fail(trf("파일을 쓰지 못했습니다: {0}", {path}));
+  if (ec) return fail(trf("Could not write the file: {0}", {path}));
   std::filesystem::remove(partInfoPath(part), ec);
   return true;
 }

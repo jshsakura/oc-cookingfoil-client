@@ -5,7 +5,7 @@ namespace foil::ui {
 void Application::dialogHints(float right, float y, const std::string &close,
                               const std::string &apply, const std::string &accept, const std::string &remove) {
   // `accept` names what A does when the popup is one decision (다운로드).
-  std::vector<std::pair<std::string, std::string>> keys{{"A", accept.empty() ? std::string(tr("선택")) : accept}};
+  std::vector<std::pair<std::string, std::string>> keys{{"A", accept.empty() ? std::string(tr("Select")) : accept}};
   if (!remove.empty())
     keys.push_back({"X", remove});
   if (!apply.empty())
@@ -108,7 +108,7 @@ float Application::pageTitle(const std::string &title, const std::string &meta, 
   return x;
 }
 std::string Application::countLabel(size_t count, const std::string &query) const {
-  return query.empty() ? std::to_string(count) : trf("{0}건의 검색 결과", {std::to_string(count)});
+  return query.empty() ? std::to_string(count) : trf("Search results: {0}", {std::to_string(count)});
 }
 void Application::notice(const std::string &title, const std::string &body, int icon) {
   // Centered between the page header and the footer.
@@ -144,11 +144,11 @@ void Application::viewPopup() {
   const auto orders = popupSorts();
   const int filterRows = (int(labels.size()) + Cols - 1) / Cols;
   const int rows = std::max(filterRows, int(orders.size()));
-  const auto body = modal(Width, 44 + rows * RowHeight + 16, tr("필터와 정렬"), tr("취소"), tr("적용"), "", 10);
+  const auto body = modal(Width, 44 + rows * RowHeight + 16, tr("Filter and sort"), tr("Cancel"), tr("Apply"), "", 10);
   const float gridLeft = body.x + 32, sortLeft = body.x + Width - 32 - SortWidth;
   const float cell = (sortLeft - 32 - gridLeft - Gap * (Cols - 1)) / Cols;
-  paint_.fonts.middle(tr("필터"), gridLeft, body.y + 26, 16, Secondary, true);
-  paint_.fonts.middle(tr("정렬"), sortLeft, body.y + 26, 16, Secondary, true);
+  paint_.fonts.middle(tr("Filter"), gridLeft, body.y + 26, 16, Secondary, true);
+  paint_.fonts.middle(tr("Sort"), sortLeft, body.y + 26, 16, Secondary, true);
   paint_.rect(sortLeft - 18, body.y + 16, 1, rows * RowHeight + 24, Line);
   auto option = [&](int column, int index, float x, float y, float w, const std::string &label,
                     bool on, bool checkbox) {
@@ -247,31 +247,31 @@ void Application::dialogs() {
     serverFormDialog(); // a failed save's alert shows over it instead
   } else if (confirmInstall_ && selection_ && detailGroup_ < groups_.size()) {
     const auto &g = groups_[detailGroup_];
-    const auto body = modal(700, 24 + 96 + 24, tr("이 게임을 설치하시겠습니까?"), tr("취소"), "", tr("설치"), 4);
+    const auto body = modal(700, 24 + 96 + 24, tr("Install this game?"), tr("Cancel"), "", tr("Install"), 4);
     const float x = body.x + 32, y = body.y + 24;
     cover(g.representative.icon, x, y, 96, false, g.representative.name);
     paint_.fonts.text(g.representative.name, x + 116, y + 4, 22, Ink, true, body.w - 180);
-    paint_.fonts.text(trf("{0}개 항목 · {1}", {std::to_string(selection_->count()),
+    paint_.fonts.text(trf("{0} items · {1}", {std::to_string(selection_->count()),
                                               formatBytes(selection_->total())}),
                       x + 116, y + 42, 19, Secondary);
-    paint_.fonts.text(selection_->target == "nand" ? tr("본체에 설치합니다.") : tr("SD 카드에 설치합니다."),
+    paint_.fonts.text(selection_->target == "nand" ? tr("Installs to the console.") : tr("Installs to the SD card."),
                       x + 116, y + 70, 19, Secondary);
   } else if (!alert_.empty()) {
-    const auto body = modal(700, 24 + 84 + 16, alertTitle_.empty() ? std::string(tr("설치할 수 없습니다")) : alertTitle_,
-                            tr("닫기"), "", tr("확인"), 25);
+    const auto body = modal(700, 24 + 84 + 16, alertTitle_.empty() ? std::string(tr("Cannot install")) : alertTitle_,
+                            tr("Close"), "", tr("OK"), 25);
     paint_.fonts.wrapped(alert_, body.x + 32, body.y + 24, 20, Ink, body.w - 64, 3);
   } else if (confirmCancel_ && cancelRetro_) {
     const bool pack = retroBusy_ == "pack";
-    const auto body = modal(700, 24 + 30 + 16, pack ? tr("RetroArch 설치를 취소하시겠습니까?") : tr("다운로드를 취소하시겠습니까?"),
-                            tr("계속 받기"), "", pack ? tr("설치 취소") : tr("다운로드 취소"), 25);
-    paint_.fonts.text(pack ? tr("받은 파일은 남겨 두고 다음에 이어서 받습니다.") : tr("받던 게임 파일은 삭제합니다."),
+    const auto body = modal(700, 24 + 30 + 16, pack ? tr("Cancel the RetroArch install?") : tr("Cancel the download?"),
+                            tr("Keep downloading"), "", pack ? tr("Cancel install") : tr("Cancel download"), 25);
+    paint_.fonts.text(pack ? tr("Files already here stay, and the next install picks up from them.") : tr("The partly downloaded game file is removed."),
                       body.x + 32, body.y + 24, 19, Secondary, false, body.w - 64);
   } else if (confirmCancel_) {
     // B keeps installing; A cancels, once the popup has settled.
     const auto body = modal(700, 24 + 30 + 16,
-                            confirmExit_ ? tr("설치를 취소하고 종료하시겠습니까?") : tr("설치를 취소하시겠습니까?"),
-                            tr("계속 설치"), "", tr("설치 취소"), 25);
-    paint_.fonts.text(tr("받던 부분은 다음에 이어서 받을 수 있습니다."), body.x + 32, body.y + 24, 19, Secondary, false,
+                            confirmExit_ ? tr("Cancel the install and exit?") : tr("Cancel the install?"),
+                            tr("Keep installing"), "", tr("Cancel install"), 25);
+    paint_.fonts.text(tr("What came down so far can be picked up next time."), body.x + 32, body.y + 24, 19, Secondary, false,
                       body.w - 64);
   } else if (screen_ == Screen::Saves && dropboxModal()) {
     dropboxDialog(); // under an alert it raised, so the alert reads first

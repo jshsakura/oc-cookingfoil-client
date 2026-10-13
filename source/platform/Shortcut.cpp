@@ -71,7 +71,7 @@ std::string code(Result rc) {
 }
 Error failure(const char *step, Result rc) {
   logLine(std::string("shortcut ") + step + " " + code(rc));
-  return {trf("바로가기를 설치하다 오류가 났습니다. 코드 {0}", {code(rc)})};
+  return {trf("Installing the shortcut failed. Code {0}", {code(rc)})};
 }
 // The services a shortcut needs, closed in reverse on the way out.
 struct Services {
@@ -125,7 +125,7 @@ std::string shortcutBlocker() {
   // Neither can change while the app runs, so they are asked once.
   static const std::string reason = [] {
     if (!std::ifstream(LoaderMain).good() || !std::ifstream(LoaderNpdm).good())
-      return std::string(tr("바로가기에 쓰는 로더가 앱에 없습니다. CookingFoil을 새로 받아 설치하면 만들 수 있습니다."));
+      return std::string(tr("This build lacks the loader shortcuts need. Download and install CookingFoil again to make them."));
     u8 kek[0x10]{};
     Result rc = splCryptoInitialize();
     if (R_SUCCEEDED(rc)) {
@@ -134,7 +134,7 @@ std::string shortcutBlocker() {
     }
     if (R_FAILED(rc)) {
       logLine("shortcut check: header key " + code(rc));
-      return std::string(tr("Atmosphere로 부팅한 상태에서만 바로가기를 만들 수 있습니다. 본체를 Atmosphere로 다시 시작하면 만들 수 있습니다."));
+      return std::string(tr("Shortcuts can be made only when the console is booted into Atmosphere. Restart into Atmosphere to make one."));
     }
     return std::string();
   }();
@@ -151,8 +151,8 @@ Error makeShortcut(const ShortcutRequest &request, uint64_t &id) {
   input.hblMain = readFile(LoaderMain);
   input.hblNpdm = readFile(LoaderNpdm);
   if (input.hblMain.empty() || input.hblNpdm.empty())
-    return {tr("바로가기에 쓰는 로더가 앱에 없습니다. CookingFoil을 새로 받아 설치하면 만들 수 있습니다.")};
-  if (input.icon.empty()) return {tr("앱 파일에 아이콘이 없어 바로가기를 만들 수 없습니다.")};
+    return {tr("This build lacks the loader shortcuts need. Download and install CookingFoil again to make them.")};
+  if (input.icon.empty()) return {tr("The app file has no icon, so no shortcut can be made.")};
   Services services;
   if (R_FAILED(services.rc)) return failure("services", services.rc);
   // The NCA header key, from the console. Without it nothing can be written;
@@ -163,7 +163,7 @@ Error makeShortcut(const ShortcutRequest &request, uint64_t &id) {
   if (R_SUCCEEDED(rc)) rc = splCryptoGenerateAesKey(kek, HeaderKeySource + 0x10, key + 0x10);
   if (R_FAILED(rc)) {
     logLine("shortcut header key " + code(rc));
-    return {tr("본체에서 NCA 헤더 키를 만들지 못했습니다. Atmosphere로 부팅한 상태에서만 바로가기를 만들 수 있습니다. 본체를 Atmosphere로 다시 시작한 뒤 시도합니다.")};
+    return {tr("Could not derive the NCA header key on the console. Shortcuts can be made only when booted into Atmosphere. Restart into Atmosphere and try again.")};
   }
   input.forceDebug = atmosphereForceDebug();
   input.storageId = NcmStorageId_SdCard;
@@ -175,7 +175,7 @@ Error makeShortcut(const ShortcutRequest &request, uint64_t &id) {
   }, package, reason);
   if (!built) {
     logLine("shortcut build: " + reason);
-    return {tr("앱 파일을 읽어 바로가기를 만들지 못했습니다.")};
+    return {tr("Could not make a shortcut from the app file.")};
   }
   id = package.titleId;
   // Made before for this path (by this app, or by sphaira in either of its
@@ -249,9 +249,9 @@ void setShortcutBlocker(const std::string &reason) {
 }
 Error makeShortcut(const ShortcutRequest &request, uint64_t &id) {
   if (auto reason = shortcutBlocker(); !reason.empty()) return {reason};
-  if (request.icon.empty()) return {tr("앱 파일에 아이콘이 없어 바로가기를 만들 수 없습니다.")};
+  if (request.icon.empty()) return {tr("The app file has no icon, so no shortcut can be made.")};
   if (request.nroPath.empty() || request.nacp.size() != forwarder::NacpSize)
-    return {tr("앱 파일을 읽어 바로가기를 만들지 못했습니다.")};
+    return {tr("Could not make a shortcut from the app file.")};
   id = forwarder::titleId(request.nroPath, request.extraArgs);
   std::lock_guard<std::mutex> lock(mutex);
   made.insert(id);

@@ -8,12 +8,12 @@ void Application::gallery() {
   hit(0, 0, 640, 660, [this] { action(Action::Previous); });
   hit(640, 0, 640, 660, [this] { action(Action::Next); });
   const auto name = detailGroup_ < groups_.size() ? groups_[detailGroup_].representative.name : std::string();
-  const float after = paint_.fonts.middle(tr("스크린샷"), 40, 40, 26, Surface, true);
+  const float after = paint_.fonts.middle(tr("Screenshots"), 40, 40, 26, Surface, true);
   paint_.fonts.middle(name, after + 16, 40, 19, {170, 170, 178, 255}, false, 1180 - after);
   // The full-screen photo at the screen's width, not the original.
   const auto url = thumbnailUrl(detail_.screenshots[screenshot_], "xl");
   if (images_->failed(url)) {
-    paint_.fonts.text(tr("사진을 불러오지 못했습니다. 잠시 뒤 다시 시도합니다."), 40, 330, 22, Surface);
+    paint_.fonts.text(tr("Could not load the photo. Try again shortly."), 40, 330, 22, Surface);
   } else if (!images_->loaded(url)) {
     // Until the large photo arrives, the small one the detail page already
     // holds stands in, so a turn never flashes a light loading box over

@@ -13,9 +13,9 @@ Parsed<std::vector<shopsaves::ShopSave>> shopSaves(const Server &server, const S
   const auto response = get(url, authHeaders(server, state, url), "", cancel);
   if (response.status == 404) {
     reply.missing = true;
-    reply.error.message = tr("이 서버는 세이브를 제공하지 않습니다.");
+    reply.error.message = tr("This server offers no saves.");
   } else if (!response.error.empty() || response.status != 200) {
-    reply.error.message = tr("서버 세이브 목록을 불러오지 못했습니다.");
+    reply.error.message = tr("Could not load the server saves.");
   }
   if (reply.error) return {{}, reply.error};
   return {shopsaves::parse(response.body, server.url), {}};
@@ -41,7 +41,7 @@ bool downloadShopSave(const Server &server, const State &state, const shopsaves:
   if (!fetch.tarError.empty()) { error.message = fetch.tarError; return false; }
   if (!fetch.response.error.empty()) { error.message = fetch.response.error; return false; }
   if (!rangedOk(fetch.response)) {
-    error.message = trf("세이브를 받지 못했습니다. HTTP {0}", {std::to_string(fetch.response.status)});
+    error.message = trf("Could not get the save. HTTP {0}", {std::to_string(fetch.response.status)});
     return false;
   }
   return fetch.complete;

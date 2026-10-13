@@ -11,7 +11,7 @@ namespace foil::install {
 enum class Status { Idle, Running, Succeeded, Failed, Cancelled };
 struct Progress {
   Status status = Status::Idle;
-  std::string name, icon, target = "sd", phase = tr("준비하고 있습니다."), error,
+  std::string name, icon, target = "sd", phase = tr("Preparing."), error,
                           kind;
   size_t index = 0, count = 0;
   uint64_t total = 0, received = 0;

@@ -83,7 +83,7 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
       logLine("ranged: " + std::to_string(last.status) + " at " + std::to_string(from) + ", starting over");
       fromZero = true;
       validator.clear();
-      last.error = tr("연결을 시작하지 못했습니다.");
+      last.error = tr("Could not start the connection.");
       continue;
     }
     fromZero = false;
@@ -139,12 +139,12 @@ PartFetch fetchPart(const std::string &url, const std::vector<std::string> &head
     out.reset();
     std::string reason;
     if (at == 0 && platform::needsBigFile(whole) && !platform::createBigFile(part, reason)) {
-      result.failure = trf("4GB가 넘는 파일을 SD 카드에 만들지 못했습니다: {0}", {name}) + " (" + reason + ")";
+      result.failure = trf("Could not create a file over 4 GB on the SD card: {0}", {name}) + " (" + reason + ")";
       return false;
     }
     out.reset(std::fopen(part.c_str(), at ? "ab" : "wb"));
     if (!out) {
-      result.failure = trf("파일을 만들지 못했습니다: {0}", {name}) + " (" + std::strerror(errno) + ")";
+      result.failure = trf("Could not create file: {0}", {name}) + " (" + std::strerror(errno) + ")";
       return false;
     }
     writeBuffer(out.get());
@@ -176,7 +176,7 @@ PartFetch fetchPart(const std::string &url, const std::vector<std::string> &head
       return false;
     }
     if (std::fwrite(data, 1, size, out.get()) != size) {
-      result.failure = trf("파일을 쓰지 못했습니다: {0}", {name}) + " (" + std::strerror(errno) + ")";
+      result.failure = trf("Could not write the file: {0}", {name}) + " (" + std::strerror(errno) + ")";
       return false;
     }
     if (hash)
@@ -187,7 +187,7 @@ PartFetch fetchPart(const std::string &url, const std::vector<std::string> &head
   };
   result.response = rangedStream(url, headers, info.etag, sink, cancel);
   if (out && std::fclose(out.release()) != 0 && result.failure.empty())
-    result.failure = trf("파일을 쓰지 못했습니다: {0}", {name}) + " (" + std::strerror(errno) + ")";
+    result.failure = trf("Could not write the file: {0}", {name}) + " (" + std::strerror(errno) + ")";
   return finish();
 }
 
@@ -239,7 +239,7 @@ TarFetch rangedTar(const std::string &url, const std::vector<std::string> &heade
   else if (rangedOk(result.response)) {
     result.complete = writer && writer->finish();
     if (!result.complete)
-      result.tarError = writer ? writer->error() : tr("패치를 받다가 끊겼습니다. 다시 받습니다.");
+      result.tarError = writer ? writer->error() : tr("The patch download was interrupted. Download it again.");
   }
   if (!result.complete && writer) {
     if (result.tarError.empty())

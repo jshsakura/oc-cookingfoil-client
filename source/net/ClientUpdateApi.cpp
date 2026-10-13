@@ -19,11 +19,11 @@ std::optional<update::Release> latestClient(const Server &server, const State &s
     return std::nullopt;
   }
   if (!response.error.empty() || response.status != 200) {
-    reply.error.message = tr("업데이트를 확인하지 못했습니다.");
+    reply.error.message = tr("Could not check for an update.");
     return std::nullopt;
   }
   auto release = update::parseRelease(response.body, server.url);
-  if (!release) reply.error.message = tr("서버의 업데이트 정보를 읽지 못했습니다.");
+  if (!release) reply.error.message = tr("Could not read the server's update details.");
   return release;
 }
 bool installClient(const Server &server, const State &state, const update::Release &release,
@@ -45,13 +45,13 @@ bool installClient(const Server &server, const State &state, const update::Relea
   };
   // Longer than the release said: the server has a newer build than the one
   // asked about.
-  if (got.tooLong) return fail(tr("서버의 업데이트가 바뀌었습니다. 다시 확인합니다."));
+  if (got.tooLong) return fail(tr("The update on the server changed. Checking again."));
   if (!got.failure.empty()) return fail(got.failure);
   if (!got.response.error.empty()) return fail(got.response.error);
   if (!rangedOk(got.response))
-    return fail(trf("업데이트를 받지 못했습니다. HTTP {0}", {std::to_string(got.response.status)}));
+    return fail(trf("Could not download the update. HTTP {0}", {std::to_string(got.response.status)}));
   if (got.size != release.size || got.sha256 != release.sha256)
-    return fail(tr("받은 파일이 서버의 것과 다릅니다. 다시 시도합니다."));
+    return fail(tr("The downloaded file does not match the server's. Try again."));
   // Checked and complete: platform::replaceSelf puts it in place on the
   // main thread, where the app can let go of its own file.
   std::error_code ec;
@@ -69,9 +69,9 @@ bool sendClientLog(const Server &server, const State &state, const std::string &
   options.timeout = 30;
   const auto response = post(url, headers, options, cancel);
   if (!response.error.empty()) error.message = response.error;
-  else if (response.status == 404) error.message = tr("서버가 오류 기록을 받지 않습니다.");
+  else if (response.status == 404) error.message = tr("The server does not take error logs.");
   else if (response.status < 200 || response.status >= 300)
-    error.message = trf("오류 기록을 보내지 못했습니다. HTTP {0}", {std::to_string(response.status)});
+    error.message = trf("Could not send the error log. HTTP {0}", {std::to_string(response.status)});
   return !error;
 }
 } // namespace foil::net

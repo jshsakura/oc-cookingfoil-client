@@ -10,7 +10,7 @@ void Application::settings() {
   // Each server is a card of its own, like "+ 서버 추가" below them, so the
   // cursor rings the card the same way on both.
   constexpr float ServerCard = 52, ServerStep = ServerCard + 12;
-  pageTitle(tr("설정"));
+  pageTitle(tr("Settings"));
   const int count = int(config_.servers.size());
   // Where each part sits before scrolling.
   const float addTop = ViewTop + std::max(1, count) * ServerStep;
@@ -38,7 +38,7 @@ void Application::settings() {
   // Servers: a card each, or one with the empty line.
   if (!count) {
     paint_.rect(Left, ViewTop + oy, Width, ServerCard, Surface, 12);
-    paint_.fonts.middle(tr("등록된 서버가 없습니다."), Inner, ViewTop + oy + ServerCard / 2, 20, Secondary);
+    paint_.fonts.middle(tr("No servers added."), Inner, ViewTop + oy + ServerCard / 2, 20, Secondary);
   }
   for (int i = 0; i < count; ++i) {
     const float top = ViewTop + i * ServerStep + oy, mid = top + ServerCard / 2;
@@ -55,13 +55,13 @@ void Application::settings() {
     paint_.fonts.middle(server.title, Inner + 27, mid, 21, Ink, true, 640);
     const bool current = size_t(i) == serverIndex_ && session_;
     // The Korean status is a key: statusColor() reads it, tr() draws it.
-    const char *status = !server.enabled                         ? "꺼 둠" // i18n: keep
-                        : active                                ? "연결됨" // i18n: keep
-                        : current && pairingPending_            ? "승인 대기" // i18n: keep
-                        : current && network_.joinable() && !detailRequest_ ? "연결 중" // i18n: keep
-                        : current && error_.message == net::offlineMessage() ? "인터넷 없음" // i18n: keep
-                        : current && error_                     ? "연결 실패" // i18n: keep
-                                                                : "연결 안 함"; // i18n: keep
+    const char *status = !server.enabled                         ? "Off|kept" // i18n: keep
+                        : active                                ? "Connected" // i18n: keep
+                        : current && pairingPending_            ? "Awaiting approval" // i18n: keep
+                        : current && network_.joinable() && !detailRequest_ ? "Connecting" // i18n: keep
+                        : current && error_.message == net::offlineMessage() ? "No internet" // i18n: keep
+                        : current && error_                     ? "Failed|connection" // i18n: keep
+                                                                : "Not connected"; // i18n: keep
     const char *statusText = tr(status);
     paint_.fonts.middle(statusText, Right - paint_.fonts.measure(statusText, 17), mid, 17, statusColor(status));
     paint_.rect(Inner, mid - 6, 12, 12, statusColor(status), 6);
@@ -69,7 +69,7 @@ void Application::settings() {
   // "+ 서버 추가" opens the server form, empty.
   if (selected_ == count && !sidebar_) paint_.ring(Left, addTop + oy, Width, 52, 12);
   paint_.rect(Left, addTop + oy, Width, 52, Surface, 12);
-  paint_.fonts.middle(tr("+ 서버 추가"), Inner, addTop + oy + 26, 21, Ink, true);
+  paint_.fonts.middle(tr("+ Add server"), Inner, addTop + oy + 26, 21, Ink, true);
   if (shown(addTop + oy, 52))
     hit(Left, addTop + oy, Width, 52, [this, count] {
       sidebar_ = false;
@@ -109,41 +109,41 @@ void Application::settings() {
   // Interface language, kept in state.json (never in the user's
   // config.json). " · Language" stays in English so someone who cannot
   // read the current language still finds it.
-  option(0, 17, std::string(tr("언어")) + (language() == Language::English ? "" : " · Language"),
+  option(0, 17, std::string(tr("Language")) + (language() == Language::English ? "" : " · Language"),
          languageName(language()), Ink, true);
   {
     const float y = optionsTop + 8 + oy, nameWidth = paint_.fonts.measure(languageName(language()), 20, true);
     paint_.flag(int(language()), Right - nameWidth - 42, y + (Row - 2) / 2 - 11, 33, 22);
   }
   // Where installs go; A switches between the SD card and the console.
-  option(1, 26, tr("기본 저장 위치"), installTarget() == "nand" ? tr("본체") : tr("SD 카드"), Ink, true);
+  option(1, 26, tr("Default location"), installTarget() == "nand" ? tr("Console") : tr("SD card"), Ink, true);
   // Ignoring signatures (the default) installs content that only runs with
   // sigpatches, which is what most homebrew installers expect.
-  option(4, 34, tr("서명 검사 무시"), "", Ink, true, state_.skipSignatureCheck ? 1 : 0);
-  note(4, tr("서명이 없는 파일도 설치합니다. 시그니처 패치가 필요합니다"));
+  option(4, 34, tr("Ignore signature check"), "", Ink, true, state_.skipSignatureCheck ? 1 : 0);
+  note(4, tr("Installs unsigned files too. Needs sigpatches"));
   // Ignoring firmware (the default) clears the version a game asks for, so
   // it installs and launches on older firmware when it can run there.
-  option(5, 27, tr("펌웨어 검사 무시"), "", Ink, true, state_.skipFirmwareCheck ? 1 : 0);
-  note(5, tr("요구 버전보다 낮은 펌웨어에서도 설치합니다"));
+  option(5, 27, tr("Ignore firmware check"), "", Ink, true, state_.skipFirmwareCheck ? 1 : 0);
+  note(5, tr("Installs even when the firmware is older than required"));
   // A HOME Menu shortcut with each retro game and homebrew app (and this
   // app's own), when the server builds one.
-  option(6, 0, tr("홈 메뉴 바로가기 만들기"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
-  note(6, state_.makeShortcuts ? tr("레트로 게임 및 홈브류 다운로드 시 바로가기를 자동 생성합니다") : tr("만들지 않습니다"));
+  option(6, 0, tr("Make HOME Menu shortcuts"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
+  note(6, state_.makeShortcuts ? tr("Creates a shortcut when a retro game or homebrew app downloads") : tr("Not made"));
   // Leftover cleanup: content no installed game uses, found first and only
   // deleted after a confirmation.
-  option(3, 14, tr("남은 파일 정리"),
-         !cleanupBusy_ ? tr("중단된 다운로드와 쓰지 않는 설치 파일을 찾아 삭제합니다") : cleanupRemoving_ ? tr("삭제 중") : tr("찾는 중"), Secondary, false);
+  option(3, 14, tr("Clean up leftovers"),
+         !cleanupBusy_ ? tr("Finds and deletes interrupted downloads and unused install files") : cleanupRemoving_ ? tr("Deleting") : tr("Scanning"), Secondary, false);
   // This build against the server's newest; A checks or updates.
-  option(2, 3, tr("앱 업데이트"), appUpdateStatus(), appUpdate_ == AppUpdate::Available ? Ink : Secondary,
+  option(2, 3, tr("App update"), appUpdateStatus(), appUpdate_ == AppUpdate::Available ? Ink : Secondary,
          appUpdate_ == AppUpdate::Available);
   // When on, an error popup sends the log's tail to the server, where the
   // admin page shows it; the last send's result reads left of the switch.
-  option(7, 40, tr("오류 로그 전송"), "", Ink, true, state_.reportErrors ? 1 : 0);
-  note(7, !state_.reportErrors ? std::string(tr("보내지 않습니다"))
-          : logStatus_.empty() ? std::string(tr("오류가 발생하면 연결한 서버로 로그를 보냅니다"))
+  option(7, 40, tr("Send error logs"), "", Ink, true, state_.reportErrors ? 1 : 0);
+  note(7, !state_.reportErrors ? std::string(tr("Not sent"))
+          : logStatus_.empty() ? std::string(tr("Sends the log to your connected server when an error occurs"))
                                : logStatus_);
   if (error_)
-    paint_.fonts.wrapped(error_.message + (error_.line ? " " + trf("({0}번째 줄)", {std::to_string(error_.line)}) : ""),
+    paint_.fonts.wrapped(error_.message + (error_.line ? " " + trf("(line {0})", {std::to_string(error_.line)}) : ""),
                          Left, optionsTop + optionsHeight + 8 + oy, 17, Secondary, Width, 1);
   SDL_RenderSetClipRect(paint_.renderer, nullptr);
 }

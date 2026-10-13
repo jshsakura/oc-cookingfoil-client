@@ -196,9 +196,9 @@ bool packPathAllowed(const std::string &path) {
 }
 std::string bundleFailure(long status, bool game) {
   if (game && status == 404)
-    return tr("서버의 게임 정보가 바뀌었습니다. 레트로 게임 목록에서 다시 받으면 됩니다.");
+    return tr("The game's details changed on the server. Download it again from the Retro games list.");
   const auto code = std::to_string(status);
-  return game ? trf("게임을 받지 못했습니다. HTTP {0}", {code}) : trf("파일을 받지 못했습니다. HTTP {0}", {code});
+  return game ? trf("Could not get the game. HTTP {0}", {code}) : trf("Could not get the file. HTTP {0}", {code});
 }
 bool bundlePathAllowed(const std::string &path) {
   if (!plainPath(path)) return false;

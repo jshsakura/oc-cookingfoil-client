@@ -31,7 +31,7 @@ bool Application::runDropboxJob(const std::string &busy, std::function<std::func
   dropboxWorker_ = std::thread([this, job = std::move(job)] {
     std::function<void()> finish;
     if (!guarded("dropbox", [&] { finish = job(); }))
-      finish = [this] { dropboxError_.message = tr("드롭박스 작업 중 오류가 났습니다. log.txt를 확인합니다."); };
+      finish = [this] { dropboxError_.message = tr("Something went wrong with Dropbox. Check log.txt."); };
     dropboxFinish_ = std::move(finish);
     dropboxDone_ = true;
   });
@@ -51,7 +51,7 @@ void Application::pollDropbox() {
   const auto now = SDL_GetTicks();
   if (now >= dropboxExpiresAt_) {
     dropboxSession_.reset();
-    dropboxError_.message = tr("로그인 시간이 지났습니다. 다시 연결합니다.");
+    dropboxError_.message = tr("The sign-in timed out. Connect again.");
     return;
   }
   if (now < dropboxPollAt_) return;
@@ -69,8 +69,8 @@ void Application::pollDropbox() {
           return;
         }
         dropboxSession_.reset();
-        dropboxError_.message = status == "expired" ? tr("로그인 시간이 지났습니다. 다시 연결합니다.")
-                                                    : tr("드롭박스 로그인이 승인되지 않았습니다.");
+        dropboxError_.message = status == "expired" ? tr("The sign-in timed out. Connect again.")
+                                                    : tr("The Dropbox sign-in was not approved.");
       };
     }
     // Approved: take the code and trade it on the same run.
@@ -84,7 +84,7 @@ void Application::pollDropbox() {
       dropboxLinked_ = dropbox_->linked();
       dropboxAccount_ = dropbox_->account();
       dropboxCursor_ = 0;
-      message(tr("드롭박스에 연결했습니다."));
+      message(tr("Dropbox is connected."));
       listDropbox();
     };
   });
@@ -101,7 +101,7 @@ void Application::dropboxEnter() {
 
 void Application::startDropboxLink() {
   if (!session_ || !connected_) {
-    message(tr("서버에 연결한 뒤 드롭박스를 연결합니다."));
+    message(tr("Dropbox connects once the server is connected."));
     return;
   }
   const auto server = session_->server();
@@ -188,7 +188,7 @@ void Application::dropboxTransfer() {
   // to pick from, even one.
   if (game.installed && dropboxPick_ == 0) {
     if (dropboxLocal_.empty()) {
-      message(tr("올릴 백업이 없습니다. 내 기기 탭에서 먼저 백업합니다."));
+      message(tr("There is no backup to upload. Back up first in the This console tab."));
       return;
     }
     dropboxChoosing_ = true;
@@ -199,8 +199,8 @@ void Application::dropboxTransfer() {
   if (picked < 0 || picked >= int(revisions.size())) return;
   const auto revision = revisions[picked].name;
   if (std::any_of(dropboxLocal_.begin(), dropboxLocal_.end(), [&](const auto &b) { return b.name == revision; })) {
-    message(game.installed ? tr("이 백업은 이미 내 기기에 있습니다. 내 기기 탭에서 복원합니다.")
-                           : tr("이 백업은 이미 내 기기에 있습니다. 게임을 설치하면 내 기기 탭에서 복원합니다."));
+    message(game.installed ? tr("This backup is already on the console. Restore it from the This console tab.")
+                           : tr("This backup is already on the console. Install the game, then restore it from the This console tab."));
     return;
   }
   runDropboxJob("download", [this, root, game, revision]() -> std::function<void()> {
@@ -209,14 +209,14 @@ void Application::dropboxTransfer() {
     return [this, got, revoked, root, id = game.applicationId, installed = game.installed] {
       if (revoked) dropboxLinked_ = false;
       if (got.error) {
-        alertTitle_ = tr("드롭박스에서 받지 못했습니다");
+        alertTitle_ = tr("Could not download from Dropbox");
         alert_ = got.error.message;
         return;
       }
       backupCounts_.erase(id);
       dropboxLocal_ = saves::listBackups(root, id);
-      message(installed ? tr("내 기기로 받았습니다. 내 기기 탭에서 이 백업으로 복원합니다.")
-                        : tr("내 기기로 받았습니다. 게임을 설치하면 내 기기 탭에서 복원합니다."));
+      message(installed ? tr("Downloaded to the console. Restore it from the This console tab.")
+                        : tr("Downloaded to the console. Install the game, then restore it from the This console tab."));
     };
   });
 }
@@ -246,12 +246,12 @@ void Application::uploadDropbox(const saves::LocalBackup &backup) {
     return [this, error, revoked, name = backup.name] {
       if (revoked) dropboxLinked_ = false;
       if (error) {
-        alertTitle_ = tr("드롭박스에 올리지 못했습니다");
+        alertTitle_ = tr("Could not upload to Dropbox");
         alert_ = error.message;
         return;
       }
       dropboxChoosing_ = false;
-      message(trf("{0} 백업을 드롭박스에 올렸습니다.", {name}));
+      message(trf("Uploaded backup {0} to Dropbox.", {name}));
       listDropbox();
     };
   });
@@ -277,7 +277,7 @@ void Application::dropboxAction(Action a) {
     dropboxRemote_.clear();
     dropboxListed_ = false;
     dropboxError_ = {};
-    message(tr("드롭박스 연결을 해제했습니다."));
+    message(tr("Dropbox is disconnected."));
     return;
   }
   if (dropboxOpen_) {
@@ -302,7 +302,7 @@ void Application::dropboxAction(Action a) {
     // Waiting for the phone: B gives up on this sign-in.
     if (a == Action::Back) {
       dropboxSession_.reset();
-      message(tr("드롭박스 연결을 취소했습니다."));
+      message(tr("Stopped connecting Dropbox."));
     }
     return;
   }
@@ -347,61 +347,61 @@ int Application::dropboxFocus(const std::vector<DropboxRow> &rows) const {
 }
 std::string Application::dropboxPopupAccept() const {
   if (!dropboxOpen_) return "";
-  if (dropboxGame_.installed && dropboxPick_ == 0) return tr("올리기");
-  return dropboxRevisions(dropboxGame_.applicationId).empty() ? "" : tr("받기");
+  if (dropboxGame_.installed && dropboxPick_ == 0) return tr("Upload");
+  return dropboxRevisions(dropboxGame_.applicationId).empty() ? "" : tr("Get");
 }
 void Application::dropboxTab() {
   dropboxEnter();
   if (!dropboxLinked_) {
     if (dropboxMissing_) {
-      notice(tr("서버에 드롭박스가 설정되어 있지 않습니다."),
-             tr("서버 관리자가 드롭박스 앱을 등록하면 여기서 연결합니다."), 25);
+      notice(tr("This server has no Dropbox set up."),
+             tr("Once the server's admin registers a Dropbox app, you can connect here."), 25);
       return;
     }
     if (!dropboxSession_ && !connected_) {
-      notice(tr("서버에 연결되어 있지 않습니다."), tr("서버에 연결한 뒤 드롭박스를 연결합니다."), 21);
+      notice(tr("Not connected to a server."), tr("Dropbox connects once the server is connected."), 21);
       return;
     }
     if (!dropboxSession_ && inContent()) paint_.ring(260, Top, 992, 466, 20);
     paint_.rect(260, Top, 992, 466, Surface, 20);
     if (dropboxSession_) {
       // The phone opens Dropbox's sign-in from the QR code; this side waits.
-      paint_.pill(tr("승인 대기"), 290, Top + 30, false, 17);
-      paint_.fonts.text(tr("휴대폰으로 드롭박스에 로그인합니다"), 290, Top + 86, 28, Ink, true, 580);
-      paint_.fonts.wrapped(tr("QR 코드를 찍어 드롭박스에서 허용을 누르면 이 본체가 알아서 연결을 마칩니다. 비밀번호는 본체나 서버에 남지 않습니다."),
+      paint_.pill(tr("Awaiting approval"), 290, Top + 30, false, 17);
+      paint_.fonts.text(tr("Sign in to Dropbox on your phone"), 290, Top + 86, 28, Ink, true, 580);
+      paint_.fonts.wrapped(tr("Scan the QR code and tap Allow in Dropbox; this console finishes on its own. Your password is never kept on the console or the server."),
                            290, Top + 140, 21, Secondary, 570, 4);
       const auto left = (dropboxExpiresAt_ > SDL_GetTicks() ? dropboxExpiresAt_ - SDL_GetTicks() : 0) / 1000;
-      paint_.fonts.text(trf("{0}분 안에 승인합니다.", {std::to_string(left / 60 + 1)}), 290, Top + 290, 18, Secondary);
+      paint_.fonts.text(trf("Approve within {0} min.", {std::to_string(left / 60 + 1)}), 290, Top + 290, 18, Secondary);
       dropboxQr_.draw(paint_.renderer, 908, int(Top + 75), 300);
       return;
     }
     paint_.icon(36, 290, Top + 32, Ink, 40);
-    paint_.fonts.text(tr("드롭박스에 세이브를 백업합니다"), 290, Top + 96, 28, Ink, true, 900);
-    paint_.fonts.wrapped(tr("드롭박스를 연결하면 이 본체의 세이브 백업을 올리고, 다른 본체나 oc-save-keeper가 올린 백업을 받아 내 기기 탭에서 복원합니다."),
+    paint_.fonts.text(tr("Back up saves to Dropbox"), 290, Top + 96, 28, Ink, true, 900);
+    paint_.fonts.wrapped(tr("With Dropbox connected, this console uploads its save backups, and backups from other consoles or oc-save-keeper come down to restore from the This console tab."),
                          290, Top + 150, 21, Secondary, 900, 3);
-    paint_.fonts.wrapped(tr("연결하기를 누르면 QR 코드가 나옵니다. 휴대폰으로 찍어 드롭박스에 로그인합니다."), 290, Top + 240,
+    paint_.fonts.wrapped(tr("Connect shows a QR code. Scan it with your phone to sign in to Dropbox."), 290, Top + 240,
                          19, Secondary, 900, 2);
     // A in the footer connects; a tap on the card does the same.
     hit(260, Top, 992, 466, [this] {
       sidebar_ = false;
       action(Action::Accept);
     });
-    if (dropboxBusy_ == "start") paint_.fonts.text(tr("연결을 준비하고 있습니다"), 290, Top + 330, 19, Ink, true);
+    if (dropboxBusy_ == "start") paint_.fonts.text(tr("Getting ready to connect"), 290, Top + 330, 19, Ink, true);
     if (dropboxError_) paint_.fonts.wrapped(dropboxError_.message, 290, Top + 370, 18, Bad, 900, 2);
     return;
   }
   // The account; X (shown on the card) unlinks, after asking.
   paint_.rect(260, Top, 992, AccountHeight, Surface, 16);
   paint_.icon(36, 282, Top + 23, Ink, 26);
-  paint_.fonts.text(dropboxAccount_.empty() ? std::string(tr("드롭박스에 연결했습니다.")) : dropboxAccount_, 324, Top + 10,
+  paint_.fonts.text(dropboxAccount_.empty() ? std::string(tr("Dropbox is connected.")) : dropboxAccount_, 324, Top + 10,
                     20, Ink, true, 640);
   int uploaded = 0;
   for (const auto &[id, revisions] : dropboxRemote_) uploaded += int(revisions.size());
-  const std::string status = dropboxBusy_ == "list"  ? std::string(tr("드롭박스 목록을 불러오고 있습니다."))
+  const std::string status = dropboxBusy_ == "list"  ? std::string(tr("Loading the Dropbox list."))
                              : dropboxError_         ? dropboxError_.message
-                                                     : trf("드롭박스에 백업 {0}개", {std::to_string(uploaded)});
+                                                     : trf("{0} backups on Dropbox", {std::to_string(uploaded)});
   paint_.fonts.text(status, 324, Top + 40, 16, dropboxError_ && dropboxBusy_.empty() ? Bad : Secondary, false, 640);
-  const std::string unlink = tr("연결 해제");
+  const std::string unlink = tr("Disconnect");
   const float uw = paint_.keyLabelWidth("Y", unlink, 17, true);
   paint_.keyLabel("Y", unlink, 1230 - uw, Top + AccountHeight / 2, 17, Secondary, true);
   hit(1230 - uw - 8, Top + 8, uw + 16, AccountHeight - 16, [this] { action(Action::Queue); });
@@ -410,12 +410,12 @@ void Application::dropboxTab() {
     if (deviceBusy_)
       for (int n = 0; n < Visible; ++n) paint_.skeleton(260, ListTop + n * RowStep, 992, RowHeight, 16);
     else
-      paint_.fonts.text(tr("세이브를 관리할 게임이 없습니다."), 290, ListTop + 20, 19, Secondary);
+      paint_.fonts.text(tr("No games to manage saves for."), 290, ListTop + 20, 19, Secondary);
     return;
   }
   const auto rows = dropboxGameRows();
   if (rows.empty()) {
-    paint_.fonts.text(trf("'{0}'에 맞는 게임이 없습니다.", {savesQuery_}), 290, ListTop + 20, 19, Secondary);
+    paint_.fonts.text(trf("No games match '{0}'.", {savesQuery_}), 290, ListTop + 20, 19, Secondary);
     return;
   }
   const int count = int(rows.size());
@@ -459,20 +459,20 @@ void Application::dropboxTab() {
       paint_.fonts.middle(text, right + 10, y + 42, 16, on ? Surface : Ink, true);
       right -= 8;
     };
-    badge(dropboxListed_ ? trf("드롭박스 {0}개", {std::to_string(g.remote)}) : std::string(tr("드롭박스 확인 중")),
+    badge(dropboxListed_ ? trf("Dropbox {0}", {std::to_string(g.remote)}) : std::string(tr("Checking Dropbox")),
           g.remote > 0);
-    badge(trf("내 기기 {0}개", {std::to_string(local)}), local > 0);
-    if (!g.installed) badge(tr("게임 미설치"), false);
+    badge(trf("Console {0}|count", {std::to_string(local)}), local > 0);
+    if (!g.installed) badge(tr("Game not installed"), false);
   }
   unclip();
 }
 
 void Application::dropboxDialog() {
   if (dropboxUnlinkAsk_) {
-    const auto body = modal(700, 20 + 30 + 84 + 16, tr("드롭박스 연결을 해제합니까?"), tr("취소"), "", tr("해제합니다"), 25);
-    paint_.fonts.text(dropboxAccount_.empty() ? std::string(tr("드롭박스")) : dropboxAccount_, body.x + 32, body.y + 20, 21,
+    const auto body = modal(700, 20 + 30 + 84 + 16, tr("Disconnect Dropbox?"), tr("Cancel"), "", tr("Disconnect|confirm"), 25);
+    paint_.fonts.text(dropboxAccount_.empty() ? std::string(tr("Dropbox")) : dropboxAccount_, body.x + 32, body.y + 20, 21,
                       Ink, true, body.w - 64);
-    paint_.fonts.wrapped(tr("이 본체에서 드롭박스 연결 정보를 삭제합니다. 드롭박스에 올린 백업은 그대로 남고, 다시 연결하면 또 보입니다."),
+    paint_.fonts.wrapped(tr("Removes the Dropbox link from this console. Backups on Dropbox stay there and show again when you reconnect."),
                          body.x + 32, body.y + 56, 19, Secondary, body.w - 64, 3);
     return;
   }
@@ -492,7 +492,7 @@ void Application::dropboxDialog() {
   const bool working = dropboxBusy_ == "upload" || dropboxBusy_ == "download";
   dropboxPick_ = std::clamp(dropboxPick_, 0, std::max(0, total - 1));
   const float note = game.installed ? 0 : 30;
-  const auto body = modal(860, 24 + rows * (Row + Gap) + 40 + note, game.name, working ? "" : tr("닫기"), "",
+  const auto body = modal(860, 24 + rows * (Row + Gap) + 40 + note, game.name, working ? "" : tr("Close"), "",
                           dropboxPopupAccept(), 36);
   const float x = body.x + 32, w = body.w - 64;
   // The row at the top follows the cursor, or the finger while it glides.
@@ -510,10 +510,10 @@ void Application::dropboxDialog() {
     else paint_.rect(x, y, w, Row, Ground, 12);
     if (n < upload) {
       paint_.icon(36, x + 20, y + 23, Ink, 26);
-      paint_.fonts.text(tr("백업을 골라 드롭박스에 올립니다"), x + 60, y + 10, 20, Ink, true, w - 80);
+      paint_.fonts.text(tr("Pick a backup to upload to Dropbox"), x + 60, y + 10, 20, Ink, true, w - 80);
       const std::string detail = dropboxLocal_.empty()
-                                     ? std::string(tr("내 기기에 백업이 없습니다. 내 기기 탭에서 먼저 백업합니다."))
-                                     : trf("내 기기 {0}개", {std::to_string(dropboxLocal_.size())});
+                                     ? std::string(tr("No backups on the console. Back up first in the This console tab."))
+                                     : trf("Console {0}|count", {std::to_string(dropboxLocal_.size())});
       paint_.fonts.text(detail, x + 60, y + 40, 16, Secondary, false, w - 80);
       continue;
     }
@@ -521,33 +521,33 @@ void Application::dropboxDialog() {
     const bool here = std::any_of(dropboxLocal_.begin(), dropboxLocal_.end(), [&](const auto &b) { return b.name == r.name; });
     paint_.fonts.text(r.name, x + 20, y + 10, 20, Ink, true, w - 220);
     // When and from which console: Dropbox holds every console's uploads.
-    std::string from = trf("드롭박스 · {0}", {when(r.modified)});
+    std::string from = trf("Dropbox · {0}", {when(r.modified)});
     const auto meta = dropboxMetas_.find(r.name);
     if (meta != dropboxMetas_.end()) {
       const auto &m = meta->second;
       from = when(m.createdAt ? m.createdAt : r.modified) + " · " +
-             (!dropboxDevice_.empty() && m.deviceId == dropboxDevice_ ? std::string(tr("이 본체"))
-              : m.deviceLabel.empty()                                  ? std::string(tr("알 수 없는 기기"))
-                                                                       : trf("{0} 기기", {m.deviceLabel}));
+             (!dropboxDevice_.empty() && m.deviceId == dropboxDevice_ ? std::string(tr("This console"))
+              : m.deviceLabel.empty()                                  ? std::string(tr("Unknown console"))
+                                                                       : trf("Console {0}", {m.deviceLabel}));
       if (!m.userName.empty()) from += " · " + m.userName;
     } else if (dropboxBusy_ == "meta") {
-      from += " · " + std::string(tr("기기 확인 중"));
+      from += " · " + std::string(tr("Checking console"));
     }
     paint_.fonts.text(from, x + 20, y + 40, 16, Secondary, false, w - 220);
-    const std::string side = here ? std::string(tr("내 기기에 있음")) : formatBytes(r.size);
+    const std::string side = here ? std::string(tr("On the console")) : formatBytes(r.size);
     paint_.fonts.middle(side, x + w - 20 - paint_.fonts.measure(side, 17, true), y + Row / 2, 17, here ? Good : Ink, true);
   }
   unclip();
   const float line = body.y + 24 + rows * (Row + Gap) + 4;
   if (working)
-    paint_.fonts.text(dropboxBusy_ == "upload" ? tr("드롭박스에 올리고 있습니다.") : tr("드롭박스에서 받고 있습니다."), x, line,
+    paint_.fonts.text(dropboxBusy_ == "upload" ? tr("Uploading to Dropbox.") : tr("Downloading from Dropbox."), x, line,
                       18, Secondary);
   else if (revisions.empty() && dropboxListed_)
-    paint_.fonts.text(tr("드롭박스에 이 게임의 백업이 없습니다."), x, line, 18, Secondary);
+    paint_.fonts.text(tr("Dropbox has no backups of this game."), x, line, 18, Secondary);
   else if (revisions.empty())
     paint_.skeleton(x, line - 2, 420, 22, 6); // the Dropbox list is on its way
   else if (!game.installed)
-    paint_.fonts.wrapped(tr("게임이 설치되어 있지 않아 받아 두기만 하고, 설치한 뒤 내 기기 탭에서 복원합니다."), x,
+    paint_.fonts.wrapped(tr("The game isn't installed, so backups only come down for now. Install it, then restore from the This console tab."), x,
                          line, 18, Secondary, w, 2);
 }
 // The console's backups of the open game: A sends the one picked.
@@ -560,7 +560,7 @@ void Application::dropboxUploadList() {
   const int rows = std::min(total, PopupRows + 1);
   const bool working = dropboxBusy_ == "upload";
   dropboxUploadPick_ = std::clamp(dropboxUploadPick_, 0, total - 1);
-  const auto body = modal(860, 24 + rows * (Row + Gap) + 40, game.name, working ? "" : tr("뒤로"), "", tr("올리기"), 36);
+  const auto body = modal(860, 24 + rows * (Row + Gap) + 40, game.name, working ? "" : tr("Back"), "", tr("Upload"), 36);
   const float x = body.x + 32, w = body.w - 64;
   // The row at the top follows the cursor, or the finger while it glides.
   const float topRow = glide("dropboxUpload", x, body.y + 24, w, rows * (Row + Gap), float(std::clamp(dropboxUploadPick_ - rows / 2, 0, std::max(0, total - rows))),
@@ -581,12 +581,12 @@ void Application::dropboxUploadList() {
     // One already on Dropbox is overwritten by the upload.
     const bool there = remote != dropboxRemote_.end() &&
                        std::any_of(remote->second.begin(), remote->second.end(), [&](const auto &r) { return r.name == b.name; });
-    const std::string side = there ? std::string(tr("드롭박스에 있음")) : formatBytes(uint64_t(b.size));
+    const std::string side = there ? std::string(tr("On Dropbox")) : formatBytes(uint64_t(b.size));
     paint_.fonts.middle(side, x + w - 20 - paint_.fonts.measure(side, 17, true), y + Row / 2, 17, there ? Good : Ink, true);
   }
   unclip();
   const float line = body.y + 24 + rows * (Row + Gap) + 4;
-  paint_.fonts.text(working ? tr("드롭박스에 올리고 있습니다.") : tr("드롭박스에 있는 백업은 같은 이름으로 덮어씁니다."), x, line, 18,
+  paint_.fonts.text(working ? tr("Uploading to Dropbox.") : tr("A backup already on Dropbox is replaced under the same name."), x, line, 18,
                     Secondary);
 }
 } // namespace foil::ui

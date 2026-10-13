@@ -41,55 +41,55 @@ std::string readLine(const std::string &path) {
 // A commit into a console save; nothing when the destination is the SD card.
 Error commitNow(const CopyHooks &hooks, int64_t &pending, const std::string &path) {
   if (!hooks.commit) return {};
-  if (!hooks.commit()) return {trf("세이브에 기록하지 못했습니다: {0}", {path})};
+  if (!hooks.commit()) return {trf("Could not write to the save: {0}", {path})};
   pending = 0;
   return {};
 }
 Error copyFile(const std::string &from, const std::string &to, const CopyHooks &hooks,
                int64_t &pending, uint64_t &copied) {
   std::unique_ptr<FILE, int (*)(FILE *)> in(std::fopen(from.c_str(), "rb"), std::fclose);
-  if (!in) return {trf("파일을 읽지 못했습니다: {0}", {from})};
+  if (!in) return {trf("Could not read the file: {0}", {from})};
   std::unique_ptr<FILE, int (*)(FILE *)> out(std::fopen(to.c_str(), "wb"), std::fclose);
   writeBuffer(out.get());
-  if (!out) return {trf("파일을 만들지 못했습니다: {0}", {to})};
+  if (!out) return {trf("Could not create file: {0}", {to})};
   std::vector<char> buffer(CopyBuffer);
   long written = 0;
   for (;;) {
     const size_t got = std::fread(buffer.data(), 1, buffer.size(), in.get());
     if (!got) {
-      if (std::ferror(in.get())) return {trf("파일을 읽지 못했습니다: {0}", {from})};
+      if (std::ferror(in.get())) return {trf("Could not read the file: {0}", {from})};
       break;
     }
     // A console save holds only `journal` uncommitted bytes: close, commit
     // and reopen at the same place before going past it (JKSV's way).
     if (hooks.commit && commitDue(pending, int64_t(got), hooks.journal)) {
       if (std::fclose(out.release()) != 0 || !hooks.commit())
-        return {trf("세이브에 기록하지 못했습니다: {0}", {to})};
+        return {trf("Could not write to the save: {0}", {to})};
       out.reset(std::fopen(to.c_str(), "rb+"));
       if (!out || std::fseek(out.get(), written, SEEK_SET) != 0)
-        return {trf("파일을 만들지 못했습니다: {0}", {to})};
+        return {trf("Could not create file: {0}", {to})};
       pending = 0;
     }
     if (std::fwrite(buffer.data(), 1, got, out.get()) != got)
-      return {trf("파일을 쓰지 못했습니다: {0}", {to})};
+      return {trf("Could not write the file: {0}", {to})};
     written += long(got);
     pending += int64_t(got);
     copied += got;
     if (hooks.progress) hooks.progress(copied);
   }
-  if (std::fclose(out.release()) != 0) return {trf("파일을 쓰지 못했습니다: {0}", {to})};
+  if (std::fclose(out.release()) != 0) return {trf("Could not write the file: {0}", {to})};
   return commitNow(hooks, pending, to);
 }
 Error copyInto(const std::string &from, const std::string &to, const CopyHooks &hooks,
                int64_t &pending, uint64_t &copied) {
-  if (!makeDirectories(to)) return {trf("폴더를 만들지 못했습니다: {0}", {to})};
+  if (!makeDirectories(to)) return {trf("Could not create the folder: {0}", {to})};
   if (auto error = commitNow(hooks, pending, to)) return error;
-  if (!isDirectory(from)) return {trf("폴더를 읽지 못했습니다: {0}", {from})};
+  if (!isDirectory(from)) return {trf("Could not read the folder: {0}", {from})};
   for (const auto &name : entries(from)) {
     if (hooks.commit && name == JksvMetaName) continue;
     const auto source = from + "/" + name, target = to + "/" + name;
     struct stat st {};
-    if (stat(source.c_str(), &st) != 0) return {trf("파일을 읽지 못했습니다: {0}", {source})};
+    if (stat(source.c_str(), &st) != 0) return {trf("Could not read the file: {0}", {source})};
     Error error;
     if (S_ISDIR(st.st_mode)) error = copyInto(source, target, hooks, pending, copied);
     else if (S_ISREG(st.st_mode)) error = copyFile(source, target, hooks, pending, copied);
@@ -112,8 +112,8 @@ std::string userIdOf(const std::array<uint64_t, 2> &user) {
 bool deviceBackup(const LocalBackup &backup) { return backup.hasMeta && backup.meta.userId == "device"; }
 Error kindMismatch(bool deviceSource, bool deviceTarget) {
   if (deviceSource == deviceTarget) return {};
-  return {deviceSource ? tr("공용 세이브용이라 계정 세이브에 넣을 수 없습니다. 공용 세이브를 고릅니다.")
-                       : tr("계정 세이브용이라 공용 세이브에 넣을 수 없습니다. 계정을 고릅니다.")};
+  return {deviceSource ? tr("This is for the shared save, so it can't go into an account's save. Pick the shared save.")
+                       : tr("This is for an account's save, so it can't go into the shared save. Pick an account.")};
 }
 Error restoreMismatch(const LocalBackup &backup, bool deviceTarget) {
   return kindMismatch(deviceBackup(backup), deviceTarget);
@@ -183,10 +183,10 @@ Error moveToTrash(const std::string &root, const LocalBackup &backup, std::time_
   const auto parent = backup.path.substr(0, slash);
   const auto title = parent.substr(parent.find_last_of('/') + 1);
   const auto trash = root + "/trash/" + title;
-  if (!makeDirectories(trash)) return {tr("휴지통 폴더를 만들지 못했습니다.")};
+  if (!makeDirectories(trash)) return {tr("Could not create the trash folder.")};
   const auto target = trash + "/" + backup.name + "_" + std::to_string(static_cast<long long>(now));
   if (std::rename(backup.path.c_str(), target.c_str()) != 0)
-    return {tr("백업을 휴지통으로 옮기지 못했습니다.")};
+    return {tr("Could not move the backup to the trash.")};
   // The folder is what save-keeper lists; its companions follow it.
   if (exists(backup.path + ".meta") && std::rename((backup.path + ".meta").c_str(), (target + ".meta").c_str()) != 0)
     logLine("saves: could not move " + backup.path + ".meta to trash");
@@ -244,7 +244,7 @@ Parsed<Device> loadDevice(const std::string &root, std::time_t now, unsigned clo
       !atomicWrite(settingsPath,
                    std::string(json_object_to_json_string_ext(settings.get(), JSON_C_TO_STRING_PRETTY)) + "\n",
                    error))
-    result.error.message = tr("기기 정보를 저장하지 못했습니다.");
+    result.error.message = tr("Could not save the device details.");
   return result;
 }
 
@@ -298,7 +298,7 @@ Error copyTree(const std::string &from, const std::string &to, const CopyHooks &
   int64_t pending = 0;
   uint64_t copied = 0;
   auto error = copyInto(from, to, hooks, pending, copied);
-  if (!error && hooks.commit && !hooks.commit()) error.message = tr("세이브에 기록하지 못했습니다.");
+  if (!error && hooks.commit && !hooks.commit()) error.message = tr("Could not write to the save.");
   return error;
 }
 Error clearTree(const std::string &path) {
@@ -307,14 +307,14 @@ Error clearTree(const std::string &path) {
     if (isDirectory(full)) {
       if (auto error = removeTree(full)) return error;
     } else if (unlink(full.c_str()) != 0) {
-      return {trf("파일을 삭제하지 못했습니다: {0}", {full})};
+      return {trf("Could not delete the file: {0}", {full})};
     }
   }
   return {};
 }
 Error removeTree(const std::string &path) {
   if (auto error = clearTree(path)) return error;
-  if (rmdir(path.c_str()) != 0) return {trf("폴더를 삭제하지 못했습니다: {0}", {path})};
+  if (rmdir(path.c_str()) != 0) return {trf("Could not delete the folder: {0}", {path})};
   return {};
 }
 } // namespace foil::saves

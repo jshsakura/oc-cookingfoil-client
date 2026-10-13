@@ -28,15 +28,15 @@ float Application::myGamesTabs(float right) {
     return int(std::count_if(all.begin(), all.end(), [&](const auto &row) { return row.item.type == type; }));
   };
   // Short labels (Japanese runs long), and the strip ends where the title does.
-  return headerTabs({tr("설치됨|탭"), tr("업데이트|탭"), "DLC"}, myGamesTab(), [this](int n) { showMyGamesTab(n); }, right,
-                    260 + paint_.fonts.measure(tr("내 게임"), 30, true) + 24, {0, count("update"), count("dlc")});
+  return headerTabs({tr("Installed|tab"), tr("Updates"), "DLC"}, myGamesTab(), [this](int n) { showMyGamesTab(n); }, right,
+                    260 + paint_.fonts.measure(tr("My games"), 30, true) + 24, {0, count("update"), count("dlc")});
 }
 // The Y button between 내 게임's tabs and search (the order on 설치됨,
 // 모두 업데이트 or 모두 설치 on the others).
 float Application::myGamesButtonWidth(const std::string &) {
   // One width on all three tabs, the longest label's, so switching tabs
   // never moves the tabs or the title.
-  float widest = std::max(paint_.fonts.measure(tr("모두 업데이트"), 18, true), paint_.fonts.measure(tr("모두 설치"), 18, true));
+  float widest = std::max(paint_.fonts.measure(tr("Update all"), 18, true), paint_.fonts.measure(tr("Install all"), 18, true));
   for (int n = 0; n < InstalledSortCount; ++n)
     widest = std::max(widest, paint_.fonts.measure(installedSortLabel(InstalledSort(n)), 18, true));
   return widest + 106;
@@ -65,7 +65,7 @@ void Application::updates() {
   const bool canUpdate = installed_.installed.complete && !deviceBusy_ && !rows.empty();
   // As on 설치됨: search at the right end, 모두 업데이트 (Y) in the order's
   // place, then the tabs.
-  const auto yLabel = updatesTab_ == 2 ? tr("모두 설치") : tr("모두 업데이트");
+  const auto yLabel = updatesTab_ == 2 ? tr("Install all") : tr("Update all");
   const float searchX = SearchX, w = myGamesButtonWidth(yLabel), buttonX = searchX - 16 - w;
   searchBar(updatesQuery_, searchX);
   // Always there, dimmed with nothing to update, so the tabs never move.
@@ -76,11 +76,11 @@ void Application::updates() {
   paint_.icon(3, buttonX + 60, 38, ink, 20);
   paint_.fonts.middle(yLabel, buttonX + 88, 48, 18, ink, true, w - 106);
   const float tabsLeft = myGamesTabs(buttonX - 16);
-  pageTitle(tr("내 게임"),
+  pageTitle(tr("My games"),
             !updatesQuery_.empty() ? countLabel(rows.size(), updatesQuery_) : bytes ? std::to_string(rows.size()) + " · " + formatBytes(bytes) : std::to_string(rows.size()),
             tabsLeft);
   if (!connected_) {
-    notice(tr("서버에 연결되어 있지 않습니다."), tr("서버에 연결한 뒤 업데이트를 확인합니다."), 21);
+    notice(tr("Not connected to a server."), tr("Connect to a server to check for updates."), 21);
     return;
   }
   // Pulsing rows only for a first read; a reread keeps the rows on screen.
@@ -93,16 +93,16 @@ void Application::updates() {
     return;
   }
   if (!installed_.installed.complete) {
-    notice(deviceError_ ? tr("설치 목록을 읽지 못했습니다.") : tr("설치 목록이 필요합니다."),
-           deviceError_ ? deviceError_.message : tr("- 버튼으로 본체의 설치 목록을 새로고침합니다."), 25);
+    notice(deviceError_ ? tr("Couldn't read installed games.") : tr("Installed list needed."),
+           deviceError_ ? deviceError_.message : tr("Press - to read the console's installed games."), 25);
     return;
   }
   if (rows.empty() && !updatesQuery_.empty()) {
-    notice(trf("'{0}'에 맞는 게임이 없습니다.", {updatesQuery_}), tr("B로 검색어를 지웁니다."), 23);
+    notice(trf("No games match '{0}'.", {updatesQuery_}), tr("Press B to clear the search."), 23);
     return;
   }
   if (rows.empty()) {
-    notice(tr("모두 최신입니다."), tr("새 업데이트나 설치하지 않은 DLC가 없습니다."), 24);
+    notice(tr("All up to date."), tr("No new updates or uninstalled DLC."), 24);
     return;
   }
   selected_ = std::clamp(selected_, 0, int(rows.size()) - 1);
@@ -126,7 +126,7 @@ void Application::updates() {
     cover(group ? group->representative.icon : row.item.icon, 282, y + 14, 80, false, name);
     if (inContent() && i == selected_) marquee(name, 382, y + 24, 22, 620);
     else paint_.fonts.text(name, 382, y + 24, 22, Ink, true, 620);
-    std::string installed = row.installedVersion ? "v" + std::to_string(*row.installedVersion) : tr("없음");
+    std::string installed = row.installedVersion ? "v" + std::to_string(*row.installedVersion) : tr("None");
     const auto local = std::find_if(installed_.games.begin(), installed_.games.end(), [&](const auto &g) { return g.titleId == row.baseId; });
     if (row.item.type == "update" && local != installed_.games.end() && !local->displayVersion.empty())
       installed = local->displayVersion;
@@ -134,22 +134,22 @@ void Application::updates() {
     const auto detail = row.item.type == "dlc" ? row.item.name : installed + " → " + versionLabel(row.item);
     paint_.fonts.text(detail, 382, y + 65, 19, Secondary, false, 600);
     // Its kind, at the right end above the size.
-    const std::string kind = row.item.type == "update" ? tr("업데이트|항목") : row.installedVersion ? tr("DLC 업데이트") : tr("새 DLC");
+    const std::string kind = row.item.type == "update" ? tr("Update|item") : row.installedVersion ? tr("DLC update") : tr("New DLC");
     paint_.pill(kind, 1230 - (paint_.fonts.measure(kind, 15, true) + 18), y + 22);
     const auto size = formatBytes(row.item.size);
     paint_.fonts.text(size, 1230 - paint_.fonts.measure(size, 19, true), y + 65, 19, Ink, true);
   }
   unclip();
-  paint_.fonts.text(tr("설치된 본편의 최신 업데이트와 미설치·최신 DLC만 표시합니다."), 260, 606, 18, Secondary);
+  paint_.fonts.text(tr("Shows only the latest updates for installed games and new or newer DLC."), 260, 606, 18, Secondary);
 }
 void Application::installUpdates(bool all) {
-  if (deviceBusy_ || !installed_.installed.complete) { message(tr("설치된 버전 조회가 끝난 뒤 업데이트합니다.")); return; }
+  if (deviceBusy_ || !installed_.installed.complete) { message(tr("Updates start after installed versions are read.")); return; }
   const auto rows = updateRows();
   if (rows.empty()) return;
   const auto &selected = rows[std::clamp(selected_, 0, int(rows.size()) - 1)];
   std::vector<Item> files;
   for (const auto &row : rows) if (all || row.baseId == selected.baseId) files.push_back(row.item);
-  const auto name = all ? std::string(updatesTab_ == 2 ? tr("모두 설치") : tr("모두 업데이트")) : selected.item.name;
+  const auto name = all ? std::string(updatesTab_ == 2 ? tr("Install all") : tr("Update all")) : selected.item.name;
   if (const auto result = startInstall(files, name, selected.item.icon, installTarget())) {
     message(result.message);
     return;

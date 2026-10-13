@@ -42,7 +42,7 @@ Parsed<State> loadState(const std::string& path) {
         auto root = parseJson(readFile(path), result.error);
         if (result.error) return result;
         result.value.deviceKey = stringField(root.get(), "deviceKey");
-        if (!validDeviceKey(result.value.deviceKey)) { result.error.message = tr("기기 키가 잘못되었습니다. 상태 파일을 확인해 주세요."); return result; }
+        if (!validDeviceKey(result.value.deviceKey)) { result.error.message = tr("The device key is invalid. Check the state file."); return result; }
         result.value.lastServer = stringField(root.get(), "lastServer");
         result.value.lastScreen = stringField(root.get(), "lastScreen", "home");
         result.value.language = stringField(root.get(), "language");
@@ -82,7 +82,7 @@ Parsed<State> loadState(const std::string& path) {
     randomGet(entropy, sizeof(entropy));
 #else
     std::ifstream random("/dev/urandom", std::ios::binary);
-    if (!random.read(reinterpret_cast<char*>(entropy), sizeof(entropy))) { result.error.message = tr("기기 키를 만들지 못했습니다."); return result; }
+    if (!random.read(reinterpret_cast<char*>(entropy), sizeof(entropy))) { result.error.message = tr("Could not create the device key."); return result; }
 #endif
     const char* hex = "0123456789abcdef";
     for (auto byte : entropy) { result.value.deviceKey += hex[byte >> 4]; result.value.deviceKey += hex[byte & 15]; }

@@ -34,8 +34,8 @@ Error httpError(const char *what, const Response &response) {
   if (!response.error.empty()) return {response.error};
   logLine(std::string("dropbox: ") + what + " HTTP " + std::to_string(response.status) + " " + summary(response));
   if (response.status == 507 || response.body.find("insufficient_space") != std::string::npos)
-    return {tr("드롭박스 공간이 부족합니다.")};
-  return {trf("드롭박스 요청이 실패했습니다. HTTP {0}", {std::to_string(response.status)})};
+    return {tr("Dropbox is out of space.")};
+  return {trf("The Dropbox request failed. HTTP {0}", {std::to_string(response.status)})};
 }
 } // namespace
 
@@ -53,7 +53,7 @@ Error Dropbox::store() {
   makeDirectories(std::filesystem::path(std::filesystem::path(path_).parent_path()).string());
   std::string error;
   if (!atomicWrite(path_, db::serializeCredentials(credentials_), error))
-    return {trf("드롭박스 연결 정보를 저장하지 못했습니다. {0}", {error})};
+    return {trf("Could not save the Dropbox link. {0}", {error})};
   return {};
 }
 
@@ -69,14 +69,14 @@ DropboxStart Dropbox::start(const Server &server, const State &state) {
   }
   if (!response.error.empty() || response.status != 200) {
     result.error = response.error.empty()
-                       ? Error{trf("드롭박스 연결을 시작하지 못했습니다. HTTP {0}", {std::to_string(response.status)})}
+                       ? Error{trf("Could not start connecting Dropbox. HTTP {0}", {std::to_string(response.status)})}
                        : Error{response.error};
     return result;
   }
   auto parsed = db::parseBridgeSession(response.body);
   if (parsed.error || parsed.value.authorizeUrl.empty()) {
     logLine("dropbox: bridge start: " + parsed.error.message);
-    result.error.message = tr("서버의 드롭박스 응답을 읽지 못했습니다.");
+    result.error.message = tr("Could not read the server's Dropbox reply.");
     return result;
   }
   result.session = std::move(parsed.value);
@@ -112,21 +112,21 @@ Error Dropbox::finish(const Server &server, const State &state, const db::Bridge
   if (!consumed.error.empty()) return {consumed.error};
   if (consumed.status != 200) {
     logLine("dropbox: bridge consume HTTP " + std::to_string(consumed.status));
-    return {tr("드롭박스 승인을 받아오지 못했습니다. 처음부터 다시 연결합니다.")};
+    return {tr("Could not complete the Dropbox approval. Connect again from the start.")};
   }
   const auto grant = db::parseBridgeGrant(consumed.body);
   if (grant.error) {
     logLine("dropbox: bridge consume: " + grant.error.message);
-    return {tr("서버의 드롭박스 응답을 읽지 못했습니다.")};
+    return {tr("Could not read the server's Dropbox reply.")};
   }
   // The code must belong to the sign-in this console started.
   if (!db::constantTimeEqual(grant.value.state, db::extractQueryParam(session.authorizeUrl, "state"))) {
     logLine("dropbox: state mismatch");
-    return {tr("드롭박스 승인을 받아오지 못했습니다. 처음부터 다시 연결합니다.")};
+    return {tr("Could not complete the Dropbox approval. Connect again from the start.")};
   }
   // The public app key is in the address the phone opened.
   const auto clientId = db::clientIdFromAuthorizeUrl(session.authorizeUrl);
-  if (clientId.empty()) return {tr("서버의 드롭박스 응답을 읽지 못했습니다.")};
+  if (clientId.empty()) return {tr("Could not read the server's Dropbox reply.")};
   PostOptions exchange;
   exchange.body = db::authorizationCodeBody(grant.value, clientId);
   const auto response =
@@ -134,12 +134,12 @@ Error Dropbox::finish(const Server &server, const State &state, const db::Bridge
   if (!response.error.empty()) return {response.error};
   if (response.status != 200) {
     logLine("dropbox: code exchange HTTP " + std::to_string(response.status));
-    return {tr("드롭박스 승인을 받아오지 못했습니다. 처음부터 다시 연결합니다.")};
+    return {tr("Could not complete the Dropbox approval. Connect again from the start.")};
   }
   const auto token = db::parseToken(response.body, true);
   if (token.error) {
     logLine("dropbox: code exchange: " + token.error.message);
-    return {tr("드롭박스 승인을 받아오지 못했습니다. 처음부터 다시 연결합니다.")};
+    return {tr("Could not complete the Dropbox approval. Connect again from the start.")};
   }
   db::Credentials linked;
   linked.clientId = clientId;
@@ -157,16 +157,16 @@ Error Dropbox::finish(const Server &server, const State &state, const db::Bridge
 Error Dropbox::unlink() {
   credentials_ = {};
   if (std::remove(path_.c_str()) != 0 && std::filesystem::exists(path_))
-    return {tr("드롭박스 연결 정보를 삭제하지 못했습니다.")};
+    return {tr("Could not remove the Dropbox link.")};
   return {};
 }
 
 Error Dropbox::fresh(bool force) {
-  if (!linked()) return {tr("드롭박스에 연결되어 있지 않습니다.")};
+  if (!linked()) return {tr("Dropbox is not connected.")};
   if (!force && !db::needsRefresh(credentials_, std::time(nullptr))) return {};
   // A token without expiry or refresh token (older links) is used as it is.
   if (credentials_.refreshToken.empty() || credentials_.clientId.empty())
-    return force ? Error{tr("드롭박스 연결이 끊어졌습니다. 다시 연결합니다.")} : Error{};
+    return force ? Error{tr("The Dropbox link has ended. Connect again.")} : Error{};
   PostOptions options;
   options.body = db::refreshBody(credentials_.refreshToken, credentials_.clientId);
   const auto response = post(db::TokenEndpoint, {"Content-Type: application/x-www-form-urlencoded"}, options, cancel_);
@@ -181,11 +181,11 @@ Error Dropbox::fresh(bool force) {
   }
   logLine("dropbox: refresh HTTP " + std::to_string(response.status));
   if (response.status != 200 && !db::isRevoked(response.status, response.body))
-    return {trf("드롭박스 요청이 실패했습니다. HTTP {0}", {std::to_string(response.status)})};
+    return {trf("The Dropbox request failed. HTTP {0}", {std::to_string(response.status)})};
   // save-keeper's reconnect: the link is gone, and so is its file.
   revoked_ = true;
   unlink();
-  return {tr("드롭박스 연결이 끊어졌습니다. 다시 연결합니다.")};
+  return {tr("The Dropbox link has ended. Connect again.")};
 }
 
 Response Dropbox::call(const std::string &url, const std::vector<std::string> &headers, const PostOptions &options,
@@ -201,7 +201,7 @@ Response Dropbox::call(const std::string &url, const std::vector<std::string> &h
   if (response.status == 401) {
     revoked_ = true;
     unlink();
-    error.message = tr("드롭박스 연결이 끊어졌습니다. 다시 연결합니다.");
+    error.message = tr("The Dropbox link has ended. Connect again.");
   }
   return response;
 }
@@ -220,7 +220,7 @@ Parsed<DropboxRevisions> Dropbox::revisions() {
     }
     auto page = db::parseListFolder(response.body);
     if (page.error) {
-      result.error.message = tr("드롭박스 목록을 읽지 못했습니다.");
+      result.error.message = tr("Could not read the Dropbox list.");
       return result;
     }
     entries.insert(entries.end(), page.value.entries.begin(), page.value.entries.end());
@@ -293,7 +293,7 @@ std::map<std::string, saves::BackupMeta> revisionMetas(Dropbox &dropbox, uint64_
 Error uploadBackup(Dropbox &dropbox, const std::string &root, uint64_t titleId, const saves::LocalBackup &backup,
                    const saves::BackupMeta &fallback) {
   const auto zip = db::revisionZipPath(titleId, backup.name), meta = db::revisionMetaPath(titleId, backup.name);
-  if (zip.empty()) return {tr("이 백업은 이름 때문에 올릴 수 없습니다.")};
+  if (zip.empty()) return {tr("This backup's name cannot be uploaded.")};
   const auto archive = root + "/temp/upload_" + saves::titleHex(titleId) + "_" + backup.name + ".zip";
   if (auto error = saves::exportArchive(backup, fallback, archive)) return error;
   const auto localMeta = backup.path + ".meta";
@@ -310,7 +310,7 @@ Parsed<saves::LocalBackup> downloadBackup(Dropbox &dropbox, const std::string &r
   Parsed<saves::LocalBackup> result;
   const auto zip = db::revisionZipPath(titleId, revision);
   if (zip.empty()) {
-    result.error.message = tr("이 백업은 이름 때문에 받을 수 없습니다.");
+    result.error.message = tr("This backup's name cannot be downloaded.");
     return result;
   }
   std::error_code ec;

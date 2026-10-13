@@ -22,8 +22,8 @@ bool changedFiles(const std::map<std::string, PatchHealth> &health, const std::s
 // What the check found, for a patch that is on: missing files first.
 const char *healthNote(const std::map<std::string, PatchHealth> &health, const Application::PatchRow &row) {
   if (!row.record || !row.record->on) return nullptr;
-  if (missingFiles(health, row.patch.id)) return tr("파일 일부 없음");
-  if (changedFiles(health, row.patch.id)) return tr("일부 파일이 바뀜");
+  if (missingFiles(health, row.patch.id)) return tr("Some files missing");
+  if (changedFiles(health, row.patch.id)) return tr("Some files changed");
   return nullptr;
 }
 bool updateAvailable(const Application::PatchRow &row) {
@@ -31,19 +31,19 @@ bool updateAvailable(const Application::PatchRow &row) {
 }
 const char *filterLabel(Application::PatchFilter filter) {
   switch (filter) {
-  case Application::PatchFilter::Stored: return tr("설치됨");
-  case Application::PatchFilter::Updates: return tr("업데이트|탭");
-  default: return tr("전체");
+  case Application::PatchFilter::Stored: return tr("Installed");
+  case Application::PatchFilter::Updates: return tr("Updates");
+  default: return tr("All");
   }
 }
 // Busy labels stay Korean keys in patchBusyLabel_ and are translated only
 // when drawn, so the progress check compares keys, never screen text.
-constexpr const char *Removing = "삭제 중";     // i18n: keep
-constexpr const char *Updating = "업데이트 중";   // i18n: keep
-constexpr const char *Getting = "받는 중";        // i18n: keep
-constexpr const char *Disabling = "끄는 중";      // i18n: keep
-constexpr const char *Enabling = "켜는 중";       // i18n: keep
-constexpr const char *Reapplying = "다시 적용 중"; // i18n: keep
+constexpr const char *Removing = "Deleting";     // i18n: keep
+constexpr const char *Updating = "Updating";   // i18n: keep
+constexpr const char *Getting = "Downloading";        // i18n: keep
+constexpr const char *Disabling = "Turning off";      // i18n: keep
+constexpr const char *Enabling = "Turning on";       // i18n: keep
+constexpr const char *Reapplying = "Reapplying"; // i18n: keep
 // One run of the light check: the lookups and the time it may take before
 // it stops and goes on at the next visit.
 constexpr size_t CheckLooks = 4000;
@@ -195,7 +195,7 @@ bool Application::runPatchJob(
   patchWorker_ = std::thread([this, session, job = std::move(job)] {
     const bool ok = guarded("patches", [&] { job(*session, *patchStore_, incomingPatchError_, patchMessage_); });
     if (!ok)
-      incomingPatchError_.message = tr("패치를 처리하다 오류가 났습니다. log.txt를 확인합니다.");
+      incomingPatchError_.message = tr("Patch error. Check log.txt.");
     patchDone_ = true;
   });
   return true;
@@ -226,10 +226,10 @@ void Application::pollPatches() {
     } else if (screen_ == Screen::Patches && !patchRows().empty()) {
       // Patches already on the SD card still list; the toast says the
       // shop's list is missing from 전체.
-      message(trf("{0} Y로 다시 시도합니다.", {patchError_.message}));
+      message(trf("{0} Press Y to try again.", {patchError_.message}));
     }
   } else if (incomingPatchError_) {
-    alertTitle_ = patchFailTitle_.empty() ? std::string(tr("패치를 처리하지 못했습니다")) : patchFailTitle_;
+    alertTitle_ = patchFailTitle_.empty() ? std::string(tr("Patch failed")) : patchFailTitle_;
     alert_ = incomingPatchError_.message;
   } else if (!patchMessage_.empty())
     message(patchMessage_);
@@ -293,26 +293,26 @@ std::vector<PatchChoice> patchChoices(const Application::PatchRow &row, bool mis
   // A patch is no use without its game: when the shop has it, getting the
   // game comes first. An app comes from 홈브류 instead.
   if (!app && !row.installed && row.shopGroup >= 0)
-    out.push_back({PatchOp::Game, tr("게임 다운로드"), tr("패치를 적용하려면 게임이 먼저 설치되어 있어야 합니다.")});
+    out.push_back({PatchOp::Game, tr("Download the game"), tr("The game must be installed before the patch can be applied.")});
   if (!row.record) {
     if (row.onServer)
-      out.push_back({PatchOp::Get, tr("패치 다운로드 및 적용"), tr("패치를 SD 카드에 받고 바로 적용합니다.")});
+      out.push_back({PatchOp::Get, tr("Download and apply the patch"), tr("Downloads the patch to the SD card and applies it right away.")});
     return out;
   }
   if (missing && row.record->on)
-    out.push_back({PatchOp::Reapply, tr("패치 다시 적용"), tr("없어지거나 바뀐 패치 파일을 다시 채워 넣습니다.")});
+    out.push_back({PatchOp::Reapply, tr("Reapply the patch"), tr("Restores patch files that went missing or were changed.")});
   if (updateAvailable(row))
-    out.push_back({PatchOp::Update, tr("패치 업데이트"), tr("새 버전으로 바꿉니다. 켜져 있던 패치는 그대로 켜 둡니다.")});
+    out.push_back({PatchOp::Update, tr("Update the patch"), tr("Replaces it with the new version. A patch that was on stays on.")});
   if (row.record->on)
-    out.push_back({PatchOp::Disable, tr("패치 끄기"),
-                   app ? tr("앱을 원래대로 되돌립니다. 받은 파일은 남아 있어 언제든 다시 켤 수 있습니다.")
-                       : tr("게임을 원래대로 되돌립니다. 받은 파일은 남아 있어 언제든 다시 켤 수 있습니다.")});
+    out.push_back({PatchOp::Disable, tr("Turn off the patch"),
+                   app ? tr("Returns the app to its original state. The files stay, so you can turn the patch back on anytime.")
+                       : tr("Returns the game to its original state. The files stay, so you can turn the patch back on anytime.")});
   else
-    out.push_back({PatchOp::Enable, tr("패치 켜기"),
-                   app ? tr("받아 둔 패치를 적용합니다. 앱을 다시 시작하면 반영됩니다.")
-                       : tr("받아 둔 패치를 적용합니다. 게임을 다시 시작하면 반영됩니다.")});
-  out.push_back({PatchOp::Remove, tr("패치 삭제"), row.record->on ? tr("패치를 끄고 받은 파일을 SD 카드에서 삭제합니다.")
-                                                                 : tr("받아 둔 패치 파일을 SD 카드에서 삭제합니다.")});
+    out.push_back({PatchOp::Enable, tr("Turn on the patch"),
+                   app ? tr("Applies the downloaded patch. It takes effect the next time you start the app.")
+                       : tr("Applies the downloaded patch. It takes effect the next time you start the game.")});
+  out.push_back({PatchOp::Remove, tr("Delete the patch"), row.record->on ? tr("Turns the patch off and deletes its files from the SD card.")
+                                                                 : tr("Deletes the downloaded patch files from the SD card.")});
   return out;
 }
 // The names of the patches that are on and share files with this one,
@@ -342,7 +342,7 @@ void Application::patchAction(Action a) {
       const auto &row = *picked;
       runPatchJob(row.patch.id, Removing, [id = row.patch.id](net::Session &, PatchStore &store, Error &error, std::string &done) {
         if (store.remove(id, error))
-          done = tr("패치를 삭제했습니다.");
+          done = tr("Patch deleted.");
       });
     }
     return;
@@ -364,7 +364,7 @@ void Application::patchAction(Action a) {
   }
   const auto open = [&](const PatchRow &row) {
     if (patchWorker_.joinable()) {
-      message(tr("패치 작업이 끝난 뒤 다시 시도합니다."));
+      message(tr("Try again when the patch task is done."));
       return;
     }
     if (patchChoices(row, missingFiles(patchHealth_, row.patch.id)).empty())
@@ -459,8 +459,8 @@ void Application::runPatchOp(int opIndex) {
 void Application::startPatchGet(const UserPatch &patch, bool fresh) {
   // Room for the unpacked files plus a little for folders.
   if (sdFree_ && *sdFree_ < patch.size + patch.size / 10 + (1 << 20)) {
-    alertTitle_ = tr("패치를 받을 수 없습니다");
-    alert_ = trf("SD 카드 공간이 부족합니다. {0}가 필요합니다.", {formatBytes(patch.size)});
+    alertTitle_ = tr("Cannot download patch");
+    alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(patch.size)});
     return;
   }
   runPatchJob(patch.id, fresh ? Getting : Updating,
@@ -476,7 +476,7 @@ void Application::startPatchGet(const UserPatch &patch, bool fresh) {
                   return;
                 }
                 if (!fresh) {
-                  done = tr("패치를 업데이트했습니다.");
+                  done = tr("Patch updated.");
                   return;
                 }
                 // A fresh patch turns on right away, over any patch already
@@ -484,9 +484,9 @@ void Application::startPatchGet(const UserPatch &patch, bool fresh) {
                 const auto over = overlapNames(store, patch.id);
                 if (!store.enable(patch.id, error))
                   return;
-                done = !over.empty() ? trf("패치를 받아 켰습니다. '{0}' 패치와 겹치는 파일은 이 패치 것을 씁니다.", {over})
-                       : patch.homebrewApp.empty() ? tr("패치를 받아 켰습니다. 게임을 다시 켜면 적용됩니다.")
-                                                   : tr("패치를 받아 켰습니다. 앱을 다시 켜면 적용됩니다.");
+                done = !over.empty() ? trf("Patch downloaded and on. Files it shares with '{0}' now come from this patch.", {over})
+                       : patch.homebrewApp.empty() ? tr("Patch downloaded and on. Applies when the game restarts.")
+                                                   : tr("Patch downloaded and on. Applies when the app restarts.");
               });
 }
 void Application::queuePatches(std::vector<UserPatch> patches, bool afterInstall) {
@@ -550,11 +550,11 @@ float Application::patchDownloadCard(float y) {
   paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 22, true), y + 20, 22, Ink, true);
   paint_.rect(386, y + 60, 842, 10, Line, 5);
   if (running) paint_.rect(386, y + 60, std::max(10.0, 842 * ratio), 10, Butter, 5);
-  std::string line = !running   ? std::string(tr("게임 설치가 끝나면 받습니다."))
-                     : fetching ? trf("{0} · SD 카드 · {1} / {2}", {tr("패치|항목"), formatBytes(got), formatBytes(total)})
+  std::string line = !running   ? std::string(tr("Downloads once the game is installed."))
+                     : fetching ? trf("{0} · SD card · {1} / {2}", {tr("Patch"), formatBytes(got), formatBytes(total)})
                                 : std::string(tr(patchBusyLabel_.c_str()));
   const size_t waiting = patchQueue_.size() - (running ? 0 : 1);
-  if (waiting) line += " · " + trf("패치 {0}개 대기", {std::to_string(waiting)});
+  if (waiting) line += " · " + trf("{0} patches waiting", {std::to_string(waiting)});
   paint_.fonts.text(line, 386, y + 82, 17, Secondary, false, 842);
   return Height;
 }
@@ -572,8 +572,8 @@ void Application::startPatchDisable(const UserPatch &patch) {
     const bool ok = store.disable(id, error);
     store.progress(nullptr);
     if (ok)
-      done = app ? tr("패치를 껐습니다. 앱을 다시 켜면 원래대로 돌아옵니다.")
-                 : tr("패치를 껐습니다. 게임을 다시 켜면 원래대로 돌아옵니다.");
+      done = app ? tr("Patch off. The app is back to normal after a restart.")
+                 : tr("Patch off. The game is back to normal after a restart.");
   });
 }
 // The store's copies go back first; only when it lacks some does the patch
@@ -601,9 +601,9 @@ void Application::startPatchReapply(const UserPatch &patch, bool onServer) {
       left = 0;
     }
     const bool app = !patch.homebrewApp.empty();
-    done = left ? trf("서버에 없는 패치라 파일 {0}개를 되돌리지 못했습니다.", {std::to_string(left)})
-           : app ? tr("패치를 다시 적용했습니다. 앱을 다시 켜면 적용됩니다.")
-                 : tr("패치를 다시 적용했습니다. 게임을 다시 켜면 적용됩니다.");
+    done = left ? trf("This patch is gone from the server, so {0} files could not be put back.", {std::to_string(left)})
+           : app ? tr("Patch reapplied. Restart the app to apply it.")
+                 : tr("Patch reapplied. Restart the game to apply it.");
   });
 }
 void Application::startPatchEnable(const UserPatch &patch) {
@@ -616,9 +616,9 @@ void Application::startPatchEnable(const UserPatch &patch) {
     store.progress(nullptr);
     if (!ok)
       return;
-    done = !over.empty() ? trf("패치를 켰습니다. '{0}' 패치와 겹치는 파일은 이 패치 것을 씁니다.", {over})
-           : app         ? tr("패치를 켰습니다. 앱을 다시 켜면 적용됩니다.")
-                         : tr("패치를 켰습니다. 게임을 다시 켜면 적용됩니다.");
+    done = !over.empty() ? trf("Patch on. Files it shares with '{0}' now come from this patch.", {over})
+           : app         ? tr("Patch on. Applies when the app restarts.")
+                         : tr("Patch on. Applies when the game restarts.");
   });
 }
 void Application::patchesScreen() {
@@ -648,11 +648,11 @@ void Application::patchesScreen() {
                    selected_ = 0;
                  }, searchX - 16);
   const float titleEnd =
-      pageTitle(tr("패치|메뉴"), !patchQuery_.empty() ? countLabel(rows.size(), patchQuery_) : on ? trf("{0} · 켜짐 {1}", {std::to_string(rows.size()), std::to_string(on)}) : std::to_string(rows.size()), tabsLeft);
+      pageTitle(tr("Mods"), !patchQuery_.empty() ? countLabel(rows.size(), patchQuery_) : on ? trf("{0} · {1} on", {std::to_string(rows.size()), std::to_string(on)}) : std::to_string(rows.size()), tabsLeft);
   // The background file check says it is running, quietly: a pulsing dot
   // and a word beside the title, while the list stays usable.
   if (patchChecking()) {
-    const std::string label = tr("파일 확인 중");
+    const std::string label = tr("Checking files");
     const float x = titleEnd + 16, w = paint_.fonts.measure(label, 15) + 22;
     if (x + w < tabsLeft - 12) {
       const float t = float(SDL_GetTicks() % 1000) / 1000.f;
@@ -662,7 +662,7 @@ void Application::patchesScreen() {
     }
   }
   if (rows.empty() && !patchQuery_.empty() && !all.empty()) {
-    notice(trf("'{0}'에 맞는 패치가 없습니다.", {patchQuery_}), tr("B로 검색어를 지웁니다."), 23);
+    notice(trf("No patches match '{0}'.", {patchQuery_}), tr("Press B to clear the search."), 23);
     return;
   }
   if (rows.empty()) {
@@ -671,16 +671,16 @@ void Application::patchesScreen() {
       for (int n = 0; n <= VisibleRows; ++n)
         paint_.skeleton(260, RowTop + n * RowStep, 992, RowHeight, 18);
     } else if (!connected_)
-      notice(tr("서버에 연결되어 있지 않습니다."), tr("서버에 연결한 뒤 패치 목록을 불러옵니다."), 21);
+      notice(tr("Not connected to a server."), tr("Connect to a server to load the patch list."), 21);
     else if (patchError_ && patchRetryAt_)
-      notice(tr("서버가 패치를 읽고 있습니다."), tr("잠시 뒤 자동으로 다시 불러옵니다."), 25);
+      notice(tr("The server is reading its patches."), tr("It loads again by itself shortly."), 25);
     else if (patchError_)
-      notice(tr("패치 목록을 불러오지 못했습니다."), patchError_.message, 25);
+      notice(tr("Could not load the patch list."), patchError_.message, 25);
     else if (patchFilter_ != PatchFilter::All && !all.empty())
-      notice(patchFilter_ == PatchFilter::Stored ? tr("설치한 패치가 없습니다.") : tr("업데이트할 패치가 없습니다."),
-             tr("패치는 SD 카드의 atmosphere/contents/타이틀 ID 폴더에 설치되고, 게임을 다시 켜면 적용됩니다."), 32);
+      notice(patchFilter_ == PatchFilter::Stored ? tr("No patches installed.") : tr("No patches to update."),
+             tr("Patches go into atmosphere/contents/<title ID> on the SD card and take effect the next time the game starts."), 32);
     else
-      notice(tr("받을 수 있는 패치가 없습니다."), tr("서버의 patches 폴더에 패치를 넣으면 여기에 나타납니다."), 32);
+      notice(tr("No patches available."), tr("Patches in the server's patches folder appear here."), 32);
     return;
   }
   const auto games = patchGames(rows);
@@ -721,8 +721,8 @@ void Application::patchesScreen() {
     } else {
       int on = 0;
       for (const int r : game.rows) on += rows[r].record && rows[r].record->on;
-      meta = trf("패치 {0}개", {std::to_string(game.rows.size())});
-      if (on) meta += " · " + trf("켜짐 {0}개", {std::to_string(on)});
+      meta = trf("{0} patches", {std::to_string(game.rows.size())});
+      if (on) meta += " · " + trf("{0} on", {std::to_string(on)});
     }
     paint_.fonts.text(meta, 382, y + 46, 18, Secondary, false, 1230 - 16 - 382);
     // What the patches touch, then any warning about the game itself.
@@ -748,13 +748,13 @@ void Application::patchesScreen() {
     if (note)
       warning = note;
     else if (!game.installed && game.app)
-      warning = tr("앱 미설치 · 홈브류에 있음");
+      warning = tr("App not installed · in Homebrew");
     else if (!game.installed)
-      warning = lead.shopGroup >= 0 ? tr("게임 미설치 · 서버에 있음") : tr("게임 미설치");
+      warning = lead.shopGroup >= 0 ? tr("Not installed · on the server") : tr("Game not installed");
     else if (mismatch && game.rows.size() == 1 && !game.app)
-      warning = trf("게임 {0} 전용", {lead.patch.gameVersion});
+      warning = trf("Game {0} only", {lead.patch.gameVersion});
     if (gone)
-      warning = tr("서버에서 사라짐");
+      warning = tr("Gone from server");
     if (!warning.empty()) {
       paint_.icon(25, at + 4, y + 77, game.installed ? Pending : Secondary, 20);
       paint_.fonts.middle(warning, at + 30, y + 87, 16, game.installed ? Pending : Secondary, true);
@@ -771,9 +771,9 @@ void Application::patchesScreen() {
       stored |= row.record.has_value();
     }
     const std::string state = busy ? tr(patchBusyLabel_.c_str())
-                              : update ? tr("업데이트|항목")
-                              : on ? tr("켜짐")
-                              : stored ? tr("꺼짐") : tr("미설치");
+                              : update ? tr("Update|item")
+                              : on ? tr("On")
+                              : stored ? tr("Off") : tr("Not installed");
     const SDL_Color fill = busy || update ? Butter : on ? Good : Line;
     const SDL_Color ink = on && !busy && !update ? Surface : Ink;
     const float w = paint_.fonts.measure(state, 16, true) + 20;
@@ -802,11 +802,11 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
   const float textW = Width - 64 - Icon - 20;
   const float gameH = paint_.fonts.wrapped(game.game, -10000, -10000, 18, Ink, textW, 2, true);
   const float head = std::max(Icon, gameH + 4 + 24);
-  const auto body = modal(Width, 24 + head + 16 + shown * (Row + Gap) - Gap + 24, tr("상세 정보"), tr("닫기"), "", "", 32);
+  const auto body = modal(Width, 24 + head + 16 + shown * (Row + Gap) - Gap + 24, tr("Details"), tr("Close"), "", "", 32);
   const float x = body.x + 32, w = body.w - 64;
   cover(game.icon, x, body.y + 24, int(Icon), false, game.game, game.app);
   paint_.fonts.wrapped(game.game, x + Icon + 20, body.y + 24, 18, Ink, textW, 2, true);
-  paint_.fonts.text(trf("패치 {0}개", {std::to_string(count)}), x + Icon + 20, body.y + 24 + gameH + 4, 16, Secondary);
+  paint_.fonts.text(trf("{0} patches", {std::to_string(count)}), x + Icon + 20, body.y + 24 + gameH + 4, 16, Secondary);
   const float listTop = body.y + 24 + head + 16;
   // The row at the top follows the cursor, or the finger while it glides.
   const float pickTop = glide("patchPick", x, listTop, w, shown * (Row + Gap), float(std::clamp(patchPickRow_ - Visible / 2, 0, std::max(0, count - Visible))),
@@ -834,9 +834,9 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
     }
     std::string meta;
     if (!row.patch.version.empty()) meta = "v" + row.patch.version;
-    if (!row.onServer) meta += (meta.empty() ? "" : " · ") + std::string(tr("서버에서 사라짐"));
+    if (!row.onServer) meta += (meta.empty() ? "" : " · ") + std::string(tr("Gone from server"));
     if (row.record && !row.record->shadowed.empty())
-      meta += (meta.empty() ? "" : " · ") + std::string(tr("다른 패치에 일부 가려짐"));
+      meta += (meta.empty() ? "" : " · ") + std::string(tr("Partly covered by another patch"));
     if (const char *note = healthNote(patchHealth_, row))
       meta += (meta.empty() ? "" : " · ") + std::string(note);
     if (!meta.empty() && at < x + 20 + nameW)
@@ -844,9 +844,9 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
     const bool busy = patchBusy_ == row.patch.id && !row.patch.id.empty();
     const bool update = updateAvailable(row);
     const std::string state = busy ? tr(patchBusyLabel_.c_str())
-                              : !row.record ? tr("미설치")
-                              : update ? tr("업데이트|항목")
-                              : row.record->on ? tr("켜짐") : tr("꺼짐");
+                              : !row.record ? tr("Not installed")
+                              : update ? tr("Update|item")
+                              : row.record->on ? tr("On") : tr("Off");
     const bool lit = row.record && row.record->on && !busy && !update;
     const float sw = paint_.fonts.measure(state, 15, true) + 20;
     paint_.rect(x + w - 16 - sw, y + 10, sw, 26, busy || update ? Butter : lit ? Good : Surface, 8);
@@ -879,11 +879,11 @@ void Application::patchDialog() {
     return;
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 150});
   blockTouch();
-  const auto body = modal(700, 24 + 70 + 16, tr("패치를 삭제하시겠습니까?"), tr("취소"), "", tr("삭제"), 37);
+  const auto body = modal(700, 24 + 70 + 16, tr("Delete this patch?"), tr("Cancel"), "", tr("Delete"), 37);
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(row.game + " · " + row.patch.name, x, y, 21, Ink, true, body.w - 64);
-  paint_.fonts.text(row.record && row.record->on ? tr("켜져 있으면 먼저 끄고 SD 카드에서 삭제합니다.")
-                                                 : tr("SD 카드에 받아 둔 파일을 삭제합니다."),
+  paint_.fonts.text(row.record && row.record->on ? tr("If it is on, it is turned off and deleted from the SD card.")
+                                                 : tr("Deletes the downloaded files from the SD card."),
                     x, y + 38, 19, Secondary, false, body.w - 64);
 
 }
@@ -907,7 +907,7 @@ void Application::patchMenu(const PatchRow &row) {
   const float describedHeight =
       described ? paint_.fonts.wrapped(row.patch.description, -10000, -10000, 17, Secondary, Width - 64, room) + 10 : 0;
   const float bodyHeight = fixed + describedHeight;
-  const auto body = modal(Width, bodyHeight, tr("상세 정보"), tr("닫기"), "", "", 32);
+  const auto body = modal(Width, bodyHeight, tr("Details"), tr("Close"), "", "", 32);
   const float x = body.x + 32, w = body.w - 64, textX = x + Icon + 20;
   float y = body.y + 24;
   cover(row.icon, x, y, int(Icon), false, row.game, !row.patch.homebrewApp.empty());
@@ -923,7 +923,7 @@ void Application::patchMenu(const PatchRow &row) {
   if (!row.patch.version.empty()) meta = "v" + row.patch.version;
   if (!row.patch.author.empty()) meta += (meta.empty() ? "" : " · ") + row.patch.author;
   if (row.record && !row.record->shadowed.empty())
-    meta += (meta.empty() ? "" : " · ") + std::string(tr("다른 패치에 일부 가려짐"));
+    meta += (meta.empty() ? "" : " · ") + std::string(tr("Partly covered by another patch"));
   if (const char *note = healthNote(patchHealth_, row))
     meta += (meta.empty() ? "" : " · ") + std::string(note);
   if (!meta.empty())

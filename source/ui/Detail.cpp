@@ -11,9 +11,9 @@ namespace {
 std::string languageName(const std::string &code) {
   // Built per call so the names follow the interface language.
   const std::pair<const char *, const char *> names[] = {
-      {"ko", tr("한국어")}, {"en", tr("영어")}, {"ja", tr("일본어")}, {"zh", tr("중국어")},
-      {"fr", tr("프랑스어")}, {"de", tr("독일어")}, {"es", tr("스페인어")}, {"it", tr("이탈리아어")},
-      {"ru", tr("러시아어")}, {"pt", tr("포르투갈어")}, {"nl", tr("네덜란드어")}};
+      {"ko", tr("Korean")}, {"en", tr("English")}, {"ja", tr("Japanese")}, {"zh", tr("Chinese")},
+      {"fr", tr("French")}, {"de", tr("German")}, {"es", tr("Spanish")}, {"it", tr("Italian")},
+      {"ru", tr("Russian")}, {"pt", tr("Portuguese")}, {"nl", tr("Dutch")}};
   for (const auto &[key, name] : names)
     if (code.rfind(key, 0) == 0)
       return name;
@@ -40,7 +40,7 @@ int Application::requiredPatchesCard(int y) {
   constexpr float X = 40, W = 750, Height = 52;
   paint_.rect(X, y, W, Height, SDL_Color{255, 241, 204, 255}, 14);
   paint_.icon(33, X + 18, y + (Height - 24) / 2, Pending, 24);
-  paint_.fonts.middle(tr("함께 설치해야 하는 패치가 있습니다"), X + 54, y + Height / 2, 18, Ink, true, W - 72);
+  paint_.fonts.middle(tr("This game needs a patch to run"), X + 54, y + Height / 2, 18, Ink, true, W - 72);
   return int(y + Height + 16);
 }
 // The operator's notes (what else to install, how big, which build): a
@@ -52,7 +52,7 @@ int Application::notesCard(int y) {
   const float height = 18 + 28 + text + 18;
   paint_.rect(X, y, W, height, Surface, 14);
   paint_.icon(33, X + 18, y + 18, Ink, 24);
-  paint_.fonts.text(tr("추가 정보"), Inner, y + 18, 18, Ink, true, InnerW);
+  paint_.fonts.text(tr("More info"), Inner, y + 18, 18, Ink, true, InnerW);
   paint_.fonts.wrapped(detail_.notes, Inner, y + 18 + 28, 18, Ink, InnerW, 12, false, 1.5f);
   return int(y + height + 16);
 }
@@ -108,7 +108,7 @@ void Application::fetchDetail() {
       incomingDetail_ = std::move(result.value);
     });
     if (!ok)
-      incomingError_.message = tr("상세 정보를 처리하다 오류가 났습니다.");
+      incomingError_.message = tr("Could not load the game details.");
     done_ = true;
   });
 }
@@ -150,12 +150,12 @@ void Application::detail() {
   };
   const auto &languages = item.languages;
   if (std::find(languages.begin(), languages.end(), "ko") != languages.end())
-    pill(tr("한국어"));
+    pill(tr("Korean"));
   if (const int score = detail_.score ? detail_.score : g.base ? g.base->score : item.score)
-    pill(trf("평점 {0}점", {std::to_string(score)}));
+    pill(trf("Score {0}", {std::to_string(score)}));
   if (!detail_.priceRegular.empty())
     pill(detail_.priceDiscount.empty() ? "eShop " + priceText(detail_.priceRegular)
-                                       : trf("eShop 할인가 {0}", {priceText(detail_.priceDiscount)}));
+                                       : trf("eShop sale {0}", {priceText(detail_.priceDiscount)}));
   // Genres last: the longest pill, and the first to give way.
   if (!detail_.category.empty())
     pill(detail_.category);
@@ -186,8 +186,8 @@ void Application::detail() {
     paint_.rect(40, y, 750, Height, Surface, 16);
     paint_.rect(64, y + (Height - Badge) / 2, Badge, Badge, {255, 241, 204, 255}, int(Badge / 2));
     paint_.icon(29, 64 + (Badge - 26) / 2, y + (Height - 26) / 2, Ink, 26);
-    paint_.fonts.middle(tr("소개 글이 아직 없습니다"), 136, y + 34, 20, Ink, true, 620);
-    paint_.fonts.middle(tr("제작사가 설명을 등록하지 않았습니다. 아래 정보로 게임을 확인합니다."), 136,
+    paint_.fonts.middle(tr("No description yet"), 136, y + 34, 20, Ink, true, 620);
+    paint_.fonts.middle(tr("The publisher has not added a description. Check the details below."), 136,
                         y + 62, 16, Secondary, false, 630);
     y += Height + 16;
   }
@@ -200,8 +200,8 @@ void Application::detail() {
     y += 174;
   }
   if (!detail_.screenshots.empty()) {
-    paint_.fonts.text(tr("스크린샷"), 40, y, 20, Ink, true);
-    paint_.keyLabel("ZR", tr("크게 보기 · 사진을 눌러도 됩니다"), 150, y + 14, 17, Secondary);
+    paint_.fonts.text(tr("Screenshots"), 40, y, 20, Ink, true);
+    paint_.keyLabel("ZR", tr("Enlarge · or tap a picture"), 150, y + 14, 17, Secondary);
     y += 40;
   }
   for (size_t i = 0; i < detail_.screenshots.size() && i < 3; ++i) {
@@ -214,7 +214,7 @@ void Application::detail() {
     // A picture that will not load says so instead of shimmering forever.
     if (images_->failed(thumb)) {
       paint_.rect(x, y, 200, 112, Line, 10);
-      const std::string none = tr("이미지 없음");
+      const std::string none = tr("No image");
       paint_.fonts.middle(none, x + (200 - paint_.fonts.measure(none, 16)) / 2, y + 56, 16, Secondary);
       continue;
     }
@@ -224,7 +224,7 @@ void Application::detail() {
   }
   y += detail_.screenshots.empty() ? 0 : 134;
   if (!g.alternatives.empty()) {
-    paint_.fonts.text(tr("다른 파일"), 40, y, 20, Ink, true);
+    paint_.fonts.text(tr("Other files"), 40, y, 20, Ink, true);
     y += 38;
     for (const auto &f : g.alternatives) {
       paint_.fonts.text(f.name + " · " + formatBytes(f.size), 40, y, 17,
@@ -247,7 +247,7 @@ void Application::detail() {
   SDL_Rect full{0, 0, 1280, 660};
   SDL_RenderSetClipRect(paint_.renderer, &full);
   paint_.rect(818, 172, 430, 484, Surface, 20);
-  paint_.fonts.text(tr("설치할 항목"), 840, 192, 22, Ink, true);
+  paint_.fonts.text(tr("To install"), 840, 192, 22, Ink, true);
   const auto &parts = selection_->parts();
   // Files, then the game's patches; the storage cards and the button follow.
   const int rows = int(selection_->rows());
@@ -282,17 +282,17 @@ void Application::detail() {
     if (patch) {
       // A patch: its name, then what it changes; one the game needs says so.
       label = patch->name;
-      sub = patch->required ? tr("실행에 필요한 패치") : tr("패치|항목");
+      sub = patch->required ? tr("Needed to run") : tr("Patch");
       for (const auto &kind : patch->kinds) sub += std::string(" · ") + patchKindLabel(kind);
       bytes = patch->size;
     } else {
       const auto &f = parts[n];
-      label = f.type == "base"     ? std::string(tr("본편"))
-              : f.type == "update" ? std::string(tr("업데이트|항목"))
+      label = f.type == "base"     ? std::string(tr("Base game"))
+              : f.type == "update" ? std::string(tr("Update|item"))
                                    : "DLC · " + f.name;
-      sub = f.type == "base"     ? trf("{0} · 꼭 필요합니다", {versionLabel(f)})
-            : f.type == "update" ? trf("{0} · 최신", {versionLabel(f)})
-                                 : std::string(tr("추가 콘텐츠"));
+      sub = f.type == "base"     ? trf("{0} · Required", {versionLabel(f)})
+            : f.type == "update" ? trf("{0} · Latest", {versionLabel(f)})
+                                 : std::string(tr("Add-on content"));
       bytes = f.size;
     }
     const auto size = formatBytes(bytes);
@@ -308,7 +308,7 @@ void Application::detail() {
     paint_.scrollbar(1232, RowTop, 4 * RowPitch - 4, float(first), 4, float(rows));
   }
   paint_.rect(840, 454, 386, 1, Line);
-  paint_.fonts.middle(tr("합계"), 852, 476, 18, Secondary);
+  paint_.fonts.middle(tr("Total"), 852, 476, 18, Secondary);
   const auto total = formatBytes(selection_->total());
   paint_.fonts.middle(total, 1214 - paint_.fonts.measure(total, 24, true), 476,
                       24, Ink, true);
@@ -318,7 +318,7 @@ void Application::detail() {
     const char *id, *label;
     std::optional<uint64_t> free;
   };
-  const Target targets[] = {{"sd", tr("SD 카드"), sdFree_}, {"nand", tr("본체"), nandFree_}};
+  const Target targets[] = {{"sd", tr("SD card"), sdFree_}, {"nand", tr("Console"), nandFree_}};
   constexpr float CardWidth = (386 - 8) / 2.f, CardTop = 494, CardHeight = 60;
   for (int n = 0; n < 2; ++n) {
     const auto &t = targets[n];
@@ -341,9 +341,9 @@ void Application::detail() {
     paint_.icon(n == 0 ? 26 : 27, x + 16, CardTop + (CardHeight - IconSize) / 2,
                 chosen ? Butter : Secondary, int(IconSize));
     paint_.fonts.middle(t.label, x + TextLeft, CardTop + 21, 18, color, chosen, CardWidth - TextLeft - 12);
-    const auto room = t.free           ? trf("{0} 여유", {formatBytes(*t.free)})
-                      : storageChecked_ ? std::string(tr("여유 공간 확인 불가"))
-                                        : std::string(tr("확인 중"));
+    const auto room = t.free           ? trf("{0} free", {formatBytes(*t.free)})
+                      : storageChecked_ ? std::string(tr("Space unknown"))
+                                        : std::string(tr("Checking"));
     paint_.fonts.middle(room, x + TextLeft, CardTop + 41, 15,
                         chosen ? SDL_Color{200, 200, 206, 255} : Secondary, false, CardWidth - TextLeft - 12);
   }
@@ -355,7 +355,7 @@ void Application::detail() {
   if (part_ == rows + 1 && panelFocus)
     paint_.ring(840, 568, 386, 60, 14);
   paint_.rect(840, 568, 386, 60, Butter, 14);
-  const auto install = tr("설치하기");
+  const auto install = tr("Install|action");
   paint_.keyLabel("A", install, 840 + (386 - paint_.keyLabelWidth("A", install, 22, true)) / 2, 598, 22, Ink, true);
   if (galleryOpen_) gallery();
 }
@@ -383,12 +383,12 @@ float Application::infoCard(const Group &g, const std::string &publisher, float 
     detail_.priceCountry = g.base->priceCountry;
   }
   if (!detail_.priceRegular.empty()) {
-    const auto country = detail_.priceCountry == "US"   ? " " + std::string(tr("(미국)"))
-                         : detail_.priceCountry == "JP" ? " " + std::string(tr("(일본)"))
+    const auto country = detail_.priceCountry == "US"   ? " " + std::string(tr("(US)"))
+                         : detail_.priceCountry == "JP" ? " " + std::string(tr("(Japan)"))
                                                         : std::string();
-    facts.push_back({15, tr("eShop 가격"), (detail_.priceDiscount.empty()
+    facts.push_back({15, tr("eShop price"), (detail_.priceDiscount.empty()
                                        ? priceText(detail_.priceRegular)
-                                       : trf("{0} · 정가 {1}", {priceText(detail_.priceDiscount),
+                                       : trf("{0} · was {1}", {priceText(detail_.priceDiscount),
                                                                priceText(detail_.priceRegular)})) +
                                       country});
   }
@@ -402,17 +402,17 @@ float Application::infoCard(const Group &g, const std::string &publisher, float 
                                                    : genreLabel(scoreLabels_, rated.scoreLabel);
     if (score) {
       // The vote count rides on the label so the value fits its cell.
-      auto text = trf("{0}점", {std::to_string(score)});
+      auto text = trf("{0}", {std::to_string(score)});
       if (!label.empty()) text += " · " + label;
-      facts.push_back({31, votes ? trf("평점 · {0}명", {countText(votes)}) : std::string(tr("평점")), text});
+      facts.push_back({31, votes ? trf("Score · {0} votes", {countText(votes)}) : std::string(tr("Score")), text});
     }
   }
-  if (release) facts.push_back({11, tr("출시일"), dateLabel(release)});
-  if (!publisher.empty()) facts.push_back({12, tr("제작사"), publisher});
-  if (players) facts.push_back({13, tr("플레이 인원"), players == 1 ? std::string(tr("1명")) : trf("최대 {0}명", {std::to_string(players)})});
-  facts.push_back({14, tr("본편 용량"), formatBytes(g.base ? g.base->size : item.size)});
+  if (release) facts.push_back({11, tr("Released"), dateLabel(release)});
+  if (!publisher.empty()) facts.push_back({12, tr("Publisher"), publisher});
+  if (players) facts.push_back({13, tr("Players"), players == 1 ? std::string(tr("1 player")) : trf("Up to {0}", {std::to_string(players)})});
+  facts.push_back({14, tr("Base size"), formatBytes(g.base ? g.base->size : item.size)});
   const auto &base = g.base ? *g.base : item;
-  if (base.installSize) facts.push_back({14, tr("설치 용량"), formatBytes(base.installSize)});
+  if (base.installSize) facts.push_back({14, tr("Install size"), formatBytes(base.installSize)});
   // The update can need newer firmware than the base; the higher one counts.
   std::vector<Item> needs{base};
   if (!detail_.requiredFirmware.empty()) needs.front().requiredFirmware = detail_.requiredFirmware;
@@ -424,17 +424,17 @@ float Application::infoCard(const Group &g, const std::string &publisher, float 
   if (!firmware.empty()) {
     const auto console = platform::firmwareVersion();
     if (!install::missingFirmware(needs, console).empty())
-      facts.push_back({27, tr("필요 펌웨어"), trf("{0} 이상 · 본체 {1}", {firmware, console}), Bad});
+      facts.push_back({27, tr("Firmware"), trf("{0}+ · console {1}", {firmware, console}), Bad});
     else
-      facts.push_back({27, tr("필요 펌웨어"), firmware});
+      facts.push_back({27, tr("Firmware"), firmware});
   }
-  if (!detail_.ratingContent.empty()) facts.push_back({25, tr("이용 등급"), detail_.ratingContent});
+  if (!detail_.ratingContent.empty()) facts.push_back({25, tr("Rating|age"), detail_.ratingContent});
   const int dlcTotal = detail_.dlcTotal ? detail_.dlcTotal : base.dlcTotal;
-  if (dlcTotal) facts.push_back({22, "DLC", trf("{0}개 출시 · {1}개 보유", {std::to_string(dlcTotal), std::to_string(g.dlc.size())})});
-  facts.push_back({19, tr("최신 버전"), versionLabel(g.update ? *g.update : item)});
-  if (!extension.empty()) facts.push_back({16, tr("파일 형식"), extension});
-  if (!item.region.empty()) facts.push_back({17, tr("지역"), item.region});
-  facts.push_back({18, tr("타이틀 ID"), g.id});
+  if (dlcTotal) facts.push_back({22, "DLC", trf("{0} released · {1} here", {std::to_string(dlcTotal), std::to_string(g.dlc.size())})});
+  facts.push_back({19, tr("Latest version"), versionLabel(g.update ? *g.update : item)});
+  if (!extension.empty()) facts.push_back({16, tr("File type"), extension});
+  if (!item.region.empty()) facts.push_back({17, tr("Region"), item.region});
+  facts.push_back({18, tr("Title ID"), g.id});
   constexpr float Left = 40, Width = 750, Columns = 3, Cell = Width / Columns, RowHeight = 66;
   const int rows = int((facts.size() + 2) / 3);
   paint_.rect(Left, y, Width, rows * RowHeight + 24, Surface, 16);
@@ -474,8 +474,8 @@ float Application::infoCard(const Group &g, const std::string &publisher, float 
     for (const auto &key : item.categories) genres.push_back(genreLabel(genreNames_, key));
   if (genres.empty() && !detail_.category.empty())
     genres.push_back(detail_.category);
-  chips(tr("지원 언어"), languages);
-  chips(tr("장르"), genres);
+  chips(tr("Languages"), languages);
+  chips(tr("Genres"), genres);
   // What the game is made of shows in the install list on the right.
   return y;
 }

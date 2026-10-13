@@ -42,10 +42,10 @@ static std::string asciiJson(const std::string& text) {
     return out;
 }
 Json parseJson(const std::string& text, Error& error) {
-    if (text.size() > 32 * 1024 * 1024) { error.message = tr("JSON 파일이 너무 큽니다."); return {}; }
+    if (text.size() > 32 * 1024 * 1024) { error.message = tr("The JSON file is too large."); return {}; }
     const auto invalid = invalidUtf8(text);
     if (invalid != text.size()) {
-        error = {tr("UTF-8로 저장해 주세요."), 1 + static_cast<int>(std::count(text.begin(), text.begin() + invalid, '\n'))};
+        error = {tr("Save the file as UTF-8."), 1 + static_cast<int>(std::count(text.begin(), text.begin() + invalid, '\n'))};
         return {};
     }
     auto* tok = json_tokener_new();
@@ -59,7 +59,7 @@ Json parseJson(const std::string& text, Error& error) {
     if (code != json_tokener_success) {
         const auto end = std::min(ascii.size(), json_tokener_get_parse_end(tok));
         error.line = 1 + std::count(ascii.begin(), ascii.begin() + end, '\n');
-        error.message = trf("JSON 문법을 확인해 주세요. {0}", {json_tokener_error_desc(code)});
+        error.message = trf("Check the JSON syntax. {0}", {json_tokener_error_desc(code)});
         value.reset();
     }
     json_tokener_free(tok);

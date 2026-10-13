@@ -41,7 +41,7 @@ Error preflight(const std::vector<Item> &files,
                 std::optional<uint64_t> space) {
   Error error;
   if (files.empty()) {
-    error.message = tr("설치할 항목을 선택해 주세요.");
+    error.message = tr("Select items to install.");
     return error;
   }
   uint64_t total = 0;
@@ -52,24 +52,24 @@ Error preflight(const std::vector<Item> &files,
     for (auto &c : ext)
       c = std::tolower(static_cast<unsigned char>(c));
     if (ext != ".nsp" && ext != ".nsz" && ext != ".xci" && ext != ".xcz") {
-      error.message = tr("이 파일 형식은 설치할 수 없습니다.");
+      error.message = tr("This file type cannot be installed.");
       return error;
     }
     // .nsz and .xcz unpack as they install: the room needed is the
     // installed size when the server knows it.
     const uint64_t need = std::max(file.size, file.installSize);
     if (UINT64_MAX - total < need) {
-      error.message = tr("파일 용량을 확인해 주세요.");
+      error.message = tr("Check the file size.");
       return error;
     }
     total += need;
   }
   if (!space) {
-    error.message = tr("저장 위치의 여유 공간을 확인하지 못했습니다.");
+    error.message = tr("Could not check the free space on the storage.");
     return error;
   }
   if (*space < total || *space - total < 256 * 1024 * 1024) {
-    error.message = tr("선택한 저장 위치의 여유 공간이 부족합니다.");
+    error.message = tr("Not enough free space on the selected storage.");
     return error;
   }
   return error;
@@ -100,7 +100,7 @@ Error Installer::start(std::vector<Item> files, std::string name,
                        State state) {
   Error error;
   if (running()) {
-    error.message = tr("현재 설치가 끝난 뒤 다시 선택합니다.");
+    error.message = tr("Select again after the current install finishes.");
     return error;
   }
   error = preflight(files, platform::freeSpace(target));
@@ -110,7 +110,7 @@ Error Installer::start(std::vector<Item> files, std::string name,
     const auto console = platform::firmwareVersion();
     const auto need = missingFirmware(files, console);
     if (!need.empty()) {
-      error.message = trf("본체 펌웨어 {0}에서는 실행되지 않습니다. {1} 이상이 필요합니다. 설정에서 펌웨어 검사 무시를 켜면 설치합니다.",
+      error.message = trf("This needs firmware {1} or later; the console has {0}. Turn on Ignore firmware check in Settings to install it anyway.",
                           {console, need});
       return error;
     }
@@ -186,16 +186,16 @@ double TimeLeft::update(double seconds, uint64_t left, double speed) {
 }
 std::string timeLeftText(double seconds) {
   if (seconds < 0)
-    return tr("남은 시간 계산 중");
+    return tr("Estimating time left");
   const auto s = std::max<int64_t>(1, std::llround(seconds));
   if (s < 60)
-    return trf("약 {0}초 남음", {std::to_string(s)});
+    return trf("About {0} s left", {std::to_string(s)});
   if (s < 600)
-    return trf("약 {0}분 {1}초 남음", {std::to_string(s / 60), std::to_string(s % 60)});
+    return trf("About {0} min {1} s left", {std::to_string(s / 60), std::to_string(s % 60)});
   if (s < 3600)
-    return trf("약 {0}분 남음", {std::to_string((s + 30) / 60)});
+    return trf("About {0} min left", {std::to_string((s + 30) / 60)});
   const auto minutes = (s + 30) / 60;
-  return trf("약 {0}시간 {1}분 남음", {std::to_string(minutes / 60), std::to_string(minutes % 60)});
+  return trf("About {0} h {1} min left", {std::to_string(minutes / 60), std::to_string(minutes % 60)});
 }
 void Installer::setPaused(bool paused) {
   pause_ = paused;
@@ -204,7 +204,7 @@ void Installer::setPaused(bool paused) {
     return;
   progress_.speed = 0;
   speed_.reset();
-  progress_.phase = paused ? tr("일시정지했습니다.") : tr("다운로드하고 있습니다.");
+  progress_.phase = paused ? tr("Paused.") : tr("Downloading.");
 }
 void Installer::phase(const std::string &text) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -240,13 +240,13 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
   try {
     for (size_t i = 0; i < files.size(); ++i) {
       if (cancel_)
-        throw std::runtime_error(tr("설치를 취소했습니다."));
+        throw std::runtime_error(tr("Install canceled."));
       std::string target;
       {
         std::lock_guard<std::mutex> lock(mutex_);
         progress_.index = i;
         progress_.kind = files[i].type;
-        progress_.phase = tr("파일을 확인하고 있습니다.");
+        progress_.phase = tr("Checking files.");
         contents_.clear();
         target = progress_.target;
       }
@@ -260,7 +260,7 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
         } catch (const std::exception &) {
           if (cancel_ || attempt >= Attempts)
             throw;
-          phase(trf("다시 받고 있습니다. {0}/{1}번째 시도", {std::to_string(attempt + 1), std::to_string(Attempts)}));
+          phase(trf("Retrying. Attempt {0} of {1}.", {std::to_string(attempt + 1), std::to_string(Attempts)}));
           for (int tenth = 0; tenth < 100 && !cancel_; ++tenth)
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
           if (cancel_)
@@ -279,13 +279,13 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
       std::lock_guard<std::mutex> lock(mutex_);
       progress_.status = Status::Succeeded;
       progress_.percent = 100;
-      progress_.phase = tr("설치했습니다.");
+      progress_.phase = tr("Installed.");
     }
   } catch (const std::exception &e) {
     std::lock_guard<std::mutex> lock(mutex_);
     progress_.status = cancel_ ? Status::Cancelled : Status::Failed;
     progress_.error = e.what();
-    progress_.phase = cancel_ ? tr("설치를 취소했습니다.") : tr("설치하지 못했습니다.");
+    progress_.phase = cancel_ ? tr("Install canceled.") : tr("Install failed.");
   }
 }
 } // namespace foil::install

@@ -21,13 +21,13 @@ struct RetroCondition {
 constexpr uint64_t MB = 1024 * 1024;
 // Titles go through tr() where the popup lists them.
 const RetroCondition RetroConditions[] = {
-    {"전체", 0, false, 0, 0},             // i18n: keep
-    {"평점 80 이상", 80, false, 0, 0},     // i18n: keep
-    {"평점 90 이상", 90, false, 0, 0},     // i18n: keep
-    {"전용 베젤", 0, true, 0, 0},          // i18n: keep
-    {"1MB 이하", 0, false, 0, MB},         // i18n: keep
-    {"10MB 이하", 0, false, 0, 10 * MB},   // i18n: keep
-    {"100MB 이상", 0, false, 100 * MB, 0}, // i18n: keep
+    {"All", 0, false, 0, 0},             // i18n: keep
+    {"Rated 80+", 80, false, 0, 0},     // i18n: keep
+    {"Rated 90+", 90, false, 0, 0},     // i18n: keep
+    {"Own bezel", 0, true, 0, 0},          // i18n: keep
+    {"Under 1 MB", 0, false, 0, MB},         // i18n: keep
+    {"Under 10 MB", 0, false, 0, 10 * MB},   // i18n: keep
+    {"100 MB and up", 0, false, 100 * MB, 0}, // i18n: keep
 };
 constexpr SortMode RetroSorts[] = {SortMode::Score, SortMode::Name, SortMode::Largest, SortMode::Recent};
 bool fileExists(const std::string &path) {
@@ -62,7 +62,7 @@ bool Application::runRetroJob(const std::string &busy, std::function<std::functi
   retroWorker_ = std::thread([this, job = std::move(job)] {
     std::function<void()> finish;
     if (!guarded("retro", [&] { finish = job(); }))
-      finish = [this] { message(tr("레트로 작업 중 오류가 났습니다. log.txt를 확인합니다.")); };
+      finish = [this] { message(tr("Something went wrong with the retro task. Check log.txt.")); };
     retroFinish_ = std::move(finish);
     retroDone_ = true;
   });
@@ -223,17 +223,17 @@ void Application::askRetroGame(const retro::Game &game) {
 bool Application::getRetroGame(const retro::Game &game, bool again) {
   if (game.bundleUrl.empty()) return false;
   if (retroWorker_.joinable() && retroBusy_ != "list") {
-    message(tr("레트로 작업이 끝난 뒤 다시 시도합니다."));
+    message(tr("Try again once the retro task finishes."));
     return false;
   }
   if (!again && retroInstalled(game) && !retroBezelMissing(game)) {
-    message(retroArchPresent() ? tr("이미 받은 게임입니다. RetroArch에서 실행합니다.")
-                               : tr("이미 받은 게임입니다. Y로 RetroArch를 받으면 실행할 수 있습니다."));
+    message(retroArchPresent() ? tr("Already on the card. Start it from RetroArch.")
+                               : tr("You already have this game. Press Y to get RetroArch and play it."));
     return false;
   }
   if (sdFree_ && *sdFree_ < game.size + game.size / 10 + (8u << 20)) {
-    alertTitle_ = tr("게임을 받을 수 없습니다");
-    alert_ = trf("SD 카드 공간이 부족합니다. {0}가 필요합니다.", {formatBytes(game.size)});
+    alertTitle_ = tr("Cannot get the game");
+    alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(game.size)});
     return false;
   }
   const auto server = session_ ? session_->server() : Server{};
@@ -262,11 +262,11 @@ bool Application::getRetroGame(const retro::Game &game, bool again) {
           finishRetroEntry("retro", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
                            ok || cancelled ? "" : error.message, ok ? game.size : received);
           if (cancelled && !ok) {
-            message(trf("{0} 다운로드를 취소했습니다.", {game.name}));
+            message(trf("Cancelled the download of {0}.", {game.name}));
             return;
           }
           if (!ok) {
-            alertTitle_ = tr("게임을 받지 못했습니다");
+            alertTitle_ = tr("Could not get the game");
             alert_ = error.message;
             return;
           }
@@ -274,11 +274,11 @@ bool Application::getRetroGame(const retro::Game &game, bool again) {
           // missing or changed.
           if (retroCoreMissing(game)) syncRetroArch();
           if (installRetroShortcut(game)) return; // 다운로드 shows the shortcut going in
-          message(retroArchPresent() ? trf("{0}을(를) 받았습니다. RetroArch에서 실행합니다.", {game.name})
-                                     : trf("{0}을(를) 받았습니다. Y로 RetroArch도 받습니다.", {game.name}));
+          message(retroArchPresent() ? trf("Got {0}. Start it from RetroArch.", {game.name})
+                                     : trf("Got {0}. Press Y to get RetroArch too.", {game.name}));
         };
       })) {
-    message(tr("레트로 작업이 끝난 뒤 다시 시도합니다."));
+    message(tr("Try again once the retro task finishes."));
     return false;
   }
   startRetroEntry("retro", game.name, game.iconUrl, game.bundleUrl, game.size, retro::serializeGame(game));
@@ -323,7 +323,7 @@ bool Application::installShortcut(const std::string &name, const std::string &ic
   if (url.empty() || !session_ || !state_.makeShortcuts) return false;
   if (installer_.running()) {
     if (!justDownloaded) return false;
-    message(trf("{0}을(를) 받았습니다. 지금 설치가 끝난 뒤 다시 받으면 홈 메뉴 바로가기를 만듭니다.", {name}));
+    message(trf("Got {0}. Once the current install ends, get it again to make its HOME Menu shortcut.", {name}));
     return true;
   }
   Item shortcut;
@@ -332,13 +332,13 @@ bool Application::installShortcut(const std::string &name, const std::string &ic
   shortcut.titleId = shortcut.baseId = titleId;
   shortcut.size = size;
   shortcut.icon = icon;
-  if (auto error = startInstall({shortcut}, trf("{0} 바로가기", {name}), icon, "sd")) {
-    alertTitle_ = tr("바로가기를 만들지 못했습니다");
+  if (auto error = startInstall({shortcut}, trf("{0} shortcut", {name}), icon, "sd")) {
+    alertTitle_ = tr("Could not make the shortcut");
     alert_ = error.message;
     return true;
   }
-  message(justDownloaded ? trf("{0}을(를) 받았습니다. 홈 메뉴 바로가기를 설치합니다.", {name})
-                         : trf("홈 메뉴에 {0} 바로가기를 설치합니다.", {name}));
+  message(justDownloaded ? trf("Got {0}. Installing its HOME Menu shortcut.", {name})
+                         : trf("Installing the {0} HOME Menu shortcut.", {name}));
   return true;
 }
 bool Application::syncRetroArch(bool full) {
@@ -401,18 +401,18 @@ bool Application::syncRetroArch(bool full) {
                            cancelled ? history::Outcome::Cancelled : error ? history::Outcome::Failed : history::Outcome::Done,
                            cancelled ? "" : error.message, received);
           if (cancelled)
-            message(trf("RetroArch 설치를 취소했습니다. {0}/{1}개를 받았고, 다시 설치하면 이어서 받습니다.",
+            message(trf("RetroArch install cancelled after {0} of {1} files. Installing again picks up from there.",
                         {std::to_string(done), std::to_string(total)}));
           else if (error) {
-            alertTitle_ = tr("RetroArch를 받지 못했습니다");
-            alert_ = trf("{0}/{1}개를 받았습니다. 다시 받으면 이어서 받습니다. {2}",
+            alertTitle_ = tr("Could not get RetroArch");
+            alert_ = trf("Got {0} of {1}. Trying again picks up where it stopped. {2}",
                          {std::to_string(done), std::to_string(total), error.message});
           } else
-            message(total ? trf("RetroArch 파일 {0}개를 받았습니다.", {std::to_string(total)})
-                          : std::string(tr("RetroArch가 최신입니다.")));
+            message(total ? trf("Got {0} RetroArch files.", {std::to_string(total)})
+                          : std::string(tr("RetroArch is up to date.")));
         };
       })) {
-    message(tr("레트로 작업이 끝난 뒤 다시 시도합니다."));
+    message(tr("Try again once the retro task finishes."));
     return false;
   }
   startRetroEntry("retroarch", "RetroArch", "", "retroarch", 0, "");
@@ -471,7 +471,7 @@ void Application::retroAction(Action a) {
   }
   if ((a == Action::Previous || a == Action::Next) && !retroSystems_.empty()) {
     if (retroWorker_.joinable() && retroBusy_ != "list") {
-      message(tr("레트로 작업이 끝난 뒤 다시 시도합니다."));
+      message(tr("Try again once the retro task finishes."));
       return;
     }
     const int count = int(retroSystems_.size());
@@ -504,15 +504,15 @@ std::vector<std::string> Application::retroLabels(const retro::Game &game, bool 
     std::transform(format.begin(), format.end(), format.begin(), ::toupper);
     out.push_back(format);
   }
-  if (game.bezel) out.push_back(tr("베젤 포함"));
+  if (game.bezel) out.push_back(tr("With bezel"));
   // What kind of release it is, in one word; the popup adds where it came
   // from and its version.
   const auto &edition = game.edition;
-  if (edition.source == "official") out.push_back(tr("정발"));
-  else if (edition.source == "patch") out.push_back(tr("한글"));
+  if (edition.source == "official") out.push_back(tr("Official"));
+  else if (edition.source == "patch") out.push_back(tr("Korean|script"));
   if (detail && !edition.from.empty()) {
-    const auto from = edition.from == "jp" ? tr("일본판") : edition.from == "us" ? tr("북미판")
-                    : edition.from == "eu" ? tr("유럽판") : "";
+    const auto from = edition.from == "jp" ? tr("Japan") : edition.from == "us" ? tr("US")
+                    : edition.from == "eu" ? tr("Europe") : "";
     if (*from) out.push_back(from);
   }
   if (detail && !edition.version.empty()) out.push_back(edition.version);
@@ -527,7 +527,7 @@ std::vector<std::string> Application::retroLabels(const retro::Game &game, bool 
     }
     out.push_back(tag);
   }
-  if (game.rating > 0) out.push_back(trf("평점 {0}점", {std::to_string(game.rating)}));
+  if (game.rating > 0) out.push_back(trf("Score {0}", {std::to_string(game.rating)}));
   return out;
 }
 // A on a game: what it is, and one button that does what it needs (get
@@ -538,11 +538,11 @@ void Application::retroConfirm() {
   const bool bezel = retroBezelMissing(game), there = retroInstalled(game) && !bezel;
   const auto system = std::find_if(retroSystems_.begin(), retroSystems_.end(),
                                    [&](const auto &s) { return s.id == game.system; });
-  const auto title = system != retroSystems_.end() ? retro::systemName(*system, languageCode()) : std::string(tr("레트로 게임"));
+  const auto title = system != retroSystems_.end() ? retro::systemName(*system, languageCode()) : std::string(tr("Retro games"));
   // One decision, so the footer says it: A gets it, B backs out.
-  const auto get = there ? tr("다시 받기") : bezel ? tr("베젤 받기") : tr("다운로드|받기");
+  const auto get = there ? tr("Get again") : bezel ? tr("Get bezel") : tr("Download");
   constexpr float Cover = 200;
-  const auto body = modal(780, 24 + Cover + 24, title, tr("취소"), "", get, 35);
+  const auto body = modal(780, 24 + Cover + 24, title, tr("Cancel"), "", get, 35);
   const float x = body.x + 32, y = body.y + 24, textX = x + Cover + 28, textW = body.w - 64 - Cover - 28;
   cover(game.iconUrl, x, y, int(Cover), false, game.name, true);
   paint_.region(game.region, x + Cover - 44, y + Cover - 32, 36, 24);
@@ -553,16 +553,16 @@ void Application::retroConfirm() {
   for (const auto &label : retroLabels(game, true)) px += paint_.pill(label, px, at + 6) + 6;
   at += 44;
   std::string facts = formatBytes(game.size);
-  if (game.ratingCount > 0) facts += " · " + trf("{0}명 평가", {std::to_string(game.ratingCount)});
+  if (game.ratingCount > 0) facts += " · " + trf("{0} ratings", {std::to_string(game.ratingCount)});
   paint_.fonts.text(facts, textX, at, 18, Ink, true, textW);
   if (!game.romPath.empty())
     paint_.fonts.text(game.romPath, textX, at + 30, 16, Secondary, false, textW);
   if (retroCoreMissing(game))
-    paint_.fonts.wrapped(trf("{0} 코어가 없어 게임을 받은 뒤 함께 받습니다.", {game.core}), textX, at + 58, 16, Secondary, textW, 2);
+    paint_.fonts.wrapped(trf("The {0} core is missing, so it comes down right after the game.", {game.core}), textX, at + 58, 16, Secondary, textW, 2);
 }
 void Application::retroArchConfirm() {
-  const auto body = modal(700, 24 + 84 + 24, tr("RetroArch를 다시 받을까요?"), tr("취소"), tr("전체 다시 받기"), tr("다시 받기"), 3);
-  paint_.fonts.wrapped(tr("이미 SD 카드에 있습니다. 바뀐 파일과 빠진 코어만 다시 받습니다. 전체 다시 받기는 모든 파일을 새로 받으며, 두 경우 모두 설정은 그대로 둡니다."), body.x + 32,
+  const auto body = modal(700, 24 + 84 + 24, tr("Get RetroArch again?"), tr("Cancel"), tr("Get all again"), tr("Get again"), 3);
+  paint_.fonts.wrapped(tr("It is already on the SD card. Only changed files and missing cores come down again. Get all again fetches every file anew; either way your settings stay."), body.x + 32,
                        body.y + 24, 19, Secondary, body.w - 64, 3);
 }
 void Application::retroScreen() {
@@ -582,7 +582,7 @@ void Application::retroBanner(float y) {
   if (retroBusy_ == "pack") {
     const float ratio = retroBytes_ ? std::min(1.f, float(retroReceived_.load()) / float(retroBytes_)) : 0.f;
     paint_.icon(4, 282, y + 19, Ink, 26);
-    paint_.fonts.middle(trf("RetroArch를 설치하고 있습니다 · {0} / {1}", {formatBytes(retroReceived_.load()), formatBytes(retroBytes_)}),
+    paint_.fonts.middle(trf("Installing RetroArch · {0} / {1}", {formatBytes(retroReceived_.load()), formatBytes(retroBytes_)}),
                         322, y + Height / 2, 19, Ink, true);
     paint_.rect(910, y + 28, 316, 8, Line, 4);
     paint_.rect(910, y + 28, std::max(8.f, 316 * ratio), 8, Butter, 4);
@@ -592,17 +592,17 @@ void Application::retroBanner(float y) {
   const bool ready = retroArchPresent();
   paint_.icon(ready ? 24 : 25, 282, y + 19, ready ? Good : Pending, 26);
   // What the player needs to know: whether games will run, and where they show up.
-  paint_.fonts.middle(!ready                 ? tr("RetroArch가 설치되어 있지 않습니다. Y로 설치해야 게임을 실행할 수 있습니다.")
-                      : state_.makeShortcuts ? tr("RetroArch가 설치되어 있습니다. 게임을 다운로드하면 홈 메뉴에 바로가기를 생성합니다.")
-                                             : tr("RetroArch가 설치되어 있습니다."),
+  paint_.fonts.middle(!ready                 ? tr("RetroArch is not installed. Install it with Y to play games.")
+                      : state_.makeShortcuts ? tr("RetroArch is installed. Downloading a game adds a shortcut to the HOME Menu.")
+                                             : tr("RetroArch is installed."),
                       322, y + Height / 2, 19, Ink, true, 900);
 }
 void Application::retroList() {
   const auto *system = retroSystems_.empty() ? nullptr : &retroSystems_[retroSystem_];
   // Right: the same filter button and search box as 모든 게임.
   searchBar(retroQuery_);
-  std::string summary = retroFilters_.empty() ? std::string(tr("전체")) : popupFilterLabels()[retroFilters_.front()];
-  if (retroFilters_.size() > 1) summary = trf("{0} 외 {1}", {summary, std::to_string(retroFilters_.size() - 1)});
+  std::string summary = retroFilters_.empty() ? std::string(tr("All")) : popupFilterLabels()[retroFilters_.front()];
+  if (retroFilters_.size() > 1) summary = trf("{0} +{1}", {summary, std::to_string(retroFilters_.size() - 1)});
   summary += " · " + std::string(sortLabel(retroSort_));
   const float viewW = std::min(300.f, paint_.keyLabelWidth("Y", summary, 18, true) + 66), viewX = SearchX - 16 - viewW;
   headerItem("filter", viewX, 24, viewW, 48, [this] { openViewPopup(); });
@@ -629,7 +629,7 @@ void Application::retroList() {
     headerItem("next", x + 8, 26, paint_.keyWidth("R") + 8, 44, [this] { action(Action::Next); });
     paint_.key("R", x + 12, Mid);
   } else
-    pageTitle(tr("레트로 게임"), "", 0);
+    pageTitle(tr("Retro games"), "", 0);
   // Here Y opens the filters, so the strip shows only a RetroArch install
   // that is running (the home is where it starts).
   const bool banner = retroBusy_ == "pack";
@@ -638,19 +638,19 @@ void Application::retroList() {
   const int Visible = banner ? 4 : 5;
   if (retroGames_.empty()) {
     if (!connected_)
-      notice(tr("서버에 연결되어 있지 않습니다."), tr("서버에 연결한 뒤 레트로 게임을 불러옵니다."), 21);
+      notice(tr("Not connected to a server."), tr("Retro games load once the server is connected."), 21);
     else if (retroMissing_)
-      notice(tr("이 서버는 레트로 게임을 제공하지 않습니다."), tr("서버에 레트로 폴더를 만들면 여기에 나타납니다."), 35);
+      notice(tr("This server has no retro games."), tr("They appear here once the server has a retro folder."), 35);
     else if (retroError_ && retroRetryAt_)
-      notice(tr("서버가 레트로 파일을 읽고 있습니다."), tr("잠시 뒤 자동으로 다시 불러옵니다."), 35);
+      notice(tr("The server is reading its retro files."), tr("It loads again by itself shortly."), 35);
     else if (retroError_)
-      notice(tr("레트로 게임 목록을 불러오지 못했습니다."), retroError_.message, 25);
+      notice(tr("Could not load the retro games."), retroError_.message, 25);
     else if (!retroBusy_.empty() || !retroLoaded_ || retroListSystem_.empty())
       for (int n = 0; n <= Visible; ++n) paint_.skeleton(260, Top + n * RowStep, 992, RowHeight, 16);
     else if (!retroQuery_.empty())
-      notice(tr("검색 결과가 없습니다."), tr("X로 다른 이름을 찾거나 B로 검색을 지웁니다."), 1);
+      notice(tr("No results."), tr("Press X to try another name, or B to clear the search."), 1);
     else
-      notice(tr("레트로 게임이 없습니다."), tr("서버의 레트로 폴더에 롬을 넣으면 여기에 나타납니다."), 35);
+      notice(tr("No retro games yet."), tr("ROMs put in the server's retro folder appear here."), 35);
     return;
   }
   const int count = int(retroGames_.size());
@@ -683,7 +683,7 @@ void Application::retroList() {
     const float right = 1230;
     const bool busy = retroBusy_ == game.id;
     const bool bezel = retroBezelMissing(game), there = retroInstalled(game) && !bezel;
-    const std::string state = busy ? tr("받는 중") : bezel ? tr("베젤 받기") : there ? tr("설치됨") : tr("미설치");
+    const std::string state = busy ? tr("Downloading") : bezel ? tr("Get bezel") : there ? tr("Installed") : tr("Not installed");
     const float w = paint_.fonts.measure(state, 16, true) + 20;
     paint_.rect(right - w, y + 12, w, 28, busy || bezel ? Butter : there ? Good : Line, 8);
     paint_.fonts.middle(state, right - w + 10, y + 26, 16, there && !busy ? Surface : Ink, true);

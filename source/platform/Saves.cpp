@@ -21,7 +21,7 @@ constexpr const char *MountName = "cfsave";
 Error failure(const char *action, Result rc) {
   char code[20];
   std::snprintf(code, sizeof(code), "%08X", rc);
-  return {trf("{0} 코드 {1}", {action, code})};
+  return {trf("{0} Code {1}", {action, code})};
 }
 FsSaveDataAttribute attributeOf(const SaveEntry &save) {
   FsSaveDataAttribute attr{};
@@ -42,14 +42,14 @@ struct GameSave {
 // The save's sizes and owner from the game's control data, as JKSV reads
 // them for a new save.
 Parsed<GameSave> gameSave(const SaveEntry &save) {
-  if (R_FAILED(nsInitialize())) return {{}, {tr("게임 정보를 읽지 못해 세이브를 만들지 못했습니다.")}};
+  if (R_FAILED(nsInitialize())) return {{}, {tr("Could not read the game's data to create a save.")}};
   auto control = std::make_unique<NsApplicationControlData>();
   u64 size = 0;
   const auto rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, save.applicationId, control.get(),
                                               sizeof(*control), &size);
   nsExit();
   if (R_FAILED(rc) || size < sizeof(NacpStruct))
-    return {{}, failure(tr("게임 정보를 읽지 못해 세이브를 만들지 못했습니다."), rc)};
+    return {{}, failure(tr("Could not read the game's data to create a save."), rc)};
   const auto &nacp = control->nacp;
   GameSave game;
   game.sizes = save.type == FsSaveDataType_Device
@@ -68,12 +68,12 @@ Parsed<saves::SaveSizes> createSave(const SaveEntry &save, const std::optional<s
   auto game = gameSave(save);
   if (game.error) return {{}, game.error};
   auto sizes = game.value.sizes;
-  if (sizes.data <= 0) return {{}, {tr("이 게임은 이 세이브를 쓰지 않습니다.")}};
+  if (sizes.data <= 0) return {{}, {tr("This game does not use this kind of save.")}};
   if (wanted) {
     sizes.data = std::max(sizes.data, wanted->data);
     sizes.journal = std::max(sizes.journal, wanted->journal);
   }
-  if (!saves::fitsSave(bytes, sizes.data)) return {{}, {tr("백업이 세이브 용량보다 커서 복원하지 않았습니다.")}};
+  if (!saves::fitsSave(bytes, sizes.data)) return {{}, {tr("The backup is larger than the save can hold, so it was not restored.")}};
   const auto attr = attributeOf(save);
   FsSaveDataCreationInfo info{};
   info.save_data_size = sizes.data;
@@ -86,7 +86,7 @@ Parsed<saves::SaveSizes> createSave(const SaveEntry &save, const std::optional<s
   meta.size = 0x40060;
   meta.type = FsSaveDataMetaType_Thumbnail;
   const auto created = fsCreateSaveDataFileSystem(&attr, &info, &meta);
-  if (R_FAILED(created)) return {{}, failure(tr("세이브를 새로 만들지 못했습니다."), created)};
+  if (R_FAILED(created)) return {{}, failure(tr("Could not create the save."), created)};
   return {sizes, {}};
 }
 // An existing save's own sizes (JKSV takes the journal from here, not from
@@ -104,10 +104,10 @@ Parsed<saves::SaveSizes> existingSave(const SaveEntry &save, const std::optional
   saves::SaveSizes sizes{extra.data_size, extra.journal_size > 0 ? extra.journal_size : saves::DefaultJournal};
   if (wanted && wanted->data > sizes.data) {
     const auto grown = fsExtendSaveDataFileSystem(FsSaveDataSpaceId_User, save.saveId, wanted->data, wanted->journal);
-    if (R_FAILED(grown)) return {{}, failure(tr("세이브 용량을 늘리지 못했습니다."), grown)};
+    if (R_FAILED(grown)) return {{}, failure(tr("Could not make the save larger."), grown)};
     sizes = *wanted;
   }
-  if (!saves::fitsSave(bytes, sizes.data)) return {{}, {tr("백업이 세이브 용량보다 커서 복원하지 않았습니다.")}};
+  if (!saves::fitsSave(bytes, sizes.data)) return {{}, {tr("The backup is larger than the save can hold, so it was not restored.")}};
   return {sizes, {}};
 }
 // A save made for a restore that then failed goes again, so the game does
@@ -148,9 +148,9 @@ private:
   Result rc_ = 0;
 };
 Error mountFailure(const SaveMount &mount) {
-  auto error = failure(tr("세이브를 열지 못했습니다."), mount.rc());
+  auto error = failure(tr("Could not open the save."), mount.rc());
   if (appletGetAppletType() != AppletType_Application)
-    error.message += " " + std::string(tr("게임을 R 버튼을 누른 채 실행해 애플리케이션 모드에서 다시 시도합니다."));
+    error.message += " " + std::string(tr("Launch a game while holding R and try again in application mode."));
   return error;
 }
 #else
@@ -201,7 +201,7 @@ Parsed<saves::LocalBackup> makeBackup(const SaveJob &job, const std::function<Er
   meta.isAutoBackup = rollback;
   if (auto error = saves::writeMetaFile(path + ".meta", meta)) {
     saves::removeTree(path);
-    result.error.message = tr("백업 정보를 저장하지 못했습니다.");
+    result.error.message = tr("Could not save the backup details.");
     logLine("saves: " + error.message);
     return result;
   }
@@ -227,7 +227,7 @@ Parsed<saves::LocalBackup> copyOut(const SaveJob &job, const std::string &source
 // Replaces what is at `target` with `source`, committing as it goes.
 Error copyIn(const std::string &source, const std::string &target, const saves::CopyHooks &hooks) {
   if (auto error = saves::clearTree(target)) return error;
-  if (hooks.commit && !hooks.commit()) return {tr("세이브에 기록하지 못했습니다.")};
+  if (hooks.commit && !hooks.commit()) return {tr("Could not write to the save.")};
   return saves::copyTree(source, target, hooks);
 }
 } // namespace
@@ -239,13 +239,13 @@ Parsed<saves::LocalBackup> backupKeeping(const SaveJob &job, bool rollback, cons
   if (!mount.open()) return {{}, mountFailure(mount)};
   return copyOut(job, mount.root(), rollback, keep);
 #else
-  if (!isDirectory(fakeSave(job))) return {{}, {tr("세이브 백업은 본체에서 사용할 수 있습니다.")}};
+  if (!isDirectory(fakeSave(job))) return {{}, {tr("Save backups work on the console.")}};
   return copyOut(job, fakeSave(job), rollback, keep);
 #endif
 }
 } // namespace
 Parsed<saves::LocalBackup> backupSave(const SaveJob &job, bool rollback) {
-  if (job.save.missing) return {{}, {tr("아직 세이브가 없어 백업할 것이 없습니다.")}};
+  if (job.save.missing) return {{}, {tr("There is no save yet, so nothing to back up.")}};
   return backupKeeping(job, rollback, "");
 }
 Parsed<saves::LocalBackup> importBackup(const SaveJob &job, const std::function<Error(const std::string &)> &fill,
@@ -254,7 +254,7 @@ Parsed<saves::LocalBackup> importBackup(const SaveJob &job, const std::function<
 }
 Error restoreSave(const SaveJob &job, const saves::LocalBackup &backup) {
   struct stat st {};
-  if (stat(backup.path.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) return {tr("백업 폴더를 찾지 못했습니다.")};
+  if (stat(backup.path.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) return {tr("Could not find the backup folder.")};
   if (auto error = saves::restoreMismatch(backup, job.save.device())) return error;
   // An account without a save gets one first; there is nothing to fall
   // back on then. Otherwise the copy to fall back on comes first, and
@@ -276,7 +276,7 @@ Error restoreSave(const SaveJob &job, const saves::LocalBackup &backup) {
 #endif
   if (!job.save.missing) {
     rollback = backupKeeping(job, true, backup.path);
-    if (rollback.error) return {trf("복원 전에 지금 세이브를 백업하지 못해 복원하지 않았습니다. {0}", {rollback.error.message})};
+    if (rollback.error) return {trf("Did not restore because the current save could not be backed up first. {0}", {rollback.error.message})};
   }
   if (job.copied) job.copied->store(0);
   Error error;
@@ -299,15 +299,15 @@ Error restoreSave(const SaveJob &job, const saves::LocalBackup &backup) {
       logLine("saves: restore failed, putting the rollback back: " + error.message);
       if (auto again = copyIn(rollback.value.path, target, hooks)) {
         logLine("saves: rollback failed: " + again.message);
-        return {trf("복원하지 못했고 원래 세이브도 되돌리지 못했습니다. {0} 백업에서 다시 복원합니다.", {rollback.value.name})};
+        return {trf("The restore failed and the original save could not be put back. Restore again from backup {0}.", {rollback.value.name})};
       }
-      return {trf("복원하지 못해 원래 세이브로 되돌렸습니다. {0}", {error.message})};
+      return {trf("The restore failed, so the original save was put back. {0}", {error.message})};
     }
   }
   // The save made for this restore goes again once it is unmounted.
 #ifdef __SWITCH__
   deleteSave(job.save);
 #endif
-  return {trf("새로 만든 세이브에 복원하지 못했습니다. {0}", {error.message})};
+  return {trf("Could not restore into the new save. {0}", {error.message})};
 }
 } // namespace foil::platform

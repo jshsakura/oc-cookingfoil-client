@@ -11,11 +11,11 @@ void Application::retroHome() {
   // Every system's games together, beside the title.
   int roms = 0;
   for (const auto &shelf : retroShelves_) roms += shelf.system.romCount;
-  pageTitle(tr("레트로 게임"), std::to_string(roms), 0);
+  pageTitle(tr("Retro games"), std::to_string(roms), 0);
   // Y gets RetroArch, or checks it for new files once it is there.
-  const std::string get = retroBusy_ == "pack"  ? tr("설치 취소")
-                          : retroArchPresent() ? tr("RetroArch 업데이트")
-                                               : tr("RetroArch 설치");
+  const std::string get = retroBusy_ == "pack"  ? tr("Cancel install")
+                          : retroArchPresent() ? tr("Update RetroArch")
+                                               : tr("Install RetroArch");
   const float getW = paint_.keyLabelWidth("Y", get, 19, true) + 40;
   headerItem("retroarch", 1252 - getW, 24, getW, 48, [this] { action(Action::Queue); });
   paint_.rect(1252 - getW, 24, getW, 48, Surface, 12);
@@ -28,18 +28,18 @@ void Application::retroHome() {
     retroBanner(90); // RetroArch's state, always on the home
     const float top = 178;
     if (!connected_)
-      notice(tr("서버에 연결되어 있지 않습니다."), tr("서버에 연결한 뒤 레트로 게임을 불러옵니다."), 21);
+      notice(tr("Not connected to a server."), tr("Retro games load once the server is connected."), 21);
     else if (retroMissing_)
-      notice(tr("이 서버는 레트로 게임을 제공하지 않습니다."), tr("서버에 레트로 폴더를 만들면 여기에 나타납니다."), 35);
+      notice(tr("This server has no retro games."), tr("They appear here once the server has a retro folder."), 35);
     else if (retroError_ && retroRetryAt_)
-      notice(tr("서버가 레트로 파일을 읽고 있습니다."), tr("잠시 뒤 자동으로 다시 불러옵니다."), 35);
+      notice(tr("The server is reading its retro files."), tr("It loads again by itself shortly."), 35);
     else if (retroError_)
-      notice(tr("레트로 게임 목록을 불러오지 못했습니다."), retroError_.message, 25);
+      notice(tr("Could not load the retro games."), retroError_.message, 25);
     else if (!retroBusy_.empty() || !retroLoaded_) {
       paint_.skeleton(260, top, 240, 28, 8);
       paint_.skeletonCards(260, top + 46, 6);
     } else
-      notice(tr("레트로 게임이 없습니다."), tr("서버의 레트로 폴더에 롬을 넣으면 여기에 나타납니다."), 35);
+      notice(tr("No retro games yet."), tr("ROMs put in the server's retro folder appear here."), 35);
     return;
   }
   // The focused shelf rides at the top once past the first; the banner
@@ -70,7 +70,7 @@ void Application::retroHome() {
     }
     x = paint_.fonts.middle(retro::systemName(shelf.system, languageCode()), x, y + HeaderMid, 26, Ink, true, 600);
     paint_.pill(std::to_string(shelf.system.romCount), x + 12, y + HeaderMid - 13);
-    if (focused) paint_.keyChip("R", tr("모두 보기"), 1252, y + HeaderMid);
+    if (focused) paint_.keyChip("R", tr("See all"), 1252, y + HeaderMid);
     hit(1100, y, 160, 34, [this, n] { openRetroList(n); });
     const int count = int(shelf.games.size());
     // Sideways like 홈's shelves: the cursor's place, or the finger's while it
@@ -95,7 +95,7 @@ void Application::retroHome() {
         if (on) paint_.ring(cx, cy, Card, Card);
         paint_.rect(cx, cy, Card, Card, Surface, 14);
         paint_.icon(9, cx + Card / 2 - 18, cy + 46, Ink, 36);
-        const std::string all = tr("모두 보기");
+        const std::string all = tr("See all");
         paint_.fonts.middle(all, cx + (Card - paint_.fonts.measure(all, 18, true)) / 2, cy + 112, 18, Ink, true);
         continue;
       }

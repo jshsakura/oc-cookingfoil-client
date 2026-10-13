@@ -54,9 +54,9 @@ void Application::openServerForm(int index) {
 void Application::askServerField(int field) {
   static const int lengths[ServerFields] = {512, 128, 128, 64, int(net::PairMessageLimit)};
   TextRequest request;
-  request.guide = field == 0 ? tr("서버 주소를 입력합니다") : field == 1 ? tr("아이디를 입력합니다")
-                : field == 2 ? tr("비밀번호를 입력합니다") : field == 3 ? tr("목록에 보일 이름을 입력합니다")
-                             : tr("관리자에게 보낼 메시지를 입력합니다");
+  request.guide = field == 0 ? tr("Enter the server address") : field == 1 ? tr("Enter the username")
+                : field == 2 ? tr("Enter the password") : field == 3 ? tr("Enter the name shown in the list")
+                             : tr("Enter a message for the admin");
   request.initial = fieldOf(serverForm_->server, serverForm_->note, field);
   request.password = field == 2;
   request.maxLength = lengths[field];
@@ -102,16 +102,16 @@ void Application::saveServerForm() {
     form.row = row;
   };
   const auto url = trimmed(server.url);
-  if (url.empty()) return fail(tr("주소를 입력해 주세요."), 0);
+  if (url.empty()) return fail(tr("Enter the address."), 0);
   // A bare address like example.com gets https://, as most servers use it.
   const bool scheme = startsWith(url, "http://") || startsWith(url, "https://");
   if (!scheme && url.find("://") != std::string::npos)
-    return fail(tr("주소는 http:// 또는 https://로 시작해야 합니다."), 0);
+    return fail(tr("The address must start with http:// or https://."), 0);
   server.url = normalizeUrl(scheme ? url : "https://" + url); // trailing slashes go here
-  if (server.url.empty()) return fail(tr("주소를 확인해 주세요."), 0);
+  if (server.url.empty()) return fail(tr("Check the address."), 0);
   for (int field = 1; field < 4; ++field)
     if (fieldOf(server, form.note, field).find_first_of("\r\n") != std::string::npos)
-      return fail(tr("줄바꿈 없이 입력해 주세요."), field);
+      return fail(tr("Enter it without line breaks."), field);
   // The approval message goes to state.json under the address; the server
   // reads it with the next approval request.
   const auto note = net::cleanPairMessage(form.note);
@@ -126,7 +126,7 @@ void Application::saveServerForm() {
   auto next = config_;
   int index = form.index;
   if (index < 0) {
-    if (next.servers.size() >= 32) return fail(tr("서버는 32개까지 등록할 수 있습니다."), form.row);
+    if (next.servers.size() >= 32) return fail(tr("You can add up to 32 servers."), form.row);
     next.servers.push_back(server);
     index = int(next.servers.size()) - 1;
   } else if (size_t(index) < next.servers.size()) {
@@ -136,7 +136,7 @@ void Application::saveServerForm() {
       // A new message for a server already open is asked with again.
       if (!(size_t(index) == serverIndex_ && session_)) connect(index);
       else if (noteChanged && !note.empty()) {
-        message(tr("메시지를 담아 승인을 다시 요청합니다."));
+        message(tr("Asking for approval again with your message."));
         pairSince_ = SDL_GetTicks();
         pairPollAt_ = 0;
         refresh();
@@ -148,7 +148,7 @@ void Application::saveServerForm() {
     serverForm_.reset();
     return;
   }
-  if (writeServers(next, index, tr("서버를 저장했습니다."))) {
+  if (writeServers(next, index, tr("Saved the server."))) {
     serverForm_.reset();
     selected_ = index;
   }
@@ -164,7 +164,7 @@ void Application::deleteServerForm() {
   // The server in use stays in use when another one goes.
   int prefer = -1;
   if (session_ && serverIndex_ != size_t(index)) prefer = int(serverIndex_) - (serverIndex_ > size_t(index) ? 1 : 0);
-  if (writeServers(next, prefer, tr("서버를 삭제했습니다."))) {
+  if (writeServers(next, prefer, tr("Deleted the server."))) {
     serverForm_.reset();
     selected_ = std::min(index, int(next.servers.size()));
   } else if (serverForm_) {
@@ -181,21 +181,21 @@ bool Application::writeServers(const Config &next, int prefer, const std::string
   // A config.json edited by hand that no longer reads is left alone.
   std::error_code ec;
   if (std::filesystem::exists(configPath_, ec) && parseConfig(readFile(configPath_)).error) {
-    alertTitle_ = tr("서버를 저장하지 못했습니다");
-    alert_ = tr("config.json에 오류가 있어 덮어쓰지 않았습니다. 파일을 고친 뒤 다시 저장합니다.");
+    alertTitle_ = tr("Could not save the server");
+    alert_ = tr("config.json has an error, so it was not overwritten. Fix the file, then save again.");
     return false;
   }
   std::string error;
   if (!saveConfig(configPath_, next, error)) {
     logLine("config write failed: " + error);
-    alertTitle_ = tr("서버를 저장하지 못했습니다");
-    alert_ = trf("config.json을 쓰지 못했습니다. {0}", {error});
+    alertTitle_ = tr("Could not save the server");
+    alert_ = trf("Could not write config.json. {0}", {error});
     return false;
   }
   logLine("config saved: " + std::to_string(next.servers.size()) + " servers");
   // A connection still running finishes first; - reads the new file then.
   if (network_.joinable() && !done_) {
-    message(tr("서버를 저장했습니다. 연결이 끝나면 - 버튼으로 새로고침합니다."));
+    message(tr("Saved the server. Press - to refresh once the connection finishes."));
     return true;
   }
   reload(prefer);
@@ -208,10 +208,10 @@ void Application::serverFormDialog() {
   constexpr float Width = 760, Row = 56, Gap = 8;
   const float errorSpace = form.error.empty() ? 0 : 30;
   const float bodyH = 20 + ServerFields * (Row + Gap) - Gap + 18 + 50 + errorSpace + 18;
-  const auto body = modal(Width, bodyH, existing ? tr("서버 편집") : tr("서버 추가"), tr("취소"), tr("저장"),
-                          tr("입력"), 21, existing ? tr("삭제") : "");
+  const auto body = modal(Width, bodyH, existing ? tr("Edit server") : tr("Add server"), tr("Cancel"), tr("Save"),
+                          tr("Type"), 21, existing ? tr("Delete") : "");
   const float x = body.x + 32, w = body.w - 64, valueX = x + 170, valueW = w - 190;
-  const char *labels[ServerFields] = {tr("주소"), tr("아이디"), tr("비밀번호"), tr("이름"), tr("메시지")};
+  const char *labels[ServerFields] = {tr("Address"), tr("Username"), tr("Password"), tr("Name"), tr("Message")};
   for (int field = 0; field < ServerFields; ++field) {
     const float y = body.y + 20 + field * (Row + Gap), mid = y + Row / 2;
     hit(x, y, w, Row, [this, field] {
@@ -224,9 +224,9 @@ void Application::serverFormDialog() {
     const auto &value = fieldOf(form.server, form.note, field);
     if (value.empty()) {
       // A placeholder per field; 이름 shows the host it falls back to.
-      const char *placeholders[ServerFields] = {tr("서버 주소 (예: example.com)"), tr("로그인 아이디"),
-                                                tr("로그인 비밀번호"), tr("서버 이름"),
-                                                tr("관리자에게 보낼 메시지 (선택)")};
+      const char *placeholders[ServerFields] = {tr("Server address (e.g. example.com)"), tr("Login username"),
+                                                tr("Login password"), tr("Server name"),
+                                                tr("Message for the admin (optional)")};
       const auto host = field == 3 ? hostOf(normalizeUrl(trimmed(form.server.url))) : "";
       const std::string hint = host.empty() ? placeholders[field] : host;
       paint_.fonts.middle(hint, valueX, mid, 19, Secondary, false, valueW);
@@ -243,13 +243,13 @@ void Application::serverFormDialog() {
     paint_.fonts.text(form.error, x, lineY, 18, Bad, true, w);
     lineY += errorSpace;
   }
-  paint_.fonts.wrapped(tr("기기 승인을 쓰는 서버는 주소만 넣고 저장하면 QR 승인 화면으로 이어지고, 메시지는 승인 요청과 함께 관리자에게 전달됩니다."),
+  paint_.fonts.wrapped(tr("For a server that uses device approval, enter only the address and save to go to the QR approval screen; the message goes to the admin with the request."),
                        x, lineY, 17, Secondary, w, 2);
   if (!form.confirmDelete) return;
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 120});
   blockTouch();
-  const auto ask = modal(640, 24 + 70 + 16, tr("이 서버를 삭제하시겠습니까?"), tr("취소"), "", tr("삭제"), 37);
+  const auto ask = modal(640, 24 + 70 + 16, tr("Delete this server?"), tr("Cancel"), "", tr("Delete"), 37);
   paint_.fonts.text(form.server.title, ask.x + 32, ask.y + 24, 21, Ink, true, ask.w - 64);
-  paint_.fonts.text(tr("다른 서버는 그대로 둡니다."), ask.x + 32, ask.y + 62, 19, Secondary, false, ask.w - 64);
+  paint_.fonts.text(tr("Other servers stay as they are."), ask.x + 32, ask.y + 62, 19, Secondary, false, ask.w - 64);
 }
 } // namespace foil::ui

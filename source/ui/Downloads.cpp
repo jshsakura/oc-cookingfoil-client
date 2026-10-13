@@ -8,10 +8,10 @@ void Application::downloads() {
   const auto p = installer_.progress();
   const auto queued = p.status == install::Status::Idle
                           ? std::string()
-                          : trf("{0}개 남음 · 합계 {1}",
+                          : trf("{0} left · {1} total",
                                 {std::to_string(p.waiting.size() + (installer_.running() ? 1 : 0)),
                                  formatBytes(p.total)});
-  pageTitle(tr("다운로드"), downloadsTab_ == 0 ? queued : std::string());
+  pageTitle(tr("Downloads"), downloadsTab_ == 0 ? queued : std::string());
   // Tabs with their counts: what runs now, what finished, what did not.
   const int running = (installer_.running() ? int(p.waiting.size()) + 1 : 0) + (retroDownloading() ? 1 : 0) +
                       int(patchQueue_.size()) + (patchWorker_.joinable() && !patchBusy_.empty() ? 1 : 0);
@@ -20,7 +20,7 @@ void Application::downloads() {
     done += e.outcome == history::Outcome::Done;
     failed += e.outcome == history::Outcome::Failed || e.outcome == history::Outcome::Cancelled;
   }
-  headerTabs({tr("진행 중"), tr("완료"), tr("실패")}, downloadsTab_, [this](int n) {
+  headerTabs({tr("Running"), tr("Done"), tr("Failed")}, downloadsTab_, [this](int n) {
                downloadsTab_ = n;
                downloadsRow_ = 0;
              }, 1252, 0, {running, done, failed});
@@ -28,13 +28,13 @@ void Application::downloads() {
     downloadsHistory();
     return;
   }
-  const auto target = p.target == "nand" ? tr("본체") : tr("SD 카드");
+  const auto target = p.target == "nand" ? tr("Console") : tr("SD card");
   if (p.status == install::Status::Idle) {
     // A retro game or RetroArch can run with no install beside it.
     float y = 82;
     if (retroDownloading()) y += retroDownloadCard(y) + 30;
     if (patchDownloading()) patchDownloadCard(y);
-    else if (!retroDownloading()) notice(tr("다운로드 중인 파일이 없습니다."), tr("상세 화면에서 설치할 항목을 고른 뒤 A로 설치합니다."), 4);
+    else if (!retroDownloading()) notice(tr("Nothing is downloading."), tr("Pick items on a game's page, then press A to install."), 4);
     return;
   }
   if (p.status == install::Status::Running)
@@ -72,9 +72,9 @@ void Application::downloads() {
         std::any_of(p.parts.begin(), p.parts.begin() + i,
                     [](const Item &item) { return item.type == "dlc"; }))
       continue;
-    std::string type = part.type == "update" ? tr("업데이트|항목")
+    std::string type = part.type == "update" ? tr("Update|item")
                        : part.type == "dlc"  ? "DLC"
-                                             : tr("본편");
+                                             : tr("Base game");
     size_t last = i;
     if (part.type == "dlc") {
       size_t count = 0;
@@ -89,8 +89,8 @@ void Application::downloads() {
     const bool active =
         p.index >= i && p.index <= last && p.status == install::Status::Running;
     const auto label = done     ? std::string("✓ ") + type
-                       : active ? trf("{0} 진행 중", {type})
-                                : trf("{0} 대기", {type});
+                       : active ? trf("{0} in progress", {type})
+                                : trf("{0} queued", {type});
     const auto width = paint_.fonts.measure(label, 15, true) + 24;
     paint_.rect(x, 208, width, 32,
                 done     ? SDL_Color{227, 242, 234, 255}
@@ -106,7 +106,7 @@ void Application::downloads() {
   }
   // Pause or resume, bottom right of the card (A does the same).
   if (p.status == install::Status::Running) {
-    const std::string label = paused ? tr("이어받기") : tr("일시정지");
+    const std::string label = paused ? tr("Resume") : tr("Pause");
     const float w = paint_.fonts.measure(label, 16, true) + 32;
     const float bx = 1228 - w;
     hit(bx, 204, w, 40, [this] { installer_.setPaused(!installer_.paused()); });
@@ -118,9 +118,9 @@ void Application::downloads() {
   if (p.status == install::Status::Succeeded || p.status == install::Status::Cancelled ||
       p.status == install::Status::Failed) {
     const bool ok = p.status == install::Status::Succeeded, failed = p.status == install::Status::Failed;
-    const std::string text = ok       ? std::string(tr("설치했습니다. 홈 메뉴에서 실행할 수 있습니다."))
+    const std::string text = ok       ? std::string(tr("Installed. You can launch it from the HOME Menu."))
                              : failed ? p.error
-                                      : std::string(tr("설치를 취소했습니다."));
+                                      : std::string(tr("Install canceled."));
     const bool twoLines = paint_.fonts.measure(text, 18, true) > 900;
     const float h = twoLines ? 80 : 56;
     paint_.rect(260, y, 992, h, ok ? SDL_Color{227, 242, 234, 255} : Surface, 14);
@@ -132,14 +132,14 @@ void Application::downloads() {
   if (retroDownloading()) y += int(retroDownloadCard(float(y))) + 30;
   if (patchDownloading()) y += int(patchDownloadCard(float(y))) + 30;
   if (!p.waiting.empty()) {
-    paint_.fonts.text(tr("대기 중"), 260, y, 26, Ink, true);
+    paint_.fonts.text(tr("Queued"), 260, y, 26, Ink, true);
     y += 40;
     for (size_t i = 0; i < p.waiting.size() && i < 2; ++i) {
       const auto &q = p.waiting[i];
       paint_.rect(260, y, 992, 104, Surface, 16);
       cover(q.icon, 284, y + 16, 72, false, q.name);
       paint_.fonts.text(q.name, 376, y + 22, 22, Ink, true, 690);
-      paint_.fonts.text(trf("{0} · 설치 대기", {target}), 376, y + 60, 18,
+      paint_.fonts.text(trf("{0} · Queued", {target}), 376, y + 60, 18,
                         Secondary);
       const auto size = formatBytes(q.size);
       paint_.fonts.text(size, 1228 - paint_.fonts.measure(size, 20, true),
@@ -173,9 +173,9 @@ float Application::retroDownloadCard(float y) {
   paint_.rect(386, y + 60, 842, 10, Line, 5);
   paint_.rect(386, y + 60, std::max(10.0, 842 * ratio), 10, Butter, 5);
   const bool app = running != history_.end() && running->kind == "homebrew";
-  const auto what = pack ? std::string(tr("RetroArch 설치")) : app ? std::string(tr("홈브류")) : std::string(tr("레트로 게임|항목"));
-  const auto line = total ? trf("{0} · SD 카드 · {1} / {2}", {what, formatBytes(got), formatBytes(total)})
-                          : trf("{0} · 받을 파일을 확인하고 있습니다", {what});
+  const auto what = pack ? std::string(tr("Install RetroArch")) : app ? std::string(tr("Homebrew")) : std::string(tr("Retro game"));
+  const auto line = total ? trf("{0} · SD card · {1} / {2}", {what, formatBytes(got), formatBytes(total)})
+                          : trf("{0} · Checking which files to get", {what});
   paint_.fonts.text(line, 386, y + 82, 17, Secondary, false, 842);
   return Height;
 }
@@ -195,8 +195,8 @@ void Application::downloadsHistory() {
   constexpr int Visible = 5;
   const auto list = downloadsList();
   if (list.empty()) {
-    notice(downloadsTab_ == 1 ? tr("완료한 다운로드가 없습니다.") : tr("실패한 다운로드가 없습니다."),
-           downloadsTab_ == 1 ? tr("설치를 마치면 여기에 남습니다.") : tr("실패하거나 취소한 설치는 여기에서 다시 시도합니다."),
+    notice(downloadsTab_ == 1 ? tr("No finished downloads.") : tr("No failed downloads."),
+           downloadsTab_ == 1 ? tr("Finished installs stay here.") : tr("Failed or cancelled installs can be tried again here."),
            downloadsTab_ == 1 ? 24 : 25);
     return;
   }
@@ -225,14 +225,14 @@ void Application::downloadsHistory() {
     localtime_r(&at, &local);
     char when[32];
     std::strftime(when, sizeof(when), "%m-%d %H:%M", &local);
-    std::string meta = std::string(e.install.target == "nand" ? tr("본체") : tr("SD 카드")) + " · " + when;
-    if (e.kind == "retro") meta = std::string(tr("레트로 게임|항목")) + " · " + meta;
-    if (e.kind == "homebrew") meta = std::string(tr("홈브류")) + " · " + meta;
+    std::string meta = std::string(e.install.target == "nand" ? tr("Console") : tr("SD card")) + " · " + when;
+    if (e.kind == "retro") meta = std::string(tr("Retro game")) + " · " + meta;
+    if (e.kind == "homebrew") meta = std::string(tr("Homebrew")) + " · " + meta;
     if (!e.error.empty()) meta += " · " + e.error;
     paint_.fonts.text(meta, 372, y + 52, 16, Secondary, false, 640);
-    const std::string state = e.outcome == history::Outcome::Done        ? tr("완료")
-                              : e.outcome == history::Outcome::Cancelled ? tr("취소됨")
-                                                                         : tr("실패");
+    const std::string state = e.outcome == history::Outcome::Done        ? tr("Done")
+                              : e.outcome == history::Outcome::Cancelled ? tr("Cancelled")
+                                                                         : tr("Failed");
     const float w = paint_.fonts.measure(state, 16, true) + 20;
     const bool ok = e.outcome == history::Outcome::Done;
     paint_.rect(1230 - w, y + 14, w, 28, ok ? Good : Line, 8);
@@ -275,7 +275,7 @@ void Application::downloadsAction(Action a) {
     }
     // Again from the start; the old entry gives way to the new one.
     if (installer_.running()) {
-      message(tr("지금 설치가 끝난 뒤 다시 시도합니다."));
+      message(tr("Try again once the current install ends."));
       return;
     }
     const auto install = history_[index].install;

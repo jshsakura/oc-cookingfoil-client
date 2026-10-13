@@ -27,9 +27,9 @@ bool plainName(const std::string &name) {
 Error exportArchive(const LocalBackup &backup, const BackupMeta &fallback, const std::string &zipPath) {
 #ifdef FOIL_NO_MINIZIP
   (void)backup, (void)fallback, (void)zipPath;
-  return {tr("이 빌드에서는 세이브를 압축할 수 없습니다.")};
+  return {tr("This build cannot zip saves.")};
 #else
-  if (!exists(backup.path)) return {tr("백업 폴더를 찾지 못했습니다.")};
+  if (!exists(backup.path)) return {tr("Could not find the backup folder.")};
   const auto metaPath = backup.path + ".meta";
   if (!exists(metaPath)) {
     if (auto error = writeMetaFile(metaPath, fallback)) return error;
@@ -43,13 +43,13 @@ Error exportArchive(const LocalBackup &backup, const BackupMeta &fallback, const
   std::error_code ec;
   makeDirectories(std::filesystem::path(fs::path(zipPath).parent_path()).string());
   ZipArchive zip;
-  if (!zip.create(zipPath)) return {trf("압축 파일을 만들지 못했습니다: {0}", {zipPath})};
+  if (!zip.create(zipPath)) return {trf("Could not create the archive: {0}", {zipPath})};
   const bool added = zip.addDirectory(backup.path) && zip.addFile(metaPath, ArchiveMetaEntry);
   const bool closed = zip.close();
   if (added && closed) return {};
   std::remove(zipPath.c_str());
   logLine("saves: archive failed: " + zip.error());
-  return {trf("압축 파일을 만들지 못했습니다: {0}", {zipPath})};
+  return {trf("Could not create the archive: {0}", {zipPath})};
 #endif
 }
 
@@ -58,7 +58,7 @@ Parsed<LocalBackup> importArchive(const std::string &root, uint64_t titleId, con
   Parsed<LocalBackup> result;
 #ifdef FOIL_NO_MINIZIP
   (void)root, (void)titleId, (void)zipPath, (void)name, (void)now;
-  result.error.message = tr("이 빌드에서는 세이브를 압축할 수 없습니다.");
+  result.error.message = tr("This build cannot zip saves.");
   return result;
 #else
   const auto epoch = std::to_string(static_cast<long long>(now));
@@ -66,7 +66,7 @@ Parsed<LocalBackup> importArchive(const std::string &root, uint64_t titleId, con
   removeTree(staging);
   if (!unzipToDirectory(zipPath, staging)) {
     removeTree(staging);
-    result.error.message = tr("받은 백업 파일을 풀지 못했습니다.");
+    result.error.message = tr("Could not unpack the downloaded backup.");
     return result;
   }
   const auto stagedMeta = staging + "/" + ArchiveMetaEntry;
@@ -85,7 +85,7 @@ Parsed<LocalBackup> importArchive(const std::string &root, uint64_t titleId, con
   fs::rename(staging, target, ec);
   if (ec) {
     removeTree(staging);
-    result.error.message = tr("받은 백업을 백업 폴더로 옮기지 못했습니다.");
+    result.error.message = tr("Could not move the downloaded backup into the backups folder.");
     return result;
   }
   BackupMeta meta = hasMeta ? incoming.value : BackupMeta{};

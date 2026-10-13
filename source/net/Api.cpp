@@ -35,7 +35,7 @@ std::string base64(const std::string& input) {
 size_t writeBody(char* data, size_t size, size_t count, void* context) {
     auto& result = *static_cast<Response*>(context);
     const auto bytes = size * count;
-    if (result.body.size() + bytes > 32 * 1024 * 1024) { result.error = tr("응답이 너무 큽니다."); return 0; }
+    if (result.body.size() + bytes > 32 * 1024 * 1024) { result.error = tr("The response is too large."); return 0; }
     result.body.append(data, bytes); return bytes;
 }
 size_t writeHeader(char* data, size_t size, size_t count, void* context) {
@@ -87,7 +87,7 @@ std::vector<std::string> authHeaders(const Server& server, const State& state, c
     return headers;
 }
 // Compared by value (error_.message == offlineMessage()), so both sides go through tr().
-const char* offlineMessage() { return tr("본체가 인터넷에 연결되어 있지 않습니다. 인터넷 설정을 확인합니다."); }
+const char* offlineMessage() { return tr("The console is not connected to the internet. Check its internet settings."); }
 bool internetConnected() {
 #ifdef __SWITCH__
     // Only for wording: on a network whose DNS blocks the vendor's test
@@ -122,11 +122,11 @@ std::string connectionError(int code, const std::string& url) {
     if (host.find("://") != std::string::npos) host = host.substr(host.find("://") + 3);
     switch (static_cast<CURLcode>(code)) {
     case CURLE_COULDNT_RESOLVE_HOST:
-        return trf("{0} 주소를 찾지 못했습니다. 주소 철자와 본체의 DNS 설정을 확인합니다.", {host});
+        return trf("Could not find {0}. Check the address spelling and the console's DNS settings.", {host});
     case CURLE_COULDNT_CONNECT:
-        return trf("{0}에 연결하지 못했습니다. 서버가 켜져 있는지 확인합니다.", {host});
+        return trf("Could not connect to {0}. Check that the server is running.", {host});
     case CURLE_OPERATION_TIMEDOUT:
-        return trf("{0}에서 응답이 없습니다. 잠시 뒤 다시 시도합니다.", {host});
+        return trf("No response from {0}. Try again later.", {host});
     case CURLE_PEER_FAILED_VERIFICATION:
     case CURLE_SSL_CONNECT_ERROR: {
         // Certificates are checked against the console's clock; one left far
@@ -137,9 +137,9 @@ std::string connectionError(int code, const std::string& url) {
         if (local.tm_year + 1900 < 2026) {
             char date[16];
             std::strftime(date, sizeof date, "%Y-%m-%d", &local);
-            return trf("본체 시계가 {0}(으)로 맞지 않아 보안 연결을 만들 수 없습니다. 설정에서 날짜와 시간을 맞춘 뒤 다시 시도합니다.", {date});
+            return trf("The console's clock reads {0}, so a secure connection cannot be made. Set the date and time in System Settings, then try again.", {date});
         }
-        return trf("{0}와 보안 연결을 만들지 못했습니다. 본체 시계와 서버 인증서를 확인합니다.", {host});
+        return trf("Could not make a secure connection to {0}. Check the console clock and the server certificate.", {host});
     }
     default:
         return curl_easy_strerror(static_cast<CURLcode>(code));
@@ -147,9 +147,9 @@ std::string connectionError(int code, const std::string& url) {
 }
 Response get(const std::string& url, const std::vector<std::string>& headers, const std::string& etag, const std::atomic<bool>* cancel) {
     Response result;
-    if (!isHttp(url)) { result.error = tr("HTTP/HTTPS 주소를 확인해 주세요."); return result; }
+    if (!isHttp(url)) { result.error = tr("Check the HTTP/HTTPS address."); return result; }
     auto* curl = curl_easy_init();
-    if (!curl) { result.error = tr("연결을 시작하지 못했습니다."); return result; }
+    if (!curl) { result.error = tr("Could not start the connection."); return result; }
     curl_slist* list = nullptr;
     for (const auto& header : headers) if (header.find_first_of("\r\n") == std::string::npos) list = curl_slist_append(list, header.c_str());
     if (!etag.empty() && etag.find_first_of("\r\n") == std::string::npos) list = curl_slist_append(list, ("If-None-Match: " + etag).c_str());
@@ -221,9 +221,9 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
                 const std::function<Start(const Response&)>& start,
                 const std::function<bool(const char*, size_t)>& onData, const std::atomic<bool>* cancel) {
     Response result;
-    if (!isHttp(url)) { result.error = tr("HTTP/HTTPS 주소를 확인해 주세요."); return result; }
+    if (!isHttp(url)) { result.error = tr("Check the HTTP/HTTPS address."); return result; }
     auto* curl = curl_easy_init();
-    if (!curl) { result.error = tr("연결을 시작하지 못했습니다."); return result; }
+    if (!curl) { result.error = tr("Could not start the connection."); return result; }
     curl_slist* list = nullptr;
     for (const auto& header : headers) if (header.find_first_of("\r\n") == std::string::npos) list = curl_slist_append(list, header.c_str());
     Stream context{curl, &result, &start, &onData};
@@ -278,7 +278,7 @@ size_t postBody(char* data, size_t size, size_t count, void* context) {
         if (std::fwrite(data, 1, bytes, p.out) != bytes) { p.failedWrite = true; return 0; }
         return bytes;
     }
-    if (p.result->body.size() + bytes > 4 * 1024 * 1024) { p.result->error = tr("응답이 너무 큽니다."); return 0; }
+    if (p.result->body.size() + bytes > 4 * 1024 * 1024) { p.result->error = tr("The response is too large."); return 0; }
     p.result->body.append(data, bytes);
     return bytes;
 }
@@ -288,22 +288,22 @@ size_t readUpload(char* buffer, size_t size, size_t count, void* context) {
 }
 Response post(const std::string& url, const std::vector<std::string>& headers, const PostOptions& options, const std::atomic<bool>* cancel) {
     Response result;
-    if (!isHttp(url)) { result.error = tr("HTTP/HTTPS 주소를 확인해 주세요."); return result; }
+    if (!isHttp(url)) { result.error = tr("Check the HTTP/HTTPS address."); return result; }
     std::unique_ptr<FILE, int (*)(FILE*)> in(nullptr, std::fclose), out(nullptr, std::fclose);
     curl_off_t uploadSize = 0;
     if (!options.uploadFile.empty()) {
         in.reset(std::fopen(options.uploadFile.c_str(), "rb"));
-        if (!in || std::fseek(in.get(), 0, SEEK_END) != 0) { result.error = trf("파일을 읽지 못했습니다: {0}", {options.uploadFile}); return result; }
+        if (!in || std::fseek(in.get(), 0, SEEK_END) != 0) { result.error = trf("Could not read the file: {0}", {options.uploadFile}); return result; }
         uploadSize = static_cast<curl_off_t>(std::ftell(in.get()));
         std::rewind(in.get());
     }
     if (!options.saveTo.empty()) {
         out.reset(std::fopen(options.saveTo.c_str(), "wb"));
         writeBuffer(out.get());
-        if (!out) { result.error = trf("파일을 만들지 못했습니다: {0}", {options.saveTo}); return result; }
+        if (!out) { result.error = trf("Could not create file: {0}", {options.saveTo}); return result; }
     }
     auto* curl = curl_easy_init();
-    if (!curl) { result.error = tr("연결을 시작하지 못했습니다."); return result; }
+    if (!curl) { result.error = tr("Could not start the connection."); return result; }
     curl_slist* list = nullptr;
     for (const auto& header : headers) if (header.find_first_of("\r\n") == std::string::npos) list = curl_slist_append(list, header.c_str());
     Posting context{curl, &result, out.get()};
@@ -338,7 +338,7 @@ Response post(const std::string& url, const std::vector<std::string>& headers, c
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &context);
     const auto code = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
-    if (context.failedWrite && result.error.empty()) result.error = trf("파일을 쓰지 못했습니다: {0}", {options.saveTo});
+    if (context.failedWrite && result.error.empty()) result.error = trf("Could not write the file: {0}", {options.saveTo});
     if (code != CURLE_OK && result.error.empty()) result.error = connectionError(code, url);
     // Only the address is logged: bodies carry tokens and codes.
     if (code != CURLE_OK || result.status >= 400)
@@ -347,7 +347,7 @@ Response post(const std::string& url, const std::vector<std::string>& headers, c
     curl_slist_free_all(list); curl_easy_cleanup(curl);
     if (out) {
         const bool closed = std::fclose(out.release()) == 0;
-        if (!closed && result.error.empty()) result.error = trf("파일을 쓰지 못했습니다: {0}", {options.saveTo});
+        if (!closed && result.error.empty()) result.error = trf("Could not write the file: {0}", {options.saveTo});
         if (!result.error.empty() || result.status < 200 || result.status >= 300) std::remove(options.saveTo.c_str());
     }
     return result;
@@ -595,7 +595,7 @@ Parsed<Catalog> parseCatalog(const std::string& json) {
         });
     });
     if (error) { result.error = error; return result; }
-    if (!ok || !sawSections) { result.error.message = tr("서버 목록 형식을 확인해 주세요."); result.value = {}; return result; }
+    if (!ok || !sawSections) { result.error.message = tr("Check the server list format."); result.value = {}; return result; }
     result.value.featured = parseFeatured(rest.get());
     result.value.genres = parseNameTable(rest.get(), "genres");
     result.value.scoreLabels = parseNameTable(rest.get(), "score_labels");
@@ -788,22 +788,22 @@ bool Session::pair(Error& error) {
     const auto url = server_.url + "/api/pair/status";
     const auto response = get(url, authHeaders(server_, state_, url), "", cancel_);
     if (response.status == 404) { pairingPending_ = false; pairingInfo_ = {}; return true; }
-    if (!response.error.empty() || response.status != 200) { error.message = response.error.empty() ? tr("기기 승인 상태를 확인하지 못했습니다.") : response.error; return false; }
+    if (!response.error.empty() || response.status != 200) { error.message = response.error.empty() ? tr("Could not check the device approval status.") : response.error; return false; }
     auto root = parseJson(response.body, error); if (error) return false;
     const auto status = stringField(root.get(), "status");
     if (status == "pending") {
         pairingPending_ = true; pairingInfo_ = parsePairingInfo(response.body, server_).value;
         sendPairMessage();
-        error.message = tr("서버 웹페이지에서 이 기기를 승인하면 연결합니다."); return false;
+        error.message = tr("Connects once you approve this device on the server website."); return false;
     }
-    if (status != "approved") { error.message = tr("기기 승인 응답을 확인해 주세요."); return false; }
+    if (status != "approved") { error.message = tr("Check the device approval response."); return false; }
     const auto key = stringField(root.get(), "accessKey");
     if (!key.empty()) {
         // Start from the file: settings chosen since this session began
         // (language, install checks) must survive the key being added.
         auto saved = loadState(path_);
         auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value; updated.accessKeys[server_.url] = key;
-        if (!saveState(path_, updated, error)) { error.message = tr("발급받은 키를 저장하지 못했습니다. 상태 파일의 저장 위치를 확인해 주세요."); return false; }
+        if (!saveState(path_, updated, error)) { error.message = tr("Could not save the issued key. Check where the state file is stored."); return false; }
         state_ = std::move(updated);
     }
     pairingPending_ = false; pairingInfo_ = {}; return true;
@@ -862,7 +862,7 @@ bool Session::refresh(Error& error) {
     if (!response.error.empty()) { error.message = response.error; return false; }
     unchanged_ = response.status == 304;
     if (unchanged_) return true;
-    if (response.status != 200) { error.message = trf("서버 연결을 확인해 주세요. HTTP {0}", {std::to_string(response.status)}); return false; }
+    if (response.status != 200) { error.message = trf("Check the server connection. HTTP {0}", {std::to_string(response.status)}); return false; }
     // Read game by game (parseCatalog), then the text goes.
     auto parsed = parseCatalog(response.body);
     std::string().swap(response.body);
@@ -883,7 +883,7 @@ Parsed<Detail> Session::detail(const std::string& baseId) {
     const auto url = server_.url + "/api/title/" + baseId + "?lang=" + languageCode();
     const auto response = get(url, authHeaders(server_, state_, url), "", cancel_);
     if (response.status == 404) return result;
-    if (!response.error.empty() || response.status != 200) { result.error.message = tr("상세 정보를 불러오지 못했습니다."); return result; }
+    if (!response.error.empty() || response.status != 200) { result.error.message = tr("Could not load the details."); return result; }
     return parseDetail(response.body);
 }
 Parsed<std::vector<UserPatch>> Session::patches() {
@@ -898,10 +898,10 @@ Parsed<std::vector<UserPatch>> Session::patches() {
         Error ignored;
         const auto body = parseJson(response.body, ignored);
         patchesRetryAfter_ = int(std::clamp<int64_t>(body ? integerField(body.get(), "retryAfter", 30) : 30, 5, 300));
-        result.error.message = tr("서버가 패치를 읽고 있습니다. 잠시 뒤 다시 불러옵니다.");
+        result.error.message = tr("The server is reading its patches. Loading again shortly.");
         return result;
     }
-    if (!response.error.empty() || response.status != 200) { result.error.message = tr("패치 목록을 불러오지 못했습니다."); return result; }
+    if (!response.error.empty() || response.status != 200) { result.error.message = tr("Could not load the patch list."); return result; }
     patches_ = parsePatches(response.body);
     result.value = patches_;
     // Still scanning: the list so far, and when to ask for the rest. Its
@@ -957,8 +957,8 @@ bool Session::downloadPatch(const UserPatch& patch, const std::string& dir, std:
     if (!fetch.tarError.empty()) return fail(fetch.tarError, false);
     if (!fetch.response.error.empty()) return fail(fetch.response.error, true);
     if (!rangedOk(fetch.response))
-        return fail(trf("패치를 받지 못했습니다. HTTP {0}", {std::to_string(fetch.response.status)}), false);
-    if (!fetch.complete) return fail(tr("패치를 받다가 끊겼습니다. 다시 받습니다."), false);
+        return fail(trf("Could not download the patch. HTTP {0}", {std::to_string(fetch.response.status)}), false);
+    if (!fetch.complete) return fail(tr("The patch download was interrupted. Download it again."), false);
     std::filesystem::remove(record, ec);
     return true;
 }

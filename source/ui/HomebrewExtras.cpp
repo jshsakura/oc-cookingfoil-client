@@ -10,15 +10,15 @@
 namespace foil::ui {
 namespace {
 constexpr int Patches = 1, Saves = 2, Remove = 3, Shortcut = 4;
-constexpr const char *Getting = "받는 중"; // i18n: keep
+constexpr const char *Getting = "Downloading"; // i18n: keep
 bool updateAvailable(const Application::PatchRow &row) {
   return row.record && row.onServer && !row.patch.hash.empty() && row.record->hash != row.patch.hash;
 }
 // What A does to a patch row, as on 유저 패치's menu.
 const char *patchVerb(const Application::PatchRow &row) {
-  if (!row.record) return tr("패치 다운로드 및 적용");
-  if (updateAvailable(row)) return tr("업데이트|동작");
-  return row.record->on ? tr("끄기") : tr("켜기");
+  if (!row.record) return tr("Download and apply the patch");
+  if (updateAvailable(row)) return tr("Update|action");
+  return row.record->on ? tr("Turn off") : tr("Turn on");
 }
 } // namespace
 std::vector<Application::PatchRow> Application::homebrewPatchRows(const homebrew::App &app) const {
@@ -93,7 +93,7 @@ void Application::homebrewExtrasAction(Action a) {
   if (a == Action::Down) homebrewExtraRow_ = std::min(count - 1, homebrewExtraRow_ + 1);
   if (a != Action::Accept || !settled()) return;
   if (patchWorker_.joinable()) {
-    message(tr("패치 작업이 끝난 뒤 다시 시도합니다."));
+    message(tr("Try again when the patch task is done."));
     return;
   }
   if (homebrewExtras_ == Saves) {
@@ -122,9 +122,9 @@ void Application::homebrewExtrasDialog() {
   constexpr float Width = 760, Row = 76, Gap = 8;
   constexpr int Visible = 5;
   const int shown = std::min(count, Visible);
-  const auto accept = patchList ? patchVerb(patches[homebrewExtraRow_]) : tr("적용");
+  const auto accept = patchList ? patchVerb(patches[homebrewExtraRow_]) : tr("Apply");
   const auto body = modal(Width, 16 + shown * (Row + Gap) + 8,
-                          app->name + " · " + (patchList ? tr("패치") : tr("세이브")), tr("닫기"), "", accept,
+                          app->name + " · " + (patchList ? tr("Patches") : tr("Saves")), tr("Close"), "", accept,
                           patchList ? 32 : 36);
   const float x = body.x + 24, w = body.w - 48;
   const int first = std::clamp(homebrewExtraRow_ - Visible / 2, 0, std::max(0, count - Visible));
@@ -144,14 +144,14 @@ void Application::homebrewExtrasDialog() {
       name = row.patch.name;
       if (!row.patch.version.empty()) meta = "v" + row.patch.version;
       if (!row.patch.author.empty()) meta += (meta.empty() ? "" : " · ") + row.patch.author;
-      if (!row.onServer) meta += (meta.empty() ? "" : " · ") + std::string(tr("서버에서 사라짐"));
+      if (!row.onServer) meta += (meta.empty() ? "" : " · ") + std::string(tr("Gone from server"));
       busy = patchBusy_ == row.patch.id;
       update = updateAvailable(row);
       lit = row.record && row.record->on && !busy && !update;
       state = busy ? tr(patchBusyLabel_.c_str())
-            : !row.record ? tr("미설치")
-            : update ? tr("업데이트|항목")
-            : row.record->on ? tr("켜짐") : tr("꺼짐");
+            : !row.record ? tr("Not installed")
+            : update ? tr("Update|item")
+            : row.record->on ? tr("On") : tr("Off");
       size = row.record ? row.record->bytes : row.patch.size;
     } else {
       const auto &save = homebrewSaves_[saves[n]];
@@ -186,9 +186,9 @@ void Application::homebrewSaveDialog() {
 }
 // The same question from 세이브 > 공유 and from the app's popup.
 void Application::appSaveConfirm(const shopsaves::ShopSave &save) {
-  const auto body = modal(700, 20 + 30 + 84 + 16, tr("이 세이브를 적용합니까?"), tr("취소"), "", tr("적용합니다"), 36);
+  const auto body = modal(700, 20 + 30 + 84 + 16, tr("Apply this save?"), tr("Cancel"), "", tr("Apply|confirm"), 36);
   paint_.fonts.text(save.name, body.x + 32, body.y + 20, 21, Ink, true, body.w - 64);
-  paint_.fonts.wrapped(trf("{0} 폴더에 세이브 파일을 넣습니다. 같은 이름의 파일은 먼저 {1} 폴더로 옮겨 둡니다.",
+  paint_.fonts.wrapped(trf("Puts the save files in {0}. Files with the same name are moved to {1} first.",
                            {save.installRoot, "switch/cookingfoil/homebrew-saves/" + save.homebrewApp}),
                        body.x + 32, body.y + 56, 19, Secondary, body.w - 64, 3);
 }
@@ -196,8 +196,8 @@ void Application::appSaveConfirm(const shopsaves::ShopSave &save) {
 // a cut download leaves the app's folder as it was.
 void Application::applyHomebrewSave(const shopsaves::ShopSave &save) {
   if (sdFree_ && *sdFree_ < save.size * 2 + (16u << 20)) {
-    alertTitle_ = tr("세이브를 적용할 수 없습니다");
-    alert_ = trf("SD 카드 공간이 부족합니다. {0}가 필요합니다.", {formatBytes(save.size * 2)});
+    alertTitle_ = tr("Cannot apply the save");
+    alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(save.size * 2)});
     return;
   }
   if (!session_) return;
@@ -220,8 +220,8 @@ void Application::applyHomebrewSave(const shopsaves::ShopSave &save) {
                   std::filesystem::remove_all(staging, ec);
                   return;
                 }
-                done = tr("세이브를 적용했습니다. 앱을 다시 켜면 바뀐 세이브로 시작합니다.");
+                done = tr("Save applied. The app starts with it next time.");
               },
-              tr("세이브를 적용하지 못했습니다"));
+              tr("Could not apply the save"));
 }
 } // namespace foil::ui

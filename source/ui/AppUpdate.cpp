@@ -21,7 +21,7 @@ void Application::checkAppUpdate() {
   if (updateWorker_.joinable()) return;
   if (!session_ || !connected_) {
     appUpdate_ = AppUpdate::Failed;
-    appUpdateError_ = tr("서버에 연결한 뒤 확인합니다.");
+    appUpdateError_ = tr("Connect to a server to check.");
     return;
   }
   appUpdate_ = AppUpdate::Checking;
@@ -48,8 +48,8 @@ void Application::checkAppUpdate() {
 void Application::installAppUpdate() {
   if (updateWorker_.joinable() || appUpdate_ != AppUpdate::Available || !session_) return;
   if (sdFree_ && *sdFree_ < appRelease_.size * 2) {
-    alertTitle_ = tr("업데이트할 수 없습니다");
-    alert_ = trf("SD 카드 공간이 부족합니다. {0}가 필요합니다.", {formatBytes(appRelease_.size * 2)});
+    alertTitle_ = tr("Cannot update");
+    alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(appRelease_.size * 2)});
     return;
   }
   appUpdate_ = AppUpdate::Downloading;
@@ -73,9 +73,9 @@ void Application::installAppUpdate() {
     updateFinish_ = [this, ok, error, cancelled, target, release] {
       if (!ok) {
         appUpdate_ = AppUpdate::Available;
-        if (cancelled) message(tr("업데이트를 취소했습니다."));
+        if (cancelled) message(tr("Cancelled the update."));
         else {
-          alertTitle_ = tr("업데이트하지 못했습니다");
+          alertTitle_ = tr("Update failed");
           alert_ = error.message;
         }
         return;
@@ -86,8 +86,8 @@ void Application::installAppUpdate() {
       if (!platform::replaceSelf(target + ".new", target, reason)) {
         logLine("update swap failed: " + reason);
         appUpdate_ = AppUpdate::Available;
-        alertTitle_ = tr("업데이트하지 못했습니다");
-        alert_ = tr("업데이트 파일을 바꾸지 못했습니다.") + std::string(" ") + reason;
+        alertTitle_ = tr("Update failed");
+        alert_ = tr("Could not put the update in place.") + std::string(" ") + reason;
         return;
       }
       appUpdate_ = AppUpdate::Latest;
@@ -97,8 +97,8 @@ void Application::installAppUpdate() {
         exitRequested_ = requestQuit();
         return;
       }
-      alertTitle_ = tr("업데이트했습니다");
-      alert_ = trf("v{0}을(를) 설치했습니다. 앱을 다시 실행하면 업데이트가 적용됩니다.", {release.version});
+      alertTitle_ = tr("Updated");
+      alert_ = trf("v{0} installed. It takes effect when you start the app again.", {release.version});
     };
     updateDone_ = true;
   });
@@ -126,7 +126,7 @@ void Application::sendLog(const std::string &reason) {
       char at[16]{};
       const auto now = std::time(nullptr);
       std::strftime(at, sizeof(at), "%H:%M", std::localtime(&now));
-      logStatus_ = trf("{0}에 보냈습니다", {at});
+      logStatus_ = trf("Sent at {0}", {at});
     };
     logDone_ = true;
   });
@@ -151,14 +151,14 @@ void Application::pollAppUpdate() {
 std::string Application::appUpdateStatus() const {
   const std::string current = std::string("v") + COOKINGFOIL_VERSION;
   switch (appUpdate_) {
-  case AppUpdate::Checking: return trf("{0} · 확인하고 있습니다", {current});
-  case AppUpdate::Latest: return trf("{0} · 최신 버전입니다", {current});
-  case AppUpdate::Available: return trf("v{0} 업데이트가 있습니다", {appRelease_.version});
-  case AppUpdate::Missing: return trf("{0} · 서버에 업데이트가 없습니다", {current});
+  case AppUpdate::Checking: return trf("{0} · Checking", {current});
+  case AppUpdate::Latest: return trf("{0} · Up to date", {current});
+  case AppUpdate::Available: return trf("v{0} update available", {appRelease_.version});
+  case AppUpdate::Missing: return trf("{0} · The server offers no update", {current});
   case AppUpdate::Failed: return current + " · " + appUpdateError_;
   case AppUpdate::Downloading:
-    return trf("받는 중 {0} / {1}", {formatBytes(updateReceived_.load()), formatBytes(appRelease_.size)});
-  default: return trf("{0} · A로 확인합니다", {current});
+    return trf("Downloading {0} / {1}", {formatBytes(updateReceived_.load()), formatBytes(appRelease_.size)});
+  default: return trf("{0} · Press A to check", {current});
   }
 }
 // A on the row: check, or with a newer build ask before getting it.
@@ -179,8 +179,8 @@ void Application::appUpdateAction(Action a) {
 #ifndef __SWITCH__
   // The PC preview has no .nro to replace: say where it works instead.
   if (appUpdate_ == AppUpdate::Available) {
-    alertTitle_ = tr("업데이트할 수 없습니다");
-    alert_ = tr("PC 미리보기에서는 앱을 바꿀 수 없습니다. 본체의 설정 > 앱 업데이트에서 받습니다.");
+    alertTitle_ = tr("Cannot update");
+    alert_ = tr("The PC preview cannot replace the app. Get it on the console in Settings > App update.");
     return;
   }
 #endif
@@ -189,17 +189,17 @@ void Application::appUpdateAction(Action a) {
 }
 void Application::appUpdateDialog() {
   if (appUpdate_ == AppUpdate::Downloading) {
-    const auto body = modal(640, 24 + 60 + 24, tr("업데이트를 받고 있습니다"), tr("취소"), "", "", 4);
+    const auto body = modal(640, 24 + 60 + 24, tr("Downloading the update"), tr("Cancel"), "", "", 4);
     const float ratio = appRelease_.size ? std::min(1.f, float(updateReceived_.load()) / float(appRelease_.size)) : 0.f;
-    paint_.fonts.text(trf("v{0} · {1} / {2}", {appRelease_.version, formatBytes(updateReceived_.load()),
-                                              formatBytes(appRelease_.size)}),
+    paint_.fonts.text("v" + appRelease_.version + " · " + formatBytes(updateReceived_.load()) + " / " +
+                          formatBytes(appRelease_.size),
                       body.x + 32, body.y + 24, 19, Ink, true, body.w - 64);
     paint_.rect(body.x + 32, body.y + 66, body.w - 64, 10, Line, 5);
     paint_.rect(body.x + 32, body.y + 66, std::max(10.f, (body.w - 64) * ratio), 10, Butter, 5);
     return;
   }
-  const auto body = modal(660, 24 + 60 + 24, tr("업데이트하시겠습니까?"), tr("취소"), "", tr("업데이트|동작"), 3);
-  paint_.fonts.wrapped(trf("v{0}에서 v{1}(으)로 바꿉니다. 받은 뒤 앱을 다시 시작합니다.",
+  const auto body = modal(660, 24 + 60 + 24, tr("Update now?"), tr("Cancel"), "", tr("Update|action"), 3);
+  paint_.fonts.wrapped(trf("Goes from v{0} to v{1}. The app starts again once it is in.",
                            {COOKINGFOIL_VERSION, appRelease_.version}),
                        body.x + 32, body.y + 24, 19, Secondary, body.w - 64, 2);
 }

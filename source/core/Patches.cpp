@@ -210,18 +210,18 @@ bool isCheatPath(const std::string &path) {
 }
 const char *patchKindLabel(const std::string &kind) {
   if (kind == "romfs")
-    return tr("데이터 패치");
+    return tr("Data patch");
   if (kind == "exefs")
-    return tr("실행 파일 패치");
+    return tr("Executable patch");
   if (kind == "cheats")
-    return tr("치트");
+    return tr("Cheats");
   if (kind == "exefs_patches")
-    return tr("IPS 패치");
+    return tr("IPS patch");
   if (kind == "fpslocker")
     return "FPSLocker";
   if (kind == "homebrew")
-    return tr("홈브류");
-  return tr("기타");
+    return tr("Homebrew");
+  return tr("Other");
 }
 
 uint64_t tarSize(const char *field) {
@@ -273,7 +273,7 @@ bool TarWriter::openFile(const std::string &path, uint64_t size) {
   // 4 GiB or more: made as a split file first, or FAT32 would cut it short.
   if (std::string reason; platform::needsBigFile(size) && !platform::createBigFile(full.string(), reason)) {
     logLine("tar: cannot create big file " + full.string() + ": " + reason);
-    return fail(trf("4GB가 넘는 파일을 SD 카드에 만들지 못했습니다: {0}", {path}) + " (" + reason + ")");
+    return fail(trf("Could not create a file over 4 GB on the SD card: {0}", {path}) + " (" + reason + ")");
   }
   file_ = std::fopen(full.string().c_str(), "wb");
   current_ = path;
@@ -284,7 +284,7 @@ bool TarWriter::openFile(const std::string &path, uint64_t size) {
     const std::string reason = std::strerror(errno);
     const bool folder = !std::filesystem::is_directory(full.parent_path(), ec);
     logLine("tar: cannot create " + full.string() + ": " + reason + (folder ? " (no folder)" : ""));
-    return fail(trf("파일을 만들지 못했습니다: {0}", {path}) + " (" + reason + (folder ? ", no folder" : "") + ")");
+    return fail(trf("Could not create file: {0}", {path}) + " (" + reason + (folder ? ", no folder" : "") + ")");
   }
   return true;
 }
@@ -297,15 +297,15 @@ bool TarWriter::header() {
   }
   zeroBlocks_ = 0;
   if (std::memcmp(b + 257, "ustar", 5) != 0)
-    return fail(tr("패치 파일 형식이 아닙니다."));
+    return fail(tr("Not a patch file."));
   unsigned sum = 0;
   for (size_t i = 0; i < Block; ++i)
     sum += (i >= 148 && i < 156) ? unsigned(' ') : unsigned(static_cast<unsigned char>(b[i]));
   if (octal(b + 148, 8) != sum)
-    return fail(tr("받은 패치 파일이 손상되었습니다."));
+    return fail(tr("The downloaded patch file is damaged."));
   uint64_t size = tarSize(b + 124);
   if (size == UINT64_MAX)
-    return fail(tr("받은 패치 파일이 손상되었습니다."));
+    return fail(tr("The downloaded patch file is damaged."));
   const char type = b[156];
   auto name = text(b, 100);
   const auto prefix = text(b + 345, 155);
@@ -321,7 +321,7 @@ bool TarWriter::header() {
   padding_ = padding(size);
   if (type == 'x' || type == 'g') {
     if (size > MaxPaxBytes)
-      return fail(tr("패치 파일의 항목 정보가 너무 깁니다."));
+      return fail(tr("A patch file entry header is too long."));
     pax_ = true;
     paxGlobal_ = type == 'g';
     paxData_.clear();
@@ -329,15 +329,15 @@ bool TarWriter::header() {
   }
   if (type == '5') { // folders are created with their files
     if (size)
-      return fail(tr("받은 패치 파일이 손상되었습니다."));
+      return fail(tr("The downloaded patch file is damaged."));
     return true;
   }
   if (type != '0' && type != '\0' && type != '7')
-    return fail(trf("패치에 일반 파일이 아닌 항목이 있습니다: {0}", {name}));
+    return fail(trf("The patch has an entry that is not a regular file: {0}", {name}));
   while (name.rfind("./", 0) == 0)
     name.erase(0, 2);
   if (allow_ ? !allow_(name) : !patchPathAllowed(titleId_, name))
-    return fail(trf("패치가 허용되지 않은 위치에 쓰려고 합니다: {0}", {name}));
+    return fail(trf("The patch tries to write to a disallowed location: {0}", {name}));
   if (skip_ && skip_(name))
     return true; // its bytes pass by with no file open
   if (!openFile(name, size))
@@ -381,7 +381,7 @@ bool TarWriter::feed(const char *data, size_t size) {
       if (pax_)
         paxData_.append(data, take);
       else if (file_ && std::fwrite(data, 1, take, file_) != take)
-        return fail(tr("SD 카드에 쓰지 못했습니다. 남은 공간을 확인합니다."));
+        return fail(tr("Could not write to the SD card. Check the free space."));
       remaining_ -= take;
       consume(take);
       if (remaining_ == 0) {
@@ -394,7 +394,7 @@ bool TarWriter::feed(const char *data, size_t size) {
             const bool closed = std::fclose(file_) == 0;
             file_ = nullptr;
             if (!closed)
-              return fail(tr("SD 카드에 쓰지 못했습니다. 남은 공간을 확인합니다."));
+              return fail(tr("Could not write to the SD card. Check the free space."));
           }
         }
       }
@@ -425,7 +425,7 @@ bool TarWriter::finish() {
   if (!error_.empty())
     return false;
   if (!ended_ || remaining_ > 0)
-    return fail(tr("패치를 받다가 끊겼습니다. 다시 받습니다."));
+    return fail(tr("The patch download was interrupted. Download it again."));
   return true;
 }
 
@@ -499,7 +499,7 @@ bool PatchStore::move(const std::string &from, const std::string &to, Error &err
   makeDirectories(std::filesystem::path(fs::path(to).parent_path()).string());
   fs::rename(from, to, ec);
   if (ec)
-    error.message = tr("패치 파일을 옮기지 못했습니다. SD 카드를 확인합니다.");
+    error.message = tr("Could not move the patch files. Check the SD card.");
   return !ec;
 }
 void PatchStore::prune(const std::string &path) const {
@@ -936,7 +936,7 @@ bool PatchStore::finishDisable(PatchRecord &record, Error &error) {
 bool PatchStore::enable(const std::string &id, Error &error) {
   const auto it = records_.find(id);
   if (it == records_.end()) {
-    error.message = tr("받아 둔 패치가 아닙니다.");
+    error.message = tr("This patch has not been downloaded.");
     return false;
   }
   if (it->second.on)
@@ -996,7 +996,7 @@ bool PatchStore::reapply(const std::string &id, size_t &left, Error &error) {
 bool PatchStore::commit(const UserPatch &patch, Error &error) {
   const bool app = !patch.homebrewApp.empty();
   if (!validId(patch.id) || (app ? !homebrew::appFolderAllowed(patch.homebrewApp) : patch.titleId.size() != 16)) {
-    error.message = tr("패치 정보가 잘못되었습니다.");
+    error.message = tr("The patch information is invalid.");
     return false;
   }
   PatchRecord record;
@@ -1014,14 +1014,14 @@ bool PatchStore::commit(const UserPatch &patch, Error &error) {
       continue;
     const auto rel = it->path().string().substr(from.size() + 1);
     if (!patchPathAllowed(patch, rel)) {
-      error.message = trf("패치가 허용되지 않은 위치에 쓰려고 합니다: {0}", {rel});
+      error.message = trf("The patch tries to write to a disallowed location: {0}", {rel});
       return false;
     }
     (isCheatPath(rel) ? record.cheats : record.files).push_back(rel);
     record.bytes += it->file_size(ec);
   }
   if (ec || (record.files.empty() && record.cheats.empty())) {
-    error.message = tr("패치에 들어 있는 파일이 없습니다.");
+    error.message = tr("The patch contains no files.");
     return false;
   }
   std::sort(record.files.begin(), record.files.end());

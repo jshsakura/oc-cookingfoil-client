@@ -92,14 +92,14 @@ std::string thumbnailUrl(const std::string &url, const char *size) {
   return url + (url.find('?') == std::string::npos ? "?" : "&") + "size=" + size;
 }
 const char *sortLabel(SortMode sort) {
-  return sort == SortMode::Recent    ? tr("최근 추가순")
-         : sort == SortMode::Release ? tr("출시일순")
-         : sort == SortMode::Name    ? tr("이름순")
-         : sort == SortMode::Popular ? tr("인기순")
-         : sort == SortMode::Largest ? tr("용량 큰순")
-         : sort == SortMode::Updated ? tr("업데이트순")
-         : sort == SortMode::Score   ? tr("평점순")
-                                     : tr("기본 순서");
+  return sort == SortMode::Recent    ? tr("Recently added|sort")
+         : sort == SortMode::Release ? tr("Release date")
+         : sort == SortMode::Name    ? tr("Name|sort")
+         : sort == SortMode::Popular ? tr("Popular|sort")
+         : sort == SortMode::Largest ? tr("Largest")
+         : sort == SortMode::Updated ? tr("Recently updated|sort")
+         : sort == SortMode::Score   ? tr("Rating|sort")
+                                     : tr("Default");
 }
 namespace {
 bool passes(const Group &g, const Theme &t) {
@@ -194,16 +194,16 @@ std::vector<Theme> libraryChips(const std::vector<Group> &groups, const GenreNam
   constexpr size_t GenreChips = 4;
   constexpr uint64_t LightSize = 1ULL << 30, BigSize = 10ULL << 30;
   std::vector<Theme> candidates = {
-      {tr("설치 안 한 게임"), SortMode::Default, Filter::All, "", 0, 0, 0, 0, true, false, "", 0},
-      {tr("eShop 할인 중"), SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, true, "", 0},
-      {tr("평점 80 이상"), SortMode::Score, Filter::All, "", 0, 0, 0, 0, false, false, "", GoodScore},
-      {tr("한국어 지원"), SortMode::Default, Filter::Korean, "", 0, 0, 0, 0, false, false, "", 0},
-      {tr("2인 이상 플레이"), SortMode::Default, Filter::All, "", 2, 0, 0, 0, false, false, PartyGenre, 0},
-      {tr("파티 게임"), SortMode::Default, Filter::All, PartyGenre, 0, 0, 0, 0, false, false, "", 0},
-      {tr("업데이트 있음"), SortMode::Default, Filter::Update, "", 0, 0, 0, 0, false, false, "", 0},
-      {tr("DLC 있음"), SortMode::Default, Filter::Dlc, "", 0, 0, 0, 0, false, false, "", 0},
-      {tr("1GB 이하"), SortMode::Default, Filter::All, "", 0, LightSize, 0, 0, false, false, "", 0},
-      {tr("10GB 이상"), SortMode::Default, Filter::All, "", 0, 0, 0, BigSize, false, false, "", 0}};
+      {tr("Not installed|filter"), SortMode::Default, Filter::All, "", 0, 0, 0, 0, true, false, "", 0},
+      {tr("eShop sale|now"), SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, true, "", 0},
+      {tr("Rated 80+"), SortMode::Score, Filter::All, "", 0, 0, 0, 0, false, false, "", GoodScore},
+      {tr("Korean|support"), SortMode::Default, Filter::Korean, "", 0, 0, 0, 0, false, false, "", 0},
+      {tr("2+ players"), SortMode::Default, Filter::All, "", 2, 0, 0, 0, false, false, PartyGenre, 0},
+      {tr("Party games"), SortMode::Default, Filter::All, PartyGenre, 0, 0, 0, 0, false, false, "", 0},
+      {tr("Has update"), SortMode::Default, Filter::Update, "", 0, 0, 0, 0, false, false, "", 0},
+      {tr("Has DLC"), SortMode::Default, Filter::Dlc, "", 0, 0, 0, 0, false, false, "", 0},
+      {tr("Under 1GB"), SortMode::Default, Filter::All, "", 0, LightSize, 0, 0, false, false, "", 0},
+      {tr("10GB+"), SortMode::Default, Filter::All, "", 0, 0, 0, BigSize, false, false, "", 0}};
   // One sort serves every genre row: the newest first.
   const auto recent = browseCatalog(groups, "", {"", SortMode::Recent, Filter::All, "", 0, 0, 0, 0, false, false, "", 0});
   std::map<std::string, size_t> counts;
@@ -218,8 +218,8 @@ std::vector<Theme> libraryChips(const std::vector<Group> &groups, const GenreNam
                genres.end());
   for (size_t n = 0; n < genres.size() && n < GenreChips; ++n)
     candidates.push_back({genreLabel(names, genres[n].first), SortMode::Default, Filter::All, genres[n].first, 0, 0, 0, 0, false, false, "", 0});
-  candidates.push_back({tr("커스텀"), SortMode::Default, Filter::Custom, "", 0, 0, 0, 0, false, false, "", 0});
-  std::vector<Theme> chips = {{tr("전체"), SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}};
+  candidates.push_back({tr("Custom"), SortMode::Default, Filter::Custom, "", 0, 0, 0, 0, false, false, "", 0});
+  std::vector<Theme> chips = {{tr("All"), SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}};
   for (auto &chip : candidates)
     if (chip.notInstalled || !browseCatalog(groups, "", chip).empty())
       chips.push_back(std::move(chip));
@@ -252,11 +252,11 @@ std::vector<HeroSlide> homeHeroes(const std::vector<Group> &groups,
     const size_t at = pick && seed ? std::mt19937(seed ^ (unsigned(slides.size() + 1) * 2654435761u))() % pool.size() : 0;
     slides.push_back({pool[at], label});
   };
-  add(tr("새로 들어온 게임"), {"", SortMode::Recent, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}, false);
-  add(tr("eShop 할인 중"), {"", SortMode::Popular, Filter::All, "", 0, 0, 0, 0, false, true, "", 0}, true);
-  add(tr("인기 게임"), {"", SortMode::Popular, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}, false);
-  add(tr("함께 하면 더 재미있는 게임"), {"", SortMode::Popular, Filter::All, "", 2, 0, 0, 0, false, false, PartyGenre, 0}, true);
-  add(tr("오늘의 추천"), {"", SortMode::Popular, Filter::Korean, "", 0, 0, 0, 0, false, false, "", 0}, true);
+  add(tr("Just added"), {"", SortMode::Recent, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}, false);
+  add(tr("eShop sale|now"), {"", SortMode::Popular, Filter::All, "", 0, 0, 0, 0, false, true, "", 0}, true);
+  add(tr("Popular games"), {"", SortMode::Popular, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}, false);
+  add(tr("Better together"), {"", SortMode::Popular, Filter::All, "", 2, 0, 0, 0, false, false, PartyGenre, 0}, true);
+  add(tr("Today's pick"), {"", SortMode::Popular, Filter::Korean, "", 0, 0, 0, 0, false, false, "", 0}, true);
   if (slides.size() > HeroSlides) slides.resize(HeroSlides);
   return slides;
 }
@@ -320,16 +320,16 @@ std::vector<HomeTheme> homeThemes(const std::vector<Group> &groups, size_t hero,
       markShown(row.items[n]);
     rows.push_back(std::move(row));
   };
-  add({tr("최근 추가"), SortMode::Recent, Filter::All, "", 0, 0, 0, 0, false, false, "", 0});
-  add({tr("eShop 할인 중"), SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, true, "", 0}, WidePool);
-  add({tr("신작"), SortMode::Release, Filter::All, "", 0, 0, 0, 0, false, false, "", 0});
-  add({tr("최근 업데이트"), SortMode::Updated, Filter::All, "", 0, 0, 0, 0, false, false, "", 0});
-  add({tr("인기"), SortMode::Popular, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}, TopPool);
-  add({tr("명작"), SortMode::Score, Filter::All, "", 0, 0, 0, 0, false, false, "", GreatScore}, WidePool);
-  add({tr("2인 이상 플레이"), SortMode::Popular, Filter::All, "", 2, 0, 0, 0, false, false, PartyGenre, 0}, WidePool);
-  add({tr("파티 게임"), SortMode::Popular, Filter::All, PartyGenre, 0, 0, 0, 0, false, false, "", 0}, WidePool);
-  add({tr("대용량 게임"), SortMode::Largest, Filter::All, "", 0, 0, 0, 10ULL << 30, false, false, "", 0}, AnyGame);
-  add({tr("한국어 지원"), SortMode::Release, Filter::Korean, "", 0, 0, 0, 0, false, false, "", 0}, WidePool);
+  add({tr("Recently added"), SortMode::Recent, Filter::All, "", 0, 0, 0, 0, false, false, "", 0});
+  add({tr("eShop sale|now"), SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, true, "", 0}, WidePool);
+  add({tr("New releases"), SortMode::Release, Filter::All, "", 0, 0, 0, 0, false, false, "", 0});
+  add({tr("Recently updated"), SortMode::Updated, Filter::All, "", 0, 0, 0, 0, false, false, "", 0});
+  add({tr("Popular"), SortMode::Popular, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}, TopPool);
+  add({tr("Classics"), SortMode::Score, Filter::All, "", 0, 0, 0, 0, false, false, "", GreatScore}, WidePool);
+  add({tr("2+ players"), SortMode::Popular, Filter::All, "", 2, 0, 0, 0, false, false, PartyGenre, 0}, WidePool);
+  add({tr("Party games"), SortMode::Popular, Filter::All, PartyGenre, 0, 0, 0, 0, false, false, "", 0}, WidePool);
+  add({tr("Big games"), SortMode::Largest, Filter::All, "", 0, 0, 0, 10ULL << 30, false, false, "", 0}, AnyGame);
+  add({tr("Korean|support"), SortMode::Release, Filter::Korean, "", 0, 0, 0, 0, false, false, "", 0}, WidePool);
   // One sort serves every genre row: the newest first.
   const auto recent = browseCatalog(groups, "", {"", SortMode::Recent, Filter::All, "", 0, 0, 0, 0, false, false, "", 0});
   std::map<std::string, size_t> counts;
@@ -391,7 +391,7 @@ std::string versionLabel(const Item &item) {
 std::string priceText(const std::string &amount) {
   const bool zero = amount.find_first_of("123456789") == std::string::npos;
   if (zero)
-    return tr("무료");
+    return tr("Free");
   auto suffix = [&](const std::string &unit) {
     return amount.size() > unit.size() && amount.compare(amount.size() - unit.size(), unit.size(), unit) == 0;
   };

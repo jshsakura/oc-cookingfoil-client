@@ -18,7 +18,7 @@ namespace {
 Error failure(const char *action, Result rc) {
   char code[20];
   std::snprintf(code, sizeof(code), "%08X", rc);
-  return {trf("{0} 코드 {1}", {action, code})};
+  return {trf("{0} Code {1}", {action, code})};
 }
 std::string hex(uint64_t id) {
   char text[17];
@@ -50,15 +50,15 @@ Parsed<std::vector<NcmApplicationContentMetaKey>> keys(Database &db, NcmContentM
   for (int attempt = 0; attempt < 3; ++attempt) {
     s32 total = 0, written = 0;
     auto rc = ncmContentMetaDatabaseListApplication(&db.db, &total, &written, nullptr, 0, type);
-    if (R_FAILED(rc)) return {{}, failure(tr("설치된 콘텐츠를 조회하지 못했습니다."), rc)};
-    if (total < 0 || total > 65536) return {{}, {tr("설치 목록의 크기를 확인하지 못했습니다.")}};
+    if (R_FAILED(rc)) return {{}, failure(tr("Could not query installed content."), rc)};
+    if (total < 0 || total > 65536) return {{}, {tr("Could not check the size of the installed list.")}};
     std::vector<NcmApplicationContentMetaKey> result(total);
     const int expected = total;
     rc = ncmContentMetaDatabaseListApplication(&db.db, &total, &written, result.data(), expected, type);
-    if (R_FAILED(rc)) return {{}, failure(tr("설치된 콘텐츠를 읽지 못했습니다."), rc)};
+    if (R_FAILED(rc)) return {{}, failure(tr("Could not read installed content."), rc)};
     if (total == expected && written == expected) return {std::move(result), {}};
   }
-  return {{}, {tr("설치 목록이 바뀌고 있습니다. 잠시 뒤 새로고침합니다.")}};
+  return {{}, {tr("The installed list is changing. Refresh in a moment.")}};
 }
 // Reading each game's control data from NS takes long enough that a large
 // library showed placeholders for seconds on every launch. Name, publisher,
@@ -110,18 +110,18 @@ void saveInstalledCache(const std::string &language, const std::map<std::string,
 }
 uint64_t currentApplication(Error &error) {
   auto rc = pmdmntInitialize();
-  if (R_FAILED(rc)) { error = failure(tr("실행 중인 게임을 확인하지 못했습니다."), rc); return 0; }
+  if (R_FAILED(rc)) { error = failure(tr("Could not check the running game."), rc); return 0; }
   u64 pid = 0, id = 0;
   rc = pmdmntGetApplicationProcessId(&pid);
   pmdmntExit();
-  if (R_FAILED(rc)) { error = failure(tr("실행 중인 게임을 확인하지 못했습니다."), rc); return 0; }
+  if (R_FAILED(rc)) { error = failure(tr("Could not check the running game."), rc); return 0; }
   // Opened from the album with no game in the background: nothing runs.
   if (!pid) return 0;
   rc = pminfoInitialize();
-  if (R_FAILED(rc)) { error = failure(tr("실행 중인 게임을 확인하지 못했습니다."), rc); return 0; }
+  if (R_FAILED(rc)) { error = failure(tr("Could not check the running game."), rc); return 0; }
   rc = pminfoGetProgramId(&id, pid);
   pminfoExit();
-  if (R_FAILED(rc) || !id) error = failure(tr("실행 중인 게임을 확인하지 못했습니다."), rc);
+  if (R_FAILED(rc) || !id) error = failure(tr("Could not check the running game."), rc);
   return id & ~0xFFFULL;
 }
 } // namespace
@@ -129,15 +129,15 @@ uint64_t currentApplication(Error &error) {
 Parsed<InstalledLibrary> readInstalled() {
 #ifdef __SWITCH__
   NsSession ns;
-  if (R_FAILED(ns.rc)) return {{}, failure(tr("게임 목록 서비스를 열지 못했습니다."), ns.rc)};
+  if (R_FAILED(ns.rc)) return {{}, failure(tr("Could not open the game list service."), ns.rc)};
   NcmSession ncm;
-  if (R_FAILED(ncm.rc)) return {{}, failure(tr("콘텐츠 서비스를 열지 못했습니다."), ncm.rc)};
+  if (R_FAILED(ncm.rc)) return {{}, failure(tr("Could not open the content service."), ncm.rc)};
   InstalledLibrary result;
   std::map<uint64_t, InstalledGame> games;
   for (auto storage : {NcmStorageId_BuiltInUser, NcmStorageId_SdCard}) {
     Database db;
     auto rc = ncmOpenContentMetaDatabase(&db.db, storage);
-    if (R_FAILED(rc)) return {{}, failure(tr("저장 위치의 설치 목록을 읽지 못했습니다."), rc)};
+    if (R_FAILED(rc)) return {{}, failure(tr("Could not read the installed list on the storage."), rc)};
     db.opened = true;
     for (auto type : {NcmContentMetaType_Application, NcmContentMetaType_Patch, NcmContentMetaType_AddOnContent}) {
       auto entries = keys(db, type);
@@ -152,7 +152,7 @@ Parsed<InstalledLibrary> readInstalled() {
         g.applicationId = baseId;
         if (type == NcmContentMetaType_Application) {
           g.titleId = hex(entry.key.id);
-          const auto location = storage == NcmStorageId_SdCard ? tr("SD 카드") : tr("본체");
+          const auto location = storage == NcmStorageId_SdCard ? tr("SD card") : tr("Console");
           if (std::find(g.storage.begin(), g.storage.end(), location) == g.storage.end())
             g.storage.push_back(location);
         }
@@ -169,11 +169,11 @@ Parsed<InstalledLibrary> readInstalled() {
     s32 count = 0;
     const auto rc = nsListApplicationRecord(records, 64, offset, &count);
     if (R_FAILED(rc) || count < 0 || count > 64)
-      return {{}, failure(tr("본체의 게임 기록을 읽지 못했습니다."), rc)};
+      return {{}, failure(tr("Could not read the console's game records."), rc)};
     for (int i = 0; i < count; ++i) recorded[records[i].application_id] = records[i].last_updated;
     offset += count;
     if (count < 64) break;
-    if (offset >= 65536) return {{}, {tr("본체의 게임 기록이 너무 많습니다.")}};
+    if (offset >= 65536) return {{}, {tr("The console has too many game records.")}};
   }
   const auto language = systemLanguage();
   const auto cached = loadInstalledCache(language);
@@ -244,20 +244,20 @@ Parsed<InstalledLibrary> readInstalled() {
   result.installed.complete = true;
   return {std::move(result), {}};
 #else
-  return {{}, {tr("설치된 게임 조회는 본체에서 사용할 수 있습니다.")}};
+  return {{}, {tr("Installed games can be listed on the console.")}};
 #endif
 }
 Parsed<std::vector<SaveEntry>> readSaves(uint64_t applicationId) {
 #ifdef __SWITCH__
   Reader reader;
   auto rc = fsOpenSaveDataInfoReader(&reader.reader, FsSaveDataSpaceId_User);
-  if (R_FAILED(rc)) return {{}, failure(tr("세이브 목록을 열지 못했습니다."), rc)};
+  if (R_FAILED(rc)) return {{}, failure(tr("Could not open the save list."), rc)};
   reader.opened = true;
   const bool accounts = R_SUCCEEDED(accountInitialize(AccountServiceType_System));
   struct Accounts { bool initialized; ~Accounts() { if (initialized) accountExit(); } } closer{accounts};
   std::vector<SaveEntry> result;
   const auto nameOf = [&](AccountUid uid) {
-    std::string name = trf("계정 {0}", {hex(uid.uid[0]) + hex(uid.uid[1])});
+    std::string name = trf("Account {0}", {hex(uid.uid[0]) + hex(uid.uid[1])});
     AccountProfile profile{};
     if (accounts && R_SUCCEEDED(accountGetProfile(&profile, uid))) {
       AccountProfileBase base{};
@@ -271,7 +271,7 @@ Parsed<std::vector<SaveEntry>> readSaves(uint64_t applicationId) {
     FsSaveDataInfo entries[32]{};
     s64 count = 0;
     rc = fsSaveDataInfoReaderRead(&reader.reader, entries, 32, &count);
-    if (R_FAILED(rc) || count < 0 || count > 32) return {{}, failure(tr("세이브 목록을 읽지 못했습니다."), rc)};
+    if (R_FAILED(rc) || count < 0 || count > 32) return {{}, failure(tr("Could not read the save list."), rc)};
     for (int i = 0; i < count; ++i) {
       const auto &v = entries[i];
       const bool account = v.save_data_type == FsSaveDataType_Account && accountUidIsValid(&v.uid);
@@ -282,7 +282,7 @@ Parsed<std::vector<SaveEntry>> readSaves(uint64_t applicationId) {
       save.applicationId = applicationId; save.saveId = v.save_data_id;
       save.type = v.save_data_type;
       save.user = {v.uid.uid[0], v.uid.uid[1]}; save.bytes = v.size;
-      save.userName = shared ? std::string(tr("공용 세이브")) : nameOf(v.uid);
+      save.userName = shared ? std::string(tr("Shared save")) : nameOf(v.uid);
       result.push_back(std::move(save));
     }
     if (count < 32) break;
@@ -326,11 +326,11 @@ Parsed<std::vector<SaveEntry>> readSaves(uint64_t applicationId) {
           missing(FsSaveDataType_Account, {uids[i].uid[0], uids[i].uid[1]}, nameOf(uids[i]));
   }
   if (control && deviceSave && !has(FsSaveDataType_Device, {0, 0}))
-    missing(FsSaveDataType_Device, {0, 0}, tr("공용 세이브"));
+    missing(FsSaveDataType_Device, {0, 0}, tr("Shared save"));
   return {std::move(result), {}};
 #else
   (void)applicationId;
-  return {{}, {tr("세이브 조회는 본체에서 사용할 수 있습니다.")}};
+  return {{}, {tr("Saves can be listed on the console.")}};
 #endif
 }
 Error removeInstalled(const RemovalRequest &request) {
@@ -345,17 +345,17 @@ Error removeInstalled(const RemovalRequest &request) {
   error = validateRemoval(request, library.value, saves.value, running, false);
   if (error) return error;
   NsSession ns;
-  if (R_FAILED(ns.rc)) return failure(tr("삭제 서비스를 열지 못했습니다."), ns.rc);
+  if (R_FAILED(ns.rc)) return failure(tr("Could not open the delete service."), ns.rc);
   // Entity removal deletes software content. Save deletion is a separate,
   // explicitly selected account operation, never DeleteApplicationCompletely.
   const auto rc = request.kind == RemovalKind::Game
       ? nsDeleteApplicationEntity(request.applicationId)
       : nsDeleteSaveData(FsSaveDataSpaceId_User, request.save.saveId);
-  if (R_FAILED(rc)) return failure(tr("삭제하지 못했습니다."), rc);
+  if (R_FAILED(rc)) return failure(tr("Could not delete."), rc);
   return {};
 #else
   (void)request;
-  return {tr("호스트에서는 게임과 세이브를 삭제하지 않습니다.")};
+  return {tr("Games and saves are not deleted on the host.")};
 #endif
 }
 #ifdef __SWITCH__
@@ -373,12 +373,12 @@ Parsed<std::vector<std::string>> referenced(Database &db) {
   auto rc = ncmContentMetaDatabaseList(&db.db, &total, &written, nullptr, 0, NcmContentMetaType_Unknown, 0, 0,
                                        UINT64_MAX, NcmContentInstallType_Full);
   if (R_FAILED(rc) || total < 0 || total > 65536)
-    return {{}, failure(tr("설치된 콘텐츠를 조회하지 못했습니다."), rc)};
+    return {{}, failure(tr("Could not query installed content."), rc)};
   std::vector<NcmContentMetaKey> metas(total);
   rc = ncmContentMetaDatabaseList(&db.db, &total, &written, metas.data(), s32(metas.size()), NcmContentMetaType_Unknown,
                                   0, 0, UINT64_MAX, NcmContentInstallType_Full);
   if (R_FAILED(rc) || written != s32(metas.size()))
-    return {{}, failure(tr("설치된 콘텐츠를 읽지 못했습니다."), rc)};
+    return {{}, failure(tr("Could not read installed content."), rc)};
   std::vector<std::string> ids;
   NcmContentInfo infos[32];
   for (const auto &meta : metas)
@@ -386,7 +386,7 @@ Parsed<std::vector<std::string>> referenced(Database &db) {
       written = 0;
       rc = ncmContentMetaDatabaseListContentInfo(&db.db, &written, infos, 32, &meta, offset);
       if (R_FAILED(rc))
-        return {{}, failure(tr("설치된 콘텐츠를 읽지 못했습니다."), rc)};
+        return {{}, failure(tr("Could not read installed content."), rc)};
       for (s32 i = 0; i < written; ++i)
         ids.push_back(key(infos[i].content_id));
       if (written < 32)
@@ -400,7 +400,7 @@ Parsed<CleanupReport> cleanOrphans(bool remove, CleanupProgress *progress) {
 #ifdef __SWITCH__
   Parsed<CleanupReport> result;
   NcmSession ncm;
-  if (R_FAILED(ncm.rc)) return {{}, failure(tr("콘텐츠 서비스를 열지 못했습니다."), ncm.rc)};
+  if (R_FAILED(ncm.rc)) return {{}, failure(tr("Could not open the content service."), ncm.rc)};
   for (const auto id : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
     if (progress) {
       progress->stage = id == NcmStorageId_SdCard ? 1 : 2;
@@ -420,18 +420,18 @@ Parsed<CleanupReport> cleanOrphans(bool remove, CleanupProgress *progress) {
     if (used.error) return {{}, used.error};
     s32 count = 0;
     if (R_FAILED(ncmContentStorageGetContentCount(&storage.cs, &count)) || count < 0 || count > 262144)
-      return {{}, {tr("저장 위치의 콘텐츠를 읽지 못했습니다.")}};
+      return {{}, {tr("Could not read the content on the storage.")}};
     std::vector<NcmContentId> contents(count);
     s32 written = 0;
     if (count && (R_FAILED(ncmContentStorageListContentId(&storage.cs, contents.data(), count, &written, 0)) ||
                   written != count))
-      return {{}, {tr("저장 위치의 콘텐츠를 읽지 못했습니다.")}};
+      return {{}, {tr("Could not read the content on the storage.")}};
     std::vector<std::string> stored;
     for (const auto &content : contents)
       stored.push_back(key(content));
     const auto orphans = orphanContents(stored, used.value);
     if (!orphans)
-      return {{}, {tr("설치 기록을 읽지 못해 정리를 멈췄습니다.")}};
+      return {{}, {tr("Cleanup stopped: the install records could not be read.")}};
     if (progress) {
       progress->total = int(orphans->size());
       progress->listed = true;
@@ -470,7 +470,7 @@ Parsed<CleanupReport> cleanOrphans(bool remove, CleanupProgress *progress) {
 #else
   (void)remove;
   (void)progress;
-  return {{}, {tr("남은 파일 정리는 본체에서 사용할 수 있습니다.")}};
+  return {{}, {tr("Leftover cleanup works on the console.")}};
 #endif
 }
 } // namespace foil::platform

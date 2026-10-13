@@ -6,7 +6,7 @@ void engineSink(Installer *value) { sink = value; }
 Installer *engineSink() { return sink.load(); }
 void reportBytes(const std::string &content, uint64_t received, double speed) {
   if (auto *s = engineSink()) {
-    s->phase(tr("다운로드하고 있습니다."));
+    s->phase(tr("Downloading."));
     s->bytes(content, received, speed);
   }
 }

@@ -59,40 +59,40 @@ Parsed<Config> parseConfig(const std::string& json) {
     auto root = parseJson(json, result.error);
     if (result.error) return result;
     auto fail = [&](const std::string& message) { result.error.message = message; };
-    if (!json_object_is_type(root.get(), json_type_object)) { fail(tr("설정은 JSON 객체로 작성해 주세요.")); return result; }
+    if (!json_object_is_type(root.get(), json_type_object)) { fail(tr("Write the config as a JSON object.")); return result; }
     auto* servers = field(root.get(), "servers");
-    if (servers && !json_object_is_type(servers, json_type_array)) { fail(tr("servers는 배열로 작성해 주세요.")); return result; }
+    if (servers && !json_object_is_type(servers, json_type_array)) { fail(tr("servers must be an array.")); return result; }
     const auto count = servers ? json_object_array_length(servers) : 0;
-    if (count > 32) { fail(tr("서버는 32개까지 등록할 수 있습니다.")); return result; }
+    if (count > 32) { fail(tr("You can add up to 32 servers.")); return result; }
     for (size_t i = 0; i < count; ++i) {
         auto* object = json_object_array_get_idx(servers, i);
         Server server;
-        if (!json_object_is_type(object, json_type_object)) { fail(tr("서버 항목을 확인해 주세요.")); return result; }
+        if (!json_object_is_type(object, json_type_object)) { fail(tr("Check the server entries.")); return result; }
         for (const auto* key : {"url", "title", "username", "password", "cfClientId", "cfClientSecret"}) {
             auto* value = field(object, key);
             if (value && (!json_object_is_type(value, json_type_string) || !headerSafe(json_object_get_string(value)))) {
-                fail(trf("{0}는 줄바꿈 없는 문자열로 작성해 주세요.", {key})); return result;
+                fail(trf("{0} must be a string without line breaks.", {key})); return result;
             }
         }
         server.url = normalizeUrl(stringField(object, "url"));
-        if (server.url.empty()) { fail(trf("서버 {0}의 HTTP/HTTPS 주소를 확인해 주세요.", {std::to_string(i + 1)})); return result; }
+        if (server.url.empty()) { fail(trf("Check the HTTP/HTTPS address of server {0}.", {std::to_string(i + 1)})); return result; }
         server.title = stringField(object, "title");
         if (server.title.empty()) server.title = originOf(server.url).substr(originOf(server.url).find("://") + 3);
         server.username = stringField(object, "username"); server.password = stringField(object, "password");
         server.cfClientId = stringField(object, "cfClientId"); server.cfClientSecret = stringField(object, "cfClientSecret");
         auto* enabled = field(object, "enabled");
-        if (enabled && !json_object_is_type(enabled, json_type_boolean)) { fail(tr("enabled는 true 또는 false로 작성해 주세요.")); return result; }
+        if (enabled && !json_object_is_type(enabled, json_type_boolean)) { fail(tr("enabled must be true or false.")); return result; }
         server.enabled = !enabled || json_object_get_boolean(enabled);
         result.value.servers.push_back(server);
     }
     for (const auto* key : {"language", "installTarget"}) {
         auto* value = field(root.get(), key);
-        if (value && !json_object_is_type(value, json_type_string)) { fail(trf("{0}는 문자열로 작성해 주세요.", {key})); return result; }
+        if (value && !json_object_is_type(value, json_type_string)) { fail(trf("{0} must be a string.", {key})); return result; }
     }
     result.value.language = stringField(root.get(), "language", "ko");
     result.value.installTarget = stringField(root.get(), "installTarget", "sd");
-    if (result.value.language != "ko" && result.value.language != "en" && result.value.language != "ja" && result.value.language != "zh") fail(tr("language는 ko, en, ja, zh 중 하나로 작성해 주세요."));
-    if (result.value.installTarget != "sd" && result.value.installTarget != "nand") fail(tr("installTarget은 sd 또는 nand로 작성해 주세요."));
+    if (result.value.language != "ko" && result.value.language != "en" && result.value.language != "ja" && result.value.language != "zh") fail(tr("language must be one of ko, en, ja, zh."));
+    if (result.value.installTarget != "sd" && result.value.installTarget != "nand") fail(tr("installTarget must be sd or nand."));
     return result;
 }
 std::string serializeConfig(const Config& config, bool redact) {
@@ -126,7 +126,7 @@ Parsed<Config> loadConfig(const std::string& path) {
     const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
     if (fd < 0) {
         if (errno == EEXIST) return parseConfig(readFile(path));
-        result.error.message = tr("설정 파일을 만들지 못했습니다."); return result;
+        result.error.message = tr("Could not create the config file."); return result;
     }
     const auto contents = serializeConfig(result.value);
     size_t offset = 0;
@@ -138,7 +138,7 @@ Parsed<Config> loadConfig(const std::string& path) {
     const bool flushed = ::fsync(fd) == 0;
     const bool closed = ::close(fd) == 0;
     result.created = offset == contents.size() && flushed && closed;
-    if (!result.created) result.error.message = tr("설정 파일을 쓰지 못했습니다.");
+    if (!result.created) result.error.message = tr("Could not write the config file.");
     return result;
 }
 }

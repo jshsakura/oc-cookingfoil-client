@@ -48,7 +48,7 @@ std::vector<ShopSave> parse(const std::string &json, const std::string &base) {
     // has no room for it, so it is left off.
     if (const auto nl = s.description.rfind('\n'); nl != std::string::npos) {
       const auto last = s.description.substr(nl + 1);
-      if (last.rfind("출처:", 0) == 0 || last.rfind("Source:", 0) == 0) // i18n: keep
+      if (last.rfind("출처:", 0) == 0 || last.rfind("Source:", 0) == 0) // i18n: as is
         s.description.erase(s.description.find_last_not_of(" \n", nl) + 1);
     }
     s.saveType = stringField(object, "saveType");
@@ -97,13 +97,13 @@ bool placeFiles(const std::string &from, const std::string &to, const std::strin
        it.increment(ec))
     if (it->is_regular_file(ec)) files.push_back(it->path().string().substr(from.size() + 1));
   if (ec) {
-    error = tr("받은 세이브 파일을 읽지 못했습니다.");
+    error = tr("Could not read the downloaded save files.");
     return false;
   }
   const auto move = [&](const std::string &a, const std::string &b, const std::string &rel) {
     makeDirectories(fs::path(b).parent_path().string());
     fs::rename(a, b, ec);
-    if (ec) error = trf("파일을 쓰지 못했습니다: {0}", {rel});
+    if (ec) error = trf("Could not write the file: {0}", {rel});
     return !ec;
   };
   for (const auto &rel : files) {

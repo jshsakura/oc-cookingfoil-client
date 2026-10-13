@@ -12,16 +12,16 @@ namespace foil::ui {
 // with, which follow the interface language.
 const char *screenLabel(Screen screen) {
   switch (screen) {
-  case Screen::Library: return tr("모든 게임");
+  case Screen::Library: return tr("All games");
   case Screen::Installed:
-  case Screen::Updates: return tr("내 게임");
-  case Screen::Patches: return tr("패치|메뉴");
-  case Screen::Homebrew: return tr("홈브류");
-  case Screen::Retro: return tr("레트로 게임");
-  case Screen::Saves: return tr("세이브");
-  case Screen::Downloads: return tr("다운로드");
-  case Screen::Settings: return tr("설정");
-  default: return tr("홈");
+  case Screen::Updates: return tr("My games");
+  case Screen::Patches: return tr("Mods");
+  case Screen::Homebrew: return tr("Homebrew");
+  case Screen::Retro: return tr("Retro games");
+  case Screen::Saves: return tr("Saves");
+  case Screen::Downloads: return tr("Downloads");
+  case Screen::Settings: return tr("Settings");
+  default: return tr("Home");
   }
 }
 int menuIndex(Screen screen) {
@@ -92,7 +92,7 @@ bool Application::open() {
   applyStartupLanguage();
   // Each step says what it is doing under the logo, so a slow SD card or
   // server shows where the time goes.
-  step(tr("이미지 캐시를 준비하고 있습니다"), 0.2f, "images");
+  step(tr("Preparing the image cache"), 0.2f, "images");
   images_ = std::make_unique<Images>(paint_.renderer);
   images_->source(
       {}, {},
@@ -100,7 +100,7 @@ bool Application::open() {
           ? ""
           : std::filesystem::path(statePath_).parent_path().string() + "/cache",
       fixture_);
-  step(tr("SD 카드의 패치와 다운로드 기록을 읽고 있습니다"), 0.4f, "sd");
+  step(tr("Reading patches and download history on the SD card"), 0.4f, "sd");
 #ifdef __SWITCH__
   usePatchFolder("sdmc:");
 #else
@@ -108,17 +108,17 @@ bool Application::open() {
     usePatchFolder(std::filesystem::path(statePath_).parent_path().string() + "/sd");
 #endif
   if (!configPath_.empty()) {
-    step(tr("서버 설정을 읽고 있습니다"), 0.65f, "config");
+    step(tr("Reading the server settings"), 0.65f, "config");
     reload();
   }
 #ifdef __SWITCH__
-  step(tr("본체의 게임 목록을 읽고 있습니다"), 0.85f, "installed");
+  step(tr("Reading the games on this console"), 0.85f, "installed");
   refreshInstalled();
   // Album (applet mode) gets a few hundred MB and no title rights: say so
   // before something big fails, and how to open it properly.
   if (!platform::applicationMode()) {
-    alertTitle_ = tr("애플릿 모드로 실행했습니다");
-    alert_ = tr("앨범에서 열면 메모리가 적어 큰 게임 설치가 느리거나 실패할 수 있습니다. 게임을 R 버튼을 누른 채 실행하면 애플리케이션 모드로 열립니다.");
+    alertTitle_ = tr("Running in applet mode");
+    alert_ = tr("Opened from the Album there is little memory, so big installs can be slow or fail. Launch a game while holding R to open in application mode.");
   }
 #endif
   logLine("startup " + stepName + " " + std::to_string(SDL_GetTicks() - stepAt) + "ms");
@@ -403,7 +403,7 @@ void Application::message(const std::string &text) {
 }
 void Application::reload(int prefer) {
   if (network_.joinable() && !done_) {
-    message(tr("서버에 연결하고 있습니다."));
+    message(tr("Connecting to the server."));
     return;
   }
   poll();
@@ -427,7 +427,7 @@ void Application::reload(int prefer) {
   state_ = state.value;
   applyStartupLanguage();
   if (parsed.created)
-    message(tr("설정 파일을 만들었습니다. 설정의 + 서버 추가에서 서버를 등록합니다."));
+    message(tr("Created the config file. Add a server with \"+ Add server\" in Settings."));
   if (prefer >= 0 && size_t(prefer) < config_.servers.size() && config_.servers[prefer].enabled) {
     connect(prefer);
     return;
@@ -444,7 +444,7 @@ void Application::connect(size_t index) {
   if (index >= config_.servers.size() || !config_.servers[index].enabled)
     return;
   if (network_.joinable() && !done_) {
-    message(tr("서버에 연결하고 있습니다."));
+    message(tr("Connecting to the server."));
     return;
   }
   poll();
@@ -472,7 +472,7 @@ void Application::refresh() {
         incoming_ = session_->takeItems();
     });
     if (!ok)
-      incomingError_.message = tr("목록을 처리하다 오류가 났습니다. log.txt를 확인합니다.");
+      incomingError_.message = tr("Failed to process the list. Check log.txt.");
     done_ = true;
   });
 }
@@ -513,7 +513,7 @@ void Application::poll() {
     patchQueueWaits_ = false;
     if (installStatus != install::Status::Succeeded && !patchQueue_.empty()) {
       patchQueue_.clear();
-      message(tr("게임을 설치하지 못해 함께 고른 패치를 받지 않았습니다."));
+      message(tr("The game did not install, so the patches picked with it were not downloaded."));
     }
   }
   pumpPatchQueue();
@@ -579,7 +579,7 @@ void Application::poll() {
   }
   if (refreshing_) {
     refreshing_ = false;
-    message(tr("목록을 다시 불러왔습니다."));
+    message(tr("The list is up to date."));
   }
   {
     // The session's copy is older for what the app owns (queue, language,
@@ -670,7 +670,7 @@ void Application::rebuildHome() {
     pinned.front().items.erase(pinned.front().items.begin());
   }
   if (heroes_.empty() && !groups_.empty())
-    heroes_.push_back({homeHero(groups_, installedMask_), tr("추천 게임")});
+    heroes_.push_back({homeHero(groups_, installedMask_), tr("Featured")});
   heroSlide_ = heroes_.empty() ? 0 : std::min(heroSlide_, int(heroes_.size()) - 1);
   hero_ = heroes_.empty() ? 0 : heroes_[heroSlide_].index;
   heroAt_ = SDL_GetTicks();
@@ -1287,9 +1287,9 @@ void Application::card(const Group &g, float x, float y, bool selected,
     // Badges in priority order; one that would spill past the card is left out.
     std::vector<std::string> labels;
     if (g.base && !g.base->priceDiscount.empty())
-      labels.push_back(tr("eShop 할인"));
+      labels.push_back(tr("eShop sale"));
     if (g.update)
-      labels.push_back(tr("업데이트|항목"));
+      labels.push_back(tr("Update|item"));
     if (!g.dlc.empty())
       labels.push_back("DLC " + std::to_string(g.dlc.size()));
     float at = x;
@@ -1319,8 +1319,8 @@ void Application::footer(
     return w;
   };
   auto all = hints;
-  all.push_back({"-", tr("새로고침")});
-  all.push_back({"+", tr("종료")});
+  all.push_back({"-", tr("Refresh")});
+  all.push_back({"+", tr("Exit")});
   if (1248 - width(all) > left) hints = std::move(all);
   float x = 1248;
   for (auto it = hints.rbegin(); it != hints.rend(); ++it) {
@@ -1416,13 +1416,13 @@ void Application::shell() {
 float Application::statusBar() {
   const bool offline = error_.message == net::offlineMessage();
   // The Korean status is a key: statusColor() reads it, tr() draws it.
-  const char *status = connected_                         ? "연결됨" // i18n: keep
-                       : pairingPending_                  ? "승인 대기" // i18n: keep
-                       : session_ && network_.joinable()  ? "연결 중" // i18n: keep
-                       : offline                          ? "인터넷 없음" // i18n: keep
-                       : session_ && error_               ? "연결 실패" // i18n: keep
-                       : session_                         ? "연결 중" // i18n: keep
-                                                          : "서버 없음"; // i18n: keep
+  const char *status = connected_                         ? "Connected" // i18n: keep
+                       : pairingPending_                  ? "Awaiting approval" // i18n: keep
+                       : session_ && network_.joinable()  ? "Connecting" // i18n: keep
+                       : offline                          ? "No internet" // i18n: keep
+                       : session_ && error_               ? "Failed|connection" // i18n: keep
+                       : session_                         ? "Connecting" // i18n: keep
+                                                          : "No server"; // i18n: keep
   constexpr float Mid = 690;
   float x = 28;
   // First the console's own link, read once a second: a cut Wi-Fi shows
@@ -1451,12 +1451,12 @@ float Application::statusBar() {
       paint_.rect(x, Mid - 3, std::max(6.f, Bar * used), 6, Butter, 3);
     }
     x += Bar + 8;
-    const auto room = d.free ? trf("{0} 남음", {formatBytes(*d.free)}) : std::string(tr("확인 불가"));
+    const auto room = d.free ? trf("{0} free|left", {formatBytes(*d.free)}) : std::string(tr("Unknown"));
     x = paint_.fonts.middle(room, x, Mid, 15, Secondary) + 26;
   }
 #ifdef __SWITCH__
   if (!platform::applicationMode()) {
-    const auto mode = tr("애플릿 모드");
+    const auto mode = tr("Applet mode");
     const float w = paint_.fonts.measure(mode, 15, true) + 18;
     paint_.rect(x - 8, Mid - 13, w, 26, {255, 236, 196, 255}, 8);
     paint_.fonts.middle(mode, x + 1, Mid, 15, Pending, true);
@@ -1543,95 +1543,95 @@ void Application::render() {
     savesScreen();
   SDL_RenderSetClipRect(paint_.renderer, nullptr);
   if (pairingPending_ && screen_ != Screen::Settings)
-    footer({{"Y", tr("메시지 입력")}, {"B", tr("뒤로")}});
+    footer({{"Y", tr("Write message")}, {"B", tr("Back")}});
   else if (!headerFocus_.empty())
-    footer({{"A", headerFocus_.rfind("tab", 0) == 0 ? tr("다음 탭") : tr("선택")}, {"B", tr("뒤로")}}); // on a header button
+    footer({{"A", headerFocus_.rfind("tab", 0) == 0 ? tr("Next tab") : tr("Select")}, {"B", tr("Back")}}); // on a header button
   else if (screen_ == Screen::Library)
-    footer({{"A", tr("선택")}, {"L R", tr("정렬")}, {"B", query_.empty() ? tr("뒤로") : tr("검색 지우기")}});
+    footer({{"A", tr("Select")}, {"L R", tr("Sort")}, {"B", query_.empty() ? tr("Back") : tr("Clear search")}});
   else if (screen_ == Screen::Detail) {
-    if (galleryOpen_) footer({{"L R", tr("이전·다음 사진")}, {"B", tr("닫기")}});
+    if (galleryOpen_) footer({{"L R", tr("Prev / next photo")}, {"B", tr("Close")}});
     else {
       const int items = selection_ ? int(selection_->rows()) : 0;
       const bool onButton = selection_ && part_ > items, onStorage = selection_ && part_ == items;
       using Hints = std::vector<std::pair<std::string, std::string>>;
-      auto hints = descriptionFocus_ ? Hints{{"A", tr("설치 항목으로")}, {"B", tr("뒤로")}}
-                                       : Hints{{"A", onButton ? tr("설치") : onStorage ? tr("이 위치로 고르기") : tr("켜고 끄기")},
-                                               {"B", tr("뒤로")}};
-      if (!detail_.screenshots.empty()) hints.insert(hints.end() - 1, {"ZR", tr("사진")});
+      auto hints = descriptionFocus_ ? Hints{{"A", tr("Back to items")}, {"B", tr("Back")}}
+                                       : Hints{{"A", onButton ? tr("Install") : onStorage ? tr("Choose this") : tr("Toggle")},
+                                               {"B", tr("Back")}};
+      if (!detail_.screenshots.empty()) hints.insert(hints.end() - 1, {"ZR", tr("Photos")});
       footer(hints);
     }
   }
   else if (screen_ == Screen::Downloads) {
     using Hints = std::vector<std::pair<std::string, std::string>>;
     if (downloadsTab_ == 0 && installer_.running())
-      footer(Hints{{"A", installer_.paused() ? tr("이어받기") : tr("일시정지")}, {"B", tr("취소")}});
+      footer(Hints{{"A", installer_.paused() ? tr("Resume") : tr("Pause")}, {"B", tr("Cancel")}});
     else if (downloadsTab_ == 0 || sidebar_ || downloadsList().empty())
-      footer({{"B", retroDownloading() && downloadsTab_ == 0 ? tr("취소") : tr("뒤로")}});
+      footer({{"B", retroDownloading() && downloadsTab_ == 0 ? tr("Cancel") : tr("Back")}});
     else if (downloadsTab_ == 2)
-      footer(Hints{{"A", tr("다시 시도")}, {"X", tr("목록에서 삭제")}, {"Y", tr("모두 삭제")}, {"B", tr("뒤로")}});
+      footer(Hints{{"A", tr("Try again")}, {"X", tr("Remove")}, {"Y", tr("Clear all")}, {"B", tr("Back")}});
     else
-      footer(Hints{{"X", tr("목록에서 삭제")}, {"Y", tr("모두 삭제")}, {"B", tr("뒤로")}});
+      footer(Hints{{"X", tr("Remove")}, {"Y", tr("Clear all")}, {"B", tr("Back")}});
   }
   else if (screen_ == Screen::Settings)
-    footer({{"A", tr("선택")}, {"B", tr("뒤로")}}); // Y still rereads config.json; - shows as 새로고침
+    footer({{"A", tr("Select")}, {"B", tr("Back")}}); // Y still rereads config.json; - shows as 새로고침
   else if (screen_ == Screen::Installed)
     // L R and Y are header buttons on this screen; the footer keeps the rest.
-    footer(managedGame_ ? std::vector<std::pair<std::string, std::string>>{{"A", tr("선택")}, {"B", tr("뒤로")}}
-           : installed_.games.empty() ? std::vector<std::pair<std::string, std::string>>{{"B", tr("뒤로")}}
-                                      : std::vector<std::pair<std::string, std::string>>{{"A", tr("게임 관리")}, {"B", tr("뒤로")}});
+    footer(managedGame_ ? std::vector<std::pair<std::string, std::string>>{{"A", tr("Select")}, {"B", tr("Back")}}
+           : installed_.games.empty() ? std::vector<std::pair<std::string, std::string>>{{"B", tr("Back")}}
+                                      : std::vector<std::pair<std::string, std::string>>{{"A", tr("Manage")}, {"B", tr("Back")}});
   else if (screen_ == Screen::Patches)
     // L R and Y are header buttons, as on 설치된 게임.
     footer(patchRows().empty() || sidebar_
-               ? std::vector<std::pair<std::string, std::string>>{{"B", tr("뒤로")}}
-               : std::vector<std::pair<std::string, std::string>>{{"A", tr("패치 관리")}, {"B", tr("뒤로")}});
+               ? std::vector<std::pair<std::string, std::string>>{{"B", tr("Back")}}
+               : std::vector<std::pair<std::string, std::string>>{{"A", tr("Manage patch")}, {"B", tr("Back")}});
   else if (screen_ == Screen::Homebrew) {
     // A opens the app's popup: what it gets or updates, or for an installed
     // app its facts, patches and saves with 지우기.
     const auto rows = homebrewRows();
     if (rows.empty() || sidebar_)
-      footer({{"B", tr("뒤로")}});
+      footer({{"B", tr("Back")}});
     else {
       const auto state = homebrewStatus(homebrewAt(rows[std::clamp(selected_, 0, int(rows.size()) - 1)]));
-      footer({{"A", state == homebrew::Status::Installed ? tr("상세 정보")
-                    : state == homebrew::Status::Update  ? tr("업데이트|동작")
-                                                         : tr("받기")},
-              {"B", tr("뒤로")}});
+      footer({{"A", state == homebrew::Status::Installed ? tr("Details")
+                    : state == homebrew::Status::Update  ? tr("Update|action")
+                                                         : tr("Get")},
+              {"B", tr("Back")}});
     }
   }
   else if (screen_ == Screen::Retro) {
     using Hints = std::vector<std::pair<std::string, std::string>>;
     if (sidebar_)
-      footer({{"B", tr("뒤로")}});
+      footer({{"B", tr("Back")}});
     else if (retroView_ == RetroView::List)
       // X is on the search box; the footer keeps A and B.
-      footer(retroGames_.empty() ? Hints{{"B", tr("뒤로")}} : Hints{{"A", tr("상세 정보")}, {"B", tr("뒤로")}});
+      footer(retroGames_.empty() ? Hints{{"B", tr("Back")}} : Hints{{"A", tr("Details")}, {"B", tr("Back")}});
     else
-      footer(retroFocused() ? Hints{{"A", tr("상세 정보")}, {"B", tr("뒤로")}}
-                            : Hints{{"A", tr("선택")}, {"B", tr("뒤로")}});
+      footer(retroFocused() ? Hints{{"A", tr("Details")}, {"B", tr("Back")}}
+                            : Hints{{"A", tr("Select")}, {"B", tr("Back")}});
   }
   else if (screen_ == Screen::Saves && savesTab_ == 2 && !managedGame_) {
     using Hints = std::vector<std::pair<std::string, std::string>>;
-    if (dropboxSession_) footer({{"B", tr("취소")}});
-    else if (sidebar_ || !dropboxFocusable()) footer({{"B", tr("뒤로")}});
-    else if (!dropboxLinked_) footer(Hints{{"A", tr("연결하기")}, {"B", tr("뒤로")}});
-    else footer(Hints{{"A", tr("백업 관리")}, {"Y", tr("연결 해제")}, {"B", savesQuery_.empty() ? tr("뒤로") : tr("검색 지우기")}});
+    if (dropboxSession_) footer({{"B", tr("Cancel")}});
+    else if (sidebar_ || !dropboxFocusable()) footer({{"B", tr("Back")}});
+    else if (!dropboxLinked_) footer(Hints{{"A", tr("Connect")}, {"B", tr("Back")}});
+    else footer(Hints{{"A", tr("Manage backups")}, {"Y", tr("Disconnect")}, {"B", savesQuery_.empty() ? tr("Back") : tr("Clear search")}});
   }
   else if (screen_ == Screen::Saves)
-    footer(managedGame_ ? std::vector<std::pair<std::string, std::string>>{{"A", tr("선택")}, {"B", tr("뒤로")}}
+    footer(managedGame_ ? std::vector<std::pair<std::string, std::string>>{{"A", tr("Select")}, {"B", tr("Back")}}
            : sidebar_ || savesTab_ == 2 || (savesTab_ == 1 ? shopSaves_.empty() : installed_.games.empty())
-               ? std::vector<std::pair<std::string, std::string>>{{"B", tr("뒤로")}}
-               : std::vector<std::pair<std::string, std::string>>{{"A", savesTab_ != 1 ? tr("세이브 관리") : tr("세이브 고르기")},
-                                                                  {"B", tr("뒤로")}});
+               ? std::vector<std::pair<std::string, std::string>>{{"B", tr("Back")}}
+               : std::vector<std::pair<std::string, std::string>>{{"A", savesTab_ != 1 ? tr("Manage saves") : tr("Choose a save")},
+                                                                  {"B", tr("Back")}});
   else if (screen_ == Screen::Updates) {
     // Only offer what can happen now.
     // Y is the header button; the footer keeps A and B.
     if (!updateRows().empty())
-      footer({{"A", updatesTab_ == 2 ? tr("이 DLC만 설치") : tr("이 게임만 업데이트")}, {"B", tr("뒤로")}});
+      footer({{"A", updatesTab_ == 2 ? tr("Install this DLC") : tr("Update this game")}, {"B", tr("Back")}});
     else
-      footer({{"B", tr("뒤로")}});
+      footer({{"B", tr("Back")}});
   }
   else
-    footer({{"A", tr("선택")}, {"B", tr("뒤로")}});
+    footer({{"A", tr("Select")}, {"B", tr("Back")}});
   if (!notice_.empty() && SDL_GetTicks() - noticeAt_ > 7000)
     notice_.clear();
   if (!notice_.empty()) {
@@ -1658,7 +1658,7 @@ void Application::requestInstall() {
   if (!selection_ || detailGroup_ >= groups_.size())
     return;
   if (!selection_->count()) {
-    alert_ = tr("설치할 항목을 하나 이상 켭니다.");
+    alert_ = tr("Turn on at least one item to install.");
     return;
   }
   confirmInstall_ = true;
@@ -1691,10 +1691,10 @@ void Application::refreshAll() {
   retroLoaded_ = false;
   if (screen_ == Screen::Retro) selected_ = 0;
   if (network_.joinable() && !done_) {
-    message(tr("서버에 연결하고 있습니다. 끝나면 목록이 바뀝니다."));
+    message(tr("Connecting to the server. The lists update when it finishes."));
     return;
   }
-  message(tr("새로고침합니다."));
+  message(tr("Refreshing."));
   refreshing_ = !configPath_.empty();
   if (!configPath_.empty()) reload();
   else if (screen_ == Screen::Patches) fetchPatches();
@@ -1703,7 +1703,7 @@ bool Application::requestQuit() {
   // A console query in flight finishes first; the app then closes by itself.
   if (deviceBusy_) {
     exitAfterDevice_ = true;
-    message(tr("본체 작업을 마치는 대로 종료합니다."));
+    message(tr("Closing as soon as the console task finishes."));
     return false;
   }
   if (!installer_.running())
@@ -1716,7 +1716,7 @@ bool Application::requestQuit() {
 }
 void Application::installSelected() {
   if (deviceBusy_) {
-    alert_ = tr("본체 조회가 끝난 뒤 설치합니다.");
+    alert_ = tr("Install after the console scan finishes.");
     return;
   }
   if (!selection_ || detailGroup_ >= groups_.size())
@@ -1810,12 +1810,12 @@ void Application::resumeDialog() {
   for (const auto &f : pending->files)
     bytes += f.size;
   // A picks it up, Y drops it, B asks again next launch.
-  const auto body = modal(700, 24 + 90 + 16, tr("끊긴 설치가 있습니다"), tr("닫기"), tr("삭제"), tr("이어서 받기"), 4);
+  const auto body = modal(700, 24 + 90 + 16, tr("An install was cut off"), tr("Close"), tr("Delete"), tr("Resume|download"), 4);
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(pending->name, x, y, 22, Ink, true, body.w - 64);
-  paint_.fonts.text(trf("{0}개 항목 · {1}", {std::to_string(pending->files.size()), formatBytes(bytes)}), x, y + 36, 18,
+  paint_.fonts.text(trf("{0} items · {1}", {std::to_string(pending->files.size()), formatBytes(bytes)}), x, y + 36, 18,
                     Secondary, false, body.w - 64);
-  paint_.fonts.text(tr("이어서 받으면 이미 받은 부분은 건너뜁니다."), x, y + 64, 18, Secondary, false, body.w - 64);
+  paint_.fonts.text(tr("Resuming skips what was already downloaded."), x, y + 64, 18, Secondary, false, body.w - 64);
 
 }
 } // namespace foil::ui
@@ -1824,7 +1824,7 @@ void Application::startCleanup(bool remove) {
   if (cleanupBusy_)
     return;
   if (installer_.running() || deviceBusy_) {
-    message(tr("설치나 본체 작업이 끝난 뒤 정리합니다."));
+    message(tr("Clean up after the install or console task finishes."));
     return;
   }
   cleanupBusy_ = true;
@@ -1837,7 +1837,7 @@ void Application::startCleanup(bool remove) {
     cleanupWorker_.join();
   cleanupWorker_ = std::thread([this, remove] {
     if (!guarded("cleanup", [this, remove] { cleanupResult_ = platform::cleanOrphans(remove, &cleanupProgress_); }))
-      cleanupResult_ = {{}, {tr("정리하다 오류가 났습니다. log.txt를 확인합니다.")}};
+      cleanupResult_ = {{}, {tr("Cleanup failed. Check log.txt.")}};
     cleanupDone_ = true;
   });
 }
@@ -1849,28 +1849,28 @@ void Application::pollCleanup() {
   const auto &report = cleanupResult_.value;
   const auto count = std::to_string(report.files + report.placeholders);
   if (cleanupResult_.error) {
-    alertTitle_ = tr("남은 파일을 정리하지 못했습니다");
+    alertTitle_ = tr("Could not clean up leftovers");
     alert_ = cleanupResult_.error.message;
   } else if (cleanupRemoving_) {
-    message(trf("남은 파일 {0}개 · {1}를 삭제했습니다.", {count, formatBytes(report.bytes)}));
+    message(trf("Deleted {0} leftover files · {1}.", {count, formatBytes(report.bytes)}));
     storageAt_ = 0; // free space changed
     refreshInstalled();
   } else if (report.files + report.placeholders == 0) {
-    message(tr("정리할 남은 파일이 없습니다."));
+    message(tr("No leftover files to clean up."));
   } else {
     confirmCleanup_ = true;
     dialogFocus_ = 1; // a stray A keeps the files
   }
 }
 void Application::cleanupProgressDialog() {
-  const auto body = modal(620, 150, cleanupRemoving_ ? tr("남은 파일을 삭제하고 있습니다") : tr("남은 파일을 찾고 있습니다"), "", "", "", 23);
+  const auto body = modal(620, 150, cleanupRemoving_ ? tr("Deleting leftover files") : tr("Looking for leftover files"), "", "", "", 23);
   const float x = body.x + 32, w = body.w - 64, y = body.y + 26;
   const int stage = cleanupProgress_.stage, done = cleanupProgress_.done, total = cleanupProgress_.total;
   const bool listed = cleanupProgress_.listed;
-  const std::string where = stage == 2 ? tr("본체") : tr("SD 카드");
-  const std::string step = stage >= 3      ? std::string(tr("마무리하고 있습니다"))
-                           : listed && total ? trf("{0} · {1}/{2}개", {where, std::to_string(done), std::to_string(total)})
-                                             : trf("{0} 확인 중", {where});
+  const std::string where = stage == 2 ? tr("Console") : tr("SD card");
+  const std::string step = stage >= 3      ? std::string(tr("Finishing up"))
+                           : listed && total ? trf("{0} · {1}/{2}", {where, std::to_string(done), std::to_string(total)})
+                                             : trf("Checking {0}", {where});
   paint_.fonts.text(step, x, y, 20, Ink, true, w);
   const auto bytes = formatBytes(cleanupProgress_.bytes);
   paint_.fonts.text(bytes, x + w - paint_.fonts.measure(bytes, 20, true), y, 20, Ink, true);
@@ -1884,12 +1884,12 @@ void Application::cleanupProgressDialog() {
   cleanupShown_ = std::max(cleanupShown_, cleanupShown_ + (target - cleanupShown_) * 0.2f);
   paint_.rect(x, y + 48, w, 10, Line, 5);
   paint_.rect(x, y + 48, std::max(10.f, w * cleanupShown_), 10, Butter, 5);
-  paint_.fonts.text(cleanupRemoving_ ? tr("끝날 때까지 본체를 끄지 않습니다.") : tr("설치된 게임과 세이브는 건드리지 않습니다."),
+  paint_.fonts.text(cleanupRemoving_ ? tr("Keep the console on until it finishes.") : tr("Installed games and saves are left alone."),
                     x, y + 76, 17, Secondary, false, w);
 }
 void Application::languageDialog() {
   constexpr float Row = 64, Gap = 8;
-  const auto body = modal(560, 16 + LanguageCount * (Row + Gap) + 8, "언어 · Language", tr("닫기"), "", "", 17); // i18n: keep (both scripts, readable in any language)
+  const auto body = modal(560, 16 + LanguageCount * (Row + Gap) + 8, "언어 · Language", tr("Close"), "", "", 17); // i18n: as is (both scripts, readable in any language)
   const float x = body.x + 24, w = body.w - 48;
   for (int i = 0; i < LanguageCount; ++i) {
     const float y = body.y + 16 + i * (Row + Gap);
@@ -1907,11 +1907,11 @@ void Application::languageDialog() {
 }
 void Application::cleanupDialog() {
   const auto &report = cleanupResult_.value;
-  const auto body = modal(700, 24 + 90 + 16, tr("남은 파일을 삭제하시겠습니까?"), tr("취소"), "", tr("삭제"), 37);
+  const auto body = modal(700, 24 + 90 + 16, tr("Delete leftover files?"), tr("Cancel"), "", tr("Delete"), 37);
   const float x = body.x + 32, y = body.y + 24;
-  paint_.fonts.text(trf("{0}개 · {1}", {std::to_string(report.files + report.placeholders), formatBytes(report.bytes)}),
+  paint_.fonts.text(trf("{0} files · {1}", {std::to_string(report.files + report.placeholders), formatBytes(report.bytes)}),
                     x, y, 22, Ink, true, body.w - 64);
-  paint_.fonts.wrapped(tr("어떤 게임도 쓰지 않는 파일과 끊긴 설치의 조각을 삭제합니다. 설치된 게임과 세이브는 그대로입니다."),
+  paint_.fonts.wrapped(tr("Deletes files no game uses and pieces of cut-off installs. Installed games and saves stay."),
                        x, y + 38, 18, Secondary, body.w - 64, 2);
 
 }

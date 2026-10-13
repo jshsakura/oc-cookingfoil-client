@@ -22,23 +22,23 @@ void Application::home() {
     if (!session_) {
       const bool none = std::none_of(config_.servers.begin(), config_.servers.end(),
                                      [](const auto &s) { return s.enabled; });
-      notice(config_.servers.empty() ? tr("등록된 서버가 없습니다.")
-             : none                  ? tr("켜 둔 서버가 없습니다.")
-                                     : tr("설정에서 연결할 서버를 고릅니다."),
-             tr("설정의 + 서버 추가에서 서버 주소와 계정을 입력합니다."), 21);
+      notice(config_.servers.empty() ? tr("No servers added.")
+             : none                  ? tr("No servers are on.")
+                                     : tr("Choose a server in Settings."),
+             tr("Enter a server's address and account with \"+ Add server\" in Settings."), 21);
       return;
     }
     if (error_) {
-      notice(pairingPending_ ? tr("기기 승인을 기다립니다.")
+      notice(pairingPending_ ? tr("Waiting for device approval.")
              : error_.message == net::offlineMessage()
-                 ? tr("인터넷에 연결되어 있지 않습니다.")
-                 : tr("서버에 연결하지 못했습니다."),
-             error_.message + "\n" + tr("설정에서 서버를 확인하고 - 버튼으로 새로고침합니다."),
+                 ? tr("No internet connection.")
+                 : tr("Couldn't connect to the server."),
+             error_.message + "\n" + tr("Check the server in Settings and press - to refresh."),
              error_.message == net::offlineMessage() ? 20 : 25);
       return;
     }
     if (connected_) {
-      notice(tr("표시할 게임이 없습니다."), tr("서버에 게임이 들어오면 여기에 보입니다."), 22);
+      notice(tr("No games to show."), tr("Games appear here once the server has some."), 22);
       return;
     }
     // Connecting: the shape of the home screen, pulsing.
@@ -101,7 +101,7 @@ void Application::home() {
     images_->draw(thumbnailUrl(g.representative.icon), 260 + hx, 24 - scroll, 992, 248, 20, true);
   }
   cover(thumbnailUrl(g.representative.icon, "md"), 296 + hx, 56 - scroll, 184, false, g.representative.name, false, true);
-  paint_.fonts.text(heroes_.empty() ? tr("추천 게임") : heroes_[heroSlide_].label, 512 + hx,
+  paint_.fonts.text(heroes_.empty() ? tr("Featured") : heroes_[heroSlide_].label, 512 + hx,
                     61 - scroll, 18, Butter, true);
   paint_.fonts.text(g.representative.name, 512 + hx, 98 - scroll, 40, Surface, true,
                     700);
@@ -110,13 +110,13 @@ void Application::home() {
   float x = 512 + hx;
   const auto &languages = g.representative.languages;
   if (std::find(languages.begin(), languages.end(), "ko") != languages.end())
-    x += paint_.pill(tr("한국어"), x, 199 - scroll, true, 17) + 10;
+    x += paint_.pill(tr("Korean"), x, 199 - scroll, true, 17) + 10;
   if (g.update)
-    x += paint_.pill(tr("업데이트 포함"), x, 199 - scroll, true, 17) + 10;
+    x += paint_.pill(tr("Update included"), x, 199 - scroll, true, 17) + 10;
   if (!g.dlc.empty())
     x += paint_.pill("DLC " + std::to_string(g.dlc.size()), x, 199 - scroll, true, 17) + 10;
   if (g.base && !g.base->priceDiscount.empty())
-    paint_.pill(trf("eShop 할인가 {0}", {priceText(g.base->priceDiscount)}), x, 199 - scroll, true, 17);
+    paint_.pill(trf("eShop sale {0}", {priceText(g.base->priceDiscount)}), x, 199 - scroll, true, 17);
   else if (g.base && !g.base->priceRegular.empty())
     paint_.pill("eShop " + priceText(g.base->priceRegular), x, 199 - scroll, true, 17);
   unclip();
@@ -147,7 +147,7 @@ void Application::home() {
     paint_.icon(themeIcon(row.theme), 260, y + HeaderMid - 13, Ink, 26);
     paint_.fonts.middle(row.theme.title, 296, y + HeaderMid, 26, Ink, true);
     if (focused)
-      paint_.keyChip("R", tr("모두 보기"), 1252, y + HeaderMid);
+      paint_.keyChip("R", tr("See all"), 1252, y + HeaderMid);
     hit(1100, y, 160, 34, [this, n] { openTheme(n); });
     const int count = int(row.items.size());
     // Sideways the shelf follows the cursor, or the finger while it glides;
@@ -168,7 +168,7 @@ void Application::home() {
       if (focused && selected_ == count) paint_.ring(cx, cy, 150, 150);
       paint_.rect(cx, cy, 150, 150, Surface, 14);
       paint_.icon(9, cx + 75 - 18, cy + 46, Ink, 36);
-      const std::string all = tr("모두 보기");
+      const std::string all = tr("See all");
       paint_.fonts.middle(all, cx + (150 - paint_.fonts.measure(all, 18, true)) / 2, cy + 112, 18, Ink, true);
     }
     unclip();

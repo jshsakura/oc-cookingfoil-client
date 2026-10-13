@@ -25,7 +25,7 @@ void Application::loadHomebrew() {
     bool unchanged = false;
     Error error;
     if (!guarded("homebrew", [&] { net::homebrewList(server, state, etag, apps, unchanged, error, &stop_); }))
-      error.message = tr("홈브류 목록을 처리하다 오류가 났습니다.");
+      error.message = tr("Something went wrong reading the homebrew list.");
     homebrewFinish_ = [this, apps = std::move(apps), unchanged, error, etag]() mutable {
       homebrewLoaded_ = true;
       homebrewError_ = error;
@@ -178,14 +178,14 @@ void Application::saveHomebrewLedger() {
 bool Application::getHomebrew(const homebrew::App &app) {
   if (app.cardOnly) return false; // nothing on the server to get
   if (retroWorker_.joinable()) {
-    message(tr("지금 받는 것이 끝난 뒤 다시 시도합니다."));
+    message(tr("Try again once the current download ends."));
     return false;
   }
   uint64_t bytes = app.files.empty() ? app.size : 0;
   for (const auto &file : app.files) bytes += file.size;
   if (bytes && sdFree_ && *sdFree_ < bytes + (8u << 20)) {
-    alertTitle_ = tr("홈브류를 받을 수 없습니다");
-    alert_ = trf("SD 카드 공간이 부족합니다. {0}가 필요합니다.", {formatBytes(bytes)});
+    alertTitle_ = tr("Cannot download this app");
+    alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(bytes)});
     return false;
   }
   const auto server = session_ ? session_->server() : Server{};
@@ -203,20 +203,20 @@ bool Application::getHomebrew(const homebrew::App &app) {
           finishRetroEntry("homebrew", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
                            ok || cancelled ? "" : error.message, received);
           if (cancelled && !ok) {
-            message(trf("{0} 다운로드를 취소했습니다.", {app.name}));
+            message(trf("Cancelled the download of {0}.", {app.name}));
             return;
           }
           if (!ok) {
-            alertTitle_ = tr("홈브류를 받지 못했습니다");
+            alertTitle_ = tr("Could not download the app");
             alert_ = error.message;
             return;
           }
           settleHomebrew(app);
           if (autoHomebrewShortcut(app)) return;
-          message(trf("{0}을(를) 받았습니다. hbmenu에서 실행합니다.", {app.name}));
+          message(trf("Downloaded {0}. Open it from hbmenu.", {app.name}));
         };
       })) {
-    message(tr("지금 받는 것이 끝난 뒤 다시 시도합니다."));
+    message(tr("Try again once the current download ends."));
     return false;
   }
   startRetroEntry("homebrew", app.name, app.iconUrl, app.downloadUrl, app.size, homebrew::serialize(app));
@@ -278,7 +278,7 @@ void Application::removeHomebrew(const homebrew::App &picked) {
     if (!removed) logLine("homebrew remove: " + error);
   }
   if (!removed) {
-    alert_ = trf("파일을 삭제하지 못했습니다: {0}", {file});
+    alert_ = trf("Could not delete the file: {0}", {file});
     return;
   }
   if (ledgered) {
@@ -298,7 +298,7 @@ void Application::removeHomebrew(const homebrew::App &picked) {
                                      [&](const homebrew::CardNro &nro) { return nro.path == file; }),
                       homebrewCard_.end());
   matchHomebrewCard();
-  message(trf("{0}을(를) 삭제했습니다.", {app.name}));
+  message(trf("Removed {0}.", {app.name}));
 }
 void Application::homebrewAction(Action a) {
   const auto rows = homebrewRows();
@@ -349,7 +349,7 @@ void Application::homebrewAction(Action a) {
           shortcutRemoveAsk_ = true;
         } else if (const auto reason = platform::shortcutBlocker(); !reason.empty()) {
           // Known before trying: the reason, and nothing half made.
-          alertTitle_ = tr("바로가기를 만들 수 없습니다");
+          alertTitle_ = tr("A shortcut can't be made here");
           alert_ = reason;
         } else
           makeHomebrewShortcut(*picked, false); // the card stays, its row now says 있음
@@ -407,13 +407,13 @@ void Application::homebrewScreen() {
   // As on 유저 패치: search at the right end, the tabs left of it.
   searchBar(homebrewQuery_);
   // Each tab counts the new versions in it (a badge, when there is one).
-  const float tabsLeft = headerTabs({tr("설치됨|탭"), tr("도구"), tr("포트")}, homebrewTab_, [this](int n) {
+  const float tabsLeft = headerTabs({tr("Installed|tab"), tr("Tools"), tr("Ports")}, homebrewTab_, [this](int n) {
     homebrewTab_ = n;
     selected_ = 0;
   }, SearchX - 16, 0, {updates[0], updates[1], updates[2]});
-  pageTitle(tr("홈브류"), homebrewLoaded_ ? countLabel(rows.size(), homebrewQuery_) : std::string(), tabsLeft);
+  pageTitle(tr("Homebrew"), homebrewLoaded_ ? countLabel(rows.size(), homebrewQuery_) : std::string(), tabsLeft);
   if (!connected_) {
-    notice(tr("서버에 연결되어 있지 않습니다."), tr("서버에 연결한 뒤 홈브류를 확인합니다."), 21);
+    notice(tr("Not connected to a server."), tr("Connect to the server to see its homebrew."), 21);
     return;
   }
   if (!homebrewLoaded_) {
@@ -421,20 +421,20 @@ void Application::homebrewScreen() {
     return;
   }
   if (homebrewError_) {
-    notice(tr("홈브류 목록을 불러오지 못했습니다."), homebrewError_.message, 25);
+    notice(tr("Could not load the homebrew list."), homebrewError_.message, 25);
     return;
   }
   if (rows.empty()) {
     if (!homebrewQuery_.empty())
-      notice(trf("'{0}'에 맞는 홈브류가 없습니다.", {homebrewQuery_}), tr("B로 검색어를 지웁니다."), 23);
+      notice(trf("No homebrew matches '{0}'.", {homebrewQuery_}), tr("Press B to clear the search."), 23);
     else if (homebrewTab_ == 0 && !homebrewScanned_)
       paint_.skeletonCards(260, 104, 6);
     else if (homebrewTab_ == 0)
-      notice(tr("설치한 홈브류가 없습니다."), tr("도구나 포트 탭에서 받으면 여기에 보입니다."), 22);
+      notice(tr("No homebrew installed."), tr("Get one from the Tools or Ports tab and it shows here."), 22);
     else if (homebrewTab_ == 2)
-      notice(tr("서버에 포트가 없습니다."), tr("서버에 포트를 올리면 여기에 보입니다."), 22);
+      notice(tr("The server has no ports."), tr("Ports added on the server show up here."), 22);
     else
-      notice(tr("서버에 도구가 없습니다."), tr("서버에 앱을 올리면 여기에 보입니다."), 22);
+      notice(tr("The server has no tools."), tr("Apps added on the server show up here."), 22);
     return;
   }
   // A grid of icons like 내 게임: the state on the icon, the size under the name.
@@ -459,7 +459,7 @@ void Application::homebrewScreen() {
     const auto state = homebrewStatus(app);
     const bool busy = retroBusy_ == "homebrew:" + app.id;
     if (busy || state != homebrew::Status::Available)
-      paint_.pill(busy ? tr("받는 중") : state == homebrew::Status::Update ? tr("업데이트|항목") : tr("설치됨"), x + 8, y + 8);
+      paint_.pill(busy ? tr("Downloading") : state == homebrew::Status::Update ? tr("Update|item") : tr("Installed"), x + 8, y + 8);
     if (inContent() && selected_ == i) marquee(app.name, x, y + 158, 18, 150, false);
     else paint_.fonts.text(app.name, x, y + 158, 18, Ink, false, 150);
     // Size first; the version beside it only when both fit under the icon.
@@ -491,15 +491,15 @@ void Application::homebrewAskDialog() {
   // Measured off screen first, so the card hugs the description.
   constexpr int Lines = 6;
   // A card file no listed app owns says so where a description would be.
-  const std::string description = app.cardOnly ? tr("서버 목록에 없는 앱이라 받거나 업데이트할 수 없습니다.") : app.description;
+  const std::string description = app.cardOnly ? tr("This app isn't on the server's list, so it can't be downloaded or updated here.") : app.description;
   const float described = description.empty() ? 0
                         : paint_.fonts.wrapped(description, -9999, -9999, 18, Ink, textW, Lines);
   const float top = 24 + std::max(Icon, 106 + described);
   const float bodyH = top + (extras.empty() ? 0 : 16 + extras.size() * (Row + Gap) - Gap) + 24;
   // A focused 패치 or 세이브 row opens its list; otherwise A acts on the app.
-  const auto accept = homebrewAskRow_ >= 0 ? tr("선택") : update ? tr("업데이트|동작") : tr("받기");
-  const auto body = modal(Width, bodyH, installed ? tr("설치된 앱") : update ? tr("업데이트할까요?") : tr("이 앱을 받을까요?"),
-                          installed ? tr("닫기") : tr("취소"), "", accept, 22);
+  const auto accept = homebrewAskRow_ >= 0 ? tr("Select") : update ? tr("Update|action") : tr("Get");
+  const auto body = modal(Width, bodyH, installed ? tr("Installed app") : update ? tr("Update it?") : tr("Get this app?"),
+                          installed ? tr("Close") : tr("Cancel"), "", accept, 22);
   const float x = body.x + 32, y = body.y + 24, textX = x + Icon + 28;
   cover(homebrewIcon(app), x, y, int(Icon), false, app.name, true);
   marquee(app.name, textX, y, 24, textW);
@@ -523,23 +523,23 @@ void Application::homebrewAskDialog() {
     else paint_.rect(x, rowY, rowW, Row, Ground, 12);
     if (extras[i] == 4) { // the HOME Menu shortcut, and whether there is one
       paint_.icon(0, x + 20, rowY + 15, Ink, 26);
-      paint_.fonts.middle(tr("홈 메뉴 바로가기"), x + 62, rowY + Row / 2, 20, Ink, true);
+      paint_.fonts.middle(tr("HOME Menu shortcut"), x + 62, rowY + Row / 2, 20, Ink, true);
       // Judged ahead: whether one can be made here, and whether it would open.
       const bool blocked = !hasShortcut && !platform::canMakeShortcuts();
       const bool unsigned_ = !hasShortcut && !blocked && !signaturePatches_;
-      const std::string state = hasShortcut ? tr("있음") : blocked ? tr("만들 수 없음") : unsigned_ ? tr("서명 패치 필요") : tr("없음");
+      const std::string state = hasShortcut ? tr("Made") : blocked ? tr("Unavailable") : unsigned_ ? tr("Needs sig patches") : tr("None");
       paint_.fonts.middle(state, x + rowW - 20 - paint_.fonts.measure(state, 17, true), rowY + Row / 2, 17,
                           hasShortcut ? Good : unsigned_ ? Pending : Secondary, true);
       continue;
     }
     if (extras[i] == 3) { // 지우기, in the colour removal uses everywhere
       paint_.icon(37, x + 20, rowY + 15, Bad, 26);
-      paint_.fonts.middle(tr("삭제"), x + 62, rowY + Row / 2, 20, Bad, true);
+      paint_.fonts.middle(tr("Delete"), x + 62, rowY + Row / 2, 20, Bad, true);
       continue;
     }
     const bool patches = extras[i] == 1;
     paint_.icon(patches ? 32 : 36, x + 20, rowY + 15, Ink, 26);
-    const float labelEnd = paint_.fonts.middle(patches ? tr("패치") : tr("세이브"), x + 62, rowY + Row / 2, 20, Ink, true);
+    const float labelEnd = paint_.fonts.middle(patches ? tr("Patches") : tr("Saves"), x + 62, rowY + Row / 2, 20, Ink, true);
     int count = 0, on = 0;
     if (patches)
       for (const auto &row : homebrewPatchRows(app)) ++count, on += row.record && row.record->on;
@@ -547,7 +547,7 @@ void Application::homebrewAskDialog() {
       count = int(homebrewSaveRows(app).size());
     paint_.pill(std::to_string(count), labelEnd + 10, rowY + Row / 2 - 13);
     if (on) {
-      const auto state = trf("켜짐 {0}개", {std::to_string(on)});
+      const auto state = trf("{0} on", {std::to_string(on)});
       paint_.fonts.middle(state, x + rowW - 20 - paint_.fonts.measure(state, 17, true), rowY + Row / 2, 17, Good, true);
     }
   }
@@ -560,13 +560,13 @@ void Application::homebrewRemoveDialog() {
   }
   const auto &app = homebrewAt(rows[std::clamp(selected_, 0, int(rows.size()) - 1)]);
   const bool shortcut = homebrewHasShortcut(app);
-  const auto body = modal(700, 24 + 70 + (shortcut ? 30 : 0) + 16, tr("홈브류를 삭제하시겠습니까?"), tr("취소"), "",
-                          tr("삭제"), 37);
+  const auto body = modal(700, 24 + 70 + (shortcut ? 30 : 0) + 16, tr("Remove this app?"), tr("Cancel"), "",
+                          tr("Delete"), 37);
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(app.name, x, y, 21, Ink, true, body.w - 64);
-  paint_.fonts.text(trf("SD 카드에서 {0}을(를) 삭제합니다.", {homebrewFile(app)}), x, y + 38, 19, Secondary,
+  paint_.fonts.text(trf("Removes {0} from the SD card.", {homebrewFile(app)}), x, y + 38, 19, Secondary,
                     false, body.w - 64);
   if (shortcut)
-    paint_.fonts.text(tr("홈 메뉴 바로가기도 함께 삭제합니다."), x, y + 68, 19, Secondary, false, body.w - 64);
+    paint_.fonts.text(tr("Its HOME Menu shortcut is deleted too."), x, y + 68, 19, Secondary, false, body.w - 64);
 }
 } // namespace foil::ui

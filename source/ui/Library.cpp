@@ -8,7 +8,7 @@ void Application::searchBar(const std::string &query, float x, float w) {
   paint_.rect(x, 24, w, 48, Surface, 12);
   paint_.key("X", x + 18, 48);
   paint_.icon(1, x + 60, 38, query.empty() ? Secondary : Ink, 20);
-  paint_.fonts.middle(query.empty() ? tr("검색어 입력") : query, x + 88, 48, 18,
+  paint_.fonts.middle(query.empty() ? tr("Search") : query, x + 88, 48, 18,
                       query.empty() ? Secondary : Ink, !query.empty(), w - 106);
 }
 void Application::library() {
@@ -18,16 +18,16 @@ void Application::library() {
   const auto count = countLabel(list.size(), query_);
   searchBar(query_);
   // Filter and sort live in a popup (Y); the button says what is applied.
-  std::string chipTitle = tr("전체");
+  std::string chipTitle = tr("All");
   if (!activeChips_.empty() && activeChips_.front() < int(chips_.size())) {
     chipTitle = chips_[activeChips_.front()].title;
     if (activeChips_.size() > 1)
-      chipTitle = trf("{0} 외 {1}", {chipTitle, std::to_string(activeChips_.size() - 1)});
+      chipTitle = trf("{0} +{1}", {chipTitle, std::to_string(activeChips_.size() - 1)});
   }
   const auto summary = chipTitle + " · " + sortLabel(librarySort_);
   const float viewWidth = std::min(330.f, paint_.keyLabelWidth("Y", summary, 18, true) + 66);
   const float viewX = SearchX - 16 - viewWidth;
-  pageTitle(tr("모든 게임"), count, viewX);
+  pageTitle(tr("All games"), count, viewX);
   headerItem("filter", viewX, 24, viewWidth, 48, [this] { action(Action::Queue); });
   paint_.rect(viewX, 24, viewWidth, 48, Surface, 12);
   paint_.key("Y", viewX + 18, 48);
@@ -38,7 +38,7 @@ void Application::library() {
     return;
   }
   if (list.empty()) {
-    notice(tr("조건에 맞는 게임이 없습니다."), tr("Y로 필터를 바꾸거나 X로 검색어를 바꿉니다."), 23);
+    notice(tr("No games match."), tr("Press Y to change filters or X to change the search."), 23);
     return;
   }
   // Rows of six; about two and a half fit on screen. The row at the top

@@ -5,7 +5,7 @@
 namespace foil::ui {
 void Application::refreshInstalled() {
   if (deviceBusy_ || deviceFixture_) return;
-  if (installer_.running()) { message(tr("설치가 끝난 뒤 설치 목록을 새로고침합니다.")); return; }
+  if (installer_.running()) { message(tr("Refresh the list after the install finishes.")); return; }
   if (deviceWorker_.joinable()) deviceWorker_.join();
   // The list on screen stays until the new one arrives: no blank flash.
   deviceBusy_ = true;
@@ -17,7 +17,7 @@ void Application::refreshInstalled() {
           incomingInstalled_ = std::move(result.value);
           incomingDeviceError_ = result.error;
         }))
-      incomingDeviceError_.message = tr("설치 목록을 읽다 오류가 났습니다.");
+      incomingDeviceError_.message = tr("Error reading installed games.");
     deviceDone_ = true;
   });
 }
@@ -43,7 +43,7 @@ void Application::pollDevice() {
   if (removalOperation_) {
     removalOperation_ = false;
     managedGame_.reset(); removal_.reset(); saves_.clear(); saveOpen_.reset();
-    message(deviceError_ ? deviceError_.message : tr("삭제했습니다. 설치 목록을 새로고침했습니다."));
+    message(deviceError_ ? deviceError_.message : tr("Deleted. The installed list was refreshed."));
   }
 }
 void Application::cycleInstalledSort(int step) {
@@ -56,7 +56,7 @@ void Application::cycleInstalledSort(int step) {
 }
 void Application::openManagement() {
   if (deviceBusy_ || !installed_.installed.complete || installed_.games.empty()) return;
-  if (installer_.running()) { message(tr("설치가 끝난 뒤 게임을 관리합니다.")); return; }
+  if (installer_.running()) { message(tr("Manage games after the install finishes.")); return; }
   // The list may be a search: its rows point into the games.
   const auto rows = gameRows(screen_ == Screen::Saves ? savesQuery_ : installedQuery_);
   if (rows.empty()) return;
@@ -73,13 +73,13 @@ void Application::openManagement() {
           incomingSaves_ = std::move(result.value);
           incomingDeviceError_ = result.error;
         }))
-      incomingDeviceError_.message = tr("세이브 목록을 읽다 오류가 났습니다.");
+      incomingDeviceError_.message = tr("Error reading saves.");
     deviceDone_ = true;
   });
 }
 void Application::performRemoval() {
   if (!removal_ || deviceBusy_) return;
-  if (installer_.running()) { message(tr("설치가 끝난 뒤 삭제합니다.")); return; }
+  if (installer_.running()) { message(tr("Delete after the install finishes.")); return; }
   const auto request = *removal_;
   deviceBusy_ = removalOperation_ = true;
   deviceWorker_ = std::thread([this, request] {
@@ -91,7 +91,7 @@ void Application::performRemoval() {
             incomingDeviceError_ = refreshed.error;
           } else incomingInstalled_ = installed_;
         })) {
-      incomingDeviceError_.message = tr("삭제 중 오류가 났습니다. 설치 목록을 새로고침합니다.");
+      incomingDeviceError_.message = tr("Error while deleting. Refreshing the installed list.");
       incomingInstalled_ = installed_;
     }
     deviceDone_ = true;
@@ -180,22 +180,22 @@ void Application::installedScreen() {
   paint_.icon(10, sortX + 60, 38, Ink, 20);
   paint_.fonts.middle(sort, sortX + 88, 48, 18, Ink, true, sortW - 106);
   const float tabsLeft = myGamesTabs(sortX - 16);
-  pageTitle(tr("내 게임"), !firstRead || managedGame_ ? countLabel(rows.size(), installedQuery_) : std::string(),
+  pageTitle(tr("My games"), !firstRead || managedGame_ ? countLabel(rows.size(), installedQuery_) : std::string(),
             tabsLeft);
   if (firstRead && !managedGame_) {
     paint_.skeletonCards(260, 104, 12);
     return;
   }
   if (deviceError_ && !managedGame_) {
-    notice(tr("설치 목록을 읽지 못했습니다."), deviceError_.message, 25);
+    notice(tr("Couldn't read installed games."), deviceError_.message, 25);
     return;
   }
   if (installed_.games.empty()) {
-    notice(tr("설치된 게임이 없습니다."), tr("서버에서 게임을 설치하면 여기에 보입니다."), 22);
+    notice(tr("No games installed."), tr("Games you install from the server appear here."), 22);
     return;
   }
   if (rows.empty()) {
-    notice(trf("'{0}'에 맞는 게임이 없습니다.", {installedQuery_}), tr("B로 검색어를 지웁니다."), 23);
+    notice(trf("No games match '{0}'.", {installedQuery_}), tr("Press B to clear the search."), 23);
     return;
   }
   // Games with a newer update on the server say so on their card.
@@ -223,8 +223,8 @@ void Application::installedScreen() {
     cover(icon, x, y, 150, inContent() && selected_ == first + n && !managedGame_, g.name);
     if (inContent() && selected_ == first + n && !managedGame_) marquee(g.name, x, y + 158, 18, 150, false);
     else paint_.fonts.text(g.name, x, y + 158, 18, Ink, false, 150);
-    if (updatable(g.titleId)) paint_.pill(tr("업데이트|항목"), x + 8, y + 8);
-    const float pill = paint_.pill(g.storage.size() > 1 ? tr("SD · 본체") : g.storage.empty() ? tr("설치됨") : g.storage.front(), x, y + 194);
+    if (updatable(g.titleId)) paint_.pill(tr("Update|item"), x + 8, y + 8);
+    const float pill = paint_.pill(g.storage.size() > 1 ? tr("SD · Console") : g.storage.empty() ? tr("Installed") : g.storage.front(), x, y + 194);
     if (g.bytes)
       paint_.fonts.text(formatBytes(g.bytes), x + pill + 8, y + 196, 15, Secondary, false, 142 - pill);
   }
@@ -246,14 +246,14 @@ void Application::management() {
   const int shown = savesOnly ? 4 : 3;
   const int listed = std::max(1, std::min(shown, int(saves_.size())));
   const float height = 20 + 28 + (savesOnly ? 0 : Label + Row + 16) + Label + listed * (Row + Gap) + 6;
-  const auto body = modal(860, height, managedGame_->name, tr("뒤로"), "", "", savesOnly ? 36 : 6);
+  const auto body = modal(860, height, managedGame_->name, tr("Back"), "", "", savesOnly ? 36 : 6);
   const float x = body.x + 32, w = body.w - 64;
   float y = body.y + 20;
-  paint_.fonts.text(applying_ ? trf("{0} 적용 · 넣을 세이브를 고릅니다", {applying_->name}) : managedGame_->titleId, x, y, 17,
+  paint_.fonts.text(applying_ ? trf("Apply {0} · pick where it goes", {applying_->name}) : managedGame_->titleId, x, y, 17,
                     applying_ ? Ink : Secondary, bool(applying_), w);
   y += 28;
   if (!savesOnly) {
-    paint_.fonts.text(tr("게임 삭제"), x, y + 4, 19, Secondary, true);
+    paint_.fonts.text(tr("Delete game"), x, y + 4, 19, Secondary, true);
     y += Label;
     hit(x, y, w, Row, [this] {
       manageRow_ = 0;
@@ -262,23 +262,23 @@ void Application::management() {
     if (manageRow_ == 0 && !removal_) paint_.focusRow(x, y, w, Row, Ground, 12);
     else paint_.rect(x, y, w, Row, Ground, 12);
     paint_.icon(37, x + 20, y + Row / 2 - 13, Bad, 26);
-    paint_.fonts.text(tr("게임 파일을 삭제합니다"), x + 62, y + 9, 21, Ink, true);
-    paint_.fonts.text(tr("본편·업데이트·DLC를 삭제합니다. 세이브는 유지합니다."), x + 62, y + 39, 16, Secondary);
+    paint_.fonts.text(tr("Delete game files"), x + 62, y + 9, 21, Ink, true);
+    paint_.fonts.text(tr("Deletes the game, updates and DLC. Saves are kept."), x + 62, y + 39, 16, Secondary);
     y += Row + 16;
   }
-  paint_.fonts.text(tr("세이브 백업·복원"), x, y + 4, 19, Secondary, true);
+  paint_.fonts.text(tr("Save backup and restore"), x, y + 4, 19, Secondary, true);
   y += Label;
   if (applyRunning_) {
-    paint_.fonts.text(trf("세이브를 받아 적용하고 있습니다 · {0}", {formatBytes(saveCopied_.load())}), x, y + 6, 19, Ink, true);
-    paint_.fonts.text(tr("끝날 때까지 본체를 끄지 않습니다."), x, y + 36, 17, Secondary);
+    paint_.fonts.text(trf("Getting and applying the save · {0}", {formatBytes(saveCopied_.load())}), x, y + 6, 19, Ink, true);
+    paint_.fonts.text(tr("Keep the console on until it finishes."), x, y + 36, 17, Secondary);
   } else if (deviceBusy_ && !removalOperation_) {
     // The save rows' shape while they are read.
     for (int n = 0; n < listed; ++n) paint_.skeleton(x, y + n * (Row + Gap), w, Row, 14);
   } else if (deviceError_) {
     paint_.fonts.wrapped(deviceError_.message, x, y + 4, 19, Secondary, w, 2);
   } else if (saves_.empty()) {
-    paint_.fonts.wrapped(applying_ ? tr("이 게임의 세이브가 없습니다. 게임을 한 번 실행해 세이브를 만든 뒤 적용합니다.")
-                                   : tr("이 게임의 세이브가 없습니다."),
+    paint_.fonts.wrapped(applying_ ? tr("This game has no save yet. Play it once to make one, then apply.")
+                                   : tr("This game has no saves."),
                          x, y + 6, 19, Secondary, w, 2);
   } else {
     // One row per save: each account's, and the device save every account shares.
@@ -294,17 +294,17 @@ void Application::management() {
       else paint_.rect(x, y, w, Row, Ground, 12);
       paint_.icon(device ? 14 : 13, x + 20, y + Row / 2 - 13, Ink, 26);
       paint_.fonts.text(save.userName, x + 62, y + 9, 21, Ink, true, w - 220);
-      paint_.fonts.text(applying_ && device && save.missing ? tr("공용 세이브를 새로 만들어 적용합니다.")
-                        : applying_ && device             ? tr("공용 세이브에 적용합니다. 지금 세이브는 먼저 백업합니다.")
-                        : applying_ && save.missing       ? tr("이 계정에 세이브를 새로 만들어 적용합니다.")
-                        : applying_                       ? tr("이 계정에 적용합니다. 지금 세이브는 먼저 백업합니다.")
-                        : save.missing          ? tr("아직 세이브가 없습니다. 백업을 복원하면 새로 만듭니다.")
-                        : device                ? tr("모든 계정이 함께 쓰는 세이브를 백업·복원·삭제합니다.")
-                                                : tr("이 계정의 세이브를 백업·복원·삭제합니다."),
+      paint_.fonts.text(applying_ && device && save.missing ? tr("Creates the shared save and applies it there.")
+                        : applying_ && device             ? tr("Applies to the shared save. The current save is backed up first.")
+                        : applying_ && save.missing       ? tr("Creates a save for this account and applies it.")
+                        : applying_                       ? tr("Apply to this account. The current save is backed up first.")
+                        : save.missing          ? tr("No save yet. Restoring a backup creates one.")
+                        : device                ? tr("Back up, restore or delete the save all accounts share.")
+                                                : tr("Back up, restore or delete this account's save."),
                         x + 62, y + 39, 16, Secondary, false, w - 220);
       // A save's size; an account without one says so in a grey label.
       if (save.missing) {
-        const auto label = tr("세이브 없음");
+        const auto label = tr("No save");
         paint_.pill(label, x + w - 20 - paint_.fonts.measure(label, 15, true) - 18, y + Row / 2 - 13);
       } else {
         const auto size = formatBytes(save.bytes);
@@ -320,15 +320,15 @@ void Application::removalConfirm() {
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 150});
   blockTouch();
   const bool save = removal_->kind == RemovalKind::Save;
-  const auto warning = removal_->save.device() ? std::string(tr("모든 계정이 함께 쓰는 공용 세이브를 삭제합니다. 되돌릴 수 없습니다."))
-                       : trf("{0} 계정의 세이브를 삭제합니다. 되돌릴 수 없습니다.", {removal_->save.userName});
+  const auto warning = removal_->save.device() ? std::string(tr("Deletes the save shared by all users. This can't be undone."))
+                       : trf("Deletes {0}'s save. This can't be undone.", {removal_->save.userName});
   // While it runs there is nothing to press: no footer keys.
-  const auto body = modal(700, 20 + 30 + 84 + 16, save ? tr("세이브를 삭제하시겠습니까?") : tr("게임을 삭제하시겠습니까?"),
-                          deviceBusy_ ? "" : tr("취소"), "", deviceBusy_ ? "" : tr("삭제합니다"), 37);
+  const auto body = modal(700, 20 + 30 + 84 + 16, save ? tr("Delete save?") : tr("Delete game?"),
+                          deviceBusy_ ? "" : tr("Cancel"), "", deviceBusy_ ? "" : tr("Delete|confirm"), 37);
   paint_.fonts.text(managedGame_->name, body.x + 32, body.y + 20, 21, Ink, true, body.w - 64);
-  paint_.fonts.wrapped(deviceBusy_ ? std::string(tr("삭제 결과를 확인하고 있습니다."))
+  paint_.fonts.wrapped(deviceBusy_ ? std::string(tr("Checking the result."))
                        : save      ? warning
-                                   : std::string(tr("본편·업데이트·DLC를 삭제합니다. 계정의 세이브는 유지합니다.")),
+                                   : std::string(tr("Deletes the game, updates and DLC. User saves are kept.")),
                        body.x + 32, body.y + 56, 19, Secondary, body.w - 64, 3);
 }
 } // namespace foil::ui

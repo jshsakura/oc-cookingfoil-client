@@ -14,9 +14,9 @@ constexpr SDL_Color Good{30, 142, 90, 255}, Pending{196, 124, 0, 255}, Bad{204, 
 // `status` is the Korean key, never the translated text: callers pass the
 // key here and draw tr(key).
 inline SDL_Color statusColor(std::string_view status) {
-  return status == "연결됨"                               ? Good // i18n: keep
-         : status == "연결 중" || status == "승인 대기"    ? Pending // i18n: keep
-         : status == "연결 실패" || status == "인터넷 없음" ? Bad // i18n: keep
+  return status == "Connected"                               ? Good // i18n: keep
+         : status == "Connecting" || status == "Awaiting approval"    ? Pending // i18n: keep
+         : status == "Failed|connection" || status == "No internet" ? Bad // i18n: keep
                                                             : Secondary;
 }
 } // namespace foil::ui

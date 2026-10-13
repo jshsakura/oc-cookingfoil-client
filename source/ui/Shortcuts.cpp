@@ -31,15 +31,15 @@ bool Application::makeShortcutFromNro(const std::string &file, const std::string
   // NCM and NS are the installer's while it runs.
   if (installer_.running()) {
     // A retro game (another .nro started) is got again; an app has its card.
-    message(!justDownloaded ? std::string(tr("지금 설치가 끝난 뒤 다시 시도합니다."))
-            : launch.empty() ? trf("{0}을(를) 받았습니다. 지금 설치가 끝난 뒤 홈브류의 앱 카드에서 바로가기를 만들 수 있습니다.", {name})
-                             : trf("{0}을(를) 받았습니다. 지금 설치가 끝난 뒤 다시 받으면 홈 메뉴 바로가기를 만듭니다.", {name}));
+    message(!justDownloaded ? std::string(tr("Try again once the current install ends."))
+            : launch.empty() ? trf("Got {0}. Once the current install ends, make its shortcut from the app's card in Homebrew.", {name})
+                             : trf("Got {0}. Once the current install ends, get it again to make its HOME Menu shortcut.", {name}));
     return true;
   }
   homebrew::NroInfo info;
   if (!homebrew::readNroFile(sdRoot_ + forwarder::loaderPath(file), homebrew::nacpLanguages(languageCode()), info)) {
-    alertTitle_ = tr("바로가기를 만들지 못했습니다");
-    alert_ = trf("앱 파일을 읽지 못했습니다: {0}", {file});
+    alertTitle_ = tr("Could not make the shortcut");
+    alert_ = trf("Could not read the app file: {0}", {file});
     return false;
   }
   platform::ShortcutRequest request;
@@ -52,7 +52,7 @@ bool Application::makeShortcutFromNro(const std::string &file, const std::string
   request.icon = info.icon;
   uint64_t id = 0;
   if (const auto error = platform::makeShortcut(request, id)) {
-    alertTitle_ = tr("바로가기를 만들지 못했습니다");
+    alertTitle_ = tr("Could not make the shortcut");
     alert_ = error.message;
     return false;
   }
@@ -60,11 +60,11 @@ bool Application::makeShortcutFromNro(const std::string &file, const std::string
   // Unsigned, the shortcut opens only with signature patches: said now,
   // not when the HOME Menu shows an error code.
   if (!forwarder::signaturePatchesFound(sdRoot_)) {
-    alertTitle_ = tr("바로가기를 만들었습니다");
-    alert_ = trf("{0} 바로가기를 만들었습니다. 서명 패치가 보이지 않아 실행하면 오류가 날 수 있으니 sys-patch 같은 서명 패치를 먼저 설치합니다.", {name});
+    alertTitle_ = tr("Shortcut made");
+    alert_ = trf("Made the {0} shortcut. No signature patches were found, so it may fail to open. Install signature patches such as sys-patch first.", {name});
   } else {
-    message(justDownloaded ? trf("{0}을(를) 받고 홈 메뉴에 바로가기를 만들었습니다.", {name})
-                           : trf("홈 메뉴에 {0} 바로가기를 만들었습니다.", {name}));
+    message(justDownloaded ? trf("Got {0} and added its shortcut to the HOME Menu.", {name})
+                           : trf("Added the {0} shortcut to the HOME Menu.", {name}));
   }
   return true;
 }
@@ -90,14 +90,14 @@ void Application::removeShortcuts(const std::vector<uint64_t> &ids, const std::s
   for (const auto id : ids) {
     if (!id || !shortcuts_.count(id)) continue;
     if (const auto error = platform::removeShortcut(id)) {
-      alertTitle_ = tr("바로가기를 삭제하지 못했습니다");
+      alertTitle_ = tr("Could not delete the shortcut");
       alert_ = error.message;
       return;
     }
     shortcuts_.erase(id);
     removed = true;
   }
-  if (removed) message(trf("홈 메뉴에서 {0} 바로가기를 삭제했습니다.", {name}));
+  if (removed) message(trf("Deleted the {0} shortcut from the HOME Menu.", {name}));
 }
 bool Application::autoHomebrewShortcut(const homebrew::App &app) {
   if (!state_.makeShortcuts) return false;
@@ -127,10 +127,10 @@ void Application::shortcutRemoveDialog() {
     shortcutRemoveAsk_ = false;
     return;
   }
-  const auto body = modal(700, 24 + 70 + 16, tr("바로가기를 삭제하시겠습니까?"), tr("취소"), "", tr("바로가기 삭제"), 37);
+  const auto body = modal(700, 24 + 70 + 16, tr("Delete the shortcut?"), tr("Cancel"), "", tr("Delete shortcut"), 37);
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(app->name, x, y, 21, Ink, true, body.w - 64);
-  paint_.fonts.text(tr("홈 메뉴에서 바로가기만 삭제하고 앱 파일은 그대로 둡니다."), x, y + 38, 19, Secondary, false,
+  paint_.fonts.text(tr("Removes only the HOME Menu shortcut and keeps the app file."), x, y + 38, 19, Secondary, false,
                     body.w - 64);
 }
 void Application::considerSelfShortcut() {
@@ -158,15 +158,15 @@ void Application::selfShortcutDialog() {
   const bool patches = forwarder::signaturePatchesFound(sdRoot_);
   constexpr int Lines = 3;
   const float textW = 760 - 64;
-  const auto why = tr("앨범에서 열면 메모리가 적어 큰 게임 설치가 느리거나 실패할 수 있습니다. 홈 메뉴에 바로가기를 만들면 다음부터 홈 메뉴에서 바로 열립니다.");
+  const auto why = tr("Opened from the Album there is little memory, so big installs can be slow or fail. With a HOME Menu shortcut it opens straight from the HOME Menu next time.");
   const float described = paint_.fonts.wrapped(why, -9999, -9999, 19, Ink, textW, Lines);
   const float bodyH = 24 + described + (patches ? 0 : 16 + 48) + 24;
-  const auto body = modal(760, bodyH, tr("애플릿 모드로 실행했습니다"), tr("닫기"), "", tr("바로가기 만들기"), HomeIcon);
+  const auto body = modal(760, bodyH, tr("Running in applet mode"), tr("Close"), "", tr("Make shortcut"), HomeIcon);
   const float x = body.x + 32;
   float y = body.y + 24;
   y += paint_.fonts.wrapped(why, x, y, 19, Ink, textW, Lines) + 16;
   if (!patches)
-    paint_.fonts.wrapped(tr("서명 패치가 보이지 않습니다. 바로가기는 서명 패치가 있어야 실행됩니다."), x, y, 17,
+    paint_.fonts.wrapped(tr("No signature patches were found. A shortcut opens only with signature patches installed."), x, y, 17,
                          Pending, textW, 2);
 }
 } // namespace foil::ui

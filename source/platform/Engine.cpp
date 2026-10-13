@@ -72,7 +72,7 @@ private:
   void check(Result rc, int stage) {
     if (R_FAILED(rc)) {
       close();
-      throw std::runtime_error(foil::trf("설치 서비스를 열지 못했습니다. 코드 {0} / {1}", {std::to_string(rc), std::to_string(stage)}));
+      throw std::runtime_error(foil::trf("Could not open the install service. Code {0} / {1}", {std::to_string(rc), std::to_string(stage)}));
     }
     ++count_;
   }

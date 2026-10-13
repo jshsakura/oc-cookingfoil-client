@@ -355,7 +355,7 @@ int runUiTests(SDL_Renderer *renderer) {
     app.previewFeatures({"retro"});
     CHECK(app.menuRowTop(foil::ui::menuIndex(foil::ui::Screen::Installed)) == withoutRetro + foil::ui::MenuRowPitch);
     CHECK(foil::ui::menuIndex(foil::ui::Screen::Updates) == foil::ui::menuIndex(foil::ui::Screen::Installed));
-    CHECK(std::string(foil::ui::screenLabel(foil::ui::Screen::Installed)) == foil::tr("내 게임"));
+    CHECK(std::string(foil::ui::screenLabel(foil::ui::Screen::Installed)) == foil::tr("My games"));
     app.screen(foil::ui::Screen::Installed);
     app.render();
     CHECK(app.myGamesTab() == 0);
@@ -435,9 +435,9 @@ int runUiTests(SDL_Renderer *renderer) {
     app.action(foil::ui::Action::Accept);
     CHECK(app.dropboxPopupOpen());
     app.render();
-    CHECK(app.dropboxAcceptLabel() == foil::tr("받기"));
+    CHECK(app.dropboxAcceptLabel() == foil::tr("Get"));
     app.action(foil::ui::Action::Up);
-    CHECK(app.dropboxAcceptLabel() == foil::tr("받기"));
+    CHECK(app.dropboxAcceptLabel() == foil::tr("Get"));
     CHECK(!app.dropboxChoosingUpload());
     app.action(foil::ui::Action::Back);
     CHECK(!app.dropboxPopupOpen());
@@ -445,7 +445,7 @@ int runUiTests(SDL_Renderer *renderer) {
     app.action(foil::ui::Action::Down);
     CHECK(app.dropboxFocused() == installed.applicationId);
     app.action(foil::ui::Action::Accept);
-    CHECK(app.dropboxAcceptLabel() == foil::tr("올리기"));
+    CHECK(app.dropboxAcceptLabel() == foil::tr("Upload"));
     app.action(foil::ui::Action::Back);
     CHECK(!app.dropboxPopupOpen());
   }

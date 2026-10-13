@@ -14,7 +14,7 @@ static void openSearchKeyboard(foil::ui::Application &ui) {
   swkbdConfigMakePresetDefault(&keyboard);
   // The default preset is QWERTY only. All lets the player switch to Korean.
   swkbdConfigSetType(&keyboard, SwkbdType_All);
-  swkbdConfigSetGuideText(&keyboard, foil::tr("게임 이름을 입력합니다"));
+  swkbdConfigSetGuideText(&keyboard, foil::tr("Enter a game name"));
   swkbdConfigSetInitialText(&keyboard, ui.query().c_str());
   char text[512]{};
   if (R_SUCCEEDED(swkbdShow(&keyboard, text, sizeof(text))))
