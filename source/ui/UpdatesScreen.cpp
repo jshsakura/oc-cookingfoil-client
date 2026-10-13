@@ -16,12 +16,21 @@ void Application::showMyGamesTab(int tab) {
   if (onTabs) headerFocus_ = "tab" + std::to_string(tab);
   else if (!sidebar_ && !hasFocusable()) headerFocus_ = "tab" + std::to_string(tab);
 }
-const std::vector<UpdateCandidate> &Application::pendingUpdates() const {
+std::vector<UpdateCandidate> Application::pendingUpdates() const {
   if (updatesStale_ && installed_.installed.complete) {
     updates_ = findUpdates(groups_, installed_.installed);
     updatesStale_ = false;
   }
-  return updates_;
+  // What waits in 다운로드 or comes down now cannot be asked for again.
+  std::set<std::string> taken;
+  for (const auto &e : history_)
+    if ((e.outcome == history::Outcome::Queued || e.outcome == history::Outcome::Running) && e.kind.empty())
+      for (const auto &file : e.install.files) taken.insert(file.url);
+  if (taken.empty()) return updates_;
+  std::vector<UpdateCandidate> out;
+  for (const auto &row : updates_)
+    if (!taken.count(row.item.url)) out.push_back(row);
+  return out;
 }
 float Application::myGamesTabs(float right) {
   const auto &all = pendingUpdates();

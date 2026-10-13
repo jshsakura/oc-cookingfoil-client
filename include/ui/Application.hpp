@@ -950,7 +950,8 @@ private:
   // the menu's count does not blink.
   mutable std::vector<UpdateCandidate> updates_;
   mutable bool updatesStale_ = true;
-  const std::vector<UpdateCandidate> &pendingUpdates() const;
+  // Updates and DLC not yet in 다운로드 (queued or downloading ones hide).
+  std::vector<UpdateCandidate> pendingUpdates() const;
   uint32_t installedAt_ = 0; // when the installed list was last read
   bool updateNewer_ = false; // a newer build was found; kept while checking again
   // Every automatic ask is bounded; - or Y starts them again.
