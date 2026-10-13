@@ -21,7 +21,9 @@ APP_TITLE := CookingFoil
 APP_AUTHOR := OpenCourse
 # The one place the version lives: the NACP, the HTTP Version header and the
 # user agent all come from it, and a release tag must match it (vX.Y.Z).
-APP_VERSION := 0.2.0
+APP_VERSION := 0.3.0
+# The commit count when this minor version began: its builds count from 0.
+APP_BUILD_FROM := 197
 ARCH := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 CFLAGS := -g -Wall -Wextra -O2 -ffunction-sections $(ARCH) $(INCLUDE) -D__SWITCH__ -DCOOKINGFOIL_VERSION=\"$(APP_VERSION)\" -I$(PORTLIBS)/include/SDL2 -I$(PORTLIBS)/include/freetype2
 CXXFLAGS := $(CFLAGS) -std=c++17 -fno-rtti
