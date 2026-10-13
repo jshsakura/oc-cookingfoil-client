@@ -645,7 +645,20 @@ void Application::patchesScreen() {
                    patchFilter_ = PatchFilter(n);
                    selected_ = 0;
                  }, searchX - 16);
-  pageTitle(tr("패치|메뉴"), on ? trf("{0} · 켜짐 {1}", {std::to_string(rows.size()), std::to_string(on)}) : std::to_string(rows.size()), tabsLeft);
+  const float titleEnd =
+      pageTitle(tr("패치|메뉴"), on ? trf("{0} · 켜짐 {1}", {std::to_string(rows.size()), std::to_string(on)}) : std::to_string(rows.size()), tabsLeft);
+  // The background file check says it is running, quietly: a pulsing dot
+  // and a word beside the title, while the list stays usable.
+  if (patchChecking()) {
+    const std::string label = tr("파일 확인 중");
+    const float x = titleEnd + 16, w = paint_.fonts.measure(label, 15) + 22;
+    if (x + w < tabsLeft - 12) {
+      const float t = float(SDL_GetTicks() % 1000) / 1000.f;
+      const auto alpha = Uint8(110 + 145 * (t < 0.5f ? t * 2 : (1 - t) * 2));
+      paint_.rect(x, 48 - 4, 8, 8, SDL_Color{Pending.r, Pending.g, Pending.b, alpha}, 4);
+      paint_.fonts.middle(label, x + 14, 48, 15, Secondary);
+    }
+  }
   if (rows.empty() && !patchQuery_.empty() && !all.empty()) {
     notice(trf("'{0}'에 맞는 패치가 없습니다.", {patchQuery_}), tr("B로 검색어를 지웁니다."), 23);
     return;
