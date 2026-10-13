@@ -1989,7 +1989,9 @@ void Application::startCleanup(bool remove) {
   if (cleanupWorker_.joinable())
     cleanupWorker_.join();
   cleanupWorker_ = std::thread([this, remove] {
-    if (!guarded("cleanup", [this, remove] { cleanupResult_ = platform::cleanOrphans(remove, &cleanupProgress_); }))
+    if (!guarded("cleanup", [this, remove] { cleanupResult_ = platform::cleanOrphans(remove, &cleanupProgress_, [this](const std::string &key) {
+      return store_.resumePoint(key).has_value();
+    }); }))
       cleanupResult_ = {{}, {tr("Cleanup failed. Check log.txt.")}};
     cleanupDone_ = true;
   });

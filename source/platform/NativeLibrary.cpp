@@ -396,7 +396,8 @@ Parsed<std::vector<std::string>> referenced(Database &db) {
 }
 } // namespace
 #endif
-Parsed<CleanupReport> cleanOrphans(bool remove, CleanupProgress *progress) {
+Parsed<CleanupReport> cleanOrphans(bool remove, CleanupProgress *progress,
+                                   const std::function<bool(const std::string &key)> &keep) {
 #ifdef __SWITCH__
   Parsed<CleanupReport> result;
   NcmSession ncm;
@@ -451,16 +452,21 @@ Parsed<CleanupReport> cleanOrphans(bool remove, CleanupProgress *progress) {
     NcmPlaceHolderId holders[64];
     s32 holderCount = 0;
     if (R_SUCCEEDED(ncmContentStorageListPlaceHolder(&storage.cs, holders, 64, &holderCount)) && holderCount > 0) {
-      uint64_t held = 0;
+      const std::string prefix = id == NcmStorageId_SdCard ? "sd:" : "nand:";
       for (s32 i = 0; i < holderCount; ++i) {
+        char hex[33];
+        for (int b = 0; b < 16; ++b)
+          std::snprintf(hex + b * 2, 3, "%02x", holders[i].uuid.uuid[b]);
+        // A download cut off mid-file picks up from this one: it stays.
+        if (keep && keep(prefix + hex))
+          continue;
         s64 size = 0;
-        if (R_SUCCEEDED(ncmContentStorageGetSizeFromPlaceHolderId(&storage.cs, &size, &holders[i])))
-          held += uint64_t(std::max<s64>(0, size));
-      }
-      // Counted only when they are really gone (or, in a scan, found).
-      if (!remove || R_SUCCEEDED(ncmContentStorageCleanupAllPlaceHolder(&storage.cs))) {
-        result.value.placeholders += holderCount;
-        result.value.bytes += held;
+        ncmContentStorageGetSizeFromPlaceHolderId(&storage.cs, &size, &holders[i]);
+        // Counted only when it is really gone (or, in a scan, found).
+        if (remove && R_FAILED(ncmContentStorageDeletePlaceHolder(&storage.cs, &holders[i])))
+          continue;
+        ++result.value.placeholders;
+        result.value.bytes += uint64_t(std::max<s64>(0, size));
         if (progress) progress->bytes = result.value.bytes;
       }
     }
