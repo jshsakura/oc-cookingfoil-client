@@ -204,8 +204,10 @@ std::vector<Theme> libraryChips(const std::vector<Group> &groups, const GenreNam
       {tr("DLC 있음"), SortMode::Default, Filter::Dlc, "", 0, 0, 0, 0, false, false, "", 0},
       {tr("1GB 이하"), SortMode::Default, Filter::All, "", 0, LightSize, 0, 0, false, false, "", 0},
       {tr("10GB 이상"), SortMode::Default, Filter::All, "", 0, 0, 0, BigSize, false, false, "", 0}};
+  // One sort serves every genre row: the newest first.
+  const auto recent = browseCatalog(groups, "", {"", SortMode::Recent, Filter::All, "", 0, 0, 0, 0, false, false, "", 0});
   std::map<std::string, size_t> counts;
-  for (const auto i : browseCatalog(groups, "", {"", SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}))
+  for (const auto i : recent)
     for (const auto &genre : groups[i].representative.categories)
       ++counts[genre];
   std::vector<std::pair<std::string, size_t>> genres(counts.begin(), counts.end());
@@ -262,17 +264,26 @@ std::vector<HomeTheme> homeThemes(const std::vector<Group> &groups, size_t hero,
                                   const InstalledMask &installed,
                                   std::vector<HomeTheme> pinned, unsigned seed,
                                   const GenreNames &names) {
-  constexpr size_t MinCategoryGames = 4, CategoryRows = 3;
+  // A genre gets a row when it still fills the screen after the rows above
+  // took their games, so every genre with enough games shows, each once.
+  constexpr size_t MinCategoryGames = HomeRowVisible;
   // Sample sizes for rotating rows. Time-ordered rows (최근 추가, 신작, 최근
   // 업데이트) change on their own as the shop grows, so they stay sorted.
   constexpr size_t TopPool = 36, WidePool = 80, AnyGame = SIZE_MAX;
   std::vector<HomeTheme> rows;
-  std::vector<size_t> shown;
+  // Games an earlier row shows on screen, as a mask: with every genre a row,
+  // a list searched per game would grow with the rows.
+  std::vector<bool> shownMask(groups.size());
+  auto isShown = [&](size_t i) { return i < shownMask.size() && shownMask[i]; };
+  auto markShown = [&](size_t i) {
+    if (i < shownMask.size())
+      shownMask[i] = true;
+  };
   for (auto &row : pinned) {
     if (row.items.empty())
       continue;
-    shown.insert(shown.end(), row.items.begin(),
-                 row.items.begin() + std::min(row.items.size(), HomeRowVisible));
+    for (size_t n = 0; n < std::min(row.items.size(), HomeRowVisible); ++n)
+      markShown(row.items[n]);
     rows.push_back(std::move(row));
   }
   // Each row skips the games an earlier row shows on screen (its first
@@ -280,15 +291,20 @@ std::vector<HomeTheme> homeThemes(const std::vector<Group> &groups, size_t hero,
   // A row with a `pool` draws a seeded sample from the first `pool` games of
   // its sort instead of always showing the same top dozen.
   unsigned rowSalt = 0;
-  auto add = [&](Theme theme, size_t pool = 0) {
+  // `order` is a list already sorted for the row (the genre rows share one
+  // instead of sorting the whole shop once per genre); `least` is how many
+  // games the row needs to show at all.
+  auto add = [&](Theme theme, size_t pool = 0, const std::vector<size_t> *order = nullptr,
+                 size_t least = 1) {
     HomeTheme row{std::move(theme), {}};
     const bool shuffle = pool && seed;
     const size_t take = shuffle ? pool : HomeRowLimit;
-    for (const auto i : browseCatalog(groups, "", row.theme)) {
+    const auto sorted = order ? std::vector<size_t>{} : browseCatalog(groups, "", row.theme);
+    for (const auto i : order ? *order : sorted) {
       if (row.items.size() >= take)
         break;
-      if (i != hero && (i >= installed.size() || !installed[i]) &&
-          std::find(shown.begin(), shown.end(), i) == shown.end())
+      if (i != hero && (i >= installed.size() || !installed[i]) && !isShown(i) &&
+          (!order || passes(groups[i], row.theme)))
         row.items.push_back(i);
     }
     if (shuffle) {
@@ -298,10 +314,10 @@ std::vector<HomeTheme> homeThemes(const std::vector<Group> &groups, size_t hero,
       if (row.items.size() > HomeRowLimit)
         row.items.resize(HomeRowLimit);
     }
-    if (row.items.empty())
+    if (row.items.size() < least)
       return;
-    shown.insert(shown.end(), row.items.begin(),
-                 row.items.begin() + std::min(row.items.size(), HomeRowVisible));
+    for (size_t n = 0; n < std::min(row.items.size(), HomeRowVisible); ++n)
+      markShown(row.items[n]);
     rows.push_back(std::move(row));
   };
   add({tr("최근 추가"), SortMode::Recent, Filter::All, "", 0, 0, 0, 0, false, false, "", 0});
@@ -314,8 +330,10 @@ std::vector<HomeTheme> homeThemes(const std::vector<Group> &groups, size_t hero,
   add({tr("파티 게임"), SortMode::Popular, Filter::All, PartyGenre, 0, 0, 0, 0, false, false, "", 0}, WidePool);
   add({tr("대용량 게임"), SortMode::Largest, Filter::All, "", 0, 0, 0, 10ULL << 30, false, false, "", 0}, AnyGame);
   add({tr("한국어 지원"), SortMode::Release, Filter::Korean, "", 0, 0, 0, 0, false, false, "", 0}, WidePool);
+  // One sort serves every genre row: the newest first.
+  const auto recent = browseCatalog(groups, "", {"", SortMode::Recent, Filter::All, "", 0, 0, 0, 0, false, false, "", 0});
   std::map<std::string, size_t> counts;
-  for (const auto i : browseCatalog(groups, "", {"", SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}))
+  for (const auto i : recent)
     for (const auto &genre : groups[i].representative.categories)
       ++counts[genre];
   std::vector<std::pair<std::string, size_t>> genres(counts.begin(), counts.end());
@@ -324,10 +342,21 @@ std::vector<HomeTheme> homeThemes(const std::vector<Group> &groups, size_t hero,
   genres.erase(std::remove_if(genres.begin(), genres.end(),
                               [](const auto &g) { return g.first == PartyGenre; }),
                genres.end());
-  for (size_t n = 0; n < genres.size() && n < CategoryRows; ++n)
-    if (genres[n].second >= MinCategoryGames)
-      add({genreLabel(names, genres[n].first), SortMode::Recent, Filter::All, genres[n].first, 0, 0, 0, 0, false, false, "", 0},
-          WidePool);
+  // A name shows once: two keys the server names alike, or a genre named
+  // like a row above, keep the first (the larger).
+  std::set<std::string> titles;
+  for (const auto &row : rows)
+    titles.insert(row.theme.title);
+  for (const auto &[genre, count] : genres) {
+    const auto title = genreLabel(names, genre);
+    if (count < MinCategoryGames || titles.count(title))
+      continue;
+    const auto before = rows.size();
+    add({title, SortMode::Recent, Filter::All, genre, 0, 0, 0, 0, false, false, "", 0}, WidePool, &recent,
+        MinCategoryGames);
+    if (rows.size() > before)
+      titles.insert(title);
+  }
   return rows;
 }
 std::vector<size_t> selectCatalog(const std::vector<Group> &groups,

@@ -281,5 +281,34 @@ int runCatalogTests() {
     CHECK(foil::priceText("42,000\xEC\x9B\x90") == "42,000\xEC\x9B\x90");
     CHECK(foil::priceText("4,950\xE5\x86\x86") == "4,950\xEC\x97\x94");
   }
+  {
+    // Every genre with a full row gets one, not just the top three, and a
+    // name never shows twice (two keys with one label, or a fixed row's).
+    std::vector<foil::Group> groups(400);
+    const std::vector<std::string> genres = {"Action", "Adventure", "Puzzle", "Racing", "Sports",
+                                             "Shooter", "Strategy", "RPG", "Acao", "Tiny"};
+    for (size_t i = 0; i < groups.size(); ++i) {
+      auto &r = groups[i].representative;
+      r.name = "v" + std::to_string(i);
+      // Tiny has three games, too few for a row of its own.
+      r.categories = {i < 3 ? "Tiny" : genres[i % (genres.size() - 1)]};
+      groups[i].addedAt = int64_t(i + 1);
+      groups[i].base = r;
+    }
+    const foil::GenreNames names{{"Action", "액션"}, {"Acao", "액션"}};
+    std::vector<std::string> titles;
+    size_t genreRows = 0;
+    for (const auto &row : foil::homeThemes(groups, 0, {}, {}, 0, names)) {
+      CHECK(std::find(titles.begin(), titles.end(), row.theme.title) == titles.end());
+      titles.push_back(row.theme.title);
+      if (!row.theme.category.empty() && row.theme.category != "Party") {
+        ++genreRows;
+        CHECK(row.items.size() >= foil::HomeRowVisible);
+        CHECK(row.theme.category != "Tiny");
+      }
+    }
+    // Nine genres, Action and Acao sharing 액션: eight rows.
+    CHECK(genreRows == 8);
+  }
   return failures;
 }
