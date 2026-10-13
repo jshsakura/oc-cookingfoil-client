@@ -11,6 +11,13 @@ typedef void CURL;
 namespace foil::net {
 struct SegmentedOptions {
   int connections = 1;
+  // Only [from, from + length) of the file (an NCA inside an NSP); length 0
+  // is the whole file. With a length the size is known up front: every
+  // request names its end and no first probe is needed.
+  uint64_t from = 0, length = 0;
+  // Bytes gathered on a connection before they go to the writer: large
+  // writes suit the card (FAT32 slows down on small ones).
+  size_t batchBytes = 4u << 20;
   std::vector<std::string> headers;      // sent with every request (auth, device keys)
   std::function<void(CURL *)> configure; // more per-handle options (the engine's basic auth)
   // Bytes held for the writer thread at most; the network waits beyond it.

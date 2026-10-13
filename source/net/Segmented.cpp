@@ -11,7 +11,6 @@
 namespace foil::net {
 namespace {
 using Clock = std::chrono::steady_clock;
-constexpr size_t Batch = 1u << 20;   // bytes gathered before they go to the writer
 constexpr int MaxFails = 3;          // a part failing this often ends the parallel phase
 constexpr auto ProgressEvery = std::chrono::milliseconds(250);
 constexpr auto CheckpointEvery = std::chrono::seconds(2);
@@ -112,6 +111,7 @@ size_t onBody(char *data, size_t size, size_t count, void *user);
 
 struct Session {
   const std::string &url;
+  size_t batch;
   const SegmentedOptions &options;
   Writer &writer;
   std::mutex &planLock;
@@ -133,7 +133,7 @@ bool hand(Session &s, Conn &c) {
   const uint64_t end = c.pos;
   std::vector<char> data;
   data.swap(c.pending);
-  c.pending.reserve(Batch);
+  c.pending.reserve(s.batch);
   return s.writer.put(offset, std::move(data), [&s, seg, end] {
     std::lock_guard<std::mutex> held(s.planLock);
     if (seg >= 0 && size_t(seg) < s.written.size())
@@ -222,7 +222,7 @@ size_t onBody(char *data, size_t size, size_t count, void *user) {
     auto &part = s.plan.segments()[size_t(c.seg)];
     part.next = std::max(part.next, c.pos);
   }
-  if (c.pending.size() >= Batch && !hand(s, c))
+  if (c.pending.size() >= s.batch && !hand(s, c))
     return 0;
   if (c.pos >= c.stop && s.ranged) {
     c.cut = true; // its part is done; the rest of an open-ended reply is not wanted
@@ -252,8 +252,9 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
   bool restarted = false;
 
   for (;;) { // a second round only when the server's file changed
-    Writer writer(write, std::max<uint64_t>(options.bufferBytes, 2 * Batch));
-    Session s{url, options, writer, planLock, plan, written};
+    const size_t batch = std::max<size_t>(options.batchBytes, 256u << 10);
+    Writer writer(write, std::max<uint64_t>(options.bufferBytes, 2 * batch));
+    Session s{url, batch, options, writer, planLock, plan, written};
     int limit = std::max(1, options.connections);
     const bool resuming = !restarted && !options.resume.empty() && options.resumeTotal > 0;
     std::vector<std::unique_ptr<Conn>> conns;
@@ -274,7 +275,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       c->pos = from;
       c->stop = end;
       c->openEnded = openEnded;
-      c->pending.reserve(Batch);
+      c->pending.reserve(s.batch);
       c->range = rangeOf(from, end, openEnded);
       for (const auto &h : options.headers)
         if (h.find_first_of("\r\n") == std::string::npos)
@@ -386,6 +387,25 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       started = true;
       while (active() < limit && assign()) {
       }
+    } else if (options.length > 0) {
+      // A known stretch of the file: parts planned now, every request closed.
+      s.total = options.from + options.length;
+      s.known = true;
+      if (!prepare(s.total)) {
+        result.error = "prepare";
+        curl_multi_cleanup(multi);
+        return result;
+      }
+      s.prepared = true;
+      started = true;
+      plan = SegmentPlan(options.from, s.total, limit);
+      written.assign(plan.segments().size(), 0);
+      for (size_t i = 0; i < plan.segments().size(); ++i)
+        written[i] = plan.segments()[i].start;
+      fails.assign(plan.segments().size(), 0);
+      waitUntil.assign(plan.segments().size(), Clock::time_point());
+      while (active() < limit && assign()) {
+      }
     } else {
       // The first request tells the size and validator, and keeps reading.
       plan = SegmentPlan(std::vector<Segment>{{0, UINT64_MAX, 0}});
@@ -440,7 +460,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         fails.assign(plan.segments().size(), 0);
         waitUntil.assign(plan.segments().size(), Clock::time_point());
       }
-      if (started && !conns.empty() && conns.front()->curl && conns.front()->pending.size() >= Batch &&
+      if (started && !conns.empty() && conns.front()->curl && conns.front()->pending.size() >= s.batch &&
           !hand(s, *conns.front())) {
         failure = "write";
         break;

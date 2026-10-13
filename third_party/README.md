@@ -73,6 +73,11 @@ applied as a series rather than checked one by one.
   dropped and the fetch waits; on resume each piece asks for the rest from the byte it stopped
   at. A pause never spends a retry. Busy (503), rate-limited (429/1015) and tunnel timeouts (524)
   wait 5 seconds before asking again, other failures 1 to 2 seconds.
+- An NCA that is not compressed (anything but `.ncz`, and not a split JBOD file) skips the ring
+  and NcaWriter: `foil::install::streamToPlace` (`source/platform/Engine.cpp`) fetches it on the
+  app's segmented engine (`net/Segmented`), long parts on several connections, and writes each
+  batch at its offset in the placeholder. The NCA header is still checked first. NCZ keeps the
+  ring path above, its parallel window sized from the same connection count.
 
 ### Limits
 
