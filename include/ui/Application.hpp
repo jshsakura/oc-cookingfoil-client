@@ -478,7 +478,7 @@ private:
   bool getRetroGame(const retro::Game &game, bool again = false);
   // Its turn in the queue came: the download itself, on the retro worker.
   bool runRetroGame(const retro::Game &game);
-  void finishRetroEntry(const std::string &kind, history::Outcome outcome, const std::string &error, uint64_t bytes);
+  bool finishRetroEntry(const std::string &kind, history::Outcome outcome, const std::string &error, uint64_t bytes);
   // A retro game or RetroArch downloading (not a list loading).
   bool retroDownloading() const { return !retroBusy_.empty(); }
   float retroDownloadCard(float y); // 다운로드 > 진행 중; returns the height drawn
@@ -649,6 +649,9 @@ private:
   // Puts back an enabled patch's missing files, downloading it again when
   // its store lacks them too.
   bool startPatchReapply(const UserPatch &patch, bool onServer);
+  void pauseSmallDownload(bool pause);
+  float heldDownloadCard(float y);
+  void pauseButton(float y, bool held);
   void patchGame(const UserPatch &patch, std::string &name, std::string &icon) const;
   void patchDialog();
   // 설정 > 남은 파일 정리: scan, confirm, then delete on a worker thread.
@@ -994,6 +997,10 @@ private:
   std::atomic<uint64_t> retroBytes_{0}; // what the running download expects
   std::thread retroWorker_;
   std::atomic<bool> retroDone_{false};
+  // Paused: a homebrew or retro download stops with its part kept and goes
+  // back to the front of the queue, which holds until it resumes (from the
+  // byte it reached).
+  bool retroPausing_ = false, queueHeld_ = false;
   // Lists load on a thread of their own, so switching systems never waits
   // for a download.
   std::thread retroListWorker_;

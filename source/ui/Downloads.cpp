@@ -165,7 +165,8 @@ void Application::downloads() {
 void Application::runningList(float y) {
   constexpr float Bottom = 660, Card = 120, Gap = 30;
   if (retroDownloading() || patchDownloading() || !installQueue_.empty()) {
-    const float cards = (retroDownloading() ? Card + Gap : 0) + (patchDownloading() ? Card + Gap : 0);
+    const bool held = queueHeld_ && !installQueue_.empty() && !installer_.running() && !retroDownloading();
+    const float cards = (retroDownloading() || held ? Card + Gap : 0) + (patchDownloading() ? Card + Gap : 0);
     const float content = cards + queueHeight();
     // The picked queue row stays in view; the cards come first.
     const int picked = downloadsRow_ - 1;
@@ -176,6 +177,7 @@ void Application::runningList(float y) {
     clipTo(232, y - 8, 1048, Bottom - y + 8);
     float at = y - top;
     if (retroDownloading()) at += retroDownloadCard(at) + Gap;
+    else if (queueHeld_ && !installQueue_.empty() && !installer_.running()) at += heldDownloadCard(at) + Gap;
     if (patchDownloading()) at += patchDownloadCard(at) + Gap;
     queueList(at, y);
     unclip();
@@ -268,8 +270,31 @@ float Application::retroDownloadCard(float y) {
   const auto what = pack ? std::string(tr("Install RetroArch")) : app ? std::string(tr("Homebrew")) : std::string(tr("Retro game"));
   const auto line = total ? trf("{0} · SD card · {1} / {2}", {what, formatBytes(got), formatBytes(total)})
                           : trf("{0} · Checking which files to get", {what});
-  paint_.fonts.text(line, 386, y + 82, 17, Secondary, false, 842);
+  paint_.fonts.text(line, 386, y + 82, 17, Secondary, false, 760);
+  pauseButton(y + 72, false);
   return Height;
+}
+// A small download paused: it waits first in line, and the queue holds
+// until it goes on from the byte it reached.
+float Application::heldDownloadCard(float y) {
+  constexpr float Height = 120;
+  const auto &q = installQueue_.front();
+  if (!installer_.running()) paint_.ring(260, y, 992, Height, 18);
+  paint_.rect(260, y, 992, Height, Surface, 18);
+  cover(q.icon, 284, y + 20, 80, false, q.name, true);
+  paint_.fonts.text(q.name, 386, y + 20, 22, Ink, true, 700);
+  paint_.fonts.text(tr("Paused."), 386, y + 60, 17, Secondary, false, 700);
+  pauseButton(y + 60, true);
+  return Height;
+}
+// 일시정지 or 계속, bottom right of a small download's card (A does the same).
+void Application::pauseButton(float y, bool held) {
+  const std::string label = held ? tr("Resume") : tr("Pause");
+  const float w = paint_.fonts.measure(label, 16, true) + 32;
+  const float bx = 1228 - w;
+  hit(bx, y, w, 40, [this, held] { pauseSmallDownload(!held); });
+  paint_.rect(bx, y, w, 40, Ground, 10);
+  paint_.fonts.middle(label, bx + 16, y + 20, 16, Ink, true);
 }
 std::vector<int> Application::downloadsList() const {
   std::vector<int> out;

@@ -276,8 +276,9 @@ bool Application::runRetroGame(const retro::Game &game) {
           if (!game.romPath.empty()) retroOnCard_[game.romPath] = there;
           if (!game.bezelPath.empty()) retroOnCard_[game.bezelPath] = bezel;
           storageAt_ = 0;
-          finishRetroEntry("retro", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
-                           ok || cancelled ? "" : error.message, ok ? game.size : received);
+          if (finishRetroEntry("retro", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
+                           ok || cancelled ? "" : error.message, ok ? game.size : received))
+            return;
           if (cancelled && !ok) {
             message(trf("Cancelled the download of {0}.", {game.name}));
             return;
@@ -298,12 +299,22 @@ bool Application::runRetroGame(const retro::Game &game) {
     return false;
   return true;
 }
-void Application::finishRetroEntry(const std::string &kind, history::Outcome outcome, const std::string &error,
+// True when it stopped for a pause: it waits at the front of the queue.
+bool Application::finishRetroEntry(const std::string &kind, history::Outcome outcome, const std::string &error,
                                    uint64_t bytes) {
+  const bool pausing = std::exchange(retroPausing_, false);
   const auto running = std::find_if(history_.begin(), history_.end(), [&](const history::Entry &e) {
     return e.kind == kind && e.outcome == history::Outcome::Running;
   });
-  if (running == history_.end()) return;
+  if (running == history_.end()) return false;
+  if (pausing && outcome == history::Outcome::Cancelled) {
+    running->outcome = history::Outcome::Queued;
+    history::takeFirstTurn(history_, running->id);
+    queueHeld_ = true;
+    saveHistory();
+    rebuildQueue();
+    return true;
+  }
   // RetroArch already up to date fetched nothing: no entry for it.
   if (outcome == history::Outcome::Done && bytes == 0 && kind == "retroarch") history_.erase(running);
   else {
@@ -311,6 +322,19 @@ void Application::finishRetroEntry(const std::string &kind, history::Outcome out
     history::finish(history_, outcome, error, int64_t(std::time(nullptr)), kind);
   }
   saveHistory();
+  return false;
+}
+// The small downloads' pause: stop now and keep the part, or go on.
+void Application::pauseSmallDownload(bool pause) {
+  if (pause) {
+    if (!retroDownloading()) return;
+    retroPausing_ = true;
+    retroCancel_ = true;
+    return;
+  }
+  queueHeld_ = false;
+  if (auto error = launchQueued())
+    alert_ = error.message;
 }
 // A HOME Menu shortcut goes in through the installer like any other title;
 // false when there is none to make, 설정 turned them off, or the server has
@@ -395,9 +419,10 @@ bool Application::runRetroArch(bool full) {
         const uint64_t received = retroReceived_;
         return [this, error, done, total, cancelled, received] {
           storageAt_ = 0;
-          finishRetroEntry("retroarch",
-                           cancelled ? history::Outcome::Cancelled : error ? history::Outcome::Failed : history::Outcome::Done,
-                           cancelled ? "" : error.message, received);
+          if (finishRetroEntry("retroarch",
+                               cancelled ? history::Outcome::Cancelled : error ? history::Outcome::Failed : history::Outcome::Done,
+                               cancelled ? "" : error.message, received))
+            return;
           if (cancelled)
             message(trf("RetroArch install cancelled after {0} of {1} files. Installing again picks up from there.",
                         {std::to_string(done), std::to_string(total)}));

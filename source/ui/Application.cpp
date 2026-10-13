@@ -1601,7 +1601,9 @@ void Application::render() {
     else if (downloadsTab_ == 0 && !sidebar_ && installer_.running())
       footer(Hints{{"A", installer_.paused() ? tr("Resume") : tr("Pause")}, {"Y", tr("Cancel")}, {"B", tr("Back")}});
     else if (downloadsTab_ == 0 && !sidebar_ && retroDownloading())
-      footer(Hints{{"Y", tr("Cancel")}, {"B", tr("Back")}});
+      footer(Hints{{"A", tr("Pause")}, {"Y", tr("Cancel")}, {"B", tr("Back")}});
+    else if (downloadsTab_ == 0 && !sidebar_ && queueHeld_ && !installQueue_.empty())
+      footer(Hints{{"A", tr("Resume")}, {"B", tr("Back")}});
     else if (downloadsTab_ == 0 || sidebar_ || downloadsList().empty())
       footer({{"B", tr("Back")}});
     else
@@ -1948,6 +1950,8 @@ void Application::runningAction(Action a) {
   }
   if (a == Action::Accept && installer_.running())
     installer_.setPaused(!installer_.paused());
+  else if (a == Action::Accept)
+    pauseSmallDownload(!queueHeld_);
   if (a == Action::Queue && (installer_.running() || retroDownloading())) {
     cancelRetro_ = !installer_.running();
     confirmCancel_ = true;
@@ -1976,8 +1980,8 @@ void Application::unqueue(size_t index) {
   message(trf("Took {0} off the queue.", {gone.name}));
 }
 Error Application::launchQueued() {
-  // One download at a time, whatever it is.
-  if (installQueue_.empty() || downloadRunning())
+  // One download at a time, whatever it is; a paused one holds the rest.
+  if (installQueue_.empty() || downloadRunning() || queueHeld_)
     return {};
   auto next = std::move(installQueue_.front());
   installQueue_.pop_front();

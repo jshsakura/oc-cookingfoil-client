@@ -205,8 +205,9 @@ bool Application::runHomebrew(const homebrew::App &app) {
         const uint64_t received = retroReceived_;
         return [this, ok, error, app, cancelled, received] {
           storageAt_ = 0;
-          finishRetroEntry("homebrew", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
-                           ok || cancelled ? "" : error.message, received);
+          if (finishRetroEntry("homebrew", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
+                           ok || cancelled ? "" : error.message, received))
+            return;
           if (cancelled && !ok) {
             message(trf("Cancelled the download of {0}.", {app.name}));
             return;
