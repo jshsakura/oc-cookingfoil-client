@@ -214,8 +214,8 @@ int runNetworkTests() {
         CHECK(foil::net::connectionsFor("http://198.51.100.10:38000", 0) == 2);
         CHECK(foil::net::connectionsFor("http://127.0.0.1:38000", 0) == 2);
         CHECK(foil::net::connectionsFor("http://172.20.1.1/", 0) == 2);
-        CHECK(foil::net::connectionsFor("http://172.32.1.1/", 0) == 8);
-        CHECK(foil::net::connectionsFor("https://tinfoil.example.com", 0) == 8);
+        CHECK(foil::net::connectionsFor("http://172.32.1.1/", 0) == 4);
+        CHECK(foil::net::connectionsFor("https://tinfoil.example.com", 0) == 4);
         CHECK(foil::net::connectionsFor("https://tinfoil.example.com", 4) == 4);
         CHECK(foil::net::connectionsFor("http://10.0.0.2", 3) == 2); // not a choice: automatic
     }

@@ -853,6 +853,7 @@ private:
   };
   std::map<std::string, DetailCache> details_;
   install::Installer installer_;
+  install::TimeLeft timeLeft_; // the download screen's, counting down
   std::optional<uint64_t> sdFree_, nandFree_, sdTotal_, nandTotal_;
   bool storageChecked_ = false;
   uint32_t storageAt_ = 0, noticeAt_ = 0;

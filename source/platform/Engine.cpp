@@ -105,22 +105,16 @@ void nativeInstall(const Item &item, const std::string &target,
   tin::data::NUM_BUFFER_SEGMENTS =
       appletGetAppletType() == AppletType_Application ? ApplicationSegments : AppletSegments;
   // Large files come down on several connections at once (each a 4 MB or
-  // 2 MB piece held until its turn): 8 x 4 MB as an application, 4 x 2 MB
+  // 2 MB piece held until its turn): 4 x 4 MB as an application, 4 x 2 MB
   // from the album, whose heap is small. A single connection rarely fills a
   // path with real latency, such as a player outside the server's network.
-  // Connections by the server's address (2 on a private network, 8 outside);
-  // the album keeps at most 4, its heap being small. NCZ, which must arrive
-  // in order, uses them on a window in front: 32 MB pieces as an
-  // application, 4 MB from the album.
+  // Connections by the server's address (2 on a private network, 4
+  // outside). NCZ, which must arrive in order, uses them on a window in
+  // front: 32 MB pieces as an application, 4 MB from the album.
   current.url = item.url;
   current.headers = headers;
   current.application = appletGetAppletType() == AppletType_Application;
-  // Several connections a file are off for now (the server's decision):
-  // everything comes on one. MultiConnection brings the aria2 style back.
-  constexpr bool MultiConnection = false;
-  current.connections = MultiConnection ? foil::net::connectionsFor(item.url, 0) : 1;
-  if (!current.application)
-    current.connections = std::min(current.connections, 4);
+  current.connections = foil::net::connectionsFor(item.url, 0);
   tin::network::SetParallelDownload(current.connections, current.application ? 0x2000000 : 0x400000);
   // Off in 설정: the required system version is cleared so the console
   // launches the game anyway (it may still fail on firmware that is too old).

@@ -80,6 +80,6 @@ bool privateHost(const std::string &url) {
 int connectionsFor(const std::string &serverUrl, int setting) {
   if (setting == 1 || setting == 2 || setting == 4 || setting == 8)
     return setting;
-  return privateHost(serverUrl) ? 2 : 8;
+  return privateHost(serverUrl) ? 2 : 4;
 }
 } // namespace foil::net

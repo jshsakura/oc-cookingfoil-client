@@ -70,25 +70,49 @@ int runInstallerTests() {
     CHECK(installer.progress().phase == "다운로드하고 있습니다.");
   }
   {
-    // The speed shown is the last ten seconds' average: bursts and stalls
-    // second to second leave it (and the time left) steady.
+    // The speed shown is the last four seconds' bytes (eight half-second
+    // slots): the card's write pauses, bursts then nothing, average out.
     constexpr uint64_t MiB = 1 << 20;
     foil::install::SpeedWindow window;
-    CHECK(window.add(0, 0) == 0);
-    CHECK(window.add(1, 30 * MiB) == 0); // too soon to say
-    uint64_t bytes = 30 * MiB;
+    window.add(0, 0);
+    CHECK(window.speed(1) < 0); // too soon to say
+    uint64_t bytes = 0;
     double low = 1e9, high = 0;
-    for (int second = 2; second <= 30; ++second) {
-      bytes += (second % 2 ? 30 : 10) * MiB; // 30 MB, then 10 MB, ...
-      const double speed = window.add(second, bytes);
-      if (second >= 12) {
-        low = std::min(low, speed);
-        high = std::max(high, speed);
+    for (int step = 1; step <= 60; ++step) {
+      bytes += (step % 2 ? 8 : 0) * MiB; // 8 MB in half a second, then nothing
+      const double now = step * 0.5;
+      window.add(now, bytes);
+      if (now >= 5) {
+        low = std::min(low, window.speed(now));
+        high = std::max(high, window.speed(now));
       }
     }
-    CHECK(low > 18 && high < 22);
+    CHECK(low > 7 && high < 9.5);
+    // Nothing more arrives: it falls to zero instead of holding the last value.
+    CHECK(window.speed(36) == 0);
+    // A smaller total is the next file starting: no negative or huge jump.
+    window.add(36.5, 4 * MiB);
+    CHECK(window.speed(36.5) >= 0 && window.speed(36.5) < 9.5);
     window.reset();
-    CHECK(window.add(31, bytes) == 0);
+    CHECK(window.speed(40) < 0);
+  }
+  {
+    // The time left follows a slow speed and counts down like a clock.
+    constexpr uint64_t MiB = 1 << 20;
+    foil::install::TimeLeft left;
+    CHECK(left.update(0, 600 * MiB, 0) < 0); // no speed yet
+    const double first = left.update(1, 600 * MiB, 10);
+    CHECK(first > 59 && first < 61);
+    // A stall to 0.1 MB/s a second later moves it only a little.
+    const double next = left.update(2, 590 * MiB, 0.1);
+    CHECK(next > first - 20 && next < first + 20);
+    // Within the same second it holds still.
+    CHECK(left.update(2.5, 585 * MiB, 50) == next);
+    CHECK(foil::install::timeLeftText(-1) == "남은 시간 계산 중");
+    CHECK(foil::install::timeLeftText(42) == "약 42초 남음");
+    CHECK(foil::install::timeLeftText(200) == "약 3분 20초 남음");
+    CHECK(foil::install::timeLeftText(1500) == "약 25분 남음");
+    CHECK(foil::install::timeLeftText(5100) == "약 1시간 25분 남음");
   }
   return failures;
 }

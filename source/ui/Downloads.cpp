@@ -53,15 +53,16 @@ void Application::downloads() {
   if (filled > 0 && filled < 810)
     paint_.rect(418 + filled - 1, 146, 2, 14, Ink);
   std::string status = p.phase;
-  if (p.speed > 0 && p.status == install::Status::Running && !paused) {
+  if (p.status == install::Status::Running && !paused && (p.speed > 0 || p.steady)) {
     char speed[64];
     std::snprintf(speed, sizeof(speed), " · %.1f MB/s", p.speed);
-    const auto seconds =
-        uint64_t((p.total > p.received ? p.total - p.received : 0) /
-                 (p.speed * 1024 * 1024));
     status += speed;
-    status += " · " + trf("약 {0}분 남음",
-                          {std::to_string(std::max<uint64_t>(1, std::lround(seconds / 60.)))});
+    const double now = SDL_GetTicks() / 1000.;
+    const double left = p.steady ? timeLeft_.update(now, p.total > p.received ? p.total - p.received : 0, p.speed)
+                                 : -1;
+    status += " · " + install::timeLeftText(left);
+  } else {
+    timeLeft_.reset();
   }
   paint_.fonts.text(status, 418, 173, 18, Secondary, false, 810);
   float x = 418;

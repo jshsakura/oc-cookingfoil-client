@@ -7,10 +7,16 @@
 #include "net/Api.hpp"
 #include "platform/Storage.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cctype>
 #include <limits>
 #include <stdexcept>
 namespace foil::install {
+namespace {
+double now() {
+  return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+} // namespace
 int compareVersions(const std::string &a, const std::string &b) {
   size_t i = 0, j = 0;
   while (i < a.size() || j < b.size()) {
@@ -79,7 +85,15 @@ bool Installer::running() const {
 }
 Progress Installer::progress() const {
   std::lock_guard<std::mutex> lock(mutex_);
-  return progress_;
+  auto copy = progress_;
+  if (copy.status == Status::Running && !pause_) {
+    const double steady = speed_.speed(now());
+    if (steady >= 0) {
+      copy.speed = steady;
+      copy.steady = true;
+    }
+  }
+  return copy;
 }
 Error Installer::start(std::vector<Item> files, std::string name,
                        std::string icon, std::string target, Server server,
@@ -126,18 +140,62 @@ Error Installer::start(std::vector<Item> files, std::string name,
                         std::move(server), std::move(state));
   return {};
 }
-double SpeedWindow::add(double seconds, uint64_t bytes) {
-  constexpr double Span = 10, Least = 2, Step = 0.25;
-  if (!samples_.empty() && bytes < samples_.back().second)
-    samples_.clear();
-  if (samples_.empty() || seconds - samples_.back().first >= Step)
-    samples_.push_back({seconds, bytes});
-  while (samples_.size() > 2 && seconds - samples_[1].first >= Span)
-    samples_.pop_front();
-  const double span = seconds - samples_.front().first;
-  if (span < Least)
-    return 0;
-  return double(bytes - samples_.front().second) / span / (1024 * 1024);
+void SpeedWindow::advance(double seconds) {
+  const auto steps = int64_t((seconds - tick_) / SlotSeconds);
+  if (steps <= 0)
+    return;
+  for (int64_t n = 0; n < std::min<int64_t>(steps, Slots); ++n) {
+    slot_ = (slot_ + 1) % Slots;
+    slots_[slot_] = 0;
+  }
+  tick_ += steps * SlotSeconds;
+}
+void SpeedWindow::add(double seconds, uint64_t total) {
+  if (tick_ < 0) {
+    tick_ = first_ = seconds;
+    last_ = total;
+    return;
+  }
+  advance(seconds);
+  if (total > last_)
+    slots_[slot_] += total - last_;
+  last_ = total;
+}
+double SpeedWindow::speed(double seconds) {
+  constexpr double Least = 2;
+  if (tick_ < 0 || seconds - first_ < Least)
+    return -1;
+  advance(seconds);
+  uint64_t sum = 0;
+  for (const auto bytes : slots_)
+    sum += bytes;
+  const double span = std::min(seconds - first_, Slots * SlotSeconds);
+  return double(sum) / span / (1024 * 1024);
+}
+double TimeLeft::update(double seconds, uint64_t left, double speed) {
+  if (at_ >= 0 && seconds - at_ < 1)
+    return left_;
+  speed_ = speed_ > 0 ? (speed_ * 4 + std::max(0., speed)) / 5 : std::max(0., speed);
+  const double estimate = speed_ > 0 ? double(left) / (speed_ * 1024 * 1024) : -1;
+  if (estimate < 0 || left_ < 0)
+    left_ = estimate;
+  else
+    left_ = std::max(0., (left_ - (seconds - at_)) * 0.8 + estimate * 0.2);
+  at_ = seconds;
+  return left_;
+}
+std::string timeLeftText(double seconds) {
+  if (seconds < 0)
+    return tr("남은 시간 계산 중");
+  const auto s = std::max<int64_t>(1, std::llround(seconds));
+  if (s < 60)
+    return trf("약 {0}초 남음", {std::to_string(s)});
+  if (s < 600)
+    return trf("약 {0}분 {1}초 남음", {std::to_string(s / 60), std::to_string(s % 60)});
+  if (s < 3600)
+    return trf("약 {0}분 남음", {std::to_string((s + 30) / 60)});
+  const auto minutes = (s + 30) / 60;
+  return trf("약 {0}시간 {1}분 남음", {std::to_string(minutes / 60), std::to_string(minutes % 60)});
 }
 void Installer::setPaused(bool paused) {
   pause_ = paused;
@@ -167,10 +225,8 @@ void Installer::bytes(const std::string &content, uint64_t received,
   for (const auto &entry : contents_)
     total += entry.second;
   progress_.received = std::min(progress_.total, total);
-  const double seconds =
-      std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-  const double steady = speed_.add(seconds, progress_.received);
-  progress_.speed = steady > 0 ? steady : speed;
+  speed_.add(now(), progress_.received);
+  progress_.speed = speed;
   progress_.percent =
       progress_.total
           ? std::min(99., 100. * progress_.received / progress_.total)
