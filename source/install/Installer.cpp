@@ -12,11 +12,6 @@
 #include <limits>
 #include <stdexcept>
 namespace foil::install {
-namespace {
-double now() {
-  return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-} // namespace
 int compareVersions(const std::string &a, const std::string &b) {
   size_t i = 0, j = 0;
   while (i < a.size() || j < b.size()) {
@@ -85,15 +80,7 @@ bool Installer::running() const {
 }
 Progress Installer::progress() const {
   std::lock_guard<std::mutex> lock(mutex_);
-  auto copy = progress_;
-  if (copy.status == Status::Running && !pause_) {
-    const double steady = speed_.speed(now());
-    if (steady >= 0) {
-      copy.speed = steady;
-      copy.steady = true;
-    }
-  }
-  return copy;
+  return progress_;
 }
 Error Installer::start(std::vector<Item> files, std::string name,
                        std::string icon, std::string target, Server server,
@@ -134,7 +121,6 @@ Error Installer::start(std::vector<Item> files, std::string name,
       progress_.total += f.size;
     completed_ = 0;
     contents_.clear();
-    speed_.reset();
   }
   thread_ = std::thread(&Installer::run, this, std::move(files),
                         std::move(server), std::move(state));
@@ -203,7 +189,6 @@ void Installer::setPaused(bool paused) {
   if (progress_.status != Status::Running)
     return;
   progress_.speed = 0;
-  speed_.reset();
   progress_.phase = paused ? tr("Paused.") : tr("Downloading.");
 }
 void Installer::phase(const std::string &text) {
@@ -225,7 +210,6 @@ void Installer::bytes(const std::string &content, uint64_t received,
   for (const auto &entry : contents_)
     total += entry.second;
   progress_.received = std::min(progress_.total, total);
-  speed_.add(now(), progress_.received);
   progress_.speed = speed;
   progress_.percent =
       progress_.total

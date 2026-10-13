@@ -23,7 +23,7 @@ struct MainApplication {
     if (++retryRounds_ > MaxRounds)
       return 1;
     if (sink)
-      sink->phase(foil::tr("연결이 끊겨 다시 연결하고 있습니다."));
+      sink->phase(foil::tr("Connection lost. Reconnecting."));
     const int waitSeconds = std::min(60, 10 * retryRounds_);
     for (int tenth = 0; tenth < waitSeconds * 10; ++tenth) {
       if (sink && sink->cancellationRequested())

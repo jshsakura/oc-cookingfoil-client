@@ -16,7 +16,6 @@ struct Progress {
   size_t index = 0, count = 0;
   uint64_t total = 0, received = 0;
   double speed = 0, percent = 0;
-  bool steady = false; // speed is the four-second average
   std::vector<Item> parts, waiting, completed;
 };
 Error preflight(const std::vector<Item> &files,
@@ -93,7 +92,6 @@ private:
   Progress progress_;
   uint64_t completed_ = 0;
   std::map<std::string, uint64_t> contents_;
-  mutable SpeedWindow speed_;
 };
 void nativeInstall(const Item &item, const std::string &target,
                    const std::vector<std::string> &headers);

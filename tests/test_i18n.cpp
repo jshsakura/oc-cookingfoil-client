@@ -91,7 +91,7 @@ int runI18nTests() {
   // for later, marked "i18n: keep") with a row in the tables; Korean lives
   // only in the tables.
   int unwrapped = 0, missing = 0;
-  for (const auto *root : {"source", "include"}) {
+  for (const auto *root : {"source", "include", "engine-shim"}) {
     for (const auto &entry : fs::recursive_directory_iterator(root)) {
       const auto path = entry.path().string();
       if (!entry.is_regular_file() || path.find("source/i18n/") != std::string::npos ||

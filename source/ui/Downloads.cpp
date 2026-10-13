@@ -53,15 +53,26 @@ void Application::downloads() {
   if (filled > 0 && filled < 810)
     paint_.rect(418 + filled - 1, 146, 2, 14, Ink);
   std::string status = p.phase;
-  if (p.status == install::Status::Running && !paused && (p.speed > 0 || p.steady)) {
-    char speed[64];
-    std::snprintf(speed, sizeof(speed), " · %.1f MB/s", p.speed);
-    status += speed;
-    const double now = SDL_GetTicks() / 1000.;
-    const double left = p.steady ? timeLeft_.update(now, p.total > p.received ? p.total - p.received : 0, p.speed)
-                                 : -1;
-    status += " · " + install::timeLeftText(left);
+  const double now = SDL_GetTicks() / 1000.;
+  // Away from this screen for a while: start the count again.
+  if (now - downloadSeen_ > 1) {
+    downloadSpeed_.reset();
+    timeLeft_.reset();
+  }
+  downloadSeen_ = now;
+  if (p.status == install::Status::Running && !paused) {
+    downloadSpeed_.add(now, p.received);
+    const double steady = downloadSpeed_.speed(now);
+    const double shown = steady >= 0 ? steady : p.speed;
+    if (shown > 0 || steady >= 0) {
+      char speed[64];
+      std::snprintf(speed, sizeof(speed), " · %.1f MB/s", shown);
+      status += speed;
+      const double left = steady >= 0 ? timeLeft_.update(now, p.total > p.received ? p.total - p.received : 0, steady) : -1;
+      status += " · " + install::timeLeftText(left);
+    }
   } else {
+    downloadSpeed_.reset();
     timeLeft_.reset();
   }
   paint_.fonts.text(status, 418, 173, 18, Secondary, false, 810);

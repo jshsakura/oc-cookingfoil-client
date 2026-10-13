@@ -21,7 +21,7 @@ struct instPage {
     if (auto *sink = foil::install::engineSink())
       if (text.rfind("Installing", 0) == 0 ||
           text.find("Verifying") != std::string::npos)
-        sink->phase(foil::tr("콘텐츠를 확인하고 설치하고 있습니다."));
+        sink->phase(foil::tr("Checking and installing content."));
   }
 };
 } // namespace inst::ui
