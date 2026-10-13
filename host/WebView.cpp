@@ -60,7 +60,7 @@ async function loop(){
       if(v!==null&&!(hidden&&v===''))send('/text?v='+encodeURIComponent(v));}
     const u=URL.createObjectURL(await r.blob());
     const old=img.src;img.src=u;if(old)URL.revokeObjectURL(old);}catch(e){}
-  setTimeout(loop,120);
+  setTimeout(loop,15);
 }
 loop();
 </script></body></html>)HTML";
@@ -128,7 +128,9 @@ std::string frame(SDL_Renderer *renderer) {
   if (SDL_RenderReadPixels(renderer, nullptr, shot->format->format, shot->pixels, shot->pitch) == 0) {
     std::vector<char> buffer(MaxPng);
     auto *rw = SDL_RWFromMem(buffer.data(), int(buffer.size()));
-    if (rw && IMG_SavePNG_RW(shot, rw, 0) == 0)
+    // JPEG encodes several times faster than PNG, so the page keeps up
+    // with motion (a running name, a filling bar).
+    if (rw && IMG_SaveJPG_RW(shot, rw, 0, 90) == 0)
       png.assign(buffer.data(), size_t(SDL_RWtell(rw)));
     if (rw)
       SDL_RWclose(rw);
@@ -206,7 +208,7 @@ int serveWeb(ui::Application &app, ui::Runtime &runtime, int port) {
         extra += "X-Text-Guide: " + encode(text->guide) + "\r\n" +
                  (text->password ? std::string("X-Text-Password: 1\r\n")
                                  : "X-Text-Initial: " + encode(text->initial) + "\r\n");
-      reply(client, "image/png", frame(runtime.renderer()), extra);
+      reply(client, "image/jpeg", frame(runtime.renderer()), extra);
     } else if (path == "/key") {
       input(app, args["k"]);
       reply(client, "text/plain", "ok");

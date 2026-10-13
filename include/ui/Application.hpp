@@ -465,8 +465,8 @@ private:
   void applyConfirm();
   void saveNeedsGameDialog();
   void marquee(const std::string &text, float x, float y, int size, float width, bool bold = true);
-  std::string marqueeText_;
-  uint32_t marqueeAt_ = 0;
+  // Per name: when it started running and when it was last drawn.
+  std::map<std::string, std::pair<uint32_t, uint32_t>> marquees_;
   static constexpr int SavesTabs = 3;
   int savesTab_ = 0; // 0 the console's games, 1 the server's saves, 2 Dropbox
   std::vector<shopsaves::ShopSave> shopSaves_, incomingShopSaves_;

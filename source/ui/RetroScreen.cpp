@@ -704,16 +704,20 @@ void Application::marquee(const std::string &text, float x, float y, int size, f
   // A ticker: rest at the start, then slide left with the name coming
   // round again from the right, and rest once it is whole again.
   constexpr float Speed = 40, Pause = 1800, Gap = 56; // px per second, ms, px
-  // Starts from the beginning each time the focus lands on a new name.
-  if (text != marqueeText_) {
-    marqueeText_ = text;
-    marqueeAt_ = SDL_GetTicks();
-  }
+  // Starts from the beginning each time the focus lands on a name; several
+  // names (a popup title and a row) run on their own clocks.
+  const uint32_t now = SDL_GetTicks();
+  if (marquees_.size() > 16)
+    for (auto it = marquees_.begin(); it != marquees_.end();)
+      it = now - it->second.second > 250 ? marquees_.erase(it) : std::next(it);
+  auto &[startedAt, drawnAt] = marquees_[text];
+  if (!drawnAt || now - drawnAt > 250) startedAt = now;
+  drawnAt = now;
   // It eases into its speed and eases out as the name comes whole again,
   // so it never jumps off or stops dead.
   constexpr float Ramp = .8f; // s
   const float loop = full + Gap, run = loop / Speed + Ramp;
-  const float t = float((SDL_GetTicks() - marqueeAt_) % uint32_t(Pause + run * 1000)) / 1000;
+  const float t = float((now - startedAt) % uint32_t(Pause + run * 1000)) / 1000;
   const float m = std::max(0.f, t - Pause / 1000);
   const float shift = m < Ramp         ? Speed * m * m / (2 * Ramp)
                       : m < run - Ramp ? Speed * (m - Ramp / 2)
