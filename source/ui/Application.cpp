@@ -613,6 +613,7 @@ void Application::poll() {
   }
   pairingPending_ = session_->pairingPending();
   pairingInfo_ = session_->pairingInfo();
+  menuKnown_ = true; // the server answered (or did not): the menu is what it is
   qr_.encode(pairingInfo_.url);
   pairPollAt_ = pairingPending_ ? SDL_GetTicks() : 0;
   if (!pairingPending_) pairSince_ = 0;
@@ -1384,6 +1385,13 @@ void Application::shell() {
     default: return 5;
     }
   };
+  // Until the server first answers, the menu is placeholders: 레트로 게임
+  // and 홈브류 appear only when it has them, and the rows would jump.
+  if (!menuKnown_ && network_.joinable()) {
+    for (int i = 0; i < MenuItems; ++i)
+      paint_.skeleton(16, 92 + i * MenuRowPitch, 200, MenuRowHeight, 12);
+    return;
+  }
   // A screen left open when approval began reads as 홈 in the menu.
   if (!menuOpen(nav_)) nav_ = 0;
   for (int i = 0; i < MenuItems; ++i) {

@@ -319,6 +319,7 @@ private:
     return menuShown(item) && (!pairingPending_ || item == 0 || item == MenuItems - 1);
   }
   std::set<std::string> features_; // the server's /api/shop/info features
+  bool menuKnown_ = false;          // the server has answered once: menuShown() holds
   std::string thisDevice_; // oc-save-keeper's id for this console, read when a save panel opens
   // 홈브류: the server's apps beside what this console holds (the ledger).
   std::vector<homebrew::App> homebrew_;
