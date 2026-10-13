@@ -188,7 +188,7 @@ double SpeedWindow::average(double seconds) const {
   return span > 0 ? double(sum) / span / (1024 * 1024) : 0;
 }
 double SpeedWindow::speed(double seconds) {
-  constexpr double Least = 5, Most = 15, Every = 2;
+  constexpr double Least = 5, Most = 15, Every = 3;
   constexpr uint64_t Enough = 4ull << 20;
   if (tick_ < 0)
     return -1;
@@ -200,7 +200,7 @@ double SpeedWindow::speed(double seconds) {
     shown_ = average(seconds);
     shownAt_ = seconds;
   } else if (seconds - shownAt_ >= Every) {
-    shown_ = shown_ * 0.5 + average(seconds) * 0.5;
+    shown_ = shown_ * 0.7 + average(seconds) * 0.3;
     if (shown_ < 0.05)
       shown_ = 0;
     shownAt_ = seconds;
@@ -208,7 +208,7 @@ double SpeedWindow::speed(double seconds) {
   return shown_;
 }
 double TimeLeft::update(double seconds, uint64_t left, double speed) {
-  constexpr double Every = 5, Stall = 10;
+  constexpr double Every = 10, Stall = 15;
   if (speed <= 0) {
     if (stalled_ < 0)
       stalled_ = seconds;

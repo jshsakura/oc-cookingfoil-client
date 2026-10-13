@@ -28,7 +28,8 @@ int compareVersions(const std::string &a, const std::string &b);
 std::string missingFirmware(const std::vector<Item> &files, const std::string &console);
 // The speed shown, calm enough to read: the bytes of the last ten seconds
 // (twenty half-second slots), with the number on screen moving toward that
-// average once every two seconds instead of every frame. Nothing is shown
+// average once every three seconds, a third of the way each time, instead of
+// every frame. Nothing is shown
 // for the first five seconds and the first 4 MB (or fifteen seconds at
 // most), while it is still measuring. When nothing arrives the slots empty
 // and it falls toward zero.
@@ -50,9 +51,9 @@ private:
   double tick_ = -1, first_ = -1, shownAt_ = -1, shown_ = -1;
   uint64_t last_ = 0, gathered_ = 0;
 };
-// The time left from that speed, changed once every five seconds and held
-// in between (four parts the old estimate, one the new). Ten seconds with
-// nothing arriving make it unknown again.
+// The time left from that speed, changed once every ten seconds and held
+// in between (four parts the old estimate, one the new). Fifteen seconds
+// with nothing arriving make it unknown again.
 class TimeLeft {
 public:
   // Seconds, or negative while there is no speed to tell it by.

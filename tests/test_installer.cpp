@@ -71,7 +71,7 @@ int runInstallerTests() {
   }
   {
     // The speed shown waits until it has measured (five seconds and 4 MB),
-    // averages ten seconds and changes only every two: bursts from the card
+    // averages ten seconds and changes only every three: bursts from the card
     // do not make the number jump.
     constexpr uint64_t MiB = 1 << 20;
     foil::install::SpeedWindow window;
@@ -88,12 +88,12 @@ int runInstallerTests() {
       window.add(now, bytes);
       const double shown = window.speed(now);
       CHECK(shown >= 0);
-      if (previous >= 0 && shown != previous && now - at < 2)
+      if (previous >= 0 && shown != previous && now - at < 3)
         heldBetween = false;
       if (shown != previous)
         at = now;
       previous = shown;
-      if (now >= 20) {
+      if (now >= 40) {
         low = std::min(low, shown);
         high = std::max(high, shown);
       }
@@ -109,30 +109,30 @@ int runInstallerTests() {
     CHECK(slow.speed(15) >= 0);
     // Nothing more arrives: it eases down toward zero.
     double later = window.speed(61);
-    for (double t = 62; t < 90; t += 0.5)
+    for (double t = 62; t < 130; t += 0.5)
       later = window.speed(t);
     CHECK(later == 0);
     // A smaller total is the next file starting: no negative or huge jump.
-    window.add(90.5, 4 * MiB);
-    CHECK(window.speed(90.5) >= 0 && window.speed(90.5) < 6.8);
+    window.add(130.5, 4 * MiB);
+    CHECK(window.speed(130.5) >= 0 && window.speed(130.5) < 6.8);
     window.reset();
-    CHECK(window.speed(100) < 0);
+    CHECK(window.speed(140) < 0);
   }
   {
-    // The time left changes once every five seconds and holds between.
+    // The time left changes once every ten seconds and holds between.
     constexpr uint64_t MiB = 1 << 20;
     foil::install::TimeLeft left;
     CHECK(left.update(0, 600 * MiB, 0) < 0); // no speed yet
     const double first = left.update(1, 600 * MiB, 10);
     CHECK(first > 59 && first < 61);
-    CHECK(left.update(3, 580 * MiB, 50) == first); // held
+    CHECK(left.update(8, 580 * MiB, 50) == first); // held
     // A slow moment moves it only a little.
-    const double next = left.update(6, 550 * MiB, 1);
+    const double next = left.update(11, 550 * MiB, 1);
     CHECK(next > first - 20 && next < first + 120);
-    // A short stall holds it; ten seconds of nothing make it unknown.
-    CHECK(left.update(8, 550 * MiB, 0) == next);
-    CHECK(left.update(18, 550 * MiB, 0) < 0);
-    CHECK(left.update(19, 550 * MiB, 10) > 0);
+    // A short stall holds it; fifteen seconds of nothing make it unknown.
+    CHECK(left.update(13, 550 * MiB, 0) == next);
+    CHECK(left.update(28, 550 * MiB, 0) < 0);
+    CHECK(left.update(29, 550 * MiB, 10) > 0);
     CHECK(foil::install::timeLeftText(-1) == "남은 시간 계산 중");
     CHECK(foil::install::timeLeftText(42) == "약 50초 남음");
     CHECK(foil::install::timeLeftText(3) == "약 10초 남음");
