@@ -57,6 +57,8 @@ Application::~Application() {
     saveWorker_.join();
   if (retroWorker_.joinable())
     retroWorker_.join();
+  if (retroListWorker_.joinable())
+    retroListWorker_.join();
   if (updateWorker_.joinable())
     updateWorker_.join();
   if (homebrewWorker_.joinable())
@@ -368,7 +370,7 @@ void Application::screen(Screen screen) {
   if (screen == Screen::Retro) {
     retroOnCard_.clear();
     retroView_ = retroHomeMissing_ ? RetroView::List : RetroView::Home;
-    if (!retroWorker_.joinable()) retroLoaded_ = false;
+    if (!retroListWorker_.joinable()) retroLoaded_ = false;
   }
   // With nothing to select the cursor stays on the menu instead of vanishing.
   sidebar_ = autoSidebar_ = !hasFocusable();
@@ -796,7 +798,7 @@ void Application::search(std::string query) {
     retroTotal_ = 0;
     selected_ = 0;
     sidebar_ = false;
-    if (!retroWorker_.joinable()) loadRetroPage(false);
+    if (!retroListWorker_.joinable()) loadRetroPage(false);
     return;
   }
   query_ = std::move(query);
@@ -910,7 +912,7 @@ void Application::action(Action a) {
         retroGames_.clear();
         retroListSystem_.clear();
         retroTotal_ = 0;
-        if (!retroWorker_.joinable()) loadRetroPage(false);
+        if (!retroListWorker_.joinable()) loadRetroPage(false);
       } else {
         activeChips_ = draftChips_;
         librarySort_ = draftSort_;
@@ -1902,10 +1904,10 @@ bool Application::queueJob(const std::string &kind, const std::string &name, con
 }
 void Application::queuePatchJobs(const std::vector<UserPatch> &patches, int group) {
   for (const auto &patch : patches) {
-    // The game's cover, as the patch card shows it.
-    std::string icon;
-    if (const auto *game = findGroup(baseTitleId(patch.titleId))) icon = game->representative.icon;
-    queueJob("patch", patch.name, icon, "", patch.size, net::serializePatch(patch), group);
+    // "Game · patch name" and the game's cover, as the 패치 screen shows them.
+    std::string game, icon;
+    patchGame(patch, game, icon);
+    queueJob("patch", game + " · " + patch.name, icon, "", patch.size, net::serializePatch(patch), group);
   }
 }
 bool Application::downloadRunning() const {
@@ -1977,10 +1979,6 @@ Error Application::launchQueued() {
   // One download at a time, whatever it is.
   if (installQueue_.empty() || downloadRunning())
     return {};
-  // A retro list loading holds the worker a retro job needs; it is next once
-  // the list is in.
-  if (!installQueue_.front().kind.empty() && installQueue_.front().kind != "patch" && retroWorker_.joinable())
-    return {};
   auto next = std::move(installQueue_.front());
   installQueue_.pop_front();
   if (!next.kind.empty())
@@ -2036,6 +2034,15 @@ Error Application::launchJob(const QueuedInstall &next) {
     started = runRetroGame(retro::parseGameJson(next.payload));
   } else if (next.kind == "retroarch") {
     started = runRetroArch(next.payload == "full");
+  } else if (next.kind == "reapply") {
+    // Puts back what went missing, downloading it again when the server
+    // still has the patch: a download like any other, so it waits its turn.
+    const auto patches = net::parsePatches(next.payload);
+    if (!patches.empty() && !patchWorker_.joinable() && !installer_.running() && !retroDownloading()) {
+      const bool onServer = std::any_of(serverPatches_.begin(), serverPatches_.end(),
+                                        [&](const UserPatch &p) { return p.id == patches.front().id; });
+      started = startPatchReapply(patches.front(), onServer);
+    }
   } else if (next.kind == "patch") {
     const auto patches = net::parsePatches(next.payload);
     if (!patches.empty() && patchStore_ && session_) {
@@ -2062,7 +2069,7 @@ Error Application::launchJob(const QueuedInstall &next) {
 }
 void Application::settlePatchJob(bool failed, const std::string &error) {
   const auto running = std::find_if(history_.begin(), history_.end(), [](const history::Entry &e) {
-    return e.kind == "patch" && e.outcome == history::Outcome::Running;
+    return (e.kind == "patch" || e.kind == "reapply") && e.outcome == history::Outcome::Running;
   });
   if (running == history_.end())
     return;

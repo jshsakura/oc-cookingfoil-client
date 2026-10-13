@@ -65,16 +65,15 @@ void Application::downloads() {
   else
     shownPercent_ += (goal - shownPercent_) * (1 - std::exp(-std::max(0., frameAt - shownPercentAt_) / 0.8));
   shownPercentAt_ = frameAt;
-  const auto percent = std::to_string(int(std::floor(shownPercent_))) + "%";
+  // One decimal: a slow download still visibly moves.
+  char percent[16];
+  std::snprintf(percent, sizeof(percent), "%.1f%%", std::floor(shownPercent_ * 10) / 10);
   paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 26, true),
                     114, 26, Ink, true);
   paint_.rect(418, 154, 810, 14, Line, 7);
   const auto filled = 810 * shownPercent_ / 100.;
   const bool paused = p.status == install::Status::Running && installer_.paused();
-  paint_.rect(418, 154, filled, 14,
-              p.status == install::Status::Succeeded ? Okay : paused ? Secondary : Butter, 7);
-  if (filled > 0 && filled < 810)
-    paint_.rect(418 + filled - 1, 154, 2, 14, Ink);
+  paint_.rect(418, 154, filled, 14, p.status == install::Status::Succeeded ? Okay : Butter, 7);
   std::string status = p.phase;
   const double now = SDL_GetTicks() / 1000.;
   // Away from this screen for a while: the bytes counted meanwhile land in
@@ -191,7 +190,7 @@ void Application::queueList(float y, float viewTop) {
   if (installQueue_.empty())
     return;
   constexpr float Row = 76, Step = QueueStep, Bottom = 660;
-  paint_.fonts.text(tr("Queued"), 260, y, 26, Ink, true);
+  paint_.fonts.text(tr("Queued"), 260, y - 6, 26, Ink, true);
   y += QueueTitle;
   const int count = int(installQueue_.size());
   for (int i = 0; i < count; ++i) {
@@ -212,7 +211,7 @@ void Application::queueList(float y, float viewTop) {
     const auto part = q.kind == "homebrew"    ? std::string(tr("Homebrew"))
                       : q.kind == "retro"     ? std::string(tr("Retro game"))
                       : q.kind == "retroarch" ? std::string("RetroArch")
-                      : q.kind == "patch"     ? std::string(tr("Patch"))
+                      : q.kind == "patch" || q.kind == "reapply" ? std::string(tr("Patch"))
                       : q.kind == "shortcut"  ? std::string(tr("HOME Menu shortcut"))
                       : q.file.type == "update" ? std::string(tr("Update|item"))
                       : q.file.type == "dlc"    ? std::string("DLC")
@@ -246,7 +245,7 @@ void Application::queueList(float y, float viewTop) {
 float Application::retroDownloadCard(float y) {
   constexpr float Height = 120;
   const auto running = std::find_if(history_.begin(), history_.end(), [](const history::Entry &e) {
-    return !e.kind.empty() && e.kind != "patch" && e.outcome == history::Outcome::Running;
+    return !e.kind.empty() && e.kind != "patch" && e.kind != "reapply" && e.outcome == history::Outcome::Running;
   });
   const bool pack = retroBusy_ == "pack";
   const std::string name = running != history_.end() ? running->install.name : pack ? "RetroArch" : "";
@@ -337,7 +336,7 @@ void Application::downloadsHistory() {
     std::string meta = std::string(e.install.target == "nand" ? tr("Console") : tr("SD card")) + " · " + when;
     if (e.kind == "retro") meta = std::string(tr("Retro game")) + " · " + meta;
     if (e.kind == "homebrew") meta = std::string(tr("Homebrew")) + " · " + meta;
-    if (e.kind == "patch") meta = std::string(tr("Patch")) + " · " + meta;
+    if (e.kind == "patch" || e.kind == "reapply") meta = std::string(tr("Patch")) + " · " + meta;
     if (!e.error.empty()) meta += " · " + e.error;
     // What a finished install took: average speed, the download, the install.
     if (e.outcome == history::Outcome::Done && e.downloadSeconds > 0) {
@@ -467,7 +466,7 @@ void Application::openHistoryRow(const history::Entry &entry) {
     askRetroGame(game);
     return;
   }
-  if (entry.kind == "patch") {
+  if (entry.kind == "patch" || entry.kind == "reapply") {
     const auto patches = net::parsePatches(entry.payload);
     if (patches.empty()) {
       gone();

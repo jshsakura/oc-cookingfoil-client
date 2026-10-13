@@ -745,8 +745,9 @@ int runUiTests(SDL_Renderer *renderer) {
     patch.id = "p-1";
     patch.titleId = "0100000000010000";
     patch.name = "D patch";
+    patch.gameName = "D"; // queued as "D · D patch", the game first
     CHECK(!queue.previewPick({file("D")}, "D", {patch}));
-    CHECK((queue.queuedNames() == std::vector<std::string>{"B", "C", "HB", "D", "D patch"}));
+    CHECK((queue.queuedNames() == std::vector<std::string>{"B", "C", "HB", "D", "D · D patch"}));
     CHECK(!queue.previewGetHomebrew(app)); // the same app is not queued twice
     queue.screen(foil::ui::Screen::Downloads);
     queue.render();
@@ -756,7 +757,7 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(queue.outcomeOf("A") == Outcome::Done);
     CHECK(queue.outcomeOf("B") == Outcome::Running);
     CHECK(queue.outcomeOf("C") == Outcome::Queued);
-    CHECK((queue.queuedNames() == std::vector<std::string>{"C", "HB", "D", "D patch"}));
+    CHECK((queue.queuedNames() == std::vector<std::string>{"C", "HB", "D", "D · D patch"}));
     queue.render();
     // B and C end; the app's turn comes before D's (it cannot start here,
     // with no server, so it reads as failed and D goes on).
@@ -765,7 +766,7 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(waitFor(queue, [&] { return queue.installingName() == "D"; }));
     CHECK(queue.outcomeOf("C") == Outcome::Done);
     CHECK(queue.outcomeOf("HB") == Outcome::Failed);
-    CHECK(queue.outcomeOf("D patch") == Outcome::Queued);
+    CHECK(queue.outcomeOf("D · D patch") == Outcome::Queued);
     queue.render();
     giveUp = true;
     allow("D");

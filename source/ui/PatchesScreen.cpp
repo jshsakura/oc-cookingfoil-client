@@ -83,33 +83,15 @@ std::vector<Application::PatchRow> Application::allPatchRows() const {
       row.installed = !app || homebrewStatus(*app) != homebrew::Status::Available;
       return;
     }
-    if (const auto *group = findGroup(row.patch.titleId)) {
-      row.game = group->representative.name;
-      row.icon = group->representative.icon;
+    if (const auto *group = findGroup(row.patch.titleId))
       row.shopGroup = int(group - groups_.data());
-    }
     const auto local = std::find_if(installed_.games.begin(), installed_.games.end(),
                                     [&](const InstalledGame &g) { return g.titleId == row.patch.titleId; });
     if (local != installed_.games.end()) {
       row.installed = true;
       row.installedVersion = local->displayVersion;
-      if (row.game.empty())
-        row.game = local->name;
     }
-    // Games the shop does not list: the name and icon the server sent.
-    if (row.game.empty()) {
-      static const char *codes[] = {"ko", "en", "ja", "zh"};
-      const std::string code = languageCode();
-      for (size_t k = 0; k < row.patch.gameNames.size() && row.game.empty(); ++k)
-        if (code == codes[k]) row.game = row.patch.gameNames[k];
-      if (row.game.empty()) row.game = row.patch.gameName;
-      for (size_t k = 0; k < row.patch.gameNames.size() && row.game.empty(); ++k)
-        row.game = row.patch.gameNames[k];
-    }
-    if (row.icon.empty() && !row.patch.gameIcon.empty())
-      row.icon = row.patch.gameIcon[0] == '/' && session_ ? session_->server().url + row.patch.gameIcon : row.patch.gameIcon;
-    if (row.game.empty())
-      row.game = row.patch.titleId;
+    patchGame(row.patch, row.game, row.icon);
   };
   // Apps' patches list here too, each under its app, as well as in 홈브류.
   for (const auto &patch : serverPatches_) {
@@ -424,6 +406,35 @@ void Application::patchAction(Action a) {
   pickingPatch_ = true;
   patchPickRow_ = 0;
 }
+// The game a patch is for, as the shop, the console or (for games the shop
+// does not list) the server names it, and its cover.
+void Application::patchGame(const UserPatch &patch, std::string &name, std::string &icon) const {
+  name.clear();
+  icon.clear();
+  if (const auto *group = findGroup(patch.titleId)) {
+    name = group->representative.name;
+    icon = group->representative.icon;
+  }
+  if (name.empty())
+    for (const auto &g : installed_.games)
+      if (g.titleId == patch.titleId) {
+        name = g.name;
+        break;
+      }
+  if (name.empty()) {
+    static const char *codes[] = {"ko", "en", "ja", "zh"};
+    const std::string code = languageCode();
+    for (size_t k = 0; k < patch.gameNames.size() && name.empty(); ++k)
+      if (code == codes[k]) name = patch.gameNames[k];
+    if (name.empty()) name = patch.gameName;
+    for (size_t k = 0; k < patch.gameNames.size() && name.empty(); ++k)
+      name = patch.gameNames[k];
+  }
+  if (icon.empty() && !patch.gameIcon.empty())
+    icon = patch.gameIcon[0] == '/' && session_ ? session_->server().url + patch.gameIcon : patch.gameIcon;
+  if (name.empty())
+    name = patch.titleId;
+}
 void Application::runPatchOp(int opIndex) {
   const auto op = PatchOp(opIndex);
   const auto rows = patchRows();
@@ -448,7 +459,9 @@ void Application::runPatchOp(int opIndex) {
     return;
   }
   if (op == PatchOp::Reapply) {
-    startPatchReapply(row.patch, row.onServer);
+    std::string game, icon;
+    patchGame(row.patch, game, icon);
+    queueJob("reapply", game + " · " + row.patch.name, icon, "", row.patch.size, net::serializePatch(row.patch));
     return;
   }
   if (op == PatchOp::Disable)
@@ -573,8 +586,8 @@ void Application::startPatchDisable(const UserPatch &patch) {
 // The store's copies go back first; only when it lacks some does the patch
 // come down again, through the same download and commit as an update, which
 // turns it back on in its place in the order.
-void Application::startPatchReapply(const UserPatch &patch, bool onServer) {
-  runPatchJob(patch.id, Reapplying, [this, patch, onServer](net::Session &session, PatchStore &store, Error &error,
+bool Application::startPatchReapply(const UserPatch &patch, bool onServer) {
+  return runPatchJob(patch.id, Reapplying, [this, patch, onServer](net::Session &session, PatchStore &store, Error &error,
                                                             std::string &done) {
     size_t left = 0;
     trackMoves(store, patchReceived_, patchMoving_);

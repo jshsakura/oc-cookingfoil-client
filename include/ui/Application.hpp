@@ -480,7 +480,7 @@ private:
   bool runRetroGame(const retro::Game &game);
   void finishRetroEntry(const std::string &kind, history::Outcome outcome, const std::string &error, uint64_t bytes);
   // A retro game or RetroArch downloading (not a list loading).
-  bool retroDownloading() const { return !retroBusy_.empty() && retroBusy_ != "list"; }
+  bool retroDownloading() const { return !retroBusy_.empty(); }
   float retroDownloadCard(float y); // 다운로드 > 진행 중; returns the height drawn
   int signal_ = 3;          // net::signalStrength(), refreshed by statusBar
   uint32_t signalAt_ = 0;
@@ -648,7 +648,8 @@ private:
   void startPatchDisable(const UserPatch &patch);
   // Puts back an enabled patch's missing files, downloading it again when
   // its store lacks them too.
-  void startPatchReapply(const UserPatch &patch, bool onServer);
+  bool startPatchReapply(const UserPatch &patch, bool onServer);
+  void patchGame(const UserPatch &patch, std::string &name, std::string &icon) const;
   void patchDialog();
   // 설정 > 남은 파일 정리: scan, confirm, then delete on a worker thread.
   void startCleanup(bool remove);
@@ -988,11 +989,16 @@ private:
   bool retroMissing_ = false, retroLoaded_ = false;
   Error retroError_;
   uint32_t retroRetryAt_ = 0;
-  std::string retroBusy_;              // a game id, "pack", "list" or "" when idle
+  std::string retroBusy_;              // a game id, "pack", "homebrew:<id>" or "" when idle
   std::atomic<uint64_t> retroReceived_{0};
   std::atomic<uint64_t> retroBytes_{0}; // what the running download expects
   std::thread retroWorker_;
   std::atomic<bool> retroDone_{false};
+  // Lists load on a thread of their own, so switching systems never waits
+  // for a download.
+  std::thread retroListWorker_;
+  std::atomic<bool> retroListDone_{false};
+  std::function<void()> retroListFinish_;
   std::function<void()> retroFinish_;  // set by the worker, run by pollRetro
   std::map<std::string, bool> retroOnCard_; // rom paths checked this visit
   std::map<uint64_t, int> backupCounts_;    // 세이브: backups per game, this visit
@@ -1058,7 +1064,7 @@ private:
   // 대기 중's rows from `y`; rows above `viewTop` are scrolled away.
   void queueList(float y, float viewTop);
   float queueHeight() const;
-  static constexpr float QueueTitle = 40, QueueStep = 88;
+  static constexpr float QueueTitle = 58, QueueStep = 88;
   // 진행 중 below the installer's card: the retro and patch cards and the
   // queue, gliding as one under a finger.
   void runningList(float y);

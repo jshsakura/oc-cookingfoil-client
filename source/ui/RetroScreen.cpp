@@ -56,7 +56,19 @@ bool Application::retroBezelMissing(const retro::Game &game) const {
   return found != retroOnCard_.end() && !found->second;
 }
 bool Application::runRetroJob(const std::string &busy, std::function<std::function<void()>()> job) {
-  if (retroWorker_.joinable() || !session_) return false;
+  if (!session_) return false;
+  if (busy == "list") {
+    if (retroListWorker_.joinable()) return false;
+    retroListWorker_ = std::thread([this, job = std::move(job)] {
+      std::function<void()> finish;
+      if (!guarded("retro list", [&] { finish = job(); }))
+        finish = [this] { message(tr("Something went wrong with the retro task. Check log.txt.")); };
+      retroListFinish_ = std::move(finish);
+      retroListDone_ = true;
+    });
+    return true;
+  }
+  if (retroWorker_.joinable()) return false;
   retroBusy_ = busy;
   retroReceived_ = 0;
   retroWorker_ = std::thread([this, job = std::move(job)] {
@@ -69,16 +81,20 @@ bool Application::runRetroJob(const std::string &busy, std::function<std::functi
   return true;
 }
 void Application::pollRetro() {
-  if (!retroDone_.exchange(false)) return;
-  retroWorker_.join();
-  retroBusy_.clear();
-  if (retroFinish_) std::exchange(retroFinish_, nullptr)();
+  if (retroDone_.exchange(false)) {
+    retroWorker_.join();
+    retroBusy_.clear();
+    if (retroFinish_) std::exchange(retroFinish_, nullptr)();
+  }
+  if (!retroListDone_.exchange(false)) return;
+  retroListWorker_.join();
+  if (retroListFinish_) std::exchange(retroListFinish_, nullptr)();
   // L R pressed while a list was loading: that result was for the system
   // left behind, so the one now shown loads here.
-  if (retroView_ == RetroView::List && !retroWorker_.joinable() && !retroSystems_.empty() && !retroError_ &&
+  if (retroView_ == RetroView::List && !retroListWorker_.joinable() && !retroSystems_.empty() && !retroError_ &&
       retroListSystem_ != retroSystems_[retroSystem_].id)
     loadRetroPage(false);
-  if (screen_ == Screen::Retro && !hasFocusable() && !retroWorker_.joinable()) sidebar_ = true;
+  if (screen_ == Screen::Retro && !hasFocusable() && !retroListWorker_.joinable()) sidebar_ = true;
 }
 void Application::loadRetroHome() {
   if (!session_ || !connected_) return;
@@ -141,7 +157,7 @@ void Application::openRetroList(int system) {
   retroTotal_ = 0;
   selected_ = 0;
   sidebar_ = false;
-  if (!retroWorker_.joinable()) loadRetroPage(false);
+  if (!retroListWorker_.joinable()) loadRetroPage(false);
 }
 void Application::loadRetroPage(bool next) {
   if (!session_ || retroSystems_.empty()) return;
@@ -437,7 +453,7 @@ void Application::retroAction(Action a) {
       retroGames_.clear();
       retroListSystem_.clear();
       selected_ = 0;
-      if (!retroWorker_.joinable()) loadRetroPage(false);
+      if (!retroListWorker_.joinable()) loadRetroPage(false);
     } else if (retroHomeMissing_)
       sidebar_ = true;
     else
@@ -449,17 +465,13 @@ void Application::retroAction(Action a) {
     return;
   }
   if ((a == Action::Previous || a == Action::Next) && !retroSystems_.empty()) {
-    if (retroWorker_.joinable() && retroBusy_ != "list") {
-      message(tr("Try again once the retro task finishes."));
-      return;
-    }
     const int count = int(retroSystems_.size());
     retroSystem_ = (retroSystem_ + (a == Action::Next ? 1 : count - 1)) % count;
     retroGames_.clear();
     retroListSystem_.clear();
     retroTotal_ = 0;
     selected_ = 0;
-    if (!retroWorker_.joinable()) loadRetroPage(false);
+    if (!retroListWorker_.joinable()) loadRetroPage(false);
     return;
   }
   if (a == Action::Left) {
@@ -470,7 +482,7 @@ void Application::retroAction(Action a) {
   if (a == Action::Up) selected_ = std::max(0, selected_ - 1);
   if (a == Action::Down) selected_ = std::min(int(retroGames_.size()) - 1, selected_ + 1);
   // The next page arrives before the cursor reaches the end.
-  if (selected_ >= int(retroGames_.size()) - 8 && !retroWorker_.joinable()) loadRetroPage(true);
+  if (selected_ >= int(retroGames_.size()) - 8 && !retroListWorker_.joinable()) loadRetroPage(true);
   if (a == Action::Accept)
     if (const auto *game = retroFocused()) askRetroGame(*game);
 }
@@ -549,7 +561,7 @@ void Application::retroScreen() {
     retroRetryAt_ = 0;
     retroLoaded_ = false;
   }
-  if (!retroLoaded_ && connected_ && !retroWorker_.joinable()) loadRetroHome();
+  if (!retroLoaded_ && connected_ && !retroListWorker_.joinable()) loadRetroHome();
   if (retroView_ == RetroView::Home) retroHome();
   else retroList();
 }
@@ -624,7 +636,7 @@ void Application::retroList() {
       notice(tr("The server is reading its retro files."), tr("It loads again by itself shortly."), 35);
     else if (retroError_)
       notice(tr("Could not load the retro games."), retroError_.message, 25);
-    else if (!retroBusy_.empty() || !retroLoaded_ || retroListSystem_.empty())
+    else if (retroListWorker_.joinable() || !retroLoaded_ || retroListSystem_.empty())
       for (int n = 0; n <= Visible; ++n) paint_.skeleton(260, Top + n * RowStep, 992, RowHeight, 16);
     else if (!retroQuery_.empty())
       notice(tr("No results."), tr("Press X to try another name, or B to clear the search."), 1);

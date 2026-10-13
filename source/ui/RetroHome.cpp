@@ -35,7 +35,7 @@ void Application::retroHome() {
       notice(tr("The server is reading its retro files."), tr("It loads again by itself shortly."), 35);
     else if (retroError_)
       notice(tr("Could not load the retro games."), retroError_.message, 25);
-    else if (!retroBusy_.empty() || !retroLoaded_) {
+    else if (retroListWorker_.joinable() || !retroLoaded_) {
       paint_.skeleton(260, top, 240, 28, 8);
       paint_.skeletonCards(260, top + 46, 6);
     } else

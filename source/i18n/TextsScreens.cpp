@@ -231,7 +231,6 @@ const Translation rows[] = {
     {"The server is reading its retro files. Loading again shortly.", "서버가 레트로 파일을 읽고 있습니다. 잠시 뒤 다시 불러옵니다.", "サーバーがレトロファイルを読み込んでいます。しばらくして再読み込みします。", "服务器正在读取复古文件。稍后重新加载。"},
     {"Retro games load once the server is connected.", "서버에 연결한 뒤 레트로 게임을 불러옵니다.", "サーバーに接続するとレトロゲームを読み込みます。", "连接服务器后加载复古游戏。"},
     {"ROMs put in the server's retro folder appear here.", "서버의 레트로 폴더에 롬을 넣으면 여기에 나타납니다.", "サーバーのレトロフォルダにROMを入れるとここに表示されます。", "将 ROM 放入服务器的复古文件夹后会显示在这里。"},
-    {"Try again once the retro task finishes.", "레트로 작업이 끝난 뒤 다시 시도합니다.", "レトロの処理が終わってから再試行します。", "复古任务完成后再试。"},
     {"Something went wrong with the retro task. Check log.txt.", "레트로 작업 중 오류가 났습니다. log.txt를 확인합니다.", "レトロの処理中にエラーが発生しました。log.txtを確認します。", "复古任务出错。请查看 log.txt。"},
     {"Already on the card. Start it from RetroArch.", "이미 받은 게임입니다. RetroArch에서 실행합니다.", "入手済みのゲームです。RetroArchで起動します。", "已获取。请在 RetroArch 中启动。"},
     {"Cannot get the game", "게임을 받을 수 없습니다", "ゲームを入手できません", "无法获取游戏"},
