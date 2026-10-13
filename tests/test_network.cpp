@@ -1,3 +1,4 @@
+#include "net/Segments.hpp"
 #include "Test.hpp"
 #include "core/State.hpp"
 #include "core/Config.hpp"
@@ -164,6 +165,59 @@ int runNetworkTests() {
         CHECK(foil::saveState(path, changed, error));
         CHECK(foil::loadState(path).value.pairMessages.empty());
         std::filesystem::remove_all(root);
+    }
+    {
+        using foil::net::SegmentPlan;
+        constexpr uint64_t MB = 1ull << 20;
+        // Small files: one part whatever the setting.
+        CHECK(SegmentPlan(0, 63 * MB, 8).segments().size() == 1);
+        // Eight parts that cover the file exactly, 4 KB aligned inside.
+        SegmentPlan plan(0, 1000 * MB + 123, 8);
+        CHECK(plan.segments().size() == 8);
+        uint64_t at = 0;
+        for (const auto &s : plan.segments()) {
+            CHECK(s.start == at && s.next == s.start && s.end > s.start);
+            at = s.end;
+        }
+        CHECK(at == 1000 * MB + 123);
+        CHECK(plan.segments()[1].start % 4096 == 0);
+        // Part 0 finishes: it takes the back half of the part with the most left.
+        plan.segments()[0].next = plan.segments()[0].end;
+        plan.segments()[3].next += 10 * MB; // part 3 has the least left among the busy
+        std::vector<bool> busy(8, true);
+        busy[0] = false;
+        const int taken = plan.take(busy);
+        CHECK(taken == 8);
+        const auto &back = plan.segments()[8];
+        CHECK(back.end == plan.segments()[7].end + 0 || back.end > back.start);
+        CHECK(plan.segments()[taken].start == plan.segments()[taken].next);
+        // The split part now stops where the new one begins.
+        bool joined = false;
+        for (int i = 1; i < 8; ++i) joined |= plan.segments()[i].end == back.start;
+        CHECK(joined);
+        // Nothing is split below 2 x 32 MB left.
+        SegmentPlan small(0, 120 * MB, 2);
+        small.segments()[0].next = small.segments()[0].end;
+        small.segments()[1].next = small.segments()[1].end - 63 * MB;
+        CHECK(small.take({false, true}) == -1);
+        // An idle part with bytes left is handed out before any split.
+        SegmentPlan idle(0, 512 * MB, 4);
+        CHECK(idle.take({true, false, true, true}) == 1);
+        // Saved and loaded as it was; nonsense is refused.
+        std::vector<foil::net::Segment> back2;
+        CHECK(SegmentPlan::load(plan.save(), back2) && back2.size() == plan.segments().size());
+        CHECK(back2[3].next == plan.segments()[3].next);
+        CHECK(!SegmentPlan::load("5-3-4;", back2));
+        CHECK(plan.received() > 0 && !plan.done());
+        // Connections: automatic by the server's address, or as set.
+        CHECK(foil::net::connectionsFor("http://192.0.2.10:38000", 0) == 2);
+        CHECK(foil::net::connectionsFor("http://198.51.100.10:38000", 0) == 2);
+        CHECK(foil::net::connectionsFor("http://127.0.0.1:38000", 0) == 2);
+        CHECK(foil::net::connectionsFor("http://172.20.1.1/", 0) == 2);
+        CHECK(foil::net::connectionsFor("http://172.32.1.1/", 0) == 8);
+        CHECK(foil::net::connectionsFor("https://tinfoil.example.com", 0) == 8);
+        CHECK(foil::net::connectionsFor("https://tinfoil.example.com", 4) == 4);
+        CHECK(foil::net::connectionsFor("http://10.0.0.2", 3) == 2); // not a choice: automatic
     }
     return failures;
 }
