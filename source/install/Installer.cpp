@@ -181,11 +181,8 @@ void SpeedWindow::add(double seconds, uint64_t total) {
   last_ = total;
 }
 double SpeedWindow::average(double seconds) const {
-  uint64_t sum = 0;
-  for (const auto bytes : slots_)
-    sum += bytes;
-  const double span = std::min(seconds - first_, Slots * SlotSeconds);
-  return span > 0 ? double(sum) / span / (1024 * 1024) : 0;
+  const double span = seconds - first_;
+  return span > 0 ? double(gathered_) / span / (1024 * 1024) : 0;
 }
 double SpeedWindow::speed(double seconds) {
   constexpr double Least = 5, Most = 15, Every = 3;
@@ -196,13 +193,13 @@ double SpeedWindow::speed(double seconds) {
   if (since < Least || (gathered_ < Enough && since < Most))
     return -1;
   advance(seconds);
-  if (shown_ < 0) {
+  uint64_t recent = 0;
+  for (const auto bytes : slots_)
+    recent += bytes;
+  if (recent == 0 && since >= Slots * SlotSeconds)
+    return 0; // nothing for ten seconds: stalled, whatever the average says
+  if (shown_ < 0 || shown_ == 0 || seconds - shownAt_ >= Every) {
     shown_ = average(seconds);
-    shownAt_ = seconds;
-  } else if (seconds - shownAt_ >= Every) {
-    shown_ = shown_ * 0.7 + average(seconds) * 0.3;
-    if (shown_ < 0.05)
-      shown_ = 0;
     shownAt_ = seconds;
   }
   return shown_;

@@ -71,8 +71,8 @@ int runInstallerTests() {
   }
   {
     // The speed shown waits until it has measured (five seconds and 4 MB),
-    // averages ten seconds and changes only every three: bursts from the card
-    // do not make the number jump.
+    // then is everything received over the time taken, refreshed every
+    // three seconds: bursts from the card do not make the number jump.
     constexpr uint64_t MiB = 1 << 20;
     foil::install::SpeedWindow window;
     window.add(0, 0);
@@ -93,13 +93,13 @@ int runInstallerTests() {
       if (shown != previous)
         at = now;
       previous = shown;
-      if (now >= 40) {
+      if (now >= 30) {
         low = std::min(low, shown);
         high = std::max(high, shown);
       }
     }
     CHECK(heldBetween);
-    CHECK(low > 5.2 && high < 6.8);
+    CHECK(low > 5.3 && high < 6.7);
     // A slow start (little data) still shows after fifteen seconds.
     foil::install::SpeedWindow slow;
     slow.add(0, 0);
@@ -107,14 +107,11 @@ int runInstallerTests() {
     CHECK(slow.speed(10) < 0);
     slow.add(15, 2 * MiB);
     CHECK(slow.speed(15) >= 0);
-    // Nothing more arrives: it eases down toward zero.
-    double later = window.speed(61);
-    for (double t = 62; t < 130; t += 0.5)
-      later = window.speed(t);
-    CHECK(later == 0);
-    // A smaller total is the next file starting: no negative or huge jump.
-    window.add(130.5, 4 * MiB);
-    CHECK(window.speed(130.5) >= 0 && window.speed(130.5) < 6.8);
+    // Nothing more arrives: after ten seconds it shows 0, then picks up again.
+    CHECK(window.speed(65) > 0);
+    CHECK(window.speed(71) == 0);
+    window.add(72, bytes + 8 * MiB);
+    CHECK(window.speed(72) > 0);
     window.reset();
     CHECK(window.speed(140) < 0);
   }

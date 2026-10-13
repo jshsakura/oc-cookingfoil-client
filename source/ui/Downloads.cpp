@@ -77,11 +77,8 @@ void Application::downloads() {
     paint_.rect(418 + filled - 1, 154, 2, 14, Ink);
   std::string status = p.phase;
   const double now = SDL_GetTicks() / 1000.;
-  // Away from this screen for a while: start the count again.
-  if (now - downloadSeen_ > 1) {
-    downloadSpeed_.reset();
-    timeLeft_.reset();
-  }
+  // Away from this screen for a while: the bytes counted meanwhile land in
+  // the next sample, so the average over the whole download still holds.
   downloadSeen_ = now;
   if (p.status == install::Status::Running && !paused) {
     downloadSpeed_.add(now, net::receivedBytes());

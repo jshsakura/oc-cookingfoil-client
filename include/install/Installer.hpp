@@ -26,13 +26,11 @@ int compareVersions(const std::string &a, const std::string &b);
 // The highest firmware the files need when the console is older, else "".
 // Unknown versions on either side never block.
 std::string missingFirmware(const std::vector<Item> &files, const std::string &console);
-// The speed shown, calm enough to read: the bytes of the last ten seconds
-// (twenty half-second slots), with the number on screen moving toward that
-// average once every three seconds, a third of the way each time, instead of
-// every frame. Nothing is shown
-// for the first five seconds and the first 4 MB (or fifteen seconds at
-// most), while it is still measuring. When nothing arrives the slots empty
-// and it falls toward zero.
+// The speed shown, calm enough to read: everything received since this
+// download started over the time it has run, refreshed every three
+// seconds. Nothing is shown for the first five seconds and the first 4 MB
+// (or fifteen seconds at most), while it is still measuring. Ten seconds
+// with nothing arriving (the last twenty half-second slots empty) shows 0.
 class SpeedWindow {
 public:
   // The bytes so far at `seconds`; a smaller total is the next file.
