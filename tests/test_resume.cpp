@@ -391,8 +391,11 @@ int runResumeTests() {
                                   {"switch/pk/Graphics/Scratch + Shadow Claw.png", body(5000, 'b')},
                                   {"switch/pk/data/설치-스위치.md", body(123, 'c')}};
     Mock mock;
-    mock.body = archive(files);
-    mock.drop = [](int i) { return i == 0 ? size_t(72000) : std::string::npos; }; // inside the second file
+    // As the server sends it: the folders first, then the files in list order.
+    const std::string folders = header("switch/pk/", 0, '5') + header("switch/pk/Graphics/", 0, '5') +
+                                header("switch/pk/data/", 0, '5');
+    mock.body = folders + archive(files);
+    mock.drop = [](int i) { return i == 0 ? size_t(1536 + 72000) : std::string::npos; }; // inside the second file
     mock.start(2);
     foil::homebrew::App app;
     app.id = "pk";
@@ -412,8 +415,12 @@ int runResumeTests() {
     CHECK(foil::net::homebrewDownload(server, state, app, sd.string(), received, error, nullptr));
     for (const auto &f : files)
       CHECK(foil::readFile((sd / f.path).string()) == f.body);
-    CHECK(mock.requests.size() == 2 && rangeOf(mock.requests[1]) == std::to_string(512 + 70144) + "-");
+    CHECK(mock.requests.size() == 2 && rangeOf(mock.requests[1]) == std::to_string(1536 + 512 + 70144) + "-");
     CHECK(!fs::exists(sd / "switch/cookingfoil/resume/homebrew-pk.json"));
+    // The progress total is the bundle's size, give or take a folder header
+    // (which parent folders a server lists is its own choice).
+    const auto estimate = foil::homebrew::bundleSize(app);
+    CHECK(estimate + 4096 >= mock.body.size() && estimate <= mock.body.size() + 4096);
     fs::remove_all(sd);
   }
   {

@@ -1,4 +1,5 @@
 #include "core/Homebrew.hpp"
+#include <set>
 #include "core/HomebrewCard.hpp"
 #include "core/Json.hpp"
 #include <algorithm>
@@ -217,5 +218,15 @@ std::string appTitle(const std::vector<App> &apps, const std::string &folder) {
 }
 std::string ownerKey(const std::string &titleId, const std::string &folder) {
   return titleId.empty() && !folder.empty() ? "app:" + folder : titleId;
+}
+uint64_t bundleSize(const App &app) {
+  uint64_t total = 1024;
+  std::set<std::string> folders;
+  for (const auto &file : app.files) {
+    total += 512 + (file.size + 511) / 512 * 512;
+    for (auto slash = file.path.find('/'); slash != std::string::npos; slash = file.path.find('/', slash + 1))
+      folders.insert(file.path.substr(0, slash));
+  }
+  return total + 512 * folders.size();
 }
 } // namespace foil::homebrew

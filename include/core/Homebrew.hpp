@@ -42,6 +42,10 @@ std::vector<App> parse(const std::string &json, const std::string &base);
 // One app in the list's shape, URLs absolute; parse() reads it back
 // (kept with a 다운로드 entry so a failed one can start again).
 std::string serialize(const App &app);
+// What a folder app's bundle (ustar) carries: a 512-byte header and the data
+// padded to 512 for each file, two closing blocks, plus one header for each
+// folder; the progress of a bundle download is counted against it.
+uint64_t bundleSize(const App &app);
 // An app folder name: one path part of letters, digits, ". _ -" and spaces,
 // no "..", not starting with a space or dot nor ending with one.
 bool appFolderAllowed(const std::string &app);

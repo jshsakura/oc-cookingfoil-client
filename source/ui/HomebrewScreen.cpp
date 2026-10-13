@@ -182,6 +182,8 @@ bool Application::getHomebrew(const homebrew::App &app) {
   if (app.cardOnly) return false; // nothing on the server to get
   uint64_t bytes = app.files.empty() ? app.size : 0;
   for (const auto &file : app.files) bytes += file.size;
+  // A bundle's bytes are the tar's (headers and padding too).
+  if (!app.bundleUrl.empty()) bytes = homebrew::bundleSize(app);
   if (bytes && sdFree_ && *sdFree_ < bytes + (8u << 20)) {
     alertTitle_ = tr("Cannot download this app");
     alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(bytes)});
