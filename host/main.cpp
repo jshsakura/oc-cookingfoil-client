@@ -232,7 +232,8 @@ int main(int argc, char **argv) {
       for (const auto &group : groups) {
         if (group.representative.name == p.name)
           p.parts = foil::Selection(group).files();
-        if (group.representative.name == "Sky Farm")
+        // A few picks queued behind it, more than fit (the list scrolls).
+        if (group.representative.name != p.name && group.representative.name != "Circuit Garden")
           for (const auto &file : foil::Selection(group).files())
             ui.previewQueued(file, group.representative.name, group.representative.icon);
         if (group.representative.name == "Circuit Garden")

@@ -390,7 +390,8 @@ bool Application::hasFocusable() const {
   case Screen::Updates:
     return connected_ && !deviceBusy_ && !updateRows().empty();
   case Screen::Downloads:
-    return downloadsTab_ != 0 && !downloadsList().empty();
+    return downloadsTab_ == 0 ? installer_.running() || !installQueue_.empty() || retroDownloading()
+                              : !downloadsList().empty();
   case Screen::Patches:
     return !patchRows().empty();
   case Screen::Homebrew:
@@ -1004,7 +1005,7 @@ void Application::action(Action a) {
   }
   // 진행 중: the card, then the queue, picked with up and down.
   if (screen_ == Screen::Downloads && downloadsTab_ == 0 && !sidebar_ &&
-      (a == Action::Up || a == Action::Down || a == Action::Accept || a == Action::Queue)) {
+      (a == Action::Up || a == Action::Down || a == Action::Accept || a == Action::Queue || a == Action::Search)) {
     runningAction(a);
     return;
   }
@@ -1590,8 +1591,14 @@ void Application::render() {
   else if (screen_ == Screen::Downloads) {
     using Hints = std::vector<std::pair<std::string, std::string>>;
     if (downloadsTab_ == 0 && !sidebar_ && downloadsRow_ > 0 && downloadsRow_ <= int(installQueue_.size()))
-      footer(downloadsRow_ > 1 ? Hints{{"A", tr("Move up")}, {"Y", tr("Cancel")}, {"B", tr("Back")}}
-                               : Hints{{"Y", tr("Cancel")}, {"B", tr("Back")}});
+    {
+      Hints hints;
+      if (downloadsRow_ > 1) hints.push_back({"A", tr("Move up")});
+      if (downloadsRow_ < int(installQueue_.size())) hints.push_back({"X", tr("Move down")});
+      hints.push_back({"Y", tr("Cancel")});
+      hints.push_back({"B", tr("Back")});
+      footer(hints);
+    }
     else if (downloadsTab_ == 0 && !sidebar_ && installer_.running())
       footer(Hints{{"A", installer_.paused() ? tr("Resume") : tr("Pause")}, {"Y", tr("Cancel")}, {"B", tr("Back")}});
     else if (downloadsTab_ == 0 && !sidebar_ && retroDownloading())
@@ -1850,6 +1857,10 @@ void Application::runningAction(Action a) {
     if (a == Action::Accept && downloadsRow_ > 1) {
       moveUp(size_t(downloadsRow_ - 1));
       --downloadsRow_;
+    }
+    if (a == Action::Search && downloadsRow_ < int(installQueue_.size())) {
+      moveUp(size_t(downloadsRow_));
+      ++downloadsRow_;
     }
     return;
   }

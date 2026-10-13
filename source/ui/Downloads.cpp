@@ -41,10 +41,19 @@ void Application::downloads() {
     // A retro game or RetroArch can run with no install beside it.
     float y = 90;
     if (retroDownloading()) y += retroDownloadCard(y) + 30;
-    if (patchDownloading()) patchDownloadCard(y);
-    else if (!retroDownloading()) notice(tr("Nothing is downloading."), tr("Pick items on a game's page, then press A to install."), 4);
+    if (patchDownloading()) y += patchDownloadCard(y) + 30;
+    if (!installQueue_.empty())
+      queueList(y);
+    else if (!retroDownloading() && !patchDownloading())
+      notice(tr("Nothing is downloading."), tr("Pick items on a game's page, then press A to install."), 4);
     return;
   }
+  // The card answers a tap with the cursor (its buttons sit on top).
+  hit(260, 90, 992, 180, [this] {
+    sidebar_ = false;
+    headerFocus_.clear();
+    downloadsRow_ = 0;
+  });
   if (p.status == install::Status::Running && inContent() && downloadsRow_ == 0)
     paint_.ring(260, 90, 992, 180, 20);
   paint_.rect(260, 90, 992, 180, Surface, 20);
@@ -160,58 +169,63 @@ void Application::downloads() {
   }
   if (retroDownloading()) y += int(retroDownloadCard(float(y))) + 30;
   if (patchDownloading()) y += int(patchDownloadCard(float(y))) + 30;
-  if (!installQueue_.empty()) {
-    paint_.fonts.text(tr("Queued"), 260, y, 26, Ink, true);
-    y += 40;
-    // As many as fit above the footer; the count says the rest.
-    // The picked row stays in view: the list starts late enough to show it.
-    const int fits = std::max(1, (660 - y) / 88);
-    const size_t first = size_t(std::max(0, downloadsRow_ - fits));
-    size_t shown = 0;
-    for (size_t i = first; i < installQueue_.size(); ++i) {
-      const auto &q = installQueue_[i];
-      if (y + 88 > 660)
-        break;
-      const bool picked = inContent() && downloadsRow_ == int(i) + 1;
-      hit(260, y, 992, 76, [this, i] {
-        sidebar_ = false;
-        headerFocus_.clear();
-        downloadsRow_ = int(i) + 1;
+  queueList(float(y));
+}
+// 대기 중: what comes next, in order, scrolling under the title. On a row A
+// moves it sooner, X later and Y takes it off; the row's buttons do the same.
+void Application::queueList(float y) {
+  if (installQueue_.empty())
+    return;
+  constexpr float Row = 76, Step = 88, Bottom = 660;
+  paint_.fonts.text(tr("Queued"), 260, y, 26, Ink, true);
+  y += 40;
+  const int count = int(installQueue_.size());
+  const int visible = std::max(1, int((Bottom - y) / Step));
+  const int picked = std::clamp(downloadsRow_ - 1, -1, count - 1);
+  // The row at the top follows the cursor, or the finger while it glides.
+  const float top = glide("queue", 232, y, 1048, Bottom - y, float(std::clamp(picked - visible / 2, 0, std::max(0, count - visible))),
+                          float(count - visible), Step);
+  paint_.scrollbar(1266, y, Step * visible - 12, top, float(visible), float(count));
+  clipTo(232, y - 8, 1048, Bottom - y + 8);
+  for (int i = int(top); i < count && i <= int(top) + visible + 1; ++i) {
+    const auto &q = installQueue_[size_t(i)];
+    const float ry = y + (i - top) * Step;
+    hit(260, ry, 992, Row, [this, i] {
+      sidebar_ = false;
+      headerFocus_.clear();
+      downloadsRow_ = i + 1;
+    });
+    if (inContent() && downloadsRow_ == i + 1) paint_.ring(260, ry, 992, Row, 16);
+    paint_.rect(260, ry, 992, Row, Surface, 16);
+    cover(q.icon, 280, ry + 10, 56, false, q.name);
+    paint_.fonts.text(q.name, 356, ry + 12, 20, Ink, true, 560);
+    const auto part = q.file.type == "update" ? std::string(tr("Update|item"))
+                      : q.file.type == "dlc"  ? std::string("DLC")
+                                              : std::string(tr("Base game"));
+    const auto where = q.target == "nand" ? tr("Console") : tr("SD card");
+    paint_.fonts.text(part + " · " + where + " · " + formatBytes(q.file.size), 356, ry + 44, 16, Secondary, false, 560);
+    // Buttons right to left: 취소, 뒤로 (not on the last), 앞으로 (not on the first).
+    float right = 1228;
+    const auto button = [&](const std::string &label, std::function<void()> run) {
+      const float w = paint_.fonts.measure(label, 16, true) + 32, x = right - w;
+      hit(x, ry + 18, w, 40, std::move(run));
+      paint_.rect(x, ry + 22, w, 32, Ground, 8);
+      paint_.fonts.middle(label, x + 16, ry + 38, 16, Ink, true);
+      right = x - 10;
+    };
+    button(tr("Cancel"), [this, i] { unqueue(size_t(i)); });
+    if (i + 1 < count)
+      button(tr("Move down"), [this, i] {
+        moveUp(size_t(i) + 1);
+        downloadsRow_ = i + 2;
       });
-      if (picked) paint_.ring(260, y, 992, 76, 16);
-      paint_.rect(260, y, 992, 76, Surface, 16);
-      cover(q.icon, 280, y + 10, 56, false, q.name);
-      paint_.fonts.text(q.name, 356, y + 12, 20, Ink, true, 700);
-      const auto part = q.file.type == "update" ? std::string(tr("Update|item"))
-                        : q.file.type == "dlc"  ? std::string("DLC")
-                                                : std::string(tr("Base game"));
-      const auto where = q.target == "nand" ? tr("Console") : tr("SD card");
-      paint_.fonts.text(part + " · " + where, 356, y + 44, 16, Secondary);
-      const auto size = formatBytes(q.file.size);
-      const std::string stop = tr("Cancel");
-      const float cw = paint_.fonts.measure(stop, 16, true) + 32, cx = 1228 - cw;
-      hit(cx, y + 18, cw, 40, [this, i] { unqueue(i); });
-      paint_.rect(cx, y + 22, cw, 32, Ground, 8);
-      paint_.fonts.middle(stop, cx + 16, y + 38, 16, Ink, true);
-      float sizeRight = cx - 20;
-      if (i > 0) { // one place sooner
-        const std::string up = tr("Move up");
-        const float uw = paint_.fonts.measure(up, 16, true) + 32, ux = cx - 10 - uw;
-        hit(ux, y + 18, uw, 40, [this, i] {
-          moveUp(i);
-          downloadsRow_ = int(i);
-        });
-        paint_.rect(ux, y + 22, uw, 32, Ground, 8);
-        paint_.fonts.middle(up, ux + 16, y + 38, 16, Ink, true);
-        sizeRight = ux - 20;
-      }
-      paint_.fonts.text(size, sizeRight - paint_.fonts.measure(size, 18, true), y + 28, 18, Ink, true);
-      y += 88;
-      ++shown;
-    }
-    if (first + shown < installQueue_.size())
-      paint_.fonts.text(trf("and {0} more", {std::to_string(installQueue_.size() - first - shown)}), 260, y, 18, Secondary);
+    if (i > 0)
+      button(tr("Move up"), [this, i] {
+        moveUp(size_t(i));
+        downloadsRow_ = i;
+      });
   }
+  unclip();
 }
 // A retro game, RetroArch or a homebrew app coming down beside the installer: what it is,
 // how far, and B to stop it.
