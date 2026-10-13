@@ -337,7 +337,6 @@ const Translation rows[] = {
     {"파일 형식", "File type", "ファイル形式", "文件格式"},
     {"지역", "Region", "地域", "地区"},
     {"타이틀 ID", "Title ID", "タイトルID", "游戏 ID"},
-    {"업데이트 {0}", "Update {0}", "アップデート {0}", "更新 {0}"},
     {"설치됨|탭", "Installed", "導入済み", "已安装"},
     {"홈브류", "Homebrew", "ホームブリュー", "自制软件"},
     {"게임 정보를 읽지 못해 세이브를 만들지 못했습니다.", "Could not read the game's data to create a save.", "ゲーム情報を読めずセーブを作れませんでした。", "无法读取游戏信息，未能创建存档。"},
@@ -416,10 +415,8 @@ const Translation rows[] = {
     {"SD 카드에서 {0}을(를) 삭제합니다.", "Removes {0} from the SD card.", "SD カードから {0} を削除します。", "将从 SD 卡删除 {0}。"},
     {"서버 목록에 없는 앱이라 받거나 업데이트할 수 없습니다.", "This app isn't on the server's list, so it can't be downloaded or updated here.", "サーバーの一覧にないアプリのため、ダウンロードや更新はできません。", "此应用不在服务器列表中，无法下载或更新。"},
     {"업데이트|탭", "Updates", "更新", "更新"},
-    {"DLC {0}개", "DLC {0}", "DLC {0}件", "DLC {0} 个"},
     {"지원 언어", "Languages", "対応言語", "支持语言"},
     {"장르", "Genres", "ジャンル", "类型"},
-    {"구성", "Contents", "構成", "内容"},
     // Patches: filters and busy labels
     {"켜짐", "On", "オン", "已开启"},
     {"삭제 중", "Deleting", "削除中", "正在删除"},

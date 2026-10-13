@@ -461,12 +461,9 @@ float Application::infoCard(const Group &g, const std::string &publisher, float 
     for (const auto &key : item.categories) genres.push_back(genreLabel(genreNames_, key));
   if (genres.empty() && !detail_.category.empty())
     genres.push_back(detail_.category);
-  std::vector<std::string> contents{tr("본편")};
-  if (g.update) contents.push_back(trf("업데이트 {0}", {versionLabel(*g.update)}));
-  if (!g.dlc.empty()) contents.push_back(trf("DLC {0}개", {std::to_string(g.dlc.size())}));
   chips(tr("지원 언어"), languages);
   chips(tr("장르"), genres);
-  chips(tr("구성"), contents);
+  // What the game is made of shows in the install list on the right.
   return y;
 }
 } // namespace foil::ui
