@@ -1481,6 +1481,15 @@ float Application::statusBar() {
                                                           : "No server"; // i18n: keep
   constexpr float Mid = 690;
   float x = 28;
+  // Until the server first answers: placeholders, as the menu and the
+  // buttons show (the link, then the two storages).
+  if (!menuKnown_ && network_.joinable()) {
+    for (const float w : {120.f, 210.f, 210.f}) {
+      paint_.skeleton(x, Mid - 15, w, 30, 15);
+      x += w + 24;
+    }
+    return x;
+  }
   // First the console's own link, read once a second: a cut Wi-Fi shows
   // at a glance, before any server error does. Then the state in its color.
   if (SDL_GetTicks() - signalAt_ >= 1000 || !signalAt_) {
@@ -2057,7 +2066,10 @@ Error Application::launchJob(const QueuedInstall &next) {
   };
   if (row() == history_.end())
     return {};
-  // Running first: the worker finds its row by kind when it ends.
+  // Running first: the worker finds its row by kind when it ends. Its clock
+  // starts here, for 완료's average speed and time.
+  jobStartMs_ = SDL_GetTicks();
+  jobStartedAt_ = int64_t(std::time(nullptr));
   row()->outcome = history::Outcome::Running;
   row()->at = int64_t(std::time(nullptr));
   bool started = false;
@@ -2107,6 +2119,11 @@ void Application::settlePatchJob(bool failed, const std::string &error) {
   });
   if (running == history_.end())
     return;
+  if (!failed && !running->install.files.empty()) {
+    running->bytes = running->install.files.front().size;
+    running->startedAt = jobStartedAt_;
+    running->downloadSeconds = (SDL_GetTicks() - jobStartMs_) / 1000.0;
+  }
   history::end(history_, running->id, failed ? history::Outcome::Failed : history::Outcome::Done, error,
                int64_t(std::time(nullptr)));
   saveHistory();

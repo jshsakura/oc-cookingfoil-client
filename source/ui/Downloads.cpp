@@ -368,8 +368,9 @@ void Application::downloadsHistory() {
     if (e.outcome == history::Outcome::Done && e.downloadSeconds > 0) {
       char speed[32];
       std::snprintf(speed, sizeof(speed), "%.1f", double(e.bytes) / (1024 * 1024) / e.downloadSeconds);
-      meta += " · " + trf("Average {0} MB/s", {speed}) + " · " + trf("Download time {0}", {durationText(e.downloadSeconds)}) +
-              " · " + trf("Install time {0}", {durationText(e.installSeconds)});
+      meta += " · " + trf("Average {0} MB/s", {speed}) + " · " + trf("Download time {0}", {durationText(e.downloadSeconds)});
+      if (e.installSeconds > 0)
+        meta += " · " + trf("Install time {0}", {durationText(e.installSeconds)});
     }
     paint_.fonts.text(meta, 372, y + 52, 16, Secondary, false, 640);
     const std::string state = e.outcome == history::Outcome::Done        ? tr("Done")

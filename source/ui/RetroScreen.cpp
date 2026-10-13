@@ -319,6 +319,12 @@ bool Application::finishRetroEntry(const std::string &kind, history::Outcome out
   if (outcome == history::Outcome::Done && bytes == 0 && kind == "retroarch") history_.erase(running);
   else {
     if (bytes && !running->install.files.empty()) running->install.files.front().size = bytes;
+    // What it took, for 완료 (nothing to install after: no install time).
+    if (outcome == history::Outcome::Done && bytes) {
+      running->bytes = bytes;
+      running->startedAt = jobStartedAt_;
+      running->downloadSeconds = (SDL_GetTicks() - jobStartMs_) / 1000.0;
+    }
     history::finish(history_, outcome, error, int64_t(std::time(nullptr)), kind);
   }
   saveHistory();
