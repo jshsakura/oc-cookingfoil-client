@@ -83,6 +83,10 @@ bool packPathAllowed(const std::string &path);
 // A game bundle may write its ROM under roms/<system>/ and its bezel and
 // per-game config under retroarch/overlays/ and retroarch/config/.
 bool bundlePathAllowed(const std::string &path);
+// What a failed game or file download says. A game the server no longer
+// knows by that id (one saved before its ids changed) is fetched again
+// from the list.
+std::string bundleFailure(long status, bool game);
 // The name shown for a system in the interface language.
 std::string systemName(const System &system, const std::string &languageCode);
 // Where the RetroArch app is expected (the forwarder chainloads it).

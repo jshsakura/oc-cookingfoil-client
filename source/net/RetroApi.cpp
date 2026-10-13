@@ -86,8 +86,7 @@ bool fetchTar(const Server &server, const State &state, const std::string &url, 
   if (!fetch.tarError.empty()) { error.message = fetch.tarError; return false; }
   if (!fetch.response.error.empty()) { error.message = fetch.response.error; return false; }
   if (!rangedOk(fetch.response)) {
-    const auto status = std::to_string(fetch.response.status);
-    error.message = game ? trf("게임을 받지 못했습니다. HTTP {0}", {status}) : trf("파일을 받지 못했습니다. HTTP {0}", {status});
+    error.message = retro::bundleFailure(fetch.response.status, game);
     return false;
   }
   return fetch.complete;

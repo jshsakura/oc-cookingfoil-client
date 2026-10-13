@@ -92,6 +92,11 @@ int runRetroTests() {
   CHECK(!packPathAllowed("/retroarch/x"));
   CHECK(!packPathAllowed("retroarch/"));
   CHECK(!packPathAllowed("atmosphere/contents/x"));
+  // A game saved under an id the server dropped asks for the list again;
+  // other failures keep their HTTP code.
+  CHECK(bundleFailure(404, true).find("목록에서 다시") != std::string::npos);
+  CHECK(bundleFailure(500, true) == "게임을 받지 못했습니다. HTTP 500");
+  CHECK(bundleFailure(404, false) == "파일을 받지 못했습니다. HTTP 404");
   CHECK(bundlePathAllowed("roms/gba/Mother 3.gba"));
   CHECK(bundlePathAllowed("retroarch/overlays/GameBezels/GBA/Mother 3.png"));
   CHECK(bundlePathAllowed("retroarch/config/mGBA/Mother 3.cfg"));

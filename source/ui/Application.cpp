@@ -1324,7 +1324,9 @@ void Application::footer(
 void Application::shell() {
   paint_.rect(0, 0, 232, 660, Surface);
   paint_.rect(231, 0, 1, 660, Line);
-  paint_.logo(22, 24);
+  // Centered in the 232px menu column: equal room left and right of the
+  // mark and the wordmark's period.
+  paint_.logo(19, 24);
   // Search lives in "모든 게임"'s search bar; a separate menu item opened the
   // same list.
   // Translated on every draw, so a language change shows at once.

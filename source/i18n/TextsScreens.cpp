@@ -237,6 +237,8 @@ const Translation rows[] = {
     {"이미 받은 게임입니다. RetroArch에서 실행합니다.", "Already on the card. Start it from RetroArch.", "入手済みのゲームです。RetroArchで起動します。", "已获取。请在 RetroArch 中启动。"},
     {"게임을 받을 수 없습니다", "Cannot get the game", "ゲームを入手できません", "无法获取游戏"},
     {"게임을 받지 못했습니다", "Could not get the game", "ゲームを入手できませんでした", "未能获取游戏"},
+    {"서버의 게임 정보가 바뀌었습니다. 레트로 게임 목록에서 다시 받으면 됩니다.", "The game's details changed on the server. Download it again from the Retro games list.",
+     "サーバーのゲーム情報が変わりました。レトロゲームの一覧からもう一度ダウンロードしてください。", "服务器上的游戏信息已更改。请从复古游戏列表重新下载。"},
     {"게임을 받지 못했습니다. HTTP {0}", "Could not get the game. HTTP {0}", "ゲームを入手できませんでした。HTTP {0}", "未能获取游戏。HTTP {0}"},
     {"{0}을(를) 받았습니다. RetroArch에서 실행합니다.", "Got {0}. Start it from RetroArch.", "{0} を入手しました。RetroArchで起動します。", "已获取 {0}。请在 RetroArch 中启动。"},
     {"RetroArch를 받지 못했습니다", "Could not get RetroArch", "RetroArchを入手できませんでした", "未能获取 RetroArch"},

@@ -1,5 +1,6 @@
 #include "core/Retro.hpp"
 #include "core/Json.hpp"
+#include "core/I18n.hpp"
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -192,6 +193,12 @@ Pack parsePack(const std::string &json, const std::string &base) {
 bool packPathAllowed(const std::string &path) {
   if (!plainPath(path)) return false;
   return path == RetroArchApp || (path.rfind("retroarch/", 0) == 0 && path.size() > 10);
+}
+std::string bundleFailure(long status, bool game) {
+  if (game && status == 404)
+    return tr("서버의 게임 정보가 바뀌었습니다. 레트로 게임 목록에서 다시 받으면 됩니다.");
+  const auto code = std::to_string(status);
+  return game ? trf("게임을 받지 못했습니다. HTTP {0}", {code}) : trf("파일을 받지 못했습니다. HTTP {0}", {code});
 }
 bool bundlePathAllowed(const std::string &path) {
   if (!plainPath(path)) return false;
