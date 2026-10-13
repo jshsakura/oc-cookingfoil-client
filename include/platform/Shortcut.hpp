@@ -14,9 +14,16 @@ struct ShortcutRequest {
   std::string name, author; // empty keeps the NACP's own
   std::string nacp, icon;   // the .nro's (forwarder::blankNacp() when it has none)
 };
-// Whether shortcuts can be made here: the loader shipped in the app's RomFS
-// is there (off the console: always).
-bool canMakeShortcuts();
+// Why shortcuts cannot be made here, judged once before anything is tried:
+// the loader missing from the app's RomFS, or a console not booted into
+// Atmosphere (its crypto service will not make the NCA header key). Empty
+// when they can.
+std::string shortcutBlocker();
+inline bool canMakeShortcuts() { return shortcutBlocker().empty(); }
+#ifndef __SWITCH__
+// Off the console, for tests: the reason shortcutBlocker() gives.
+void setShortcutBlocker(const std::string &reason);
+#endif
 // Makes the shortcut, replacing one made before for the same path; `id` gets
 // its title id. The message, when it fails, is for the player.
 Error makeShortcut(const ShortcutRequest &request, uint64_t &id);

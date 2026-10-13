@@ -121,10 +121,24 @@ Result write(NcmContentStorage &storage, const forwarder::Nca &nca) {
   return rc;
 }
 } // namespace
-bool canMakeShortcuts() {
-  // In the RomFS, so it cannot come or go while the app runs.
-  static const bool loader = std::ifstream(LoaderMain).good() && std::ifstream(LoaderNpdm).good();
-  return loader;
+std::string shortcutBlocker() {
+  // Neither can change while the app runs, so they are asked once.
+  static const std::string reason = [] {
+    if (!std::ifstream(LoaderMain).good() || !std::ifstream(LoaderNpdm).good())
+      return std::string(tr("바로가기에 쓰는 로더가 앱에 없습니다. CookingFoil을 새로 받아 설치하면 만들 수 있습니다."));
+    u8 kek[0x10]{};
+    Result rc = splCryptoInitialize();
+    if (R_SUCCEEDED(rc)) {
+      rc = splCryptoGenerateAesKek(HeaderKekSource, 0, 0, kek);
+      splCryptoExit();
+    }
+    if (R_FAILED(rc)) {
+      logLine("shortcut check: header key " + code(rc));
+      return std::string(tr("Atmosphere로 부팅한 상태에서만 바로가기를 만들 수 있습니다. 본체를 Atmosphere로 다시 시작하면 만들 수 있습니다."));
+    }
+    return std::string();
+  }();
+  return reason;
 }
 Error makeShortcut(const ShortcutRequest &request, uint64_t &id) {
   forwarder::Input input;
@@ -223,9 +237,18 @@ std::set<uint64_t> presentShortcuts(const std::vector<uint64_t> &ids) {
 namespace {
 std::mutex mutex;
 std::set<uint64_t> made;
+std::string blocker;
 } // namespace
-bool canMakeShortcuts() { return true; }
+std::string shortcutBlocker() {
+  std::lock_guard<std::mutex> lock(mutex);
+  return blocker;
+}
+void setShortcutBlocker(const std::string &reason) {
+  std::lock_guard<std::mutex> lock(mutex);
+  blocker = reason;
+}
 Error makeShortcut(const ShortcutRequest &request, uint64_t &id) {
+  if (auto reason = shortcutBlocker(); !reason.empty()) return {reason};
   if (request.icon.empty()) return {tr("앱 파일에 아이콘이 없어 바로가기를 만들 수 없습니다.")};
   if (request.nroPath.empty() || request.nacp.size() != forwarder::NacpSize)
     return {tr("앱 파일을 읽어 바로가기를 만들지 못했습니다.")};

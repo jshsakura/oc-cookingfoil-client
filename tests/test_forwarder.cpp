@@ -418,6 +418,15 @@ int runShortcutUiTests(SDL_Renderer *renderer) {
     const auto demo = titleId("/switch/demo/demo.nro");
     CHECK(!app.hasShortcut(demo));
     CHECK(app.appPopupRow() == 0); // an installed app starts on its first row
+    // Where none can be made, the row still shows and A says why up front,
+    // trying nothing.
+    foil::platform::setShortcutBlocker("blocked here");
+    settle(app);
+    app.action(Action::Accept);
+    CHECK(!app.hasShortcut(demo) && app.alert() == "blocked here");
+    foil::platform::setShortcutBlocker("");
+    app.action(Action::Back);
+    CHECK(app.alert().empty() && app.appPopupOpen());
     settle(app);
     app.action(Action::Accept);
     CHECK(app.hasShortcut(demo) && app.appPopupOpen());

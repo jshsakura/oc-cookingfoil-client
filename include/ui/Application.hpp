@@ -333,6 +333,8 @@ private:
   // last card scan found them and as made or removed since.
   std::set<uint64_t> shortcuts_;
   std::set<uint64_t> homebrewShortcutsFound_; // the card worker's result
+  std::atomic<bool> signaturePatchesFound_{true};
+  bool signaturePatches_ = true; // seen on the card at the last scan; a shortcut needs them to open
   bool shortcutRemoveAsk_ = false; // X on the app popup's shortcut row, asked first
   bool selfShortcutAsk_ = false;   // this app's own, offered once from the album
   // The app popup's shortcut row: only for an app on the card, after its

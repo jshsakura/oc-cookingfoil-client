@@ -51,6 +51,7 @@ void Application::pollHomebrew() {
     for (const auto &nro : homebrewCard_) shortcuts_.erase(forwarder::titleId(forwarder::loaderPath(nro.path)));
     for (const auto &app : homebrew_) shortcuts_.erase(homebrewServerShortcut(app));
     shortcuts_.insert(homebrewShortcutsFound_.begin(), homebrewShortcutsFound_.end());
+    signaturePatches_ = signaturePatchesFound_;
     matchHomebrewCard();
     if (screen_ == Screen::Homebrew && sidebar_ && autoSidebar_ && hasFocusable()) sidebar_ = autoSidebar_ = false;
   }
@@ -81,6 +82,7 @@ void Application::scanHomebrewCard() {
           found = homebrew::scanCard(sd, languages);
           for (const auto &nro : found) ids.push_back(forwarder::titleId(forwarder::loaderPath(nro.path)));
           shortcuts = platform::presentShortcuts(ids);
+          signaturePatchesFound_ = forwarder::signaturePatchesFound(sd);
         }))
       found.clear();
     homebrewCardFound_ = std::move(found);
@@ -345,6 +347,10 @@ void Application::homebrewAction(Action a) {
         if (homebrewHasShortcut(*picked)) {
           homebrewAsk_ = false;
           shortcutRemoveAsk_ = true;
+        } else if (const auto reason = platform::shortcutBlocker(); !reason.empty()) {
+          // Known before trying: the reason, and nothing half made.
+          alertTitle_ = tr("바로가기를 만들 수 없습니다");
+          alert_ = reason;
         } else
           makeHomebrewShortcut(*picked, false); // the card stays, its row now says 있음
       } else if (homebrewAskRow_ >= 0) {
@@ -512,9 +518,12 @@ void Application::homebrewAskDialog() {
     if (extras[i] == 4) { // the HOME Menu shortcut, and whether there is one
       paint_.icon(0, x + 20, rowY + 15, Ink, 26);
       paint_.fonts.middle(tr("홈 메뉴 바로가기"), x + 62, rowY + Row / 2, 20, Ink, true);
-      const std::string state = hasShortcut ? tr("있음") : tr("없음");
+      // Judged ahead: whether one can be made here, and whether it would open.
+      const bool blocked = !hasShortcut && !platform::canMakeShortcuts();
+      const bool unsigned_ = !hasShortcut && !blocked && !signaturePatches_;
+      const std::string state = hasShortcut ? tr("있음") : blocked ? tr("만들 수 없음") : unsigned_ ? tr("서명 패치 필요") : tr("없음");
       paint_.fonts.middle(state, x + rowW - 20 - paint_.fonts.measure(state, 17, true), rowY + Row / 2, 17,
-                          hasShortcut ? Good : Secondary, true);
+                          hasShortcut ? Good : unsigned_ ? Pending : Secondary, true);
       continue;
     }
     if (extras[i] == 3) { // 지우기, in the colour removal uses everywhere

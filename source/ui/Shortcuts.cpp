@@ -12,8 +12,8 @@ namespace {
 constexpr int HomeIcon = 0;
 } // namespace
 bool Application::homebrewShortcutRow(const homebrew::App &app) const {
-  return homebrewStatus(app) != homebrew::Status::Available && homebrew::cardNroPath(homebrewFile(app)) &&
-         platform::canMakeShortcuts();
+  // Shown even where none can be made: the row says so before A is pressed.
+  return homebrewStatus(app) != homebrew::Status::Available && homebrew::cardNroPath(homebrewFile(app));
 }
 uint64_t Application::homebrewShortcutId(const homebrew::App &app) const {
   return forwarder::titleId(forwarder::loaderPath(homebrewFile(app)));
