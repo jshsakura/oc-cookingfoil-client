@@ -872,7 +872,7 @@ void Application::patchMenu(const PatchRow &row) {
   const auto size = formatBytes(row.record ? row.record->bytes : row.patch.size);
   const float sizeW = paint_.fonts.measure(size, 17, true), nameW = textW - sizeW - 16;
   const float gameH = paint_.fonts.wrapped(row.game, -10000, -10000, 16, Secondary, nameW, 2);
-  const float nameH = paint_.fonts.wrapped(row.patch.name, -10000, -10000, 20, Ink, nameW, 2, true);
+  const float nameH = paint_.fonts.wrapped(row.patch.name, -10000, -10000, 18, Ink, nameW, 2, true);
   const float head = std::max(Icon, gameH + 4 + nameH + 10 + 26);
   const float fixed = 24 + head + 16 + 8 + choices.size() * (ChoiceHeight + ChoiceGap) + 14;
   const int room = std::max(2, int((720 - 48 - 60 - 60 - fixed) / (17 * 1.3f)));
@@ -885,8 +885,8 @@ void Application::patchMenu(const PatchRow &row) {
   cover(row.icon, x, y, int(Icon), false, row.game, !row.patch.homebrewApp.empty());
   paint_.fonts.wrapped(row.game, textX, y, 16, Secondary, nameW, 2);
   const float nameY = y + gameH + 4;
-  paint_.fonts.wrapped(row.patch.name, textX, nameY, 20, Ink, nameW, 2, true);
-  paint_.fonts.text(size, x + w - sizeW, nameY + 2, 17, Ink, true);
+  paint_.fonts.wrapped(row.patch.name, textX, nameY, 18, Ink, nameW, 2, true);
+  paint_.fonts.text(size, x + w - sizeW, nameY + 1, 17, Ink, true);
   const float pillY = nameY + nameH + 10;
   float at = textX;
   for (const auto &kind : row.patch.kinds)
