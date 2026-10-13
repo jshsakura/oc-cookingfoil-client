@@ -58,6 +58,7 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
     a.fileName = stringField(o, "file_name");
     a.iconUrl = urlField(o, "icon_url", base);
     a.downloadUrl = urlField(o, "download_url", base);
+    a.bundleUrl = urlField(o, "bundle_url", base);
     a.source = stringField(o, "source");
     a.releasedAt = stringField(o, "released_at");
     a.repoUrl = stringField(o, "repo_url");
@@ -112,7 +113,7 @@ std::string serialize(const App &a) {
   };
   add("id", a.id); add("name", a.name); add("version", a.version); add("author", a.author);
   add("description", a.description); add("hash", a.hash); add("file_name", a.fileName);
-  add("icon_url", a.iconUrl); add("download_url", a.downloadUrl); add("source", a.source);
+  add("icon_url", a.iconUrl); add("download_url", a.downloadUrl); add("bundle_url", a.bundleUrl); add("source", a.source);
   add("released_at", a.releasedAt); add("repo_url", a.repoUrl);
   json_object_object_add(o.get(), "size", json_object_new_int64(int64_t(a.size)));
   add("forwarder_url", a.forwarderUrl);

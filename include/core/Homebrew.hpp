@@ -29,6 +29,9 @@ struct App {
   // means the .nro alone from downloadUrl.
   std::string installPath;
   std::vector<File> files;
+  // A folder install's files as one tar stream (one request, resumable);
+  // empty when the server has none, and the files come one by one.
+  std::string bundleUrl;
   // A file found on the SD card that no listed app owns: shown under 설치됨
   // with what the file says, never downloaded or updated, only removed.
   bool cardOnly = false;

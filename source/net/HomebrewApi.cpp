@@ -3,6 +3,9 @@
 #include "core/Json.hpp"
 #include "net/Api.hpp"
 #include "net/Ranged.hpp"
+#include <set>
+#include "core/Log.hpp"
+#include "core/Patches.hpp"
 #include <vector>
 #include <thread>
 #include <mutex>
@@ -76,11 +79,60 @@ bool alreadyThere(const std::string &target, uint64_t size, const std::string &s
   while ((n = std::fread(chunk.data(), 1, chunk.size(), in.get())) > 0) hash.update(chunk.data(), n);
   return hash.hex() == sha256;
 }
+// A folder install as one tar stream: one request at full speed, and a cut
+// goes on from the last whole file (kept in switch/cookingfoil/resume). Only
+// the files the list names are written.
+bool fetchBundle(const Server &server, const State &state, const homebrew::App &app, const std::string &sd,
+                 std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel) {
+  std::set<std::string> listed;
+  PartInfo wanted;
+  wanted.url = app.bundleUrl;
+  Sha256 list;
+  for (const auto &file : app.files) {
+    listed.insert(file.path);
+    wanted.size += file.size;
+    list.update(file.path.data(), file.path.size());
+    list.update(file.sha256.data(), file.sha256.size());
+  }
+  wanted.tag = list.hex(); // the same files, the same build
+  const auto record = sd + "/switch/cookingfoil/resume/homebrew-" + app.id + ".json";
+  const auto kept = parsePartInfo(readFile(record));
+  const uint64_t from = samePart(kept, wanted) ? kept.offset : 0;
+  if (from) logLine("homebrew " + app.id + " resumes at " + std::to_string(from >> 20) + " MB");
+  const auto fetch = rangedTar(app.bundleUrl, authHeaders(server, state, app.bundleUrl), from, from ? kept.etag : "",
+      [&](uint64_t) {
+        return std::make_unique<TarWriter>(sd, [&listed](const std::string &path) { return listed.count(path) > 0; });
+      },
+      [&](uint64_t boundary, const std::string &etag) {
+        auto info = wanted;
+        info.offset = boundary;
+        info.etag = etag;
+        std::string ignored;
+        makeDirectories(sd + "/switch/cookingfoil/resume");
+        atomicWrite(record, serializePartInfo(info), ignored);
+      },
+      received, cancel);
+  std::error_code ec;
+  const auto fail = [&](const std::string &message, bool keep) {
+    if (!keep) std::filesystem::remove(record, ec);
+    error.message = message;
+    return false;
+  };
+  if (!fetch.tarError.empty()) return fail(fetch.tarError, false);
+  if (!fetch.response.error.empty()) return fail(fetch.response.error, true);
+  if (!rangedOk(fetch.response))
+    return fail(trf("Could not get the file. HTTP {0}", {std::to_string(fetch.response.status)}), false);
+  if (!fetch.complete) return fail(tr("The download was interrupted. Download it again."), true);
+  std::filesystem::remove(record, ec);
+  return true;
+}
 } // namespace
 bool homebrewDownload(const Server &server, const State &state, const homebrew::App &app, const std::string &sd,
                       std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel) {
   if (app.files.empty())
     return fetchFile(server, state, app.downloadUrl, sd, app.installPath, "", 0, received, error, cancel);
+  if (!app.bundleUrl.empty())
+    return fetchBundle(server, state, app, sd, received, error, cancel);
   // A folder install: thousands of small files, each its own request, so
   // most of the time is the round trip; eight at a time, each checked. One
   // already on the card as the server lists it (size and hash) is kept.
