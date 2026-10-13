@@ -25,11 +25,6 @@ void Application::gallery() {
       paint_.rect(40, 78, 1200, 558, {28, 28, 34, 255}, 10);
   }
   images_->draw(url, 40, 78, 1200, 558, 10, false, true);
-  // The photos either side load in the background, so the next turn is instant.
-  const size_t count = detail_.screenshots.size();
-  if (count > 1)
-    for (const size_t n : {(screenshot_ + 1) % count, (screenshot_ + count - 1) % count})
-      images_->request(thumbnailUrl(detail_.screenshots[n], "xl"));
   // Page dots under the photo: the current one long and butter.
   if (detail_.screenshots.size() > 1) {
     constexpr float Dot = 8, Gap = 10, Active = 26;
