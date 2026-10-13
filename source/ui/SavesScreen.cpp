@@ -44,7 +44,7 @@ void Application::savesAction(Action a) {
     return;
   }
   if (saveNeedsGame_) {
-    // The popup for a save whose game is not here: 게임 받으러 가기 or 닫기.
+    // The popup for a save whose game is not here: 게임 다운로드 or 닫기.
     if (a == Action::Back) saveNeedsGame_ = false;
     if (a == Action::Accept) {
       saveNeedsGame_ = false;
@@ -465,7 +465,7 @@ void Application::saveNeedsGameDialog() {
   const int listed = std::min(count, Shown);
   const auto body = modal(700, 24 + Cover + 20 + listed * Line + (count > Shown ? Line : 0) + 16,
                           tr("게임이 본체에 없습니다"), tr("닫기"), "",
-                          offered ? tr("게임 받으러 가기") : tr("확인"), 25);
+                          offered ? tr("게임 다운로드") : tr("확인"), 25);
   const float x = body.x + 32, y = body.y + 24, textX = x + Cover + 24, textW = body.w - 64 - Cover - 24;
   cover(save.gameIcon, x, y, int(Cover), false, shopsaves::gameName(save, languageCode()));
   paint_.fonts.text(shopsaves::gameName(save, languageCode()), textX, y + 4, 21, Ink, true, textW);

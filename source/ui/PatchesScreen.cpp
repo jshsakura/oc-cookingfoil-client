@@ -293,24 +293,26 @@ std::vector<PatchChoice> patchChoices(const Application::PatchRow &row, bool mis
   // A patch is no use without its game: when the shop has it, getting the
   // game comes first. An app comes from 홈브류 instead.
   if (!app && !row.installed && row.shopGroup >= 0)
-    out.push_back({PatchOp::Game, tr("게임 받으러 가기"), tr("서버에서 이 게임을 설치합니다. 패치는 게임이 있어야 적용됩니다.")});
+    out.push_back({PatchOp::Game, tr("게임 다운로드"), tr("패치를 적용하려면 게임이 먼저 설치되어 있어야 합니다.")});
   if (!row.record) {
     if (row.onServer)
-      out.push_back({PatchOp::Get, tr("다운로드 및 적용"), tr("SD 카드에 받아 바로 적용합니다. 다른 패치와 겹치는 파일은 나중에 켠 패치 것을 씁니다.")});
+      out.push_back({PatchOp::Get, tr("패치 다운로드 및 적용"), tr("패치를 SD 카드에 받고 바로 적용합니다.")});
     return out;
   }
   if (missing && row.record->on)
-    out.push_back({PatchOp::Reapply, tr("다시 적용"),
-                   tr("SD 카드에서 없어진 파일을 다시 넣습니다. 받아 둔 파일이 없으면 서버에서 다시 받습니다.")});
+    out.push_back({PatchOp::Reapply, tr("패치 다시 적용"), tr("없어지거나 바뀐 패치 파일을 다시 채워 넣습니다.")});
   if (updateAvailable(row))
-    out.push_back({PatchOp::Update, tr("업데이트|동작"), tr("켜져 있던 패치는 바꾼 뒤 다시 켭니다.")});
+    out.push_back({PatchOp::Update, tr("패치 업데이트"), tr("새 버전으로 바꿉니다. 켜져 있던 패치는 그대로 켜 둡니다.")});
   if (row.record->on)
-    out.push_back({PatchOp::Disable, tr("끄기"), app ? tr("앱을 다시 켜면 원래대로 돌아옵니다. 받은 파일은 남겨 둡니다.")
-                                                     : tr("게임을 다시 켜면 원래대로 돌아옵니다. 받은 파일은 남겨 둡니다.")});
+    out.push_back({PatchOp::Disable, tr("패치 끄기"),
+                   app ? tr("앱을 원래대로 되돌립니다. 받은 파일은 남아 있어 언제든 다시 켤 수 있습니다.")
+                       : tr("게임을 원래대로 되돌립니다. 받은 파일은 남아 있어 언제든 다시 켤 수 있습니다.")});
   else
-    out.push_back({PatchOp::Enable, tr("켜기"), app ? tr("앱을 다시 켜면 적용됩니다.") : tr("게임을 다시 켜면 적용됩니다.")});
-  out.push_back({PatchOp::Remove, tr("삭제"), row.record->on ? tr("패치를 끄고 SD 카드에서 삭제합니다.")
-                                                            : tr("SD 카드에 받아 둔 파일을 삭제합니다.")});
+    out.push_back({PatchOp::Enable, tr("패치 켜기"),
+                   app ? tr("받아 둔 패치를 적용합니다. 앱을 다시 시작하면 반영됩니다.")
+                       : tr("받아 둔 패치를 적용합니다. 게임을 다시 시작하면 반영됩니다.")});
+  out.push_back({PatchOp::Remove, tr("패치 삭제"), row.record->on ? tr("패치를 끄고 받은 파일을 SD 카드에서 삭제합니다.")
+                                                                 : tr("받아 둔 패치 파일을 SD 카드에서 삭제합니다.")});
   return out;
 }
 // The names of the patches that are on and share files with this one,
@@ -868,14 +870,14 @@ void Application::patchMenu(const PatchRow &row) {
   // Both names show whole (up to two lines) instead of running.
   const float textW = Width - 64 - Icon - 20;
   const auto size = formatBytes(row.record ? row.record->bytes : row.patch.size);
-  const float sizeW = paint_.fonts.measure(size, 18, true), nameW = textW - sizeW - 16;
+  const float sizeW = paint_.fonts.measure(size, 17, true), nameW = textW - sizeW - 16;
   const float gameH = paint_.fonts.wrapped(row.game, -10000, -10000, 16, Secondary, nameW, 2);
-  const float nameH = paint_.fonts.wrapped(row.patch.name, -10000, -10000, 22, Ink, nameW, 2, true);
+  const float nameH = paint_.fonts.wrapped(row.patch.name, -10000, -10000, 20, Ink, nameW, 2, true);
   const float head = std::max(Icon, gameH + 4 + nameH + 10 + 26);
   const float fixed = 24 + head + 16 + 8 + choices.size() * (ChoiceHeight + ChoiceGap) + 14;
-  const int room = std::max(2, int((720 - 48 - 72 - 60 - fixed) / (18 * 1.3f)));
+  const int room = std::max(2, int((720 - 48 - 72 - 60 - fixed) / (17 * 1.3f)));
   const float describedHeight =
-      described ? paint_.fonts.wrapped(row.patch.description, -10000, -10000, 18, Secondary, Width - 64, room) + 10 : 0;
+      described ? paint_.fonts.wrapped(row.patch.description, -10000, -10000, 17, Secondary, Width - 64, room) + 10 : 0;
   const float bodyHeight = fixed + describedHeight;
   const auto body = modal(Width, bodyHeight, tr("상세 정보"), tr("닫기"), "", "", 32);
   const float x = body.x + 32, w = body.w - 64, textX = x + Icon + 20;
@@ -883,8 +885,8 @@ void Application::patchMenu(const PatchRow &row) {
   cover(row.icon, x, y, int(Icon), false, row.game, !row.patch.homebrewApp.empty());
   paint_.fonts.wrapped(row.game, textX, y, 16, Secondary, nameW, 2);
   const float nameY = y + gameH + 4;
-  paint_.fonts.wrapped(row.patch.name, textX, nameY, 22, Ink, nameW, 2, true);
-  paint_.fonts.text(size, x + w - sizeW, nameY + 2, 18, Ink, true);
+  paint_.fonts.wrapped(row.patch.name, textX, nameY, 20, Ink, nameW, 2, true);
+  paint_.fonts.text(size, x + w - sizeW, nameY + 2, 17, Ink, true);
   const float pillY = nameY + nameH + 10;
   float at = textX;
   for (const auto &kind : row.patch.kinds)
@@ -900,7 +902,7 @@ void Application::patchMenu(const PatchRow &row) {
     paint_.fonts.middle(meta, at + (at > textX ? 6 : 0), pillY + 13, 17, Secondary, false, x + w - at);
   y += head + 16;
   if (described) {
-    paint_.fonts.wrapped(row.patch.description, x, y, 18, Secondary, w, room);
+    paint_.fonts.wrapped(row.patch.description, x, y, 17, Secondary, w, room);
     y += describedHeight;
   }
   y += 8;
@@ -915,8 +917,8 @@ void Application::patchMenu(const PatchRow &row) {
       paint_.rect(x, y, w, ChoiceHeight, Ground, 12);
     const SDL_Color ink = choices[i].op == PatchOp::Remove ? Bad : Ink;
     paint_.icon(patchOpIcon(choices[i].op), x + 20, y + 19, ink, 26);
-    paint_.fonts.text(choices[i].title, x + 62, y + 8, 21, ink, true);
-    paint_.fonts.text(choices[i].body, x + 62, y + 37, 17, Secondary, false, w - 82);
+    paint_.fonts.text(choices[i].title, x + 62, y + 10, 19, ink, true);
+    paint_.fonts.text(choices[i].body, x + 62, y + 37, 16, Secondary, false, w - 82);
     y += ChoiceHeight + ChoiceGap;
   }
 }

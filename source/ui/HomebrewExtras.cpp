@@ -16,7 +16,7 @@ bool updateAvailable(const Application::PatchRow &row) {
 }
 // What A does to a patch row, as on 유저 패치's menu.
 const char *patchVerb(const Application::PatchRow &row) {
-  if (!row.record) return tr("다운로드 및 적용");
+  if (!row.record) return tr("패치 다운로드 및 적용");
   if (updateAvailable(row)) return tr("업데이트|동작");
   return row.record->on ? tr("끄기") : tr("켜기");
 }
