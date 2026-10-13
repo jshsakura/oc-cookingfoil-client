@@ -1,0 +1,261 @@
+diff --git a/include/data/buffered_placeholder_writer.hpp b/include/data/buffered_placeholder_writer.hpp
+index beb8363..8bba534 100755
+--- a/include/data/buffered_placeholder_writer.hpp
++++ b/include/data/buffered_placeholder_writer.hpp
+@@ -46,8 +46,10 @@ namespace tin::data
+     {
+         private:
+             size_t m_totalDataSize = 0;
+-            size_t m_sizeBuffered = 0;
+-            size_t m_sizeWrittenToPlaceholder = 0;
++            // CookingFoil: written by one thread, read by others (the curl
++            // thread, the writer thread, the progress loop), so atomic.
++            std::atomic<size_t> m_sizeBuffered{0};
++            std::atomic<size_t> m_sizeWrittenToPlaceholder{0};
+ 
+             // The current segment to which further data will be appended
+             u64 m_currentFreeSegment = 0;
+diff --git a/source/install/http_nsp.cpp b/source/install/http_nsp.cpp
+index 50d2f4a..ab86040 100755
+--- a/source/install/http_nsp.cpp
++++ b/source/install/http_nsp.cpp
+@@ -84,7 +84,7 @@ namespace tin::install::nsp
+         }
+     }
+ 
+-    bool stopThreadsHttpNsp;
++    volatile bool stopThreadsHttpNsp;
+ 
+     HTTPNSP::HTTPNSP(std::string url) :
+         m_download(url), m_displayName(DeriveDisplayNameFromUrl(url))
+@@ -107,8 +107,24 @@ namespace tin::install::nsp
+         RetryConfirmState retryConfirm;
+     };
+ 
++    // CookingFoil: the download and the writer (zstd, AES, ncm) each get a
++    // core of their own when the process may use it; by default every thread
++    // shares the drawing thread's core.
++    static void RunOnCore(int core)
++    {
++        u64 mask = 0;
++        if (R_SUCCEEDED(svcGetInfo(&mask, InfoType_CoreMask, CUR_PROCESS_HANDLE, 0)) && ((mask >> core) & 1))
++            svcSetThreadCoreMask(CUR_THREAD_HANDLE, core, 1ULL << core);
++    }
++
++    // CookingFoil: the waits below sleep a millisecond instead of spinning;
++    // four spinning loops took the CPU the download and the writer need.
++    static constexpr u64 WaitNs = 1000 * 1000ULL;
++    static constexpr u64 ProgressNs = 20 * 1000 * 1000ULL;
++
+     int CurlStreamFunc(void* in)
+     {
++        RunOnCore(2);
+         StreamFuncArgs* args = reinterpret_cast<StreamFuncArgs*>(in);
+         try {
+             auto streamFunc = [&](u8* streamBuf, size_t streamBufSize) -> size_t
+@@ -121,6 +137,7 @@ namespace tin::install::nsp
+                         return 0;
+                     if (args->bufferedPlaceholderWriter->CanAppendData(streamBufSize))
+                         break;
++                    svcSleepThread(WaitNs);
+                 }
+ 
+                 args->bufferedPlaceholderWriter->AppendData(streamBuf, streamBufSize);
+@@ -145,6 +162,7 @@ namespace tin::install::nsp
+ 
+     int PlaceholderWriteFunc(void* in)
+     {
++        RunOnCore(1);
+         StreamFuncArgs* args = reinterpret_cast<StreamFuncArgs*>(in);
+         try {
+             while (!args->bufferedPlaceholderWriter->IsPlaceholderComplete() && !stopThreadsHttpNsp)
+@@ -155,6 +173,8 @@ namespace tin::install::nsp
+                 }
+                 if (args->bufferedPlaceholderWriter->CanWriteSegmentToPlaceholder())
+                     args->bufferedPlaceholderWriter->WriteSegmentToPlaceholder();
++                else
++                    svcSleepThread(WaitNs);
+             }
+         }
+         catch (...) {
+@@ -194,6 +214,7 @@ namespace tin::install::nsp
+         inst::ui::instPage::setInstBarPerc(0);
+         while (!bufferedPlaceholderWriter.IsBufferDataComplete() && !stopThreadsHttpNsp)
+         {
++            svcSleepThread(ProgressNs);
+             if (inst::ui::instPage::isInstallCancelRequested()) {
+                 args.retryConfirm.approved.store(false);
+                 args.retryConfirm.pending.store(false);
+@@ -216,7 +237,7 @@ namespace tin::install::nsp
+             if (newTime - startTime >= freq * 0.5)
+             {
+                 size_t newSizeBuffered = bufferedPlaceholderWriter.GetSizeBuffered();
+-                double mbBuffered = (newSizeBuffered / (1024 * 1024)) - (startSizeBuffered / (1024 * 1024));
++                double mbBuffered = double(newSizeBuffered - startSizeBuffered) / (1024 * 1024);
+                 double duration = ((double)(newTime - startTime) / (double)freq);
+                 double speed =  mbBuffered / duration;
+ 
+@@ -260,6 +281,7 @@ namespace tin::install::nsp
+         inst::ui::instPage::setInstBarPerc(0);
+         while (!bufferedPlaceholderWriter.IsPlaceholderComplete() && !stopThreadsHttpNsp)
+         {
++            svcSleepThread(ProgressNs);
+             if (inst::ui::instPage::isInstallCancelRequested()) {
+                 args.retryConfirm.approved.store(false);
+                 args.retryConfirm.pending.store(false);
+diff --git a/source/install/http_xci.cpp b/source/install/http_xci.cpp
+index 325c6b9..bd3759f 100755
+--- a/source/install/http_xci.cpp
++++ b/source/install/http_xci.cpp
+@@ -21,6 +21,12 @@ SOFTWARE.
+ */
+ 
+ #include "install/http_xci.hpp"
++#include <atomic>
++#include <condition_variable>
++#include <deque>
++#include <mutex>
++#include <thread>
++#include <vector>
+ #include "install/EngineHooks.hpp"
+ 
+ #include "nx/nca_writer.h"
+@@ -46,12 +52,70 @@ namespace tin::install::xci
+         size_t ncaSize = fileEntry->fileSize;
+ 
+         NcaWriter writer(ncaId, contentStorage);
+-        float progress = 0.0f;
+         u64 fileStart = GetDataOffset() + fileEntry->dataOffset;
+         u64 fileOff = 0;
+         const u64 began=armGetSystemTick();
+-        size_t readSize = 0x400000;
+-        auto readBuffer = std::make_unique<u8[]>(readSize);
++
++        // CookingFoil: one connection streams the whole NCA on a thread of its
++        // own into a few 4 MB chunks while this thread decrypts, decompresses
++        // and writes them. It fetched 4 MB, wrote it, then opened a new
++        // connection for the next 4 MB, so the network sat idle while the card
++        // was written. At most Chunks are held (about 20 MB in all).
++        constexpr size_t Chunk = 0x400000, Chunks = 3;
++        std::mutex lock;
++        std::condition_variable changed;
++        std::deque<std::vector<u8>> ready;
++        bool done = false, failed = false;
++        std::atomic<bool> stop{false}; // this side gave up: the fetch stops at its next bytes
++        std::thread fetch([&] {
++            u64 mask = 0;
++            if (R_SUCCEEDED(svcGetInfo(&mask, InfoType_CoreMask, CUR_PROCESS_HANDLE, 0)) && ((mask >> 2) & 1))
++                svcSetThreadCoreMask(CUR_THREAD_HANDLE, 2, 1ULL << 2);
++            std::vector<u8> filling;
++            filling.reserve(Chunk);
++            const auto hand = [&](std::vector<u8>&& full) {
++                std::unique_lock<std::mutex> held(lock);
++                changed.wait(held, [&] { return ready.size() < Chunks || stop; });
++                if (stop) return false;
++                ready.push_back(std::move(full));
++                changed.notify_all();
++                return true;
++            };
++            bool ok = false;
++            try {
++                const auto feed = [&](u8* bytes, size_t size) -> size_t {
++                    size_t used = 0;
++                    while (used < size) {
++                        if (stop || inst::ui::instPage::isInstallCancelRequested()) return 0;
++                        const size_t take = std::min(size - used, Chunk - filling.size());
++                        filling.insert(filling.end(), bytes + used, bytes + used + take);
++                        used += take;
++                        if (filling.size() == Chunk) {
++                            if (!hand(std::move(filling))) return 0;
++                            filling = std::vector<u8>();
++                            filling.reserve(Chunk);
++                        }
++                    }
++                    return size;
++                };
++                ok = m_download.StreamDataRange(fileStart, ncaSize, feed) != 1 &&
++                     !inst::ui::instPage::isInstallCancelRequested() && (filling.empty() || hand(std::move(filling)));
++            } catch (...) {
++                ok = false;
++            }
++            std::lock_guard<std::mutex> held(lock);
++            failed = !ok;
++            done = true;
++            changed.notify_all();
++        });
++        const auto finish = [&] {
++            {
++                std::lock_guard<std::mutex> held(lock);
++                stop = true;
++            }
++            changed.notify_all();
++            if (fetch.joinable()) fetch.join();
++        };
+ 
+         try {
+             inst::ui::instPage::setInstInfoText("inst.info_page.top_info0"_lang + ncaFileName + "...");
+@@ -60,26 +124,34 @@ namespace tin::install::xci
+                 if (inst::ui::instPage::isInstallCancelRequested()) {
+                     THROW_FORMAT("Installation canceled.");
+                 }
+-                progress = (float)fileOff / (float)ncaSize;
+-
+-                if (fileOff % (0x400000 * 3) == 0) {
+-                    LOG_DEBUG("> Progress: %lu/%lu MB (%d%s)\r", (fileOff / 1000000), (ncaSize / 1000000), (int)(progress * 100.0), "%");
+-                    inst::ui::instPage::setInstBarPerc((double)(progress * 100.0));
++                std::vector<u8> chunk;
++                {
++                    std::unique_lock<std::mutex> held(lock);
++                    changed.wait(held, [&] { return !ready.empty() || done; });
++                    if (ready.empty()) break;
++                    chunk = std::move(ready.front());
++                    ready.pop_front();
+                 }
+-
+-                if (fileOff + readSize >= ncaSize)
+-                    readSize = ncaSize - fileOff;
+-
+-                this->BufferData(readBuffer.get(), fileOff + fileStart, readSize);
+-                writer.write(readBuffer.get(), readSize);
+-                fileOff += readSize;
++                changed.notify_all();
++                writer.write(chunk.data(), chunk.size());
++                fileOff += chunk.size();
++                inst::ui::instPage::setInstBarPerc((double)fileOff * 100.0 / (double)ncaSize);
+                 const auto seconds=double(armGetSystemTick()-began)/armGetSystemTickFreq();
+                 foil::install::reportBytes(ncaFileName,fileOff,seconds>0?fileOff/seconds/(1024*1024):0);
+             }
++            finish();
++            if (inst::ui::instPage::isInstallCancelRequested())
++                THROW_FORMAT("Installation canceled.");
++            if (failed || fileOff < ncaSize)
++                THROW_FORMAT(("inst.net.transfer_interput"_lang).c_str());
+             inst::ui::instPage::setInstBarPerc(100);
+         } catch (std::exception& e) {
++            finish();
+             LOG_DEBUG("something went wrong: %s\n", e.what());
+             throw;
++        } catch (...) {
++            finish();
++            throw;
+         }
+ 
+         writer.close();
+diff --git a/source/util/network_util.cpp b/source/util/network_util.cpp
+index ea0dad8..1fabe8f 100755
+--- a/source/util/network_util.cpp
++++ b/source/util/network_util.cpp
+@@ -238,6 +238,13 @@ namespace tin::network
+         curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.c_str());
+         curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "identity");
+         curl_easy_setopt(curl, CURLOPT_RANGE, range.c_str());
++        // CookingFoil: curl's 16 KB default meant a callback and a ring copy
++        // every 16 KB of a multi-GB game; larger reads, no signals from curl's
++        // timers, and a kept-alive socket on slow paths.
++        curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 512L * 1024);
++        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
++        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
++        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+         curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 8L);
+         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callbackCtx);

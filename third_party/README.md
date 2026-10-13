@@ -50,6 +50,17 @@ applied as a series rather than checked one by one.
   removes only unfinished placeholders, so a retry resumes instead of starting over.
 - A cancel still removes everything the session wrote.
 
+`patches/0003-cookingfoil-faster-install-streaming.patch`:
+
+- The install fetch reads 512 KB at a time instead of curl's 16 KB default, keeps the socket
+  alive, and resolves IPv4 only, as the app's other downloads do.
+- NSP/NSZ: the download and writer threads sleep a millisecond while they wait instead of
+  spinning, and so do the progress loops. The download runs on core 2 and the writer (zstd,
+  AES, ncm) on core 1 when the process may use them. The ring's byte counters are atomic.
+- XCI/XCZ: one connection streams each NCA on a fetch thread into at most three 4 MB chunks
+  while the install thread writes them. Before, it fetched 4 MB, wrote it, and opened a new
+  connection for the next 4 MB.
+
 ### Limits
 
 The patches were checked by applying them to the pinned commit in a clean checkout and comparing

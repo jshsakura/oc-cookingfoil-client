@@ -42,7 +42,15 @@ static void openTextKeyboard(foil::ui::Application &ui, const foil::ui::Applicat
   swkbdClose(&keyboard);
 }
 int main(int argc, char **argv) {
-  if (R_FAILED(socketInitializeDefault()))
+  // Larger TCP receive buffers than libnx's defaults (64 KB growing to 256 KB):
+  // a game streams for minutes over paths with real latency, and a small
+  // window caps the rate. An album launch gets less of its small heap for it.
+  SocketInitConfig sockets = *socketGetDefaultInitConfig();
+  const bool application = appletGetAppletType() == AppletType_Application;
+  sockets.tcp_rx_buf_size = 0x40000;
+  sockets.tcp_rx_buf_max_size = application ? 0x200000 : 0x100000;
+  sockets.sb_efficiency = application ? 8 : 4;
+  if (R_FAILED(socketInitialize(&sockets)))
     return 1;
   const bool nifm = R_SUCCEEDED(nifmInitialize(NifmServiceType_User));
   if (R_FAILED(romfsInit())) {

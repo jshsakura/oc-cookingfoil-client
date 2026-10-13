@@ -1,4 +1,6 @@
+#include "core/Log.hpp"
 #include "install/Installer.hpp"
+#include <cstdio>
 #include <chrono>
 #include "install/EngineHooks.hpp"
 #include "core/I18n.hpp"
@@ -166,6 +168,7 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
       // A failed item is tried again from the start: the engine skips the
       // content files it already finished, so this picks up where it broke.
       constexpr int Attempts = 3;
+      const auto began = std::chrono::steady_clock::now();
       for (int attempt = 1;; ++attempt) {
         try {
           nativeInstall(files[i], target, net::authHeaders(server, state, files[i].url));
@@ -179,6 +182,16 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
           if (cancel_)
             throw;
         }
+      }
+      // The item's average speed, so a slow install can be told apart in the
+      // log: the network, the server or the console.
+      {
+        const double seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+        char line[160];
+        std::snprintf(line, sizeof(line), "install %s %.1f MB in %.1f s, %.2f MB/s", files[i].type.c_str(),
+                      files[i].size / 1048576.0, seconds, seconds > 0 ? files[i].size / 1048576.0 / seconds : 0.0);
+        logLine(line);
       }
       {
         std::lock_guard<std::mutex> lock(mutex_);
