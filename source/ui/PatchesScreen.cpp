@@ -864,24 +864,31 @@ void Application::patchMenu(const PatchRow &row) {
   const bool described = !row.patch.description.empty();
   // The whole description, as many lines as the screen leaves room for
   // (header, footer and the rows below); measured off screen first.
-  const float fixed = 24 + Icon + 16 + 8 + choices.size() * (ChoiceHeight + ChoiceGap) + 14;
+  // Beside the icon: the game in small type, the patch name, then its kinds.
+  // Both names show whole (up to two lines) instead of running.
+  const float textW = Width - 64 - Icon - 20;
+  const auto size = formatBytes(row.record ? row.record->bytes : row.patch.size);
+  const float sizeW = paint_.fonts.measure(size, 18, true), nameW = textW - sizeW - 16;
+  const float gameH = paint_.fonts.wrapped(row.game, -10000, -10000, 16, Secondary, nameW, 2);
+  const float nameH = paint_.fonts.wrapped(row.patch.name, -10000, -10000, 22, Ink, nameW, 2, true);
+  const float head = std::max(Icon, gameH + 4 + nameH + 10 + 26);
+  const float fixed = 24 + head + 16 + 8 + choices.size() * (ChoiceHeight + ChoiceGap) + 14;
   const int room = std::max(2, int((720 - 48 - 72 - 60 - fixed) / (18 * 1.3f)));
   const float describedHeight =
       described ? paint_.fonts.wrapped(row.patch.description, -10000, -10000, 18, Secondary, Width - 64, room) + 10 : 0;
   const float bodyHeight = fixed + describedHeight;
-  const auto body = modal(Width, bodyHeight, row.game, tr("닫기"), "", "", 32);
-  const float x = body.x + 32, w = body.w - 64, textX = x + Icon + 20, textW = w - Icon - 20;
+  const auto body = modal(Width, bodyHeight, tr("상세 정보"), tr("닫기"), "", "", 32);
+  const float x = body.x + 32, w = body.w - 64, textX = x + Icon + 20;
   float y = body.y + 24;
-  // The game's icon beside the patch: its name, then what kind and how big.
   cover(row.icon, x, y, int(Icon), false, row.game, !row.patch.homebrewApp.empty());
-  const auto size = formatBytes(row.record ? row.record->bytes : row.patch.size);
-  const float sizeW = paint_.fonts.measure(size, 18, true);
-  // The full name runs here, since the list cuts it short.
-  marquee(row.patch.name, textX, y + 4, 22, textW - sizeW - 16);
-  paint_.fonts.text(size, x + w - sizeW, y + 8, 18, Ink, true);
+  paint_.fonts.wrapped(row.game, textX, y, 16, Secondary, nameW, 2);
+  const float nameY = y + gameH + 4;
+  paint_.fonts.wrapped(row.patch.name, textX, nameY, 22, Ink, nameW, 2, true);
+  paint_.fonts.text(size, x + w - sizeW, nameY + 2, 18, Ink, true);
+  const float pillY = nameY + nameH + 10;
   float at = textX;
   for (const auto &kind : row.patch.kinds)
-    at += paint_.pill(patchKindLabel(kind), at, y + 44) + 6;
+    at += paint_.pill(patchKindLabel(kind), at, pillY) + 6;
   std::string meta;
   if (!row.patch.version.empty()) meta = "v" + row.patch.version;
   if (!row.patch.author.empty()) meta += (meta.empty() ? "" : " · ") + row.patch.author;
@@ -890,8 +897,8 @@ void Application::patchMenu(const PatchRow &row) {
   if (const char *note = healthNote(patchHealth_, row))
     meta += (meta.empty() ? "" : " · ") + std::string(note);
   if (!meta.empty())
-    paint_.fonts.middle(meta, at + (at > textX ? 6 : 0), y + 57, 17, Secondary, false, x + w - at);
-  y += Icon + 16;
+    paint_.fonts.middle(meta, at + (at > textX ? 6 : 0), pillY + 13, 17, Secondary, false, x + w - at);
+  y += head + 16;
   if (described) {
     paint_.fonts.wrapped(row.patch.description, x, y, 18, Secondary, w, room);
     y += describedHeight;

@@ -37,8 +37,7 @@ SDL_FRect Application::modal(float width, float bodyHeight, const std::string &t
   // An icon ahead of the title says what kind of popup this is.
   const float titleX = left + 32 + (icon >= 0 ? 36 : 0);
   if (icon >= 0) paint_.icon(icon, left + 32, top + Header / 2 - 13, Ink, 26);
-  // A title too long for the header runs, so the whole name can be read.
-  marquee(title, titleX, paint_.fonts.centerTop(title, 24, true, top + Header / 2), 24, left + width - 32 - titleX);
+  paint_.fonts.middle(title, titleX, top + Header / 2, 24, Ink, true, left + width - 32 - titleX);
   paint_.rect(left, top + Header - 1, width, 1, Line);
   const float footerTop = top + height - Footer;
   paint_.rect(left, footerTop, width, Footer, Ground, 20);
