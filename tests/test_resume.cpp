@@ -6,11 +6,13 @@
 #include "net/Ranged.hpp"
 #include "net/HomebrewApi.hpp"
 #include "core/Homebrew.hpp"
+#include "core/Sha256.hpp"
 #include "platform/Storage.hpp"
 #include <arpa/inet.h>
 #include <cstring>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <poll.h>
 #include <sys/socket.h>
 #include <thread>
@@ -80,6 +82,8 @@ struct Mock {
   bool ranges = true;                          // false: Range is ignored (200)
   std::function<size_t(int index)> drop;       // bytes to send before closing; npos: all
   std::vector<std::string> requests;
+  // When set, a body for each path (by the request line); any other path is 404.
+  std::map<std::string, std::string> paths;
   int listener = -1;
   std::string url;
   std::thread thread;
@@ -110,6 +114,20 @@ struct Mock {
           request.append(buffer, size);
         }
         requests.push_back(request);
+        std::string served = body;
+        if (!paths.empty()) {
+          const auto start = request.find(' ') + 1;
+          const auto path = request.substr(start, request.find(' ', start) - start);
+          const auto found = paths.find(path);
+          if (found == paths.end()) {
+            const std::string missing = "HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
+            send(client, missing.data(), missing.size(), MSG_NOSIGNAL);
+            close(client);
+            continue;
+          }
+          served = found->second;
+        }
+        const std::string &body = served;
         uint64_t from = 0;
         const auto range = request.find("Range: bytes=");
         const auto ifRange = request.find("If-Range: ");
@@ -421,6 +439,34 @@ int runResumeTests() {
     // (which parent folders a server lists is its own choice).
     const auto estimate = foil::homebrew::bundleSize(app);
     CHECK(estimate + 4096 >= mock.body.size() && estimate <= mock.body.size() + 4096);
+    fs::remove_all(sd);
+  }
+  {
+    // A server whose bundle address is gone (404): the files come one by one.
+    const auto sd = fs::temp_directory_path() / ("cf-bundle-gone-" + std::to_string(getpid()));
+    fs::remove_all(sd);
+    fs::create_directories(sd);
+    Mock mock;
+    const std::string one = body(3000, 'q'), two = body(10, 'r');
+    mock.paths = {{"/f/1", one}, {"/f/2", two}};
+    mock.start(3);
+    foil::homebrew::App app;
+    app.id = "gone";
+    app.bundleUrl = mock.url + "/bundle";
+    const auto hash = [](const std::string &bytes) {
+      foil::Sha256 h;
+      h.update(bytes.data(), bytes.size());
+      return h.hex();
+    };
+    app.files.push_back({"switch/gone/one.nro", hash(one), mock.url + "/f/1", one.size()});
+    app.files.push_back({"switch/gone/설치-스위치.md", hash(two), mock.url + "/f/2", two.size()});
+    foil::Server server;
+    server.url = mock.url;
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(foil::net::homebrewDownload(server, foil::State{}, app, sd.string(), received, error, nullptr));
+    CHECK(foil::readFile((sd / "switch/gone/one.nro").string()) == one);
+    CHECK(foil::readFile((sd / "switch/gone/설치-스위치.md").string()) == two);
     fs::remove_all(sd);
   }
   {

@@ -93,7 +93,8 @@ bool alreadyThere(const std::string &target, uint64_t size, const std::string &s
 // goes on from the last whole file (kept in switch/cookingfoil/resume). Only
 // the files the list names are written.
 bool fetchBundle(const Server &server, const State &state, const homebrew::App &app, const std::string &sd,
-                 std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel) {
+                 std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel, bool &unusable) {
+  unusable = false;
   std::set<std::string> listed;
   PartInfo wanted;
   wanted.url = app.bundleUrl;
@@ -128,10 +129,18 @@ bool fetchBundle(const Server &server, const State &state, const homebrew::App &
     error.message = message;
     return false;
   };
-  if (!fetch.tarError.empty()) return fail(fetch.tarError, false);
+  // The bundle itself will not do (no such address, an error page, not a
+  // tar we can read): the caller takes the files one by one instead. A cut
+  // connection keeps its place for the next try.
+  if (!fetch.tarError.empty()) {
+    unusable = true;
+    return fail(fetch.tarError, false);
+  }
   if (!fetch.response.error.empty()) return fail(fetch.response.error, true);
-  if (!rangedOk(fetch.response))
+  if (!rangedOk(fetch.response)) {
+    unusable = true;
     return fail(trf("Could not get the file. HTTP {0}", {std::to_string(fetch.response.status)}), false);
+  }
   if (!fetch.complete) return fail(tr("The download was interrupted. Download it again."), true);
   std::filesystem::remove(record, ec);
   return true;
@@ -141,8 +150,17 @@ bool homebrewDownload(const Server &server, const State &state, const homebrew::
                       std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel) {
   if (app.files.empty())
     return fetchFile(server, state, app.downloadUrl, sd, app.installPath, "", 0, received, error, cancel);
-  if (!app.bundleUrl.empty())
-    return fetchBundle(server, state, app, sd, received, error, cancel);
+  if (!app.bundleUrl.empty()) {
+    bool unusable = false;
+    const uint64_t before = received;
+    if (fetchBundle(server, state, app, sd, received, error, cancel, unusable)) return true;
+    if (!unusable || (cancel && *cancel)) return false;
+    // Falls back to one request a file; what the bundle already wrote is
+    // checked by its hash and kept.
+    logLine("homebrew " + app.id + ": bundle unusable (" + error.message + "), file by file");
+    received = before;
+    error = {};
+  }
   // A folder install: thousands of small files, each its own request, so
   // most of the time is the round trip; eight at a time, each checked. One
   // already on the card as the server lists it (size and hash) is kept.
