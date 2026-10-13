@@ -43,7 +43,6 @@ const Translation rows[] = {
     {"패치를 받다가 끊겼습니다. 다시 받습니다.", "The patch download was interrupted. Download it again.", "パッチのダウンロードが途切れました。もう一度ダウンロードしてください。", "补丁下载中断。请重新下载。"},
     {"패치 파일을 옮기지 못했습니다. SD 카드를 확인합니다.", "Could not move the patch files. Check the SD card.", "パッチファイルを移動できませんでした。SDカードを確認してください。", "无法移动补丁文件。请检查 SD 卡。"},
     {"받아 둔 패치가 아닙니다.", "This patch has not been downloaded.", "ダウンロード済みのパッチではありません。", "这不是已下载的补丁。"},
-    {"다른 패치나 직접 넣은 파일과 겹칩니다.", "Conflicts with another patch or files added by hand.", "他のパッチや手動で追加したファイルと重複します。", "与其他补丁或手动添加的文件冲突。"},
     {"패치 정보가 잘못되었습니다.", "The patch information is invalid.", "パッチ情報が正しくありません。", "补丁信息无效。"},
     {"패치에 들어 있는 파일이 없습니다.", "The patch contains no files.", "パッチにファイルが含まれていません。", "补丁中没有文件。"},
     // core/Config.cpp (config field names stay as they are)

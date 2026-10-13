@@ -95,9 +95,7 @@ uint64_t tarSize(const char *field);
 
 struct PatchRecord {
   std::string id, titleId, name, version, hash;
-  // An app's patch: files the app already had at its paths are set aside
-  // while it is on, not a conflict, and come back when it goes off.
-  std::string homebrewApp;
+  std::string homebrewApp; // an app's patch: its files go below switch/<app>/
   bool on = false;
   // Set while files move, so an interrupted enable or disable can finish.
   std::string pending; // "", "enable" or "disable"
@@ -105,6 +103,9 @@ struct PatchRecord {
   std::vector<std::string> cheats; // merged into place when on
   uint64_t bytes = 0;
   int64_t order = 0; // enable order; cheats merge in this order
+  // Paths where a patch turned on later puts its own copy instead, and which
+  // one. Worked out from the enable order; the ledger keeps a copy to read.
+  std::map<std::string, std::string> shadowed;
 };
 // What a patch picked with a game install still needs, given what the SD
 // store holds of it: fetch it, fetch its newer build, switch it on, or nothing.
@@ -117,6 +118,12 @@ struct PatchConflict {
 // Downloaded patches live in a store on the SD card; enabling moves their
 // files into place and a ledger remembers every path, so disabling takes back
 // exactly those files and nothing the user put there.
+//
+// Patches layer. Where several that are on share a path, the one turned on
+// last puts its copy on the card and the others keep theirs in their own
+// store; turning it off brings back the copy of the latest one still on. A
+// file the user put there is set aside under _base/<path> while any patch
+// covers the path and comes back when the last one goes off.
 class PatchStore {
 public:
   PatchStore(std::string sdRoot, std::string storeRoot);
@@ -127,8 +134,11 @@ public:
   // An empty folder the download unpacks into before commit.
   std::string staging(const std::string &id) const;
   // Takes a finished staging folder into the store. An enabled older version
-  // is swapped for the new one and enabled again when nothing conflicts.
+  // is swapped for the new one and enabled again in its old place in the order.
   bool commit(const UserPatch &patch, Error &error);
+  // What the patch shares with others that are on (owner: that patch) and
+  // with the user's own files (owner empty). Only for telling: enable goes
+  // ahead and puts its own copy on top.
   std::vector<PatchConflict> conflicts(const std::string &id) const;
   bool enable(const std::string &id, Error &error);
   bool disable(const std::string &id, Error &error);
@@ -144,8 +154,16 @@ private:
   bool finishEnable(PatchRecord &record, Error &error);
   bool finishDisable(PatchRecord &record, Error &error);
   bool rebuildCheat(const std::string &path, Error &error);
-  // An app's file in _base an app patch that is on (or moving) set aside.
-  bool setAside(const std::string &path) const;
+  bool turnOn(PatchRecord &record, int64_t order, Error &error);
+  // The patch whose copy belongs at path: the latest one turned on.
+  const PatchRecord *provider(const std::string &path) const;
+  // The patch whose copy is on the card at path: one on or moving that lists
+  // the path and whose store is missing it.
+  const PatchRecord *holder(const std::string &path) const;
+  // Moves files so the card holds what provider() says, the user's own file
+  // when no patch covers the path, or nothing.
+  bool place(const std::string &path, Error &error);
+  void markShadows();
   std::string sdRoot_, storeRoot_;
   std::map<std::string, PatchRecord> records_;
   std::set<std::string> cheatPaths_; // cheat files we currently write

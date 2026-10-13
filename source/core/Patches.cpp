@@ -93,6 +93,10 @@ json_object *array(const std::vector<std::string> &values) {
     json_object_array_add(out, json_object_new_string(value.c_str()));
   return out;
 }
+// Whether the patch has a file at path (its files are kept sorted).
+bool lists(const PatchRecord &record, const std::string &path) {
+  return std::binary_search(record.files.begin(), record.files.end(), path);
+}
 } // namespace
 
 bool patchPathAllowed(const std::string &titleId, const std::string &path) {
@@ -403,6 +407,7 @@ const PatchRecord *PatchStore::find(const std::string &id) const {
   return it == records_.end() ? nullptr : &it->second;
 }
 bool PatchStore::save(Error &error) {
+  markShadows();
   Json root(json_object_new_object());
   json_object_object_add(root.get(), "order", json_object_new_int64(order_));
   json_object_object_add(root.get(), "cheatPaths",
@@ -422,6 +427,12 @@ bool PatchStore::save(Error &error) {
     json_object_object_add(p, "cheats", array(r.cheats));
     json_object_object_add(p, "bytes", json_object_new_int64(int64_t(r.bytes)));
     json_object_object_add(p, "order", json_object_new_int64(r.order));
+    if (!r.shadowed.empty()) {
+      auto *shadowed = json_object_new_object();
+      for (const auto &[path, by] : r.shadowed)
+        json_object_object_add(shadowed, path.c_str(), json_object_new_string(by.c_str()));
+      json_object_object_add(p, "shadowed", shadowed);
+    }
     json_object_object_add(patches, id.c_str(), p);
   }
   json_object_object_add(root.get(), "patches", patches);
@@ -477,6 +488,7 @@ bool PatchStore::load(Error &error) {
         r.on = json_object_get_boolean(field(p, "on"));
         r.pending = stringField(p, "pending");
         r.files = strings(field(p, "files"));
+        std::sort(r.files.begin(), r.files.end()); // lists() searches it
         r.cheats = strings(field(p, "cheats"));
         r.bytes = uint64_t(std::max<int64_t>(0, integerField(p, "bytes")));
         r.order = integerField(p, "order");
@@ -484,20 +496,23 @@ bool PatchStore::load(Error &error) {
       }
     }
   }
-  // A cheat file we set aside but never recorded goes back where it was;
-  // an app's file set aside for a patch that is on, or half way, stays.
+  // A cheat file we set aside but never recorded goes back where it was.
+  // The user's other files set aside are looked at once every move is done.
   const auto baseRoot = storeRoot_ + "/_base";
+  std::vector<std::string> userFiles;
   if (fs::is_directory(baseRoot, ec)) {
     std::vector<std::string> orphans;
     for (auto it = fs::recursive_directory_iterator(baseRoot, ec);
          !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
       if (it->is_regular_file(ec)) {
         const auto rel = it->path().string().substr(baseRoot.size() + 1);
-        if (!cheatPaths_.count(rel) && !setAside(rel))
+        if (!isCheatPath(rel))
+          userFiles.push_back(rel);
+        else if (!cheatPaths_.count(rel))
           orphans.push_back(rel);
       }
     for (const auto &rel : orphans) {
-      fs::remove(sd(rel), ec);
+      fs::remove(sd(rel), ec); // our merged file, rebuilt from the patches
       if (!move(base(rel), sd(rel), error))
         return false;
     }
@@ -508,6 +523,11 @@ bool PatchStore::load(Error &error) {
     if (r.pending == "disable" && !finishDisable(r, error))
       return false;
   }
+  // One no patch covers any more goes back; one a patch covers stays aside.
+  for (const auto &rel : userFiles)
+    if (!place(rel, error))
+      return false;
+  markShadows();
   const std::vector<std::string> taken(cheatPaths_.begin(), cheatPaths_.end());
   for (const auto &path : taken)
     if (!rebuildCheat(path, error))
@@ -523,12 +543,69 @@ bool PatchStore::load(Error &error) {
     }
   return true;
 }
-bool PatchStore::setAside(const std::string &path) const {
+const PatchRecord *PatchStore::provider(const std::string &path) const {
+  const PatchRecord *top = nullptr;
   for (const auto &[id, r] : records_)
-    if (!r.homebrewApp.empty() && (r.on || !r.pending.empty()) &&
-        std::find(r.files.begin(), r.files.end(), path) != r.files.end())
-      return true;
-  return false;
+    if (r.on && lists(r, path) && (!top || r.order > top->order))
+      top = &r;
+  return top;
+}
+const PatchRecord *PatchStore::holder(const std::string &path) const {
+  std::error_code ec;
+  if (!fs::exists(sd(path), ec))
+    return nullptr;
+  for (const auto &[id, r] : records_)
+    if ((r.on || !r.pending.empty()) && lists(r, path) && !fs::exists(stored(r.id, path), ec))
+      return &r;
+  return nullptr;
+}
+bool PatchStore::place(const std::string &path, Error &error) {
+  std::error_code ec;
+  const auto *want = provider(path);
+  if (fs::exists(sd(path), ec)) {
+    const auto *have = holder(path);
+    if (have == want)
+      return true; // the right patch's copy, or the user's file with no patch over it
+    if (have) {
+      if (!move(sd(path), stored(have->id, path), error))
+        return false;
+    } else {
+      // The user's file goes aside. One is already there only when the user
+      // put another file in place since; that one is kept apart, never lost.
+      auto aside = base(path);
+      for (int n = 1; fs::exists(aside, ec); ++n)
+        aside = storeRoot_ + "/_kept/" + path + "." + std::to_string(n);
+      if (aside != base(path))
+        logLine("patches: kept a second file of the user's at " + aside);
+      if (!move(sd(path), aside, error))
+        return false;
+    }
+  }
+  if (want) {
+    if (fs::exists(stored(want->id, path), ec))
+      return move(stored(want->id, path), sd(path), error);
+    logLine("patches: " + want->id + " is missing " + path);
+  } else if (fs::exists(base(path), ec))
+    return move(base(path), sd(path), error);
+  prune(sd(path));
+  return true;
+}
+void PatchStore::markShadows() {
+  std::map<std::string, const PatchRecord *> top;
+  for (const auto &[id, r] : records_)
+    if (r.on)
+      for (const auto &file : r.files) {
+        auto &slot = top[file];
+        if (!slot || r.order > slot->order)
+          slot = &r;
+      }
+  for (auto &[id, r] : records_) {
+    r.shadowed.clear();
+    if (r.on)
+      for (const auto &file : r.files)
+        if (const auto *over = top[file]; over != &r)
+          r.shadowed[file] = over->id;
+  }
 }
 bool PatchStore::rebuildCheat(const std::string &path, Error &error) {
   std::vector<const PatchRecord *> owners;
@@ -575,37 +652,35 @@ bool PatchStore::rebuildCheat(const std::string &path, Error &error) {
 std::vector<PatchConflict> PatchStore::conflicts(const std::string &id) const {
   std::vector<PatchConflict> out;
   const auto *record = find(id);
-  if (!record || record->on)
+  if (!record)
     return out;
   std::error_code ec;
   for (const auto &file : record->files) {
-    if (!fs::exists(sd(file), ec))
-      continue;
-    std::string owner;
+    bool shared = false;
     for (const auto &[otherId, other] : records_)
-      if (other.on && std::find(other.files.begin(), other.files.end(), file) != other.files.end())
-        owner = otherId;
-    // An app's own file is set aside on enable, so only another patch clashes.
-    if (owner.empty() && !record->homebrewApp.empty())
-      continue;
-    out.push_back({file, owner});
+      if (otherId != id && other.on && lists(other, file)) {
+        out.push_back({file, otherId});
+        shared = true;
+      }
+    // The user's own file: still in place, or set aside while this is on.
+    if (!shared && (record->on ? fs::exists(base(file), ec) : fs::exists(sd(file), ec)))
+      out.push_back({file, ""});
   }
   return out;
 }
+// Both finish steps only move files towards what the ledger says, so running
+// one again after a power loss completes it. Ledgers from before layering
+// left `on` as it was until the end; that is caught up here first.
 bool PatchStore::finishEnable(PatchRecord &record, Error &error) {
-  std::error_code ec;
-  for (const auto &file : record.files) {
-    if (!fs::exists(stored(record.id, file), ec))
-      continue;
-    // An app patch sets the app's own file aside first.
-    if (!record.homebrewApp.empty() && fs::exists(sd(file), ec) && !fs::exists(base(file), ec) &&
-        !move(sd(file), base(file), error))
-      return false;
-    if (!fs::exists(sd(file), ec) && !move(stored(record.id, file), sd(file), error))
+  if (!record.on) {
+    record.on = true;
+    record.order = ++order_;
+    if (!save(error))
       return false;
   }
-  record.on = true;
-  record.order = ++order_;
+  for (const auto &file : record.files)
+    if (!place(file, error))
+      return false;
   record.pending.clear();
   if (!save(error))
     return false;
@@ -615,19 +690,14 @@ bool PatchStore::finishEnable(PatchRecord &record, Error &error) {
   return true;
 }
 bool PatchStore::finishDisable(PatchRecord &record, Error &error) {
-  std::error_code ec;
-  for (const auto &file : record.files)
-    if (fs::exists(sd(file), ec) && !fs::exists(stored(record.id, file), ec)) {
-      if (!move(sd(file), stored(record.id, file), error))
-        return false;
-      prune(sd(file));
-    }
-  // What an app patch set aside goes back.
-  for (const auto &file : record.files)
-    if (!record.homebrewApp.empty() && fs::exists(base(file), ec) && !fs::exists(sd(file), ec) &&
-        !move(base(file), sd(file), error))
+  if (record.on) {
+    record.on = false;
+    if (!save(error))
       return false;
-  record.on = false;
+  }
+  for (const auto &file : record.files)
+    if (!place(file, error))
+      return false;
   record.pending.clear();
   if (!save(error))
     return false;
@@ -644,17 +714,21 @@ bool PatchStore::enable(const std::string &id, Error &error) {
   }
   if (it->second.on)
     return true;
-  if (!conflicts(id).empty()) {
-    error.message = tr("다른 패치나 직접 넣은 파일과 겹칩니다.");
-    return false;
-  }
-  it->second.pending = "enable";
-  return save(error) && finishEnable(it->second, error);
+  return turnOn(it->second, ++order_, error);
+}
+// On and its place in the order are written with the pending mark, so a move
+// cut short finishes the same way on the next load.
+bool PatchStore::turnOn(PatchRecord &record, int64_t order, Error &error) {
+  record.on = true;
+  record.order = order;
+  record.pending = "enable";
+  return save(error) && finishEnable(record, error);
 }
 bool PatchStore::disable(const std::string &id, Error &error) {
   const auto it = records_.find(id);
   if (it == records_.end() || !it->second.on)
     return true;
+  it->second.on = false;
   it->second.pending = "disable";
   return save(error) && finishDisable(it->second, error);
 }
@@ -700,19 +774,20 @@ bool PatchStore::commit(const UserPatch &patch, Error &error) {
   std::sort(record.files.begin(), record.files.end());
   std::sort(record.cheats.begin(), record.cheats.end());
   bool wasOn = false;
+  int64_t order = 0;
   if (const auto *old = find(patch.id)) {
     wasOn = old->on;
+    order = old->order;
     if (!remove(patch.id, error))
       return false;
   }
   fs::remove_all(storeRoot_ + "/" + patch.id, ec);
   if (!move(from, storeRoot_ + "/" + patch.id, error))
     return false;
-  records_[patch.id] = std::move(record);
+  auto &fresh = records_[patch.id] = std::move(record);
   if (!save(error))
     return false;
-  if (wasOn && conflicts(patch.id).empty())
-    return enable(patch.id, error);
-  return true;
+  // Back on where it was in the order: patches over it stay over it.
+  return !wasOn || turnOn(fresh, order, error);
 }
 } // namespace foil

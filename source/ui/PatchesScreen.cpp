@@ -232,7 +232,7 @@ std::vector<PatchChoice> patchChoices(const Application::PatchRow &row) {
     out.push_back({PatchOp::Game, tr("게임 받으러 가기"), tr("서버에서 이 게임을 설치합니다. 패치는 게임이 있어야 적용됩니다.")});
   if (!row.record) {
     if (row.onServer)
-      out.push_back({PatchOp::Get, tr("다운로드 및 적용"), tr("SD 카드에 받아 바로 적용합니다. 이미 켠 다른 패치와 같은 파일을 바꾸면 받기만 하고 꺼 둡니다.")});
+      out.push_back({PatchOp::Get, tr("다운로드 및 적용"), tr("SD 카드에 받아 바로 적용합니다. 다른 패치와 겹치는 파일은 나중에 켠 패치 것을 씁니다.")});
     return out;
   }
   if (updateAvailable(row))
@@ -245,6 +245,20 @@ std::vector<PatchChoice> patchChoices(const Application::PatchRow &row) {
   out.push_back({PatchOp::Remove, tr("삭제"), row.record->on ? tr("패치를 끄고 SD 카드에서 삭제합니다.")
                                                             : tr("SD 카드에 받아 둔 파일을 삭제합니다.")});
   return out;
+}
+// The names of the patches that are on and share files with this one,
+// quoted for the message: A', 'B. Empty when it shares none.
+std::string overlapNames(const PatchStore &store, const std::string &id) {
+  std::vector<std::string> owners;
+  for (const auto &clash : store.conflicts(id))
+    if (!clash.owner.empty() && std::find(owners.begin(), owners.end(), clash.owner) == owners.end())
+      owners.push_back(clash.owner);
+  std::string names;
+  for (const auto &owner : owners) {
+    const auto *record = store.find(owner);
+    names += (names.empty() ? "" : "', '") + (record && !record->name.empty() ? record->name : owner);
+  }
+  return names;
 }
 } // namespace
 void Application::patchAction(Action a) {
@@ -392,14 +406,13 @@ void Application::startPatchGet(const UserPatch &patch, bool fresh) {
                   done = tr("패치를 업데이트했습니다.");
                   return;
                 }
-                // A fresh patch turns on right away unless it would replace
-                // someone else's files; then it waits, switched off.
-                if (!store.conflicts(patch.id).empty()) {
-                  done = tr("패치를 받았습니다. 다른 패치와 겹쳐서 꺼 두었습니다.");
+                // A fresh patch turns on right away, over any patch already
+                // on that shares its files.
+                const auto over = overlapNames(store, patch.id);
+                if (!store.enable(patch.id, error))
                   return;
-                }
-                if (store.enable(patch.id, error))
-                  done = patch.homebrewApp.empty() ? tr("패치를 받아 켰습니다. 게임을 다시 켜면 적용됩니다.")
+                done = !over.empty() ? trf("패치를 받아 켰습니다. '{0}' 패치와 겹치는 파일은 이 패치 것을 씁니다.", {over})
+                       : patch.homebrewApp.empty() ? tr("패치를 받아 켰습니다. 게임을 다시 켜면 적용됩니다.")
                                                    : tr("패치를 받아 켰습니다. 앱을 다시 켜면 적용됩니다.");
               });
 }
@@ -478,23 +491,15 @@ void Application::startPatchDisable(const UserPatch &patch) {
   });
 }
 void Application::startPatchEnable(const UserPatch &patch) {
-  if (patchStore_) {
-    const auto clash = patchStore_->conflicts(patch.id);
-    if (!clash.empty()) {
-      const auto owner = clash.front().owner;
-      const auto found = patchRecords_.find(owner);
-      alertTitle_ = tr("패치를 켤 수 없습니다");
-      alert_ = owner.empty()
-                   ? trf("직접 넣어 둔 파일과 겹칩니다. {0} 를 확인합니다.", {clash.front().path})
-                   : trf("'{0}' 패치와 같은 파일을 바꿉니다. 그 패치를 끈 뒤 켭니다.",
-                         {found == patchRecords_.end() ? owner : found->second.name});
-      return;
-    }
-  }
+  // Files it shares with patches already on come from this one from now on.
   runPatchJob(patch.id, Enabling, [id = patch.id, app = !patch.homebrewApp.empty()](
                                       net::Session &, PatchStore &store, Error &error, std::string &done) {
-    if (store.enable(id, error))
-      done = app ? tr("패치를 켰습니다. 앱을 다시 켜면 적용됩니다.") : tr("패치를 켰습니다. 게임을 다시 켜면 적용됩니다.");
+    const auto over = overlapNames(store, id);
+    if (!store.enable(id, error))
+      return;
+    done = !over.empty() ? trf("패치를 켰습니다. '{0}' 패치와 겹치는 파일은 이 패치 것을 씁니다.", {over})
+           : app         ? tr("패치를 켰습니다. 앱을 다시 켜면 적용됩니다.")
+                         : tr("패치를 켰습니다. 게임을 다시 켜면 적용됩니다.");
   });
 }
 void Application::patchesScreen() {
@@ -663,6 +668,8 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
     if (!row.patch.version.empty()) meta = "v" + row.patch.version;
     for (const auto &kind : row.patch.kinds) meta += (meta.empty() ? "" : " · ") + std::string(patchKindLabel(kind));
     if (!row.onServer) meta += (meta.empty() ? "" : " · ") + std::string(tr("서버에서 사라짐"));
+    if (row.record && !row.record->shadowed.empty())
+      meta += (meta.empty() ? "" : " · ") + std::string(tr("다른 패치에 일부 가려짐"));
     paint_.fonts.text(meta, x + 20, y + 42, 17, Secondary, false, w - 220);
     const bool busy = patchBusy_ == row.patch.id && !row.patch.id.empty();
     const bool update = updateAvailable(row);
@@ -736,6 +743,8 @@ void Application::patchMenu(const PatchRow &row) {
   std::string meta;
   if (!row.patch.version.empty()) meta = "v" + row.patch.version;
   if (!row.patch.author.empty()) meta += (meta.empty() ? "" : " · ") + row.patch.author;
+  if (row.record && !row.record->shadowed.empty())
+    meta += (meta.empty() ? "" : " · ") + std::string(tr("다른 패치에 일부 가려짐"));
   if (!meta.empty())
     paint_.fonts.middle(meta, at + (at > textX ? 6 : 0), y + 57, 17, Secondary, false, x + w - at);
   y += Icon + 16;
