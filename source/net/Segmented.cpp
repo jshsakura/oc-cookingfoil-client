@@ -578,6 +578,10 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
           continue;
         }
         const bool fatal = code == 401 || code == 403 || code == 404 || code == 416;
+        // No internet on the console: the outage does not count against the
+        // window; the parts are asked again once it is back.
+        if (linkDown())
+          s.lastData = Clock::now();
         if (!fatal && !c->changed && (code >= 500 || !c->bad) && Clock::now() - s.lastData < ResumeWindow) {
           waitUntil[size_t(seg)] = Clock::now() + RetryGap;
           continue;

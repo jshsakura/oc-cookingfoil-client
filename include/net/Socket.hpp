@@ -16,5 +16,8 @@ int tuneSocket(void *user, int socket, int purpose);
 // over: the download screen's speed reads this, so it moves while pieces
 // that must arrive in order are still filling.
 void countReceived(size_t bytes);
+// The console says it has no internet right now (its own link check). A
+// download waits that out instead of giving up; false when it cannot tell.
+bool linkDown();
 uint64_t receivedBytes();
 } // namespace foil::net

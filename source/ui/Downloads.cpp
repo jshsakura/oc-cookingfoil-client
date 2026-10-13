@@ -196,11 +196,16 @@ void Application::topCard(const TopCard &c) {
     topCardMovedAt_ = now;
   }
   const double still = now - topCardMovedAt_;
-  // Only once this download has had bytes: before that it is still getting
-  // ready (checking the install, putting a resumed point back together),
-  // which is no stall of the server's.
-  if (!c.paused && c.measure && c.bytes > topCardStartBytes_ && still >= 6) {
-    status += " · " + trf("No data from the server for {0} s. It reconnects by itself.", {std::to_string(int(still))});
+  // The console's own link gone (the Wi-Fi icon's check): said in red, and
+  // that it goes on by itself. Otherwise, a while with nothing once bytes had
+  // come is said calmly, without counting seconds; before any bytes it is
+  // still getting ready (checking the install, putting a resume together).
+  const bool linkDown = signal_ < 0 && !c.paused;
+  if (linkDown) {
+    status = c.phase + " · " + tr("The internet connection dropped. It goes on once it is back.");
+    downloadSpeed_.add(now, c.bytes);
+  } else if (!c.paused && c.measure && c.bytes > topCardStartBytes_ && still >= 20) {
+    status += " · " + std::string(tr("The connection paused. Reconnecting."));
     downloadSpeed_.add(now, c.bytes);
   } else if (!c.paused && c.measure) {
     downloadSpeed_.add(now, c.bytes);
@@ -217,7 +222,7 @@ void Application::topCard(const TopCard &c) {
     downloadSpeed_.reset();
     timeLeft_.reset();
   }
-  paint_.fonts.text(status, 418, 181, 18, Secondary, false, 810);
+  paint_.fonts.text(status, 418, 181, 18, linkDown ? Bad : Secondary, false, 810);
   float x = 418;
   for (const auto &[label, state] : c.chips) {
     // A finished part leads with the check mark icon (the font has no ✓).
