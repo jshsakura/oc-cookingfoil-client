@@ -73,10 +73,16 @@ void Application::retroHome() {
     if (focused) paint_.keyChip("R", tr("모두 보기"), 1252, y + HeaderMid);
     hit(1100, y, 160, 34, [this, n] { openRetroList(n); });
     const int count = int(shelf.games.size());
-    const int first = focused ? std::max(0, retroCol_ - (Columns - 1)) : 0;
-    for (int col = 0; col < Columns && first + col <= count; ++col) {
+    // Sideways like 홈's shelves: the cursor's place, or the finger's while it
+    // glides, resting on whole cards; the last card (모두 보기) counts as one.
+    const float left = glide("retroShelf" + std::to_string(n), 232, y + 40, 1048, ShelfHeight - 40,
+                             focused ? float(std::max(0, retroCol_ - (Columns - 1))) : 0.f,
+                             float(count + 1 - Columns), CardStep, true, true);
+    const int first = int(left);
+    clipTo(232, y + 40, 1048, ShelfHeight - 40);
+    for (int col = 0; col <= Columns && first + col <= count; ++col) {
       const int i = first + col;
-      const float cx = 260 + CardStep * col, cy = y + 46;
+      const float cx = 260 + CardStep * (i - left), cy = y + 46;
       const bool on = focused && retroCol_ == i;
       hit(cx, cy, Card, Card + 30, [this, n, i, on] {
         sidebar_ = false;
@@ -120,6 +126,7 @@ void Application::retroHome() {
       if (on) marquee(game.name, cx, cy + 158, 18, Card, false);
       else paint_.fonts.text(game.name, cx, cy + 158, 18, Ink, false, Card);
     }
+    unclip();
   }
   SDL_RenderSetClipRect(paint_.renderer, SDL_RectEmpty(&page) ? nullptr : &page);
   paint_.scrollbar(1266, 90, 560, float(std::max(0, retroRow_)), 1.6f, float(rows));

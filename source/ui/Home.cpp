@@ -83,28 +83,31 @@ void Application::home() {
   const int scroll = std::lround(glide("home", 232, 0, 1048, 660, !sidebar_ && row_ >= 2 ? (row_ - 1) * RowHeight : 0,
                                        RowTop + float(themes_.size()) * RowHeight + 16 - 660, 1));
   hit(260, 24 - scroll, 992, 248, [this] { openDetail(hero_); });
+  // Sideways the banner follows the finger a little, then turns (heroFlick).
+  const float hx = -glide("hero", 260, 24 - scroll, 992, 248, 0, 0, 1, true);
   if (row_ == 0 && !sidebar_)
     paint_.ring(260, 24 - scroll, 992, 248, 20);
   paint_.rect(260, 24 - scroll, 992, 248, {10, 10, 14, 255}, 20);
+  clipTo(260, 24 - scroll, 992, 248);
   // The backdrop breathes in dark shades only while its picture is on its way.
   if (const auto backdrop = slideImages(heroSlide_)[0];
       !backdrop.empty() && !images_->loaded(backdrop) && !images_->failed(backdrop))
-    paint_.skeleton(260, 24 - scroll, 992, 248, 20, true);
+    paint_.skeleton(260 + hx, 24 - scroll, 992, 248, 20, true);
   // An admin banner shows as is under a dark wash; otherwise the cover blurs.
   if (!heroBanner_.empty() && heroFeatured_ && heroSlide_ == 0) {
-    images_->draw(thumbnailUrl(heroBanner_, "xl"), 260, 24 - scroll, 992, 248, 20);
-    paint_.rect(260, 24 - scroll, 992, 248, {10, 10, 14, 150}, 20);
+    images_->draw(thumbnailUrl(heroBanner_, "xl"), 260 + hx, 24 - scroll, 992, 248, 20);
+    paint_.rect(260 + hx, 24 - scroll, 992, 248, {10, 10, 14, 150}, 20);
   } else {
-    images_->draw(thumbnailUrl(g.representative.icon), 260, 24 - scroll, 992, 248, 20, true);
+    images_->draw(thumbnailUrl(g.representative.icon), 260 + hx, 24 - scroll, 992, 248, 20, true);
   }
-  cover(thumbnailUrl(g.representative.icon, "md"), 296, 56 - scroll, 184, false, g.representative.name, false, true);
-  paint_.fonts.text(heroes_.empty() ? tr("추천 게임") : heroes_[heroSlide_].label, 512,
+  cover(thumbnailUrl(g.representative.icon, "md"), 296 + hx, 56 - scroll, 184, false, g.representative.name, false, true);
+  paint_.fonts.text(heroes_.empty() ? tr("추천 게임") : heroes_[heroSlide_].label, 512 + hx,
                     61 - scroll, 18, Butter, true);
-  paint_.fonts.text(g.representative.name, 512, 98 - scroll, 40, Surface, true,
+  paint_.fonts.text(g.representative.name, 512 + hx, 98 - scroll, 40, Surface, true,
                     700);
-  paint_.fonts.text(g.representative.publisher, 512, 155 - scroll, 19,
+  paint_.fonts.text(g.representative.publisher, 512 + hx, 155 - scroll, 19,
                     {228, 228, 234, 255}, false, 680);
-  float x = 512;
+  float x = 512 + hx;
   const auto &languages = g.representative.languages;
   if (std::find(languages.begin(), languages.end(), "ko") != languages.end())
     x += paint_.pill(tr("한국어"), x, 199 - scroll, true, 17) + 10;
@@ -116,6 +119,7 @@ void Application::home() {
     paint_.pill(trf("eShop 할인가 {0}", {priceText(g.base->priceDiscount)}), x, 199 - scroll, true, 17);
   else if (g.base && !g.base->priceRegular.empty())
     paint_.pill("eShop " + priceText(g.base->priceRegular), x, 199 - scroll, true, 17);
+  unclip();
   // Slide dots, bottom right: the current one is a wide butter pill.
   if (heroes_.size() > 1) {
     constexpr float Dot = 8, Wide = 24, Gap = 8;
@@ -146,9 +150,15 @@ void Application::home() {
       paint_.keyChip("R", tr("모두 보기"), 1252, y + HeaderMid);
     hit(1100, y, 160, 34, [this, n] { openTheme(n); });
     const int count = int(row.items.size());
-    const int first = focused ? std::max(0, selected_ - (Columns - 1)) : 0;
-    for (int col = 0; col < Columns && first + col <= count; ++col) {
-      const float cx = 260 + 170 * col, cy = y + 46;
+    // Sideways the shelf follows the cursor, or the finger while it glides;
+    // its last card (모두 보기) counts as one more.
+    const float left = glide("shelf" + std::to_string(n), 232, y + 40, 1048, RowHeight - 40,
+                             focused ? float(std::max(0, selected_ - (Columns - 1))) : 0.f,
+                             float(count + 1 - Columns), 170, true, true);
+    const int first = int(left);
+    clipTo(232, y + 40, 1048, RowHeight - 40);
+    for (int col = 0; col <= Columns && first + col <= count; ++col) {
+      const float cx = 260 + 170 * (first + col - left), cy = y + 46;
       if (first + col < count) {
         card(groups_[row.items[first + col]], cx, cy, focused && selected_ == first + col, false);
         continue;
@@ -161,6 +171,7 @@ void Application::home() {
       const std::string all = tr("모두 보기");
       paint_.fonts.middle(all, cx + (150 - paint_.fonts.measure(all, 18, true)) / 2, cy + 112, 18, Ink, true);
     }
+    unclip();
   }
   // Whole page: the hero plus one entry per row.
   if (!themes_.empty())

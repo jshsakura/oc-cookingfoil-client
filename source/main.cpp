@@ -69,9 +69,9 @@ int main(int argc, char **argv) {
       PadState pad;
       padConfigureInput(1, HidNpadStyleSet_NpadStandard);
       padInitializeDefault(&pad);
-      uint32_t repeatAt = 0, scrollAt = 0, heartbeatAt = 0;
+      uint32_t repeatAt = 0, stickAt = 0, heartbeatAt = 0;
       auto shownScreen = ui.current();
-      float touchX = 0, touchY = 0, lastY = 0;
+      float touchX = 0, touchY = 0, lastX = 0, lastY = 0;
       bool dragging = false;
       while (appletMainLoop()) {
         padUpdate(&pad);
@@ -90,15 +90,17 @@ int main(int argc, char **argv) {
           if (event.type == SDL_FINGERDOWN) {
             touchX = tx;
             touchY = lastY = ty;
+            lastX = tx;
             dragging = false;
             ui.fingerDown();
           } else if (event.type == SDL_FINGERMOTION) {
             if (!dragging && (std::abs(ty - touchY) > TapSlop || std::abs(tx - touchX) > TapSlop)) {
               dragging = true;
-              ui.dragBegin(touchX, touchY);
+              ui.dragBegin(touchX, touchY, tx - touchX, ty - touchY);
             }
             if (dragging)
-              ui.drag(ty - lastY);
+              ui.drag(tx - lastX, ty - lastY);
+            lastX = tx;
             lastY = ty;
           } else if (event.type == SDL_FINGERUP) {
             if (dragging)
@@ -132,14 +134,16 @@ int main(int argc, char **argv) {
           ui.action(Action::Left);
         if (keys & right)
           ui.action(Action::Right);
-        // Right stick scrolls continuously while held.
-        constexpr uint32_t ScrollEveryMs = 50;
-        const auto scroll = padGetButtons(&pad) &
-                            (HidNpadButton_StickRUp | HidNpadButton_StickRDown);
-        if (scroll && SDL_GetTicks() >= scrollAt) {
-          ui.action(scroll & HidNpadButton_StickRUp ? Action::ScrollUp
-                                                    : Action::ScrollDown);
-          scrollAt = SDL_GetTicks() + ScrollEveryMs;
+        // The right stick moves the screen itself, as a finger does; how far
+        // it leans sets the speed.
+        {
+          const HidAnalogStickState stick = padGetStickPos(&pad, 1);
+          constexpr float Dead = 0.15f;
+          const float lean = -stick.y / 32767.f;
+          const uint32_t now = SDL_GetTicks();
+          if (std::abs(lean) > Dead)
+            ui.stick((lean - (lean > 0 ? Dead : -Dead)) / (1 - Dead), std::min(0.05f, (now - stickAt) / 1000.f));
+          stickAt = now;
         }
         if (keys & HidNpadButton_A)
           ui.action(Action::Accept);

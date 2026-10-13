@@ -15,41 +15,66 @@ constexpr float Stretch = 0.35f, MaxStretch = 90;
 // How fast it springs back (per second), and how fast a coast that runs
 // into an end dies down.
 constexpr float SpringRate = 14, EdgeBrake = 30;
+// A shelf settling onto a card: a spring stiff enough to land quickly and
+// damped just under critical, so it overshoots a touch and clicks back.
+constexpr float SnapStiffness = 150, SnapDamping = 19;
 } // namespace
 float Application::glide(const std::string &id, float x, float y, float w, float h, float focus, float max,
-                         float unit) {
+                         float unit, bool horizontal, bool snap) {
   max = std::max(0.f, max);
   float shown = std::clamp(focus, 0.f, max);
+  if (const auto rest = glideRest_.find(id); rest != glideRest_.end() && !(glide_.active && glide_.id == id))
+    shown = std::clamp(rest->second, 0.f, max);
   if (glide_.active && glide_.id == id) {
     glide_.max = max;
     glide_.unit = unit;
     shown = glide_.pos; // may be past an end while it stretches
 
   }
-  glideAreas_.push_back({id, {x, y, w, h}, shown, max, unit});
+  glideAreas_.push_back({id, {x, y, w, h}, shown, max, unit, horizontal, snap});
   return shown;
 }
 void Application::fingerDown() {
-  swallowTap_ = glide_.active && !glide_.held && glide_.velocity != 0;
+  swallowTap_ = glide_.active && !glide_.held && (glide_.velocity != 0 || glide_.settling);
   glide_.velocity = 0;
+  glide_.settling = false;
 }
-void Application::dragBegin(float x, float y) {
-  // The topmost area under the finger, as drawn in the last frame.
+void Application::dragBegin(float x, float y, float dx, float dy) {
+  // The topmost area under the finger that moves the way the finger set
+  // off, as drawn in the last frame.
+  const bool sideways = std::abs(dx) > std::abs(dy);
+  // The area let go of stays where it was, or where it was settling to.
+  if (glide_.active && glide_.id != "hero")
+    glideRest_[glide_.id] = glide_.settling ? glide_.target : std::clamp(glide_.pos, 0.f, glide_.max);
   for (auto it = glideAreas_.rbegin(); it != glideAreas_.rend(); ++it) {
     const auto &a = it->area;
-    if (x < a.x || x >= a.x + a.w || y < a.y || y >= a.y + a.h)
+    if (it->horizontal != sideways || x < a.x || x >= a.x + a.w || y < a.y || y >= a.y + a.h)
       continue;
-    glide_ = {it->id, it->shown, 0, it->max, it->unit, true, true, SDL_GetTicks()};
+    glide_ = {it->id, it->shown, 0, it->max, it->unit, true, true, sideways, SDL_GetTicks(), 0, it->snap, false, 0};
     return;
   }
   glide_.held = false;
 }
-void Application::dragEnd(float fingerSpeed) {
+void Application::dragEnd(float speedX, float speedY) {
   if (!glide_.held)
     return;
   glide_.held = false;
+  const float fingerSpeed = glide_.horizontal ? speedX : speedY;
+  if (glide_.id == "hero") {
+    heroFlick(std::isnan(fingerSpeed) ? -glide_.velocity : fingerSpeed);
+    return;
+  }
   if (!std::isnan(fingerSpeed))
     glide_.velocity = -fingerSpeed / glide_.unit;
+  if (glide_.snap) {
+    // Where the flick would coast to, rounded to a whole card, so the shelf
+    // always comes to rest with its cards whole.
+    const float coast = glide_.velocity / std::log(1 / KeptPerSecond);
+    glide_.target = std::clamp(std::round(glide_.pos + coast), 0.f, std::max(0.f, std::round(glide_.max)));
+    glide_.settling = true;
+    glide_.at = SDL_GetTicks();
+    return;
+  }
   else if (SDL_GetTicks() - glide_.at > FlickWindowMs)
     glide_.velocity = 0;
   glide_.at = SDL_GetTicks();
@@ -67,12 +92,37 @@ float Application::glideFollow(float steps) const {
   const float limit = MaxStretch / glide_.unit;
   return edge + std::clamp(stretched, -limit, limit);
 }
+// The banner flips by how far the finger went, or how fast it flicked;
+// it springs back into place either way.
+void Application::heroFlick(float speed) {
+  constexpr float FlipDistance = 60, FlipSpeed = 500;
+  glide_.velocity = 0;
+  if (glide_.travel <= -FlipDistance || speed <= -FlipSpeed)
+    showHero(heroSlide_ + 1);
+  else if (glide_.travel >= FlipDistance || speed >= FlipSpeed)
+    showHero(heroSlide_ - 1);
+}
 void Application::glideStep() {
   if (!glide_.active || glide_.held)
     return;
   const uint32_t now = SDL_GetTicks();
   const float dt = std::min(0.05f, (now - glide_.at) / 1000.f);
   glide_.at = now;
+  if (glide_.settling) {
+    // In small steps, so a slow frame does not make the spring jump.
+    for (float left = dt; left > 0; left -= 0.008f) {
+      const float h = std::min(left, 0.008f);
+      const float pull = SnapStiffness * (glide_.target - glide_.pos) - SnapDamping * glide_.velocity;
+      glide_.velocity += pull * h;
+      glide_.pos += glide_.velocity * h;
+    }
+    if (std::abs(glide_.target - glide_.pos) * glide_.unit < 0.5f && std::abs(glide_.velocity) * glide_.unit < 8) {
+      glide_.pos = glide_.target;
+      glide_.velocity = 0;
+      glide_.settling = false;
+    }
+    return;
+  }
   const bool past = glide_.pos < 0 || glide_.pos > glide_.max;
   if (glide_.velocity != 0) {
     glide_.pos = glideFollow(glide_.velocity * dt);
@@ -92,6 +142,24 @@ void Application::glideStep() {
     glide_.pos = edge;
     glide_.velocity = 0;
   }
+}
+void Application::stick(float amount, float seconds) {
+  constexpr float FullSpeed = 1800; // px/s at full tilt; gentle near the middle
+  const GlideArea *target = nullptr;
+  for (const auto &a : glideAreas_)
+    if (!a.horizontal && a.max > 0 && (!target || a.area.w * a.area.h > target->area.w * target->area.h))
+      target = &a;
+  if (!target)
+    return;
+  if (!(glide_.active && glide_.id == target->id)) {
+    if (glide_.active && glide_.id != "hero")
+      glideRest_[glide_.id] = glide_.settling ? glide_.target : std::clamp(glide_.pos, 0.f, glide_.max);
+    glide_ = {target->id, target->shown, 0, target->max, target->unit, true, false, false, SDL_GetTicks(), 0, false, false, 0};
+  }
+  const float speed = amount * std::abs(amount) * FullSpeed / glide_.unit;
+  glide_.pos = std::clamp(glide_.pos + speed * seconds, 0.f, glide_.max);
+  glide_.velocity = 0;
+  glide_.at = SDL_GetTicks();
 }
 void Application::clipTo(float x, float y, float w, float h) {
   SDL_Rect previous{};

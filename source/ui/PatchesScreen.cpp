@@ -707,7 +707,11 @@ void Application::patchesScreen() {
       paint_.ring(260, y, 992, RowHeight, 18);
     paint_.rect(260, y, 992, RowHeight, Surface, 18);
     cover(game.icon, 282, y + 14, 80, false, game.game, game.app); // app icons as 홈브류 draws them
-    paint_.fonts.text(game.game, 382, y + 14, 22, Ink, true, 560);
+    // The name runs up to the state label on the right (at most ~110px);
+    // the focused one runs when even that is too short, as names do elsewhere.
+    constexpr float NameWidth = 1230 - 110 - 16 - 382;
+    if (inContent() && i == selected_ && !pickingPatch_) marquee(game.game, 382, y + 14, 22, NameWidth);
+    else paint_.fonts.text(game.game, 382, y + 14, 22, Ink, true, NameWidth);
     // A single patch is named; several are counted.
     const auto &lead = rows[game.rows.front()];
     std::string meta;
@@ -721,7 +725,7 @@ void Application::patchesScreen() {
       meta = trf("패치 {0}개", {std::to_string(game.rows.size())});
       if (on) meta += " · " + trf("켜짐 {0}개", {std::to_string(on)});
     }
-    paint_.fonts.text(meta, 382, y + 46, 18, Secondary, false, 560);
+    paint_.fonts.text(meta, 382, y + 46, 18, Secondary, false, 1230 - 16 - 382);
     // What the patches touch, then any warning about the game itself.
     std::vector<std::string> kinds;
     bool mismatch = false, gone = true;

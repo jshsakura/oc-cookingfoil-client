@@ -45,26 +45,28 @@ document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>key(b.dataset.k))
 const keys={ArrowUp:'UP',ArrowDown:'DOWN',ArrowLeft:'LEFT',ArrowRight:'RIGHT',Enter:'A',Escape:'B',Backspace:'B',
   x:'X',y:'Y',l:'L',r:'R',z:'ZR',PageUp:'SUP',PageDown:'SDOWN','+':'PLUS'};
 addEventListener('keydown',e=>{const k=keys[e.key];if(k){e.preventDefault();key(k);}});
-let start=null,last=0,moved=false,trail=[];
+let start=null,last=null,moved=false,trail=[];
 const at=(e)=>{const r=img.getBoundingClientRect();return[(e.clientX-r.left)*1280/r.width,(e.clientY-r.top)*720/r.height];};
 // Touch goes out in order, one request at a time, moves added up while one
 // is on its way: through the tunnel they would otherwise arrive shuffled.
-let queue=Promise.resolve(),pending=0,busy=false;
+let queue=Promise.resolve(),px=0,py=0,busy=false;
 const seq=(p)=>{queue=queue.then(()=>fetch(p)).catch(()=>{});return queue;};
-const flush=()=>{if(busy||!pending)return;const d=pending;pending=0;busy=true;
-  seq('/drag?dy='+d.toFixed(1)).then(()=>{busy=false;flush();});};
-img.onpointerdown=e=>{start=at(e);last=start[1];moved=false;trail=[[performance.now(),start[1]]];
+const flush=()=>{if(busy||(!px&&!py))return;const dx=px,dy=py;px=py=0;busy=true;
+  seq('/drag?dx='+dx.toFixed(1)+'&dy='+dy.toFixed(1)).then(()=>{busy=false;flush();});};
+img.onpointerdown=e=>{start=at(e);last=start;moved=false;trail=[[performance.now(),start[0],start[1]]];
   img.setPointerCapture(e.pointerId);seq('/down');};
 img.onpointermove=e=>{if(!start)return;const p=at(e);const now=performance.now();
-  trail.push([now,p[1]]);while(trail.length>2&&now-trail[0][0]>100)trail.shift();
-  if(!moved&&Math.abs(p[1]-start[1])>14){moved=true;seq('/dragstart?x='+start[0].toFixed(1)+'&y='+start[1].toFixed(1));}
-  if(moved){pending+=p[1]-last;last=p[1];flush();}};
+  trail.push([now,p[0],p[1]]);while(trail.length>2&&now-trail[0][0]>100)trail.shift();
+  const dx=p[0]-start[0],dy=p[1]-start[1];
+  if(!moved&&(Math.abs(dx)>14||Math.abs(dy)>14)){moved=true;
+    seq('/dragstart?x='+start[0].toFixed(1)+'&y='+start[1].toFixed(1)+'&dx='+dx.toFixed(1)+'&dy='+dy.toFixed(1));}
+  if(moved){px+=p[0]-last[0];py+=p[1]-last[1];last=p;flush();}};
 // The flick's speed is measured here, where the finger is, not from when
 // the moves reach the server.
 img.onpointerup=e=>{if(start&&!moved){const p=at(e);seq('/tap?x='+p[0].toFixed(1)+'&y='+p[1].toFixed(1));}
-  else if(start&&moved){const a=trail[0],b=trail[trail.length-1],dt=(b[0]-a[0])/1000;
-    const v=dt>0&&performance.now()-b[0]<80?(b[1]-a[1])/dt:0;
-    const end=()=>{if(busy||pending){setTimeout(end,10);return;}seq('/dragend?v='+v.toFixed(1));};end();}
+  else if(start&&moved){const a=trail[0],b=trail[trail.length-1],dt=(b[0]-a[0])/1000,fresh=performance.now()-b[0]<80;
+    const vx=dt>0&&fresh?(b[1]-a[1])/dt:0,vy=dt>0&&fresh?(b[2]-a[2])/dt:0;
+    const end=()=>{if(busy||px||py){setTimeout(end,10);return;}seq('/dragend?vx='+vx.toFixed(1)+'&vy='+vy.toFixed(1));};end();}
   start=null;};
 let shown='';
 async function loop(){
@@ -174,8 +176,11 @@ void input(ui::Application &app, const std::string &k) {
       {"UP", Action::Up},       {"DOWN", Action::Down},     {"LEFT", Action::Left},
       {"RIGHT", Action::Right}, {"A", Action::Accept},      {"B", Action::Back},
       {"L", Action::Previous},  {"R", Action::Next},        {"ZR", Action::Preview},
-      {"SUP", Action::ScrollUp}, {"SDOWN", Action::ScrollDown}};
-  if (k == "Y")
+  };
+  // The page's R-stick buttons lean the stick for a moment.
+  if (k == "SUP" || k == "SDOWN")
+    app.stick(k == "SUP" ? -1.f : 1.f, 0.15f);
+  else if (k == "Y")
     app.action(app.current() == ui::Screen::Settings || app.current() == ui::Screen::Installed
                    ? Action::Reload
                    : Action::Queue);
@@ -255,13 +260,14 @@ int serveWeb(ui::Application &app, ui::Runtime &runtime, int port) {
       app.fingerDown();
       reply(client, "text/plain", "ok");
     } else if (path == "/dragstart") {
-      app.dragBegin(std::strtof(args["x"].c_str(), nullptr), std::strtof(args["y"].c_str(), nullptr));
+      app.dragBegin(std::strtof(args["x"].c_str(), nullptr), std::strtof(args["y"].c_str(), nullptr),
+                    std::strtof(args["dx"].c_str(), nullptr), std::strtof(args["dy"].c_str(), nullptr));
       reply(client, "text/plain", "ok");
     } else if (path == "/dragend") {
-      app.dragEnd(std::strtof(args["v"].c_str(), nullptr));
+      app.dragEnd(std::strtof(args["vx"].c_str(), nullptr), std::strtof(args["vy"].c_str(), nullptr));
       reply(client, "text/plain", "ok");
     } else if (path == "/drag") {
-      app.drag(std::strtof(args["dy"].c_str(), nullptr));
+      app.drag(std::strtof(args["dx"].c_str(), nullptr), std::strtof(args["dy"].c_str(), nullptr));
       reply(client, "text/plain", "ok");
     } else if (path == "/text") {
       app.enterText(args["v"]);

@@ -245,13 +245,18 @@ public:
   void usePatchFolder(const std::string &sd);
   // Touch: a tap runs the topmost area drawn last frame; a drag scrolls.
   void touch(float x, float y);
-  void drag(float dy);
+  void drag(float dx, float dy);
   void fingerDown(); // a finger lands: a coasting list stops, and that touch opens nothing
-  void dragBegin(float x, float y); // a finger starts moving (past the tap slop)
-  // A finger lifts. `fingerSpeed` (px/s, down positive) when the caller
-  // measured the flick itself (the web preview); otherwise from the moves.
-  void dragEnd(float fingerSpeed = NAN);
+  // A finger starts moving (past the tap slop) from x, y; dx, dy is its first
+  // move, which picks sideways (a shelf, the banner) or up and down.
+  void dragBegin(float x, float y, float dx = 0, float dy = 1);
+  // A finger lifts. `speedX`, `speedY` (px/s) when the caller measured the
+  // flick itself (the web preview); otherwise from the moves.
+  void dragEnd(float speedX = NAN, float speedY = NAN);
   bool gliding() const { return glide_.active; }
+  // The right stick: moves the screen's main scrolling area (a popup's list
+  // when one is open) without the cursor. `amount` -1 (up) to 1 (down).
+  void stick(float amount, float seconds);
   float glidePos() const { return glide_.pos; } // tests
   // User patches: the server's list joined with what the SD store holds.
   struct PatchRow {
@@ -746,26 +751,39 @@ private:
     std::string id;
     SDL_FRect area;
     float shown = 0, max = 0, unit = 1; // what was drawn, its end, pixels per step
+    bool horizontal = false;            // a shelf moves sideways
+    bool snap = false;                  // it comes to rest on whole steps (a shelf's cards)
   };
   std::vector<GlideArea> glideAreas_; // as the last frame drew them
   struct Glide {
     std::string id;
     float pos = 0, velocity = 0, max = 0, unit = 1; // in steps (rows, or pixels when unit is 1)
-    bool active = false, held = false;
-    uint32_t at = 0; // the last finger move or glide step
+    bool active = false, held = false, horizontal = false;
+    uint32_t at = 0;    // the last finger move or glide step
+    float travel = 0;   // the finger's whole way, in pixels (the banner flips by it)
+    bool snap = false, settling = false; // springing onto `target`, a whole step
+    float target = 0;
   } glide_;
   bool swallowTap_ = false; // the touch that stopped a coasting list
+  // Where other areas were left by the finger (a shelf swiped, then the
+  // page scrolled): each keeps its place until a button is pressed.
+  std::map<std::string, float> glideRest_;
   // Where the area `id` (x, y, w, h on screen) starts: `focus` (what the
   // cursor wants) unless the finger moved it; 0..max, in steps of `unit` px.
-  float glide(const std::string &id, float x, float y, float w, float h, float focus, float max, float unit);
+  float glide(const std::string &id, float x, float y, float w, float h, float focus, float max, float unit,
+              bool horizontal = false, bool snap = false);
   void glideStep(); // the flick's coast and the spring back from an end, once a frame
+  void heroFlick(float speed); // the banner's turn when a finger lets go of it
   float glideFollow(float steps) const; // where `steps` more takes it, stretching past an end
   // A gliding list draws rows cut at its edges: drawing and touch are both
   // kept inside the area until unclip().
   std::vector<SDL_Rect> clips_;
   void clipTo(float x, float y, float w, float h);
   void unclip();
-  void unglide() { glide_.active = glide_.held = false; }
+  void unglide() {
+    glide_.active = glide_.held = glide_.settling = false;
+    glideRest_.clear();
+  }
   std::vector<size_t> homeRow(int row) const;
   void openTheme(size_t row);
   const std::vector<size_t> &libraryList() const; // cached until its inputs change

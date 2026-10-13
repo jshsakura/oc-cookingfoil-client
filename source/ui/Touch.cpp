@@ -144,14 +144,16 @@ void Application::touch(float x, float y) {
     }
   }
 }
-void Application::drag(float dy) {
+void Application::drag(float dx, float dy) {
   // In a gliding area: the view follows the finger (finger up reads further
   // down), and the speed of the last moves becomes the flick. Elsewhere a
   // drag does nothing; it never moves the cursor.
   if (!glide_.held)
     return;
   const uint32_t now = SDL_GetTicks();
-  const float steps = -dy / glide_.unit;
+  const float move = glide_.horizontal ? dx : dy;
+  glide_.travel += move;
+  const float steps = -move / glide_.unit;
   glide_.pos = glideFollow(steps);
   const float dt = std::max(0.008f, (now - glide_.at) / 1000.f);
   // Smoothed, so one jittery sample does not throw the list.

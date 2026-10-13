@@ -122,21 +122,21 @@ int runUiTests(SDL_Renderer *renderer) {
     const auto before = app.selectedName();
     app.fingerDown();
     app.dragBegin(700, 400);
-    app.drag(-120);
+    app.drag(0, -120);
     app.render();
     CHECK(app.gliding());
     CHECK(app.glidePos() > 0.4f && app.glidePos() < 0.6f); // 120px of a 240px row
     CHECK(app.selectedName() == before);
     // Pulled far past the top it stretches at most 90px, then springs back.
-    app.drag(2000);
+    app.drag(0, 2000);
     CHECK(app.glidePos() < 0 && app.glidePos() * 240 >= -90.5f);
-    app.dragEnd(0);
+    app.dragEnd(0, 0);
     for (int i = 0; i < 60; ++i) { SDL_Delay(5); app.render(); }
     CHECK(app.glidePos() == 0);
     // A flick coasts; the touch that stops it opens nothing.
     app.dragBegin(700, 400);
-    app.drag(-30);
-    app.dragEnd(-3000);
+    app.drag(0, -30);
+    app.dragEnd(0, -3000);
     SDL_Delay(20);
     app.render();
     app.fingerDown();
@@ -144,13 +144,21 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(app.current() == foil::ui::Screen::Library);
     app.action(foil::ui::Action::Right);
     CHECK(!app.gliding());
+    // The right stick moves the list, not the cursor.
+    app.render();
+    const auto cursor = app.selectedName();
+    app.stick(1, 0.2f);
+    CHECK(app.gliding() && app.glidePos() > 0);
+    CHECK(app.selectedName() == cursor);
+    app.action(foil::ui::Action::Left);
+    CHECK(!app.gliding());
     // Nothing glides where nothing scrolls: a drag there moves no cursor.
     app.screen(foil::ui::Screen::Home);
     app.action(foil::ui::Action::Back);
     app.render();
     const bool menu = app.onMenu();
     app.dragBegin(120, 300);
-    app.drag(-200);
+    app.drag(0, -200);
     CHECK(app.onMenu() == menu && app.current() == foil::ui::Screen::Home);
   }
   app.screen(foil::ui::Screen::Library);

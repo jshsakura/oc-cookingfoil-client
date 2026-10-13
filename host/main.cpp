@@ -350,8 +350,14 @@ int main(int argc, char **argv) {
         ui.search(ui.query() + event.text.text);
       if (event.type == SDL_MOUSEBUTTONUP && !typing)
         ui.touch(event.button.x, event.button.y);
-      if (event.type == SDL_MOUSEWHEEL)
-        ui.drag(event.wheel.y * 40.f);
+      if (event.type == SDL_MOUSEWHEEL) {
+        // The wheel is a short finger drag where the pointer is.
+        int mx = 0, my = 0;
+        SDL_GetMouseState(&mx, &my);
+        ui.dragBegin(float(mx), float(my), 0, 1);
+        ui.drag(0, event.wheel.y * 40.f);
+        ui.dragEnd(0, 0);
+      }
       if (event.type == SDL_KEYDOWN) {
         const auto key = event.key.keysym.sym;
         if (key == SDLK_PLUS || key == SDLK_F10) {
