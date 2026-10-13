@@ -509,19 +509,20 @@ index 0ba55bd..c19531f 100755
  
       m_contentBuffer.resize(0);
 diff --git a/source/util/network_util.cpp b/source/util/network_util.cpp
-index ea0dad8..e5d78a9 100755
+index ea0dad8..117ca76 100755
 --- a/source/util/network_util.cpp
 +++ b/source/util/network_util.cpp
-@@ -20,6 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+@@ -20,6 +20,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
  */
  
++#include "net/Socket.hpp"
 +#include <memory>
 +#include <deque>
  #include "util/network_util.hpp"
  #include "core/Config.hpp"
  
-@@ -207,6 +209,188 @@ namespace tin::network
+@@ -207,6 +210,189 @@ namespace tin::network
          }
      }
  
@@ -565,6 +566,7 @@ index ea0dad8..e5d78a9 100755
 +        curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "identity");
 +        curl_easy_setopt(curl, CURLOPT_RANGE, range.c_str());
 +        curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 512L * 1024);
++        curl_easy_setopt(curl, CURLOPT_SOCKOPTFUNCTION, &foil::net::tuneSocket); // CookingFoil: the large receive window
 +        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 +        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
 +        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
@@ -710,7 +712,7 @@ index ea0dad8..e5d78a9 100755
      static int StreamHttpRangeForUrl(const std::string& url, size_t offset, size_t size,
          const std::function<size_t (u8* bytes, size_t size)>& streamFunc)
      {
-@@ -233,11 +417,18 @@ namespace tin::network
+@@ -233,11 +419,19 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -724,13 +726,14 @@ index ea0dad8..e5d78a9 100755
 +        // every 16 KB of a multi-GB game; larger reads, no signals from curl's
 +        // timers, and a kept-alive socket on slow paths.
 +        curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 512L * 1024);
++        curl_easy_setopt(curl, CURLOPT_SOCKOPTFUNCTION, &foil::net::tuneSocket); // CookingFoil: the large receive window
 +        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 +        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
 +        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
          curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
          curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 8L);
          curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callbackCtx);
-@@ -325,7 +516,7 @@ namespace tin::network
+@@ -325,7 +519,7 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -739,7 +742,7 @@ index ea0dad8..e5d78a9 100755
          const std::string& userAgent = inst::curl::getUserAgent();
          curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.c_str());
          curl_easy_setopt(curl, CURLOPT_HEADERDATA, this);
-@@ -496,14 +687,18 @@ namespace tin::network
+@@ -496,14 +690,18 @@ namespace tin::network
  
              while (true)
              {
@@ -759,7 +762,7 @@ index ea0dad8..e5d78a9 100755
  
                      const size_t currentOffset = requestOffset + bytesReceived;
                      const size_t remaining = requestSize - bytesReceived;
-@@ -514,6 +709,17 @@ namespace tin::network
+@@ -514,6 +712,17 @@ namespace tin::network
                      const int rc = StreamHttpRangeForUrl(url, currentOffset, remaining, trackingFunc);
                      if (rc == 0)
                          return 0;
@@ -777,7 +780,7 @@ index ea0dad8..e5d78a9 100755
  
                      const bool fatal =
                          rc == 1999 ||
-@@ -547,7 +753,21 @@ namespace tin::network
+@@ -547,7 +756,21 @@ namespace tin::network
          };
  
          if (!m_isJbod)
@@ -799,7 +802,7 @@ index ea0dad8..e5d78a9 100755
  
          size_t globalOffset = offset;
          size_t remaining = size;
-@@ -679,7 +899,7 @@ namespace tin::network
+@@ -679,7 +902,7 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);

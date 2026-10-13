@@ -1,4 +1,5 @@
 #include "net/Segmented.hpp"
+#include "net/Socket.hpp"
 #include <curl/curl.h>
 #include <algorithm>
 #include <chrono>
@@ -295,6 +296,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
       curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
       curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 512L * 1024);
+      curl_easy_setopt(curl, CURLOPT_SOCKOPTFUNCTION, &tuneSocket);
       curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
       curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
       curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);

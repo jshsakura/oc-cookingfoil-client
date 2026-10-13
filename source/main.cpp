@@ -1,3 +1,4 @@
+#include "net/Socket.hpp"
 #include "ui/Application.hpp"
 #include "ui/Runtime.hpp"
 #include "core/Log.hpp"
@@ -42,18 +43,19 @@ static void openTextKeyboard(foil::ui::Application &ui, const foil::ui::Applicat
   swkbdClose(&keyboard);
 }
 int main(int argc, char **argv) {
-  // TCP receive buffers far above libnx's defaults (64 KB growing to 256 KB).
+  // TCP receive windows far above libnx's defaults (64 KB growing to 256 KB).
   // One connection carries at most its window per round trip: 256 KB over the
-  // 0.25 s to a server behind a distant Cloudflare edge is about 1 MB/s,
-  // which is what players outside saw. 8 MB as an application (about 32 MB/s
-  // a connection; the transfer memory is sb_efficiency times the buffers,
-  // about 70 MB of an application's gigabytes); 2 MB from the album, whose
-  // heap is small.
+  // 0.25 s to a distant Cloudflare edge is about 1 MB/s, what players outside
+  // saw. 16 MB as an application (about 64 MB/s a connection), 4 MB from the
+  // album. The transfer memory is sb_efficiency times the buffers, taken from
+  // the heap: about 66 MB of an application's gigabytes, about 9 MB from the
+  // album with two buffers (downloads use one connection).
   SocketInitConfig sockets = *socketGetDefaultInitConfig();
   const bool application = appletGetAppletType() == AppletType_Application;
   sockets.tcp_rx_buf_size = application ? 0x100000 : 0x40000;
-  sockets.tcp_rx_buf_max_size = application ? 0x800000 : 0x200000;
-  sockets.sb_efficiency = application ? 8 : 4;
+  sockets.tcp_rx_buf_max_size = application ? 0x1000000 : 0x400000;
+  sockets.sb_efficiency = application ? 4 : 2;
+  foil::net::setReceiveWindow(int(sockets.tcp_rx_buf_max_size));
   if (R_FAILED(socketInitialize(&sockets)))
     return 1;
   const bool nifm = R_SUCCEEDED(nifmInitialize(NifmServiceType_User));

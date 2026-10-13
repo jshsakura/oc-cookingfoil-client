@@ -115,7 +115,10 @@ void nativeInstall(const Item &item, const std::string &target,
   current.url = item.url;
   current.headers = headers;
   current.application = appletGetAppletType() == AppletType_Application;
-  current.connections = foil::net::connectionsFor(item.url, 0);
+  // Several connections a file are off for now (the server's decision):
+  // everything comes on one. MultiConnection brings the aria2 style back.
+  constexpr bool MultiConnection = false;
+  current.connections = MultiConnection ? foil::net::connectionsFor(item.url, 0) : 1;
   if (!current.application)
     current.connections = std::min(current.connections, 4);
   tin::network::SetParallelDownload(current.connections, current.application ? 0x2000000 : 0x400000);

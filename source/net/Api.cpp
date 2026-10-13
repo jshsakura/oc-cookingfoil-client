@@ -1,3 +1,4 @@
+#include "net/Socket.hpp"
 #include "net/Api.hpp"
 #include "core/Version.hpp"
 #include "core/Json.hpp"
@@ -234,6 +235,7 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "CookingFoil/" COOKINGFOIL_VERSION);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 512L * 1024); // fewer, larger writes on the way to the card
+    curl_easy_setopt(curl, CURLOPT_SOCKOPTFUNCTION, &tuneSocket);
     // Large patches take minutes; only a stalled transfer gives up.
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);

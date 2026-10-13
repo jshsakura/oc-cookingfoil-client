@@ -78,6 +78,10 @@ applied as a series rather than checked one by one.
   app's segmented engine (`net/Segmented`), long parts on several connections, and writes each
   batch at its offset in the placeholder. The NCA header is still checked first. NCZ keeps the
   ring path above, its parallel window sized from the same connection count.
+- Several connections a file are switched off for now (`MultiConnection` in
+  `source/platform/Engine.cpp`): every download runs on one connection, plain NCAs still on the
+  segmented engine's reader and writer threads. Every install request asks the socket for the
+  app's large receive window (`foil::net::tuneSocket`).
 
 ### Limits
 
