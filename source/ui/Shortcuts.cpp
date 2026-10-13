@@ -134,23 +134,24 @@ void Application::shortcutRemoveDialog() {
                     body.w - 64);
 }
 void Application::considerSelfShortcut() {
-  if (selfShortcutAsk_ || state_.selfShortcutAsked || !platform::canMakeShortcuts()) return;
+  // The applet mode notice with a button to fix it: every start from the
+  // album while there is no shortcut, until closed for this run.
+  if (selfShortcutAsk_ || selfShortcutClosed_ || !platform::canMakeShortcuts()) return;
   const auto path = forwarder::loaderPath(selfPath_);
   if (selfPath_.rfind("sdmc:/", 0) != 0) return; // not started from the SD card
   const auto id = forwarder::titleId(path);
   const bool present = platform::presentShortcuts({id}).count(id) > 0;
   if (present) shortcuts_.insert(id);
-  if (!forwarder::offerSelfShortcut(platform::applicationMode(), state_.selfShortcutAsked, selfPath_, present)) return;
+  if (!forwarder::offerSelfShortcut(platform::applicationMode(), selfShortcutClosed_, selfPath_, present)) return;
   selfShortcutAsk_ = true;
-  // The offer says what the applet mode notice says, and how to fix it.
+  // It takes the place of the plain applet mode notice.
   alert_.clear();
   alertTitle_.clear();
 }
 void Application::selfShortcutAction(Action a) {
   if (a != Action::Back && !(a == Action::Accept && settled())) return;
   selfShortcutAsk_ = false;
-  state_.selfShortcutAsked = true; // asked once, whatever the answer
-  saveStateQuietly();
+  selfShortcutClosed_ = true; // not again this run; the next start from the album asks again
   if (a == Action::Accept) makeShortcutFromNro(forwarder::loaderPath(selfPath_).substr(1), "", "CookingFoil", "", "", "", false);
 }
 void Application::selfShortcutDialog() {
@@ -159,14 +160,13 @@ void Application::selfShortcutDialog() {
   const float textW = 760 - 64;
   const auto why = tr("앨범에서 열면 메모리가 적어 큰 게임 설치가 느리거나 실패할 수 있습니다. 홈 메뉴에 바로가기를 만들면 다음부터 홈 메뉴에서 바로 열립니다.");
   const float described = paint_.fonts.wrapped(why, -9999, -9999, 19, Ink, textW, Lines);
-  const float bodyH = 24 + described + 16 + 26 + (patches ? 0 : 56) + 16;
-  const auto body = modal(760, bodyH, tr("홈 메뉴에 바로가기를 만들까요?"), tr("닫기"), "", tr("만들기"), HomeIcon);
+  const float bodyH = 24 + described + (patches ? 0 : 16 + 48) + 24;
+  const auto body = modal(760, bodyH, tr("애플릿 모드로 실행했습니다"), tr("닫기"), "", tr("바로가기 만들기"), HomeIcon);
   const float x = body.x + 32;
   float y = body.y + 24;
   y += paint_.fonts.wrapped(why, x, y, 19, Ink, textW, Lines) + 16;
-  paint_.fonts.text(tr("한 번만 묻습니다. 닫으면 다시 묻지 않습니다."), x, y, 17, Secondary, false, textW);
   if (!patches)
-    paint_.fonts.wrapped(tr("서명 패치가 보이지 않습니다. 바로가기는 서명 패치가 있어야 실행됩니다."), x, y + 34, 17,
+    paint_.fonts.wrapped(tr("서명 패치가 보이지 않습니다. 바로가기는 서명 패치가 있어야 실행됩니다."), x, y, 17,
                          Pending, textW, 2);
 }
 } // namespace foil::ui

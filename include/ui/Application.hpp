@@ -336,7 +336,8 @@ private:
   std::atomic<bool> signaturePatchesFound_{true};
   bool signaturePatches_ = true; // seen on the card at the last scan; a shortcut needs them to open
   bool shortcutRemoveAsk_ = false; // X on the app popup's shortcut row, asked first
-  bool selfShortcutAsk_ = false;   // this app's own, offered once from the album
+  bool selfShortcutAsk_ = false;   // this app's own, offered with the applet mode notice
+  bool selfShortcutClosed_ = false; // closed this run
   // The app popup's shortcut row: only for an app on the card, after its
   // 패치 and 세이브 rows.
   bool homebrewShortcutRow(const homebrew::App &app) const;

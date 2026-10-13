@@ -591,7 +591,6 @@ void Application::poll() {
     state_.skipFirmwareCheck = mine.skipFirmwareCheck;
     state_.reportErrors = mine.reportErrors;
     state_.makeShortcuts = mine.makeShortcuts;
-    state_.selfShortcutAsked = mine.selfShortcutAsked;
     state_.installTarget = mine.installTarget;
     state_.pairMessages = mine.pairMessages;
   }

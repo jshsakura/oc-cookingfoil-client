@@ -335,17 +335,6 @@ int runForwarderTests() {
     CHECK(!offerSelfShortcut(false, false, self, true));  // it has one
     CHECK(!offerSelfShortcut(false, false, "", false));   // no path to point at
   }
-  {
-    // The answer is kept with the other settings.
-    const auto dir = tempDir("state");
-    foil::State state;
-    state.deviceKey = std::string(64, 'a');
-    state.selfShortcutAsked = true;
-    foil::Error error;
-    CHECK(foil::saveState(dir + "/state.json", state, error));
-    CHECK(foil::loadState(dir + "/state.json").value.selfShortcutAsked);
-    std::filesystem::remove_all(dir);
-  }
   return failures;
 }
 
@@ -361,7 +350,7 @@ int runShortcutUiTests(SDL_Renderer *renderer) {
     SDL_Delay(750); // the double-press guard
   };
   {
-    // Opened from the album with no shortcut: offered once; A makes it.
+    // Opened from the album with no shortcut: the applet notice offers one; A makes it.
     foil::ui::Application app(renderer, "", "", "");
     CHECK(app.open());
     app.usePatchFolder(sd);
@@ -372,13 +361,13 @@ int runShortcutUiTests(SDL_Renderer *renderer) {
     CHECK(!app.askingSelfShortcut());
     CHECK(app.hasShortcut(titleId("/switch/cookingfoil/cookingfoil.nro")));
     CHECK(app.alert().empty());
-    // Asked once: not again, and not when a shortcut is there.
+    // Not when a shortcut is there.
     app.setSelfPath("sdmc:/switch/cookingfoil/cookingfoil.nro");
     CHECK(!app.askingSelfShortcut());
   }
   {
     // A new run sees the shortcut made above: nothing to offer. Without it,
-    // B closes the offer for good.
+    // B closes the offer for this run; the next run offers it again.
     foil::ui::Application app(renderer, "", "", "");
     CHECK(app.open());
     app.usePatchFolder(sd);
@@ -395,6 +384,11 @@ int runShortcutUiTests(SDL_Renderer *renderer) {
     CHECK(!again.askingSelfShortcut() && !again.hasShortcut(titleId("/switch/cookingfoil/cookingfoil.nro")));
     again.setSelfPath("sdmc:/switch/cookingfoil/cookingfoil.nro");
     CHECK(!again.askingSelfShortcut());
+    foil::ui::Application later(renderer, "", "", "");
+    CHECK(later.open());
+    later.usePatchFolder(sd);
+    later.setSelfPath("sdmc:/switch/cookingfoil/cookingfoil.nro");
+    CHECK(later.askingSelfShortcut());
     // Not from the SD card (the PC preview): nothing to point a shortcut at.
     foil::ui::Application preview(renderer, "", "", "");
     CHECK(preview.open());

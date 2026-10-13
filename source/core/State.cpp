@@ -22,7 +22,6 @@ bool saveState(const std::string& path, const State& state, Error& error) {
     json_object_object_add(object.get(), "ignoreFirmware", json_object_new_boolean(state.skipFirmwareCheck));
     json_object_object_add(object.get(), "reportErrors", json_object_new_boolean(state.reportErrors));
     json_object_object_add(object.get(), "makeShortcuts", json_object_new_boolean(state.makeShortcuts));
-    json_object_object_add(object.get(), "selfShortcutAsked", json_object_new_boolean(state.selfShortcutAsked));
     json_object_object_add(object.get(), "installTarget", json_object_new_string(state.installTarget.c_str()));
     auto* keys = json_object_new_object();
     for (const auto& [url, key] : state.accessKeys) json_object_object_add(keys, url.c_str(), json_object_new_string(key.c_str()));
@@ -58,8 +57,6 @@ Parsed<State> loadState(const std::string& path) {
         if (json_object_is_type(report, json_type_boolean)) result.value.reportErrors = json_object_get_boolean(report);
         auto* shortcuts = field(root.get(), "makeShortcuts");
         if (json_object_is_type(shortcuts, json_type_boolean)) result.value.makeShortcuts = json_object_get_boolean(shortcuts);
-        auto* asked = field(root.get(), "selfShortcutAsked");
-        if (json_object_is_type(asked, json_type_boolean)) result.value.selfShortcutAsked = json_object_get_boolean(asked);
         const auto target = stringField(root.get(), "installTarget");
         if (target == "sd" || target == "nand") result.value.installTarget = target;
         auto* keys = field(root.get(), "accessKeys");
