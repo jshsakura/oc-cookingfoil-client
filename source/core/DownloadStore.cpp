@@ -119,10 +119,13 @@ void rollback(sqlite3 *db) {
   if (db && !sqlite3_get_autocommit(db))
     sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
 }
+// close_v2: a statement still open (a failed check's) does not keep the file
+// open; it closes once that statement goes. The console cannot rename an
+// open file, so a damaged one could never be set aside with plain close.
 void closeDb(sqlite3 *&db) {
   if (db) {
     rollback(db);
-    sqlite3_close(db);
+    sqlite3_close_v2(db);
   }
   db = nullptr;
 }

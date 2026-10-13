@@ -1071,7 +1071,7 @@ private:
   // 대기 중's rows from `y`; rows above `viewTop` are scrolled away.
   void queueList(float y, float viewTop);
   float queueHeight() const;
-  static constexpr float QueueTitle = 58, QueueStep = 88;
+  static constexpr float QueueTitle = 0, QueueStep = 88; // the queue has no title: its cards follow the one above
   // 진행 중 below the installer's card: the retro and patch cards and the
   // queue, gliding as one under a finger.
   void runningList(float y);

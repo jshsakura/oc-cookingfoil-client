@@ -192,8 +192,6 @@ void Application::queueList(float y, float viewTop) {
   if (installQueue_.empty())
     return;
   constexpr float Row = 76, Step = QueueStep, Bottom = 660;
-  paint_.fonts.text(tr("Queued"), 260, y - 6, 26, Ink, true);
-  y += QueueTitle;
   const int count = int(installQueue_.size());
   for (int i = 0; i < count; ++i) {
     const float ry = y + i * Step;
