@@ -1,7 +1,16 @@
 diff --git a/include/data/buffered_placeholder_writer.hpp b/include/data/buffered_placeholder_writer.hpp
-index beb8363..b08be0c 100755
+index beb8363..8e0a2b1 100755
 --- a/include/data/buffered_placeholder_writer.hpp
 +++ b/include/data/buffered_placeholder_writer.hpp
+@@ -38,7 +38,7 @@ namespace tin::data
+     {
+         std::atomic_bool isFinalized = false;
+         u64 writeOffset = 0;
+-        u8 data[BUFFER_SEGMENT_DATA_SIZE] = {0};
++        u8 data[BUFFER_SEGMENT_DATA_SIZE]; // CookingFoil: not zeroed, see the constructor
+     };
+ 
+     // Receives data in a circular buffer split into 8MB segments
 @@ -46,8 +46,10 @@ namespace tin::data
      {
          private:
@@ -165,10 +174,10 @@ index a4c62f2..d917b1a 100755
      void ClearBasicAuth();
  
 diff --git a/source/data/buffered_placeholder_writer.cpp b/source/data/buffered_placeholder_writer.cpp
-index 9ebdd96..c9a5022 100755
+index 9ebdd96..298aac3 100755
 --- a/source/data/buffered_placeholder_writer.cpp
 +++ b/source/data/buffered_placeholder_writer.cpp
-@@ -33,8 +33,9 @@ namespace tin::data
+@@ -33,11 +33,15 @@ namespace tin::data
  {
      int NUM_BUFFER_SEGMENTS;
  
@@ -179,7 +188,36 @@ index 9ebdd96..c9a5022 100755
 +        m_totalDataSize(totalDataSize), m_contentStorage(contentStorage), m_ncaId(ncaId), m_writer(ncaId, contentStorage, std::move(resume))
      {
          // Though currently the number of segments is fixed, we want them allocated on the heap, not the stack
-         m_bufferSegments = std::make_unique<BufferSegment[]>(NUM_BUFFER_SEGMENTS);
+-        m_bufferSegments = std::make_unique<BufferSegment[]>(NUM_BUFFER_SEGMENTS);
++        // CookingFoil: default-initialised, not zeroed (make_unique<T[]> wrote
++        // all of the ring, hundreds of MB, for every NCA); a segment's bytes
++        // are only read up to what was written into it.
++        m_bufferSegments = std::unique_ptr<BufferSegment[]>(new BufferSegment[NUM_BUFFER_SEGMENTS]);
+ 
+         if (m_bufferSegments == nullptr)
+             THROW_FORMAT("Failed to allocated buffer segments!\n");
+@@ -113,8 +117,11 @@ namespace tin::data
+         size_t sizeToWriteToPlaceholder = std::min(m_totalDataSize - m_sizeWrittenToPlaceholder, BUFFER_SEGMENT_DATA_SIZE);
+         m_writer.write(m_currentSegmentToWritePtr->data, sizeToWriteToPlaceholder);
+ 
+-        m_currentSegmentToWritePtr->isFinalized = false;
++        // CookingFoil: the offset is cleared before the segment is handed back;
++        // the other way round, the curl thread could see it free with its old
++        // offset and throw "Unexpected non-zero write offset".
+         m_currentSegmentToWritePtr->writeOffset = 0;
++        m_currentSegmentToWritePtr->isFinalized.store(false, std::memory_order_release);
+         m_currentSegmentToWrite = (m_currentSegmentToWrite + 1) % NUM_BUFFER_SEGMENTS;
+         m_currentSegmentToWritePtr = &m_bufferSegments[m_currentSegmentToWrite];
+         m_sizeWrittenToPlaceholder += sizeToWriteToPlaceholder;
+@@ -158,7 +165,7 @@ namespace tin::data
+             unsigned int segmentIndex = m_currentFreeSegment + i;
+             BufferSegment* bufferSegment = &m_bufferSegments[segmentIndex % NUM_BUFFER_SEGMENTS];
+ 
+-            if (bufferSegment->isFinalized)
++            if (bufferSegment->isFinalized.load(std::memory_order_acquire))
+                 return false;
+ 
+             if (i != 0 && bufferSegment->writeOffset != 0)
 diff --git a/source/install/http_nsp.cpp b/source/install/http_nsp.cpp
 index 50d2f4a..892f701 100755
 --- a/source/install/http_nsp.cpp
@@ -786,20 +824,21 @@ index 59c4417..bd7aeca 100755
                  if (contentStorage->Has(ncaId))
                      contentStorage->Delete(ncaId);
 diff --git a/source/nx/nca_writer.cpp b/source/nx/nca_writer.cpp
-index 0ba55bd..fdeaf70 100755
+index 0ba55bd..48436ec 100755
 --- a/source/nx/nca_writer.cpp
 +++ b/source/nx/nca_writer.cpp
-@@ -30,6 +30,9 @@ SOFTWARE.
+@@ -30,6 +30,10 @@ SOFTWARE.
  #include "util/title_util.hpp"
  #include "install/nca.hpp"
  #include <limits>
 +#include "core/Log.hpp"
 +#include "core/NczPoint.hpp"
 +#include "core/ZstdBlockDecoder.hpp"
++#include <new>
  
  // region Utility Functions, Classes, Structs
  
-@@ -200,7 +203,71 @@ NcaBodyWriter::NcaBodyWriter(const NcmContentId& ncaId, u64 offset, std::shared_
+@@ -200,7 +204,72 @@ NcaBodyWriter::NcaBodyWriter(const NcmContentId& ncaId, u64 offset, std::shared_
  
  NcaBodyWriter::~NcaBodyWriter()
  {
@@ -817,6 +856,7 @@ index 0ba55bd..fdeaf70 100755
 +
 +void NcaBodyWriter::startFlusher()
 +{
++     m_flushStop = false; // CookingFoil: a flusher started again must not see an old stop
 +     m_flusher = std::thread([this] {
 +          std::unique_lock<std::mutex> held(m_flushLock);
 +          while (true)
@@ -872,7 +912,7 @@ index 0ba55bd..fdeaf70 100755
  }
  
  void NcaBodyWriter::close()
-@@ -210,6 +277,16 @@ void NcaBodyWriter::close()
+@@ -210,6 +279,16 @@ void NcaBodyWriter::close()
       doBeforeClose(); // Derived close/flush delegates so content buffer is complete
  
       flushContentBuffer(); // Virtual dispatch - overrides expected to invoke parent
@@ -889,7 +929,7 @@ index 0ba55bd..fdeaf70 100755
  
       doClose(); // Derived cleanup before finalizing close
  
-@@ -274,13 +351,55 @@ void NcaBodyWriter::flushContentBuffer()
+@@ -274,13 +353,55 @@ void NcaBodyWriter::flushContentBuffer()
  
       if (m_contentStorage)
       {
@@ -947,7 +987,7 @@ index 0ba55bd..fdeaf70 100755
  // endregion
  
  // region NCZ Writer Delegates
-@@ -296,7 +415,7 @@ public:
+@@ -296,7 +417,7 @@ public:
       }
       ~DirectStreamWriter() override
       {
@@ -956,7 +996,7 @@ index 0ba55bd..fdeaf70 100755
       }
  
       void write(const u8* data, u64 sz) override
-@@ -347,7 +466,7 @@ public:
+@@ -347,7 +468,7 @@ public:
  
       ~ZstdStreamWriter() override
       {
@@ -965,7 +1005,7 @@ index 0ba55bd..fdeaf70 100755
       }
  
       void close() override
-@@ -406,6 +525,33 @@ private:
+@@ -406,6 +527,33 @@ private:
       std::unique_ptr<ZSTD_DCtx, ZstdDCtxDeleter> m_dctx;
  };
  
@@ -999,7 +1039,7 @@ index 0ba55bd..fdeaf70 100755
  // NCZBLOCK Stream Writer - handles streaming NCZBLOCK compression
  class NczBlockStreamWriter : public CloseableWriter
  {
-@@ -421,7 +567,7 @@ public:
+@@ -421,7 +569,7 @@ public:
  
       ~NczBlockStreamWriter() override
       {
@@ -1008,7 +1048,7 @@ index 0ba55bd..fdeaf70 100755
       }
  
       void close() override
-@@ -597,13 +743,57 @@ private:
+@@ -597,13 +745,57 @@ private:
  class NczBodyWriter : public NcaBodyWriter
  {
  public:
@@ -1068,7 +1108,7 @@ index 0ba55bd..fdeaf70 100755
       }
  
  protected:
-@@ -810,6 +1000,7 @@ public:
+@@ -810,6 +1002,7 @@ public:
                 }
  
                 m_sectionsInitialized = true;
@@ -1076,7 +1116,7 @@ index 0ba55bd..fdeaf70 100755
                 m_buffer.resize(0);
            }
  
-@@ -839,7 +1030,16 @@ public:
+@@ -839,7 +1032,16 @@ public:
                 u64 magic64; memcpy(&magic64, m_buffer.data(), sizeof(magic64));
                 u32 magic32; memcpy(&magic32, m_buffer.data(), sizeof(magic32));
  
@@ -1094,7 +1134,7 @@ index 0ba55bd..fdeaf70 100755
                 {
                      m_writer = std::make_unique<ZstdStreamWriter>(getDirectWriterFn());
                 }
-@@ -868,6 +1068,36 @@ public:
+@@ -868,6 +1070,43 @@ public:
       }
  
  private:
@@ -1114,12 +1154,19 @@ index 0ba55bd..fdeaf70 100755
 +                    m_nextPoint = std::numeric_limits<u64>::max();
 +                    return;
 +               }
-+               auto mark = std::make_shared<Mark>();
-+               mark->decoder = saved;
-+               mark->consumed = at.consumed;
-+               mark->produced = at.produced;
-+               mark->windowSize = at.window;
-+               if (!d->window(mark->window)) return;
++               // Short of memory for the window copy: no point this time,
++               // the download goes on (the next boundary tries again).
++               std::shared_ptr<Mark> mark;
++               try {
++                    mark = std::make_shared<Mark>();
++                    mark->decoder = saved;
++                    mark->consumed = at.consumed;
++                    mark->produced = at.produced;
++                    mark->windowSize = at.window;
++                    if (!d->window(mark->window)) return;
++               } catch (const std::bad_alloc&) {
++                    return;
++               }
 +               m_nextPoint = at.produced + std::max(m_resume->every, 4 * at.window);
 +               flushMarked(std::move(mark));
 +          });
@@ -1131,7 +1178,7 @@ index 0ba55bd..fdeaf70 100755
       std::unique_ptr<CloseableWriter> m_writer;
  
       std::vector<u8> m_buffer;
-@@ -881,36 +1111,71 @@ private:
+@@ -881,36 +1120,71 @@ private:
  
  // region NcaWriter Methods
  
@@ -1217,7 +1264,7 @@ index 0ba55bd..fdeaf70 100755
  }
  
  void NcaWriter::write(const  u8* ptr, u64 sz)
-@@ -944,6 +1209,14 @@ void NcaWriter::write(const  u8* ptr, u64 sz)
+@@ -944,6 +1218,14 @@ void NcaWriter::write(const  u8* ptr, u64 sz)
  
            // assert m_buffer.size() == NCA_HEADER_SIZE
  
@@ -1232,7 +1279,7 @@ index 0ba55bd..fdeaf70 100755
            // Now we can flush the header
            flushHeader();
            m_headerFlushed = true;
-@@ -979,7 +1252,9 @@ void NcaWriter::write(const  u8* ptr, u64 sz)
+@@ -979,7 +1261,9 @@ void NcaWriter::write(const  u8* ptr, u64 sz)
            if (magic == NczHeader::MAGIC)
            {
                 // NOTE: Don't clear header, it needs to be written to m_write for downstream consumption

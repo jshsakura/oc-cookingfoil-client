@@ -31,7 +31,9 @@
 #include <stdexcept>
 namespace {
 // 256MB and 32MB of download buffer.
-constexpr int ApplicationSegments = 32, AppletSegments = 4;
+// 64 MB as an application is plenty between the network and the card;
+// 256 MB was a large block taken and freed for every NCA.
+constexpr int ApplicationSegments = 8, AppletSegments = 4;
 // The file being installed, for streamToPlace: its address, the headers
 // every request carries, and how many connections it gets.
 struct Current {
