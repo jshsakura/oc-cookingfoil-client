@@ -120,8 +120,7 @@ void Application::sendBugReport(const std::string &said) {
 void Application::pollLog() {
   if (bugDone_.exchange(false)) {
     bugWorker_.join();
-    bugStatus_ = incomingBugStatus_;
-    message(bugStatus_);
+    message(incomingBugStatus_); // said once; the row reads as before
   }
   // An error popup that just appeared goes into the log on the card.
   if (!alert_.empty() && alert_ != lastAlert_) {

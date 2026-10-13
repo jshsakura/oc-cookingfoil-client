@@ -216,8 +216,9 @@ double TimeLeft::update(double seconds, uint64_t left, double speed) {
   stalled_ = -1;
   if (at_ >= 0 && seconds - at_ < Every)
     return left_;
-  const double estimate = double(left) / (speed * 1024 * 1024);
-  left_ = left_ < 0 ? estimate : std::max(0., (left_ - (seconds - at_)) * 0.8 + estimate * 0.2);
+  // The speed is the whole download's average already: what is left over it,
+  // nothing blended with an earlier guess that may have been far off.
+  left_ = double(left) / (speed * 1024 * 1024);
   at_ = seconds;
   return left_;
 }

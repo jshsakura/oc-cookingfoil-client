@@ -123,9 +123,9 @@ int runInstallerTests() {
     const double first = left.update(1, 600 * MiB, 10);
     CHECK(first > 59 && first < 61);
     CHECK(left.update(8, 580 * MiB, 50) == first); // held
-    // A slow moment moves it only a little.
-    const double next = left.update(11, 550 * MiB, 1);
-    CHECK(next > first - 20 && next < first + 120);
+    // Ten seconds on: what is left over the speed given, nothing blended in.
+    const double next = left.update(11, 550 * MiB, 5);
+    CHECK(next > 109 && next < 111);
     // A short stall holds it; fifteen seconds of nothing make it unknown.
     CHECK(left.update(13, 550 * MiB, 0) == next);
     CHECK(left.update(28, 550 * MiB, 0) < 0);

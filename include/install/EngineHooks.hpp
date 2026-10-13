@@ -1,5 +1,6 @@
 #pragma once
 #include <functional>
+#include <vector>
 #include "install/Installer.hpp"
 namespace foil::install {
 void engineSink(Installer *sink);
@@ -21,4 +22,14 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
 // or file name ("0123….nca"). True when such a point is kept for it.
 bool resumable(const std::string &nca);
 void forgetResume(const std::string &nca);
+// A solid NCZ (`nca`, `size` bytes in the file): the point kept for it by this
+// download (the same file at the same place), with its decoded window read
+// back from the card. False when there is none to go on from.
+bool nczPoint(const std::string &nca, uint64_t size, std::string &point, std::vector<uint8_t> &window);
+// Keeps one: the window to the card first (the newest two stay), then the
+// point, which 다운로드's database takes.
+void keepNczPoint(const std::string &nca, uint64_t size, const std::string &point, const std::vector<uint8_t> &window,
+                  uint64_t produced);
+// The largest window a point is kept for (memory: more as an application).
+uint64_t nczMaxWindow();
 } // namespace foil::install

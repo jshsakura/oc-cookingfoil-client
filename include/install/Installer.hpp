@@ -49,9 +49,9 @@ private:
   double tick_ = -1, first_ = -1, shownAt_ = -1, shown_ = -1;
   uint64_t last_ = 0, gathered_ = 0;
 };
-// The time left from that speed, changed once every ten seconds and held
-// in between (four parts the old estimate, one the new). Fifteen seconds
-// with nothing arriving make it unknown again.
+// The time left: what is left over that average speed, worked out once every
+// ten seconds and held in between. Fifteen seconds with nothing arriving make
+// it unknown again.
 class TimeLeft {
 public:
   // Seconds, or negative while there is no speed to tell it by.

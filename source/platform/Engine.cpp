@@ -16,6 +16,13 @@
 #include <cctype>
 #include "net/Segments.hpp"
 #include "core/DownloadStore.hpp"
+#include "core/Json.hpp"
+#include <unistd.h>
+#include <fcntl.h>
+#include <map>
+#include <filesystem>
+#include "core/ZstdBlockDecoder.hpp"
+#include "core/NczPoint.hpp"
 #include "net/Socket.hpp"
 #include <cstdio>
 #include "core/Log.hpp"
@@ -184,10 +191,89 @@ bool resumable(const std::string &nca) {
   auto *sink = engineSink();
   return sink && sink->resumePoint(resumeKey(nca)).has_value();
 }
+namespace {
+const std::string ResumeDir = "sdmc:/switch/cookingfoil/resume";
+// The window files kept for `key`, by the decoded position each ends at.
+std::map<uint64_t, std::string> windowFiles(const std::string &key) {
+  std::map<uint64_t, std::string> out;
+  std::error_code ec;
+  for (const auto &entry : std::filesystem::directory_iterator(ResumeDir, ec)) {
+    std::string owner;
+    uint64_t produced = 0;
+    if (foil::windowFileOf(entry.path().filename().string(), owner, produced) && owner == key)
+      out[produced] = entry.path().string();
+  }
+  return out;
+}
+} // namespace
 void forgetResume(const std::string &nca) {
   if (auto *sink = engineSink())
     sink->forgetResumePoint(resumeKey(nca));
+  std::error_code ec;
+  for (const auto &[at, path] : windowFiles(resumeKey(nca)))
+    std::filesystem::remove(path, ec);
 }
+bool nczPoint(const std::string &nca, uint64_t size, std::string &point, std::vector<uint8_t> &window) {
+  auto *sink = engineSink();
+  if (!sink || current.url.empty())
+    return false;
+  const auto key = resumeKey(nca);
+  const auto kept = sink->resumePoint(key);
+  foil::NczPoint at;
+  if (!kept || kept->url != current.url || kept->total != size || !foil::NczPoint::isNcz(kept->plan) ||
+      !foil::NczPoint::decode(kept->plan, at))
+    return false;
+  foil::ZstdBlockDecoder::Point state;
+  if (!foil::ZstdBlockDecoder::pointOf(at.decoder, state))
+    return false;
+  const auto files = windowFiles(key);
+  const auto file = files.find(at.produced);
+  if (file == files.end())
+    return false;
+  const auto bytes = readFile(file->second);
+  if (bytes.size() != state.window)
+    return false;
+  window.assign(bytes.begin(), bytes.end());
+  point = kept->plan;
+  logLine("download resumes at " + std::to_string((at.zstdStart + at.consumed) >> 20) + " MB (compressed): " + nca);
+  return true;
+}
+void keepNczPoint(const std::string &nca, uint64_t size, const std::string &point, const std::vector<uint8_t> &window,
+                  uint64_t produced) {
+  auto *sink = engineSink();
+  if (!sink || current.url.empty())
+    return;
+  const auto key = resumeKey(nca);
+  makeDirectories(ResumeDir);
+  const auto path = ResumeDir + "/" + foil::windowFileName(key, produced);
+  // The window on the card before the point is kept: a point without its
+  // window could not be gone on from.
+  const int out = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  if (out < 0)
+    return;
+  size_t done = 0;
+  while (done < window.size()) {
+    const auto n = ::write(out, window.data() + done, window.size() - done);
+    if (n <= 0)
+      break;
+    done += size_t(n);
+  }
+  const bool written = done == window.size() && ::fsync(out) == 0;
+  if (::close(out) != 0 || !written) {
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    return;
+  }
+  sink->keepResumePoint(key, {current.url, "", size, point});
+  // The newest two stay: the database may still hold the one before.
+  auto files = windowFiles(key);
+  std::error_code ec;
+  while (files.size() > 2) {
+    std::filesystem::remove(files.begin()->second, ec);
+    files.erase(files.begin());
+  }
+}
+uint64_t nczMaxWindow() { return current.application ? 32ull << 20 : 8ull << 20; }
 Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, const std::function<bool()> &prepare,
                      const std::function<bool(uint64_t, const char *, size_t)> &write,
                      const std::function<void()> &flush) {

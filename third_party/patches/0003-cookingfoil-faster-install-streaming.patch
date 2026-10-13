@@ -1,5 +1,5 @@
 diff --git a/include/data/buffered_placeholder_writer.hpp b/include/data/buffered_placeholder_writer.hpp
-index beb8363..8bba534 100755
+index beb8363..b08be0c 100755
 --- a/include/data/buffered_placeholder_writer.hpp
 +++ b/include/data/buffered_placeholder_writer.hpp
 @@ -46,8 +46,10 @@ namespace tin::data
@@ -15,11 +15,22 @@ index beb8363..8bba534 100755
  
              // The current segment to which further data will be appended
              u64 m_currentFreeSegment = 0;
+@@ -63,7 +65,9 @@ namespace tin::data
+ 			NcaWriter m_writer;
+ 
+         public:
+-            BufferedPlaceholderWriter(std::shared_ptr<nx::ncm::ContentStorage>& contentStorage, NcmContentId ncaId, size_t totalDataSize);
++            // CookingFoil: `resume` keeps points for a solid NCZ, or goes on from one.
++            BufferedPlaceholderWriter(std::shared_ptr<nx::ncm::ContentStorage>& contentStorage, NcmContentId ncaId, size_t totalDataSize,
++                                      std::shared_ptr<NczResume> resume = nullptr);
+ 
+             void AppendData(void* source, size_t length);
+             bool CanAppendData(size_t length);
 diff --git a/include/nx/nca_writer.h b/include/nx/nca_writer.h
-index 8e5b7e5..c4fb307 100755
+index 8e5b7e5..3b48867 100755
 --- a/include/nx/nca_writer.h
 +++ b/include/nx/nca_writer.h
-@@ -21,6 +21,11 @@ SOFTWARE.
+@@ -21,11 +21,33 @@ SOFTWARE.
  */
  
  #pragma once
@@ -31,7 +42,47 @@ index 8e5b7e5..c4fb307 100755
  #include <functional>
  #include <switch.h>
  #include <vector>
-@@ -86,6 +91,22 @@ protected:
+ #include "nx/ncm.hpp"
+ #include <memory>
++#include <string>
++
++// CookingFoil: a solid NCZ (one zstd stream) that can go on later from where
++// it was cut off. Every so often, at a block boundary, a point is kept: once
++// everything before it is on the card, `keep` hears it (foil::NczPoint
++// encoded, with the decoded window before it). To go on, `point`, `window`
++// and `prefix` (the file's first zstdStart bytes) are set before writing.
++struct NczResume
++{
++	std::function<void(const std::string& point, const std::vector<u8>& window, u64 produced)> keep;
++	u64 every = 64ull << 20;     // decoded bytes between points, at least
++	u64 maxWindow = 32ull << 20; // a stream with a larger window keeps none
++	std::string point;
++	std::vector<u8> window;
++	std::vector<u8> prefix;
++	u64 zstdStart = 0; // set as the section table is read: where the stream begins
++};
+ 
+ class CloseableWriter
+ {
+@@ -81,17 +103,51 @@ protected:
+ 	// To *actually* flush the buffer to content storage
+ 	virtual void flushContentBuffer();
+ 
++	// CookingFoil: a point to keep once the bytes before it are on the card.
++	struct Mark { std::string decoder; u64 consumed = 0, produced = 0, windowSize = 0; std::vector<u8> window; };
++	// What is buffered goes to the card now, carrying `mark`.
++	void flushMarked(std::shared_ptr<Mark> mark);
++	// On the card thread, the file flushed, with the hash's midstate there.
++	std::function<void(const Mark&, const std::string& sha)> m_onMark;
++public:
++	// Hashes what goes to the card (after `start`, the bytes before it).
++	void hashFrom(const Sha256Context& start) { m_sha = std::make_unique<Sha256Context>(start); }
++	// After close: 1 the written NCA hashes to its id, -1 it does not, 0 not hashed.
++	int hashCheck() const { return m_hashCheck; }
++protected:
++
+ 	std::vector<u8> m_contentBuffer;
+ 	std::shared_ptr<nx::ncm::ContentStorage> m_contentStorage;
  	NcmContentId m_ncaId;
  
  	u64 m_offset;
@@ -41,7 +92,10 @@ index 8e5b7e5..c4fb307 100755
 +	// the next one is decompressed and encrypted, so the card and the CPU work
 +	// at once. At most one buffer waits; a write error comes back on the next
 +	// flush or at close.
-+	struct Pending { u64 offset; std::vector<u8> data; };
++	struct Pending { u64 offset; std::vector<u8> data; std::shared_ptr<Mark> mark; };
++	std::shared_ptr<Mark> m_nextMark;
++	std::unique_ptr<Sha256Context> m_sha; // used by the card thread only, then at close
++	int m_hashCheck = 0;
 +	void startFlusher();
 +	void drainFlusher(); // waits for the card, then ends the thread
 +	std::thread m_flusher;
@@ -54,6 +108,23 @@ index 8e5b7e5..c4fb307 100755
  };
  
  class NcaWriter : public CloseableWriter
+ {
+ public:
+-	NcaWriter(const NcmContentId& ncaId, std::shared_ptr<nx::ncm::ContentStorage>& contentStorage);
++	// CookingFoil: with `resume`, a solid NCZ keeps points, or goes on from one.
++	NcaWriter(const NcmContentId& ncaId, std::shared_ptr<nx::ncm::ContentStorage>& contentStorage,
++	          std::shared_ptr<NczResume> resume = nullptr);
+ 	~NcaWriter() override;
+ 
+ 	void close() override;
+@@ -104,4 +160,7 @@ protected:
+ 	std::vector<u8> m_buffer;
+ 	std::shared_ptr<NcaBodyWriter> m_writer; // Must be shared_ptr for getDirectWriterFn to work
+ 	bool m_headerFlushed = false;
++	std::shared_ptr<NczResume> m_resume;
++	bool m_resumed = false; // went on from a point: its hash must match at the end
++	std::unique_ptr<Sha256Context> m_headerSha; // the header as it came, hashed
+ };
 diff --git a/include/nx/ncm.hpp b/include/nx/ncm.hpp
 index 2301850..ae3ed63 100755
 --- a/include/nx/ncm.hpp
@@ -93,11 +164,35 @@ index a4c62f2..d917b1a 100755
      void SetBasicAuth(const std::string& user, const std::string& pass);
      void ClearBasicAuth();
  
+diff --git a/source/data/buffered_placeholder_writer.cpp b/source/data/buffered_placeholder_writer.cpp
+index 9ebdd96..c9a5022 100755
+--- a/source/data/buffered_placeholder_writer.cpp
++++ b/source/data/buffered_placeholder_writer.cpp
+@@ -33,8 +33,9 @@ namespace tin::data
+ {
+     int NUM_BUFFER_SEGMENTS;
+ 
+-    BufferedPlaceholderWriter::BufferedPlaceholderWriter(std::shared_ptr<nx::ncm::ContentStorage>& contentStorage, NcmContentId ncaId, size_t totalDataSize) :
+-        m_totalDataSize(totalDataSize), m_contentStorage(contentStorage), m_ncaId(ncaId), m_writer(ncaId, contentStorage)
++    BufferedPlaceholderWriter::BufferedPlaceholderWriter(std::shared_ptr<nx::ncm::ContentStorage>& contentStorage, NcmContentId ncaId, size_t totalDataSize,
++                                                         std::shared_ptr<NczResume> resume) :
++        m_totalDataSize(totalDataSize), m_contentStorage(contentStorage), m_ncaId(ncaId), m_writer(ncaId, contentStorage, std::move(resume))
+     {
+         // Though currently the number of segments is fixed, we want them allocated on the heap, not the stack
+         m_bufferSegments = std::make_unique<BufferSegment[]>(NUM_BUFFER_SEGMENTS);
 diff --git a/source/install/http_nsp.cpp b/source/install/http_nsp.cpp
-index 50d2f4a..5e54040 100755
+index 50d2f4a..892f701 100755
 --- a/source/install/http_nsp.cpp
 +++ b/source/install/http_nsp.cpp
-@@ -84,7 +84,8 @@ namespace tin::install::nsp
+@@ -22,6 +22,7 @@ SOFTWARE.
+ 
+ #include "install/http_nsp.hpp"
+ #include "install/EngineHooks.hpp"
++#include "core/NczPoint.hpp"
+ 
+ #include <atomic>
+ #include <cstdio>
+@@ -84,7 +85,8 @@ namespace tin::install::nsp
          }
      }
  
@@ -107,7 +202,7 @@ index 50d2f4a..5e54040 100755
  
      HTTPNSP::HTTPNSP(std::string url) :
          m_download(url), m_displayName(DeriveDisplayNameFromUrl(url))
-@@ -107,8 +108,24 @@ namespace tin::install::nsp
+@@ -107,8 +109,24 @@ namespace tin::install::nsp
          RetryConfirmState retryConfirm;
      };
  
@@ -132,7 +227,7 @@ index 50d2f4a..5e54040 100755
          StreamFuncArgs* args = reinterpret_cast<StreamFuncArgs*>(in);
          try {
              auto streamFunc = [&](u8* streamBuf, size_t streamBufSize) -> size_t
-@@ -119,8 +136,13 @@ namespace tin::install::nsp
+@@ -119,8 +137,13 @@ namespace tin::install::nsp
                  {
                      if (inst::ui::instPage::isInstallCancelRequested())
                          return 0;
@@ -146,7 +241,7 @@ index 50d2f4a..5e54040 100755
                  }
  
                  args->bufferedPlaceholderWriter->AppendData(streamBuf, streamBufSize);
-@@ -145,6 +167,7 @@ namespace tin::install::nsp
+@@ -145,6 +168,7 @@ namespace tin::install::nsp
  
      int PlaceholderWriteFunc(void* in)
      {
@@ -154,7 +249,7 @@ index 50d2f4a..5e54040 100755
          StreamFuncArgs* args = reinterpret_cast<StreamFuncArgs*>(in);
          try {
              while (!args->bufferedPlaceholderWriter->IsPlaceholderComplete() && !stopThreadsHttpNsp)
-@@ -155,6 +178,8 @@ namespace tin::install::nsp
+@@ -155,6 +179,8 @@ namespace tin::install::nsp
                  }
                  if (args->bufferedPlaceholderWriter->CanWriteSegmentToPlaceholder())
                      args->bufferedPlaceholderWriter->WriteSegmentToPlaceholder();
@@ -163,7 +258,7 @@ index 50d2f4a..5e54040 100755
              }
          }
          catch (...) {
-@@ -164,6 +189,19 @@ namespace tin::install::nsp
+@@ -164,6 +190,19 @@ namespace tin::install::nsp
          return 0;
      }
  
@@ -183,10 +278,11 @@ index 50d2f4a..5e54040 100755
      void HTTPNSP::StreamToPlaceholder(std::shared_ptr<nx::ncm::ContentStorage>& contentStorage, NcmContentId placeholderId)
      {
          const PFS0FileEntry* fileEntry = this->GetFileEntryByNcaId(placeholderId);
-@@ -173,6 +211,37 @@ namespace tin::install::nsp
+@@ -173,18 +212,109 @@ namespace tin::install::nsp
          LOG_DEBUG("Retrieving %s\n", displayFileName.c_str());
          size_t ncaSize = fileEntry->fileSize;
  
+-        tin::data::BufferedPlaceholderWriter bufferedPlaceholderWriter(contentStorage, placeholderId, ncaSize);
 +        if (PlaceDirectly(displayFileName, m_download.IsJbod()))
 +        {
 +            const u64 placeFrom = this->GetDataOffset() + fileEntry->dataOffset;
@@ -218,10 +314,59 @@ index 50d2f4a..5e54040 100755
 +                THROW_FORMAT(("inst.net.transfer_interput"_lang).c_str());
 +        }
 +
-         tin::data::BufferedPlaceholderWriter bufferedPlaceholderWriter(contentStorage, placeholderId, ncaSize);
++        // CookingFoil: a solid NCZ keeps points as it goes, and one cut off
++        // goes on from its last point: the decoder and the hash come back,
++        // the stream is asked for from where the point stands. Anything off
++        // about the point (or a failed restore) starts it over.
++        const u64 ncaStart = this->GetDataOffset() + fileEntry->dataOffset;
++        const auto makeResume = [&] {
++            auto resume = std::make_shared<NczResume>();
++            resume->maxWindow = foil::install::nczMaxWindow();
++            resume->keep = [name = displayFileName, ncaSize](const std::string& point, const std::vector<u8>& window, u64 produced) {
++                foil::install::keepNczPoint(name, ncaSize, point, window, produced);
++            };
++            return resume;
++        };
++        u64 skip = 0;
++        std::unique_ptr<tin::data::BufferedPlaceholderWriter> placeholderWriter;
++        {
++            std::string point;
++            std::vector<uint8_t> window;
++            foil::NczPoint at;
++            if (foil::install::nczPoint(displayFileName, ncaSize, point, window) && foil::NczPoint::decode(point, at) &&
++                contentStorage->HasPlaceholder(*(NcmPlaceHolderId*)&placeholderId))
++            {
++                try {
++                    auto resume = makeResume();
++                    resume->point = point;
++                    resume->window.assign(window.begin(), window.end());
++                    resume->prefix.resize(at.zstdStart);
++                    m_download.BufferDataRange(resume->prefix.data(), ncaStart, at.zstdStart, nullptr);
++                    skip = at.zstdStart + at.consumed;
++                    placeholderWriter = std::make_unique<tin::data::BufferedPlaceholderWriter>(contentStorage, placeholderId, ncaSize - skip, resume);
++                } catch (...) {
++                    placeholderWriter.reset();
++                    skip = 0;
++                }
++            }
++            if (!placeholderWriter)
++            {
++                // From the start: what an earlier try left goes, point and all.
++                foil::install::forgetResume(displayFileName);
++                if (contentStorage->HasPlaceholder(*(NcmPlaceHolderId*)&placeholderId))
++                    contentStorage->DeletePlaceholder(*(NcmPlaceHolderId*)&placeholderId);
++                placeholderWriter = std::make_unique<tin::data::BufferedPlaceholderWriter>(contentStorage, placeholderId, ncaSize, makeResume());
++            }
++        }
++        tin::data::BufferedPlaceholderWriter& bufferedPlaceholderWriter = *placeholderWriter;
          StreamFuncArgs args;
          args.download = &m_download;
-@@ -183,8 +252,24 @@ namespace tin::install::nsp
+         args.bufferedPlaceholderWriter = &bufferedPlaceholderWriter;
+-        args.pfs0Offset = this->GetDataOffset() + fileEntry->dataOffset;
+-        args.ncaSize = ncaSize;
++        args.pfs0Offset = ncaStart + skip;
++        args.ncaSize = ncaSize - skip;
+         thrd_t curlThread;
          thrd_t writeThread;
  
          stopThreadsHttpNsp = false;
@@ -248,7 +393,7 @@ index 50d2f4a..5e54040 100755
  
          u64 freq = armGetSystemTickFreq();
          u64 startTime = armGetSystemTick();
-@@ -194,6 +279,7 @@ namespace tin::install::nsp
+@@ -194,6 +324,7 @@ namespace tin::install::nsp
          inst::ui::instPage::setInstBarPerc(0);
          while (!bufferedPlaceholderWriter.IsBufferDataComplete() && !stopThreadsHttpNsp)
          {
@@ -256,7 +401,7 @@ index 50d2f4a..5e54040 100755
              if (inst::ui::instPage::isInstallCancelRequested()) {
                  args.retryConfirm.approved.store(false);
                  args.retryConfirm.pending.store(false);
-@@ -216,7 +302,7 @@ namespace tin::install::nsp
+@@ -216,7 +347,7 @@ namespace tin::install::nsp
              if (newTime - startTime >= freq * 0.5)
              {
                  size_t newSizeBuffered = bufferedPlaceholderWriter.GetSizeBuffered();
@@ -265,7 +410,28 @@ index 50d2f4a..5e54040 100755
                  double duration = ((double)(newTime - startTime) / (double)freq);
                  double speed =  mbBuffered / duration;
  
-@@ -260,6 +346,7 @@ namespace tin::install::nsp
+@@ -229,8 +360,9 @@ namespace tin::install::nsp
+                 startTime = newTime;
+                 startSizeBuffered = newSizeBuffered;
+ 
+-                const double sizeBuffered = static_cast<double>(bufferedPlaceholderWriter.GetSizeBuffered());
+-                const double totalSize = static_cast<double>(bufferedPlaceholderWriter.GetTotalDataSize());
++                // CookingFoil: counted from the file's start when it went on from a point.
++                const double sizeBuffered = static_cast<double>(bufferedPlaceholderWriter.GetSizeBuffered() + skip);
++                const double totalSize = static_cast<double>(ncaSize);
+                 int downloadProgress = (int)((sizeBuffered / totalSize) * 100.0);
+ 
+                 std::string etaText = "--:--";
+@@ -252,7 +384,7 @@ namespace tin::install::nsp
+                 );
+             }
+         }
+-        foil::install::reportBytes(displayFileName,bufferedPlaceholderWriter.GetSizeBuffered(),emaSpeed);
++        foil::install::reportBytes(displayFileName,bufferedPlaceholderWriter.GetSizeBuffered() + skip,emaSpeed);
+         inst::ui::instPage::setInstBarPerc(100);
+         inst::ui::instPage::setProgressDetailText("Downloaded 100% • Verifying and installing...");
+ 
+@@ -260,6 +392,7 @@ namespace tin::install::nsp
          inst::ui::instPage::setInstBarPerc(0);
          while (!bufferedPlaceholderWriter.IsPlaceholderComplete() && !stopThreadsHttpNsp)
          {
@@ -273,14 +439,37 @@ index 50d2f4a..5e54040 100755
              if (inst::ui::instPage::isInstallCancelRequested()) {
                  args.retryConfirm.approved.store(false);
                  args.retryConfirm.pending.store(false);
-@@ -280,6 +367,7 @@ namespace tin::install::nsp
+@@ -280,10 +413,28 @@ namespace tin::install::nsp
  
          thrd_join(curlThread, NULL);
          thrd_join(writeThread, NULL);
+-        bufferedPlaceholderWriter.close();
 +        joiner.curl = joiner.write = nullptr;
-         bufferedPlaceholderWriter.close();
          if (inst::ui::instPage::isInstallCancelRequested())
++        {
++            // Cancelled on purpose: nothing of it stays to go on from.
++            foil::install::forgetResume(displayFileName);
++            try { bufferedPlaceholderWriter.close(); } catch (...) {}
              THROW_FORMAT("Installation canceled.");
+-        if (stopThreadsHttpNsp) THROW_FORMAT(("inst.net.transfer_interput"_lang).c_str());
++        }
++        if (stopThreadsHttpNsp)
++        {
++            // Cut off: its last point stays for the next try.
++            try { bufferedPlaceholderWriter.close(); } catch (...) {}
++            THROW_FORMAT(("inst.net.transfer_interput"_lang).c_str());
++        }
++        try {
++            bufferedPlaceholderWriter.close();
++        } catch (...) {
++            // The resumed file did not hash to its id: next time, from the start.
++            foil::install::forgetResume(displayFileName);
++            throw;
++        }
++        foil::install::forgetResume(displayFileName); // done: the point is spent
+     }
+ 
+     void HTTPNSP::BufferData(void* buf, off_t offset, size_t size)
 diff --git a/source/install/http_xci.cpp b/source/install/http_xci.cpp
 index 325c6b9..70a8738 100755
 --- a/source/install/http_xci.cpp
@@ -597,10 +786,20 @@ index 59c4417..bd7aeca 100755
                  if (contentStorage->Has(ncaId))
                      contentStorage->Delete(ncaId);
 diff --git a/source/nx/nca_writer.cpp b/source/nx/nca_writer.cpp
-index 0ba55bd..7bcd946 100755
+index 0ba55bd..fdeaf70 100755
 --- a/source/nx/nca_writer.cpp
 +++ b/source/nx/nca_writer.cpp
-@@ -200,7 +200,60 @@ NcaBodyWriter::NcaBodyWriter(const NcmContentId& ncaId, u64 offset, std::shared_
+@@ -30,6 +30,9 @@ SOFTWARE.
+ #include "util/title_util.hpp"
+ #include "install/nca.hpp"
+ #include <limits>
++#include "core/Log.hpp"
++#include "core/NczPoint.hpp"
++#include "core/ZstdBlockDecoder.hpp"
+ 
+ // region Utility Functions, Classes, Structs
+ 
+@@ -200,7 +203,71 @@ NcaBodyWriter::NcaBodyWriter(const NcmContentId& ncaId, u64 offset, std::shared_
  
  NcaBodyWriter::~NcaBodyWriter()
  {
@@ -630,7 +829,18 @@ index 0ba55bd..7bcd946 100755
 +               held.unlock();
 +               std::exception_ptr error;
 +               try {
-+                    m_contentStorage->WritePlaceholder(*(NcmPlaceHolderId*)&m_ncaId, next.offset, next.data.data(), next.data.size());
++                    if (!next.data.empty())
++                         m_contentStorage->WritePlaceholder(*(NcmPlaceHolderId*)&m_ncaId, next.offset, next.data.data(), next.data.size());
++                    // CookingFoil: the hash follows the card, in order.
++                    if (m_sha && !next.data.empty())
++                         sha256ContextUpdate(m_sha.get(), next.data.data(), next.data.size());
++                    // A point: kept only once what is before it is on the card.
++                    if (next.mark && m_onMark)
++                    {
++                         m_contentStorage->FlushPlaceholder();
++                         const std::string midstate = m_sha ? std::string(reinterpret_cast<const char*>(m_sha.get()), sizeof(Sha256Context)) : std::string();
++                         try { m_onMark(*next.mark, midstate); } catch (...) {}
++                    }
 +               } catch (...) {
 +                    error = std::current_exception();
 +               }
@@ -662,15 +872,24 @@ index 0ba55bd..7bcd946 100755
  }
  
  void NcaBodyWriter::close()
-@@ -210,6 +263,7 @@ void NcaBodyWriter::close()
+@@ -210,6 +277,16 @@ void NcaBodyWriter::close()
       doBeforeClose(); // Derived close/flush delegates so content buffer is complete
  
       flushContentBuffer(); // Virtual dispatch - overrides expected to invoke parent
 +     drainFlusher(); // everything handed to the card thread is on the card
++
++     // CookingFoil: an NCA's id is the start of its SHA-256.
++     if (m_sha)
++     {
++          u8 digest[SHA256_HASH_SIZE];
++          sha256ContextGetHash(m_sha.get(), digest);
++          m_hashCheck = memcmp(digest, &m_ncaId, sizeof(NcmContentId)) == 0 ? 1 : -1;
++          m_sha.reset();
++     }
  
       doClose(); // Derived cleanup before finalizing close
  
-@@ -274,8 +328,27 @@ void NcaBodyWriter::flushContentBuffer()
+@@ -274,13 +351,55 @@ void NcaBodyWriter::flushContentBuffer()
  
       if (m_contentStorage)
       {
@@ -693,14 +912,42 @@ index 0ba55bd..7bcd946 100755
 +          m_spare = std::vector<u8>();
 +          if (next.capacity() < CONTENT_BUFFER_SIZE) next.reserve(CONTENT_BUFFER_SIZE);
 +          std::swap(next, m_contentBuffer);
-+          m_pending.push_back({m_offset, std::move(next)});
++          m_pending.push_back({m_offset, std::move(next), std::move(m_nextMark)});
++          m_nextMark = nullptr;
 +          m_offset += size;
 +          m_flushChanged.notify_all();
 +          return;
       }
  
       m_contentBuffer.resize(0);
-@@ -296,7 +369,7 @@ public:
+ }
+ 
++void NcaBodyWriter::flushMarked(std::shared_ptr<Mark> mark)
++{
++     if (isClosed() || !m_contentStorage) return;
++     m_nextMark = std::move(mark);
++     flushContentBuffer(); // virtual: the NCZ writer encrypts first
++     if (!m_nextMark) return;
++     // Nothing was buffered: the mark rides on an empty write of its own.
++     std::unique_lock<std::mutex> held(m_flushLock);
++     m_flushChanged.wait(held, [this] { return m_pending.empty() || m_flushError; });
++     if (m_flushError)
++     {
++          auto error = m_flushError;
++          m_flushError = nullptr;
++          std::rethrow_exception(error);
++     }
++     if (!m_flusher.joinable())
++          startFlusher();
++     m_pending.push_back({m_offset, std::vector<u8>(), std::move(m_nextMark)});
++     m_nextMark = nullptr;
++     m_flushChanged.notify_all();
++}
++
+ // endregion
+ 
+ // region NCZ Writer Delegates
+@@ -296,7 +415,7 @@ public:
       }
       ~DirectStreamWriter() override
       {
@@ -709,7 +956,7 @@ index 0ba55bd..7bcd946 100755
       }
  
       void write(const u8* data, u64 sz) override
-@@ -347,7 +420,7 @@ public:
+@@ -347,7 +466,7 @@ public:
  
       ~ZstdStreamWriter() override
       {
@@ -718,7 +965,41 @@ index 0ba55bd..7bcd946 100755
       }
  
       void close() override
-@@ -421,7 +494,7 @@ public:
+@@ -406,6 +525,33 @@ private:
+      std::unique_ptr<ZSTD_DCtx, ZstdDCtxDeleter> m_dctx;
+ };
+ 
++// CookingFoil: a solid zstd stream decoded a block at a time, so it can stop
++// between two blocks and go on from there (foil::ZstdBlockDecoder).
++class SolidZstdWriter : public CloseableWriter
++{
++public:
++     explicit SolidZstdWriter(std::unique_ptr<foil::ZstdBlockDecoder> decoder) : m_decoder(std::move(decoder)) {}
++     ~SolidZstdWriter() override
++     {
++          try { SolidZstdWriter::close(); } catch (...) {}
++     }
++     void write(const u8* ptr, u64 sz) override
++     {
++          if (isClosed() || !sz) return;
++          std::string error;
++          if (!m_decoder->write(ptr, size_t(sz), error))
++               THROW_FORMAT("SolidZstdWriter: %s", error.c_str());
++     }
++     void close() override
++     {
++          if (isClosed()) return;
++          CloseableWriter::close();
++     }
++     foil::ZstdBlockDecoder& decoder() { return *m_decoder; }
++private:
++     std::unique_ptr<foil::ZstdBlockDecoder> m_decoder;
++};
++
+ // NCZBLOCK Stream Writer - handles streaming NCZBLOCK compression
+ class NczBlockStreamWriter : public CloseableWriter
+ {
+@@ -421,7 +567,7 @@ public:
  
       ~NczBlockStreamWriter() override
       {
@@ -727,7 +1008,57 @@ index 0ba55bd..7bcd946 100755
       }
  
       void close() override
-@@ -603,7 +676,8 @@ public:
+@@ -597,13 +743,57 @@ private:
+ class NczBodyWriter : public NcaBodyWriter
+ {
+ public:
+-     NczBodyWriter(const NcmContentId& ncaId, u64 offset, std::shared_ptr<nx::ncm::ContentStorage>& contentStorage) : NcaBodyWriter(ncaId, offset, contentStorage)
++     NczBodyWriter(const NcmContentId& ncaId, u64 offset, std::shared_ptr<nx::ncm::ContentStorage>& contentStorage,
++                   std::shared_ptr<NczResume> resume = nullptr)
++          : NcaBodyWriter(ncaId, offset, contentStorage), m_resume(std::move(resume))
+      {
++          // CookingFoil: a kept point becomes foil::NczPoint, handed on.
++          if (m_resume && m_resume->keep)
++               m_onMark = [resume = m_resume](const Mark& mark, const std::string& sha) {
++                    foil::NczPoint point;
++                    point.zstdStart = resume->zstdStart;
++                    point.consumed = mark.consumed;
++                    point.produced = mark.produced;
++                    point.windowSize = mark.windowSize;
++                    point.decoder = mark.decoder;
++                    point.sha = sha;
++                    resume->keep(point.encode(), mark.window, mark.produced);
++               };
++     }
++
++     // CookingFoil: on from a kept point. `sections` is the NCZSECTN table as
++     // the file has it; what comes next is the stream from point.consumed.
++     void resumeFrom(const u8* sections, u64 size)
++     {
++          foil::NczPoint point;
++          if (!m_resume || !foil::NczPoint::decode(m_resume->point, point))
++               THROW_FORMAT("NCZ resume: no point");
++          write(sections, size); // the section table only: no stream yet
++          if (!m_sectionsInitialized || m_writer || !m_buffer.empty() || NCA_HEADER_SIZE + size != point.zstdStart)
++               THROW_FORMAT("NCZ resume: the section table does not match");
++          if (point.sha.size() != sizeof(Sha256Context))
++               THROW_FORMAT("NCZ resume: no hash");
++          Sha256Context sha;
++          memcpy(&sha, point.sha.data(), sizeof(sha));
++          hashFrom(sha);
++          std::string error;
++          auto direct = getDirectWriterFn();
++          auto decoder = foil::ZstdBlockDecoder::restore(point.decoder, m_resume->window.data(), m_resume->window.size(),
++                                                         [direct](const uint8_t* data, size_t n) { direct(data, n); }, error);
++          if (!decoder)
++               THROW_FORMAT("NCZ resume: %s", error.c_str());
++          m_resume->zstdStart = point.zstdStart;
++          m_resume->window.clear();
++          m_resume->window.shrink_to_fit();
++          watch(*decoder);
++          m_nextPoint = point.produced + std::max(m_resume->every, 4 * point.windowSize);
++          m_writer = std::make_unique<SolidZstdWriter>(std::move(decoder));
+      }
  
       ~NczBodyWriter() override
       {
@@ -737,7 +1068,94 @@ index 0ba55bd..7bcd946 100755
       }
  
  protected:
-@@ -887,30 +961,37 @@ NcaWriter::NcaWriter(const NcmContentId& ncaId, std::shared_ptr<nx::ncm::Content
+@@ -810,6 +1000,7 @@ public:
+                }
+ 
+                m_sectionsInitialized = true;
++               if (m_resume) m_resume->zstdStart = NCA_HEADER_SIZE + header_size;
+                m_buffer.resize(0);
+           }
+ 
+@@ -839,7 +1030,16 @@ public:
+                u64 magic64; memcpy(&magic64, m_buffer.data(), sizeof(magic64));
+                u32 magic32; memcpy(&magic32, m_buffer.data(), sizeof(magic32));
+ 
+-               if (magic32 == ZstdStreamWriter::ZSTD_MAGIC)
++               if (magic32 == ZstdStreamWriter::ZSTD_MAGIC && m_resume && m_resume->keep)
++               {
++                    // CookingFoil: decoded a block at a time, keeping points.
++                    auto direct = getDirectWriterFn();
++                    auto decoder = std::make_unique<foil::ZstdBlockDecoder>([direct](const uint8_t* data, size_t n) { direct(data, n); });
++                    watch(*decoder);
++                    m_nextPoint = m_resume->every;
++                    m_writer = std::make_unique<SolidZstdWriter>(std::move(decoder));
++               }
++               else if (magic32 == ZstdStreamWriter::ZSTD_MAGIC)
+                {
+                     m_writer = std::make_unique<ZstdStreamWriter>(getDirectWriterFn());
+                }
+@@ -868,6 +1068,36 @@ public:
+      }
+ 
+ private:
++     // CookingFoil: at each block boundary past the next point's place, the
++     // decoder's state and the window go to the card with what precedes them.
++     void watch(foil::ZstdBlockDecoder& decoder)
++     {
++          foil::ZstdBlockDecoder* d = &decoder;
++          decoder.onBoundary([this, d] {
++               if (d->produced() < m_nextPoint) return;
++               foil::ZstdBlockDecoder::Point at;
++               const auto saved = d->save();
++               if (saved.empty() || !foil::ZstdBlockDecoder::pointOf(saved, at)) return;
++               // Bytes still buffered or a window too big to keep: no point.
++               if (m_offset + m_contentBuffer.size() != NCA_HEADER_SIZE + at.produced || at.window > m_resume->maxWindow)
++               {
++                    m_nextPoint = std::numeric_limits<u64>::max();
++                    return;
++               }
++               auto mark = std::make_shared<Mark>();
++               mark->decoder = saved;
++               mark->consumed = at.consumed;
++               mark->produced = at.produced;
++               mark->windowSize = at.window;
++               if (!d->window(mark->window)) return;
++               m_nextPoint = at.produced + std::max(m_resume->every, 4 * at.window);
++               flushMarked(std::move(mark));
++          });
++     }
++
++     std::shared_ptr<NczResume> m_resume;
++     u64 m_nextPoint = std::numeric_limits<u64>::max();
++
+      std::unique_ptr<CloseableWriter> m_writer;
+ 
+      std::vector<u8> m_buffer;
+@@ -881,36 +1111,71 @@ private:
+ 
+ // region NcaWriter Methods
+ 
+-NcaWriter::NcaWriter(const NcmContentId& ncaId, std::shared_ptr<nx::ncm::ContentStorage>& contentStorage) : m_ncaId(ncaId), m_contentStorage(contentStorage), m_writer(NULL)
++NcaWriter::NcaWriter(const NcmContentId& ncaId, std::shared_ptr<nx::ncm::ContentStorage>& contentStorage,
++                     std::shared_ptr<NczResume> resume)
++     : m_ncaId(ncaId), m_contentStorage(contentStorage), m_writer(NULL), m_resume(std::move(resume))
+ {
++     // CookingFoil: on from a kept point. The header and what came before are
++     // on the card already (the placeholder was kept); the body writer starts
++     // where the point stands, with the decoder and the hash as they were.
++     if (!m_resume || m_resume->point.empty()) return;
++     foil::NczPoint point;
++     if (!foil::NczPoint::decode(m_resume->point, point) || m_resume->prefix.size() != point.zstdStart ||
++         point.zstdStart <= NCA_HEADER_SIZE)
++          THROW_FORMAT("NCZ resume: the point does not fit this file");
++     auto body = std::make_shared<NczBodyWriter>(m_ncaId, NCA_HEADER_SIZE + point.produced, m_contentStorage, m_resume);
++     body->resumeFrom(m_resume->prefix.data() + NCA_HEADER_SIZE, point.zstdStart - NCA_HEADER_SIZE);
++     m_resume->prefix.clear();
++     m_resume->prefix.shrink_to_fit();
++     m_writer = body;
++     m_headerFlushed = true;
++     m_resumed = true;
+ }
  
  NcaWriter::~NcaWriter()
  {
@@ -752,6 +1170,11 @@ index 0ba55bd..7bcd946 100755
       if (isClosed()) return; // Idempotent close
  
 -     if (m_writer)
+-     {
+-          m_writer->close();
+-          m_writer = NULL;
+-     }
+-     else if (!m_buffer.empty())
 +     // CookingFoil: closed first and the state let go even when what
 +     // follows throws, so a later close (the destructor's) does not throw
 +     // the same error again.
@@ -764,18 +1187,24 @@ index 0ba55bd..7bcd946 100755
 +     m_contentStorage = NULL;
 +     if (writer)
       {
--          m_writer->close();
--          m_writer = NULL;
-+          writer->close();
-      }
--     else if (!m_buffer.empty())
-+     else if (!header.empty() && storage)
-      {
 -          if (m_contentStorage)
--          {
++          writer->close();
++          // CookingFoil: what was written must be the file it claims to be.
++          // One that went on from a point and does not hash to its id fails
++          // (the next try starts it over); a fresh one only says so.
++          if (writer->hashCheck() < 0)
+           {
 -               flushHeader();
--          }
++               foil::logLine("NCA hash differs from its id" + std::string(m_resumed ? " after a resume" : ""));
++               if (m_resumed)
++                    THROW_FORMAT("The resumed file does not match the original. It downloads again from the start.");
+           }
 -
++          else if (writer->hashCheck() > 0 && m_resumed)
++               foil::logLine("NCA resumed and verified");
++     }
++     else if (!header.empty() && storage)
++     {
 +          m_buffer.swap(header);
 +          m_contentStorage = storage;
 +          try { flushHeader(); } catch (...) { m_buffer.clear(); m_contentStorage = NULL; throw; }
@@ -788,6 +1217,32 @@ index 0ba55bd..7bcd946 100755
  }
  
  void NcaWriter::write(const  u8* ptr, u64 sz)
+@@ -944,6 +1209,14 @@ void NcaWriter::write(const  u8* ptr, u64 sz)
+ 
+           // assert m_buffer.size() == NCA_HEADER_SIZE
+ 
++          // CookingFoil: the id is the hash of the file as it came, before the
++          // header is changed for this console.
++          if (m_resume && m_resume->keep)
++          {
++               m_headerSha = std::make_unique<Sha256Context>();
++               sha256ContextCreate(m_headerSha.get());
++               sha256ContextUpdate(m_headerSha.get(), m_buffer.data(), NCA_HEADER_SIZE);
++          }
+           // Now we can flush the header
+           flushHeader();
+           m_headerFlushed = true;
+@@ -979,7 +1252,9 @@ void NcaWriter::write(const  u8* ptr, u64 sz)
+           if (magic == NczHeader::MAGIC)
+           {
+                // NOTE: Don't clear header, it needs to be written to m_write for downstream consumption
+-               m_writer = std::make_shared<NczBodyWriter>(m_ncaId, NCA_HEADER_SIZE, m_contentStorage);
++               auto body = std::make_shared<NczBodyWriter>(m_ncaId, NCA_HEADER_SIZE, m_contentStorage, m_resume);
++               if (m_headerSha) body->hashFrom(*m_headerSha);
++               m_writer = body;
+           }
+           else
+           {
 diff --git a/source/nx/ncm.cpp b/source/nx/ncm.cpp
 index 643c236..cc42774 100755
 --- a/source/nx/ncm.cpp

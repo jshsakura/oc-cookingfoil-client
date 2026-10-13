@@ -137,7 +137,7 @@ void Application::settings() {
   // The log's tail to the server, only when pressed: what went wrong reaches
   // whoever runs it.
   option(7, 33, tr("Send a bug report"),
-         bugWorker_.joinable() ? std::string(tr("Sending")) : bugStatus_.empty() ? std::string(tr("Sends the end of the app's log to your server")) : bugStatus_,
+         bugWorker_.joinable() ? std::string(tr("Sending")) : std::string(tr("Sends the end of the app's log to your server")),
          Secondary, false);
   // Leftover cleanup: content no installed game uses, found first and only
   // deleted after a confirmation.

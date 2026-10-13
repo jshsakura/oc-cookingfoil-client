@@ -694,7 +694,7 @@ private:
   std::string bugMessage_;
   std::thread bugWorker_;
   std::atomic<bool> bugDone_{false};
-  std::string bugStatus_, incomingBugStatus_;
+  std::string incomingBugStatus_;
   std::string lastAlert_; // the alert already written to the log
   void checkAppUpdate();
   void installAppUpdate();
