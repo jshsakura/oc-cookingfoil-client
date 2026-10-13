@@ -184,7 +184,7 @@ void Application::dialogs() {
       !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !confirmCleanup_ &&
       !languagePopup_ && !cleanupBusy_ && !retroAsking_ && !retroArchAsking_ && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
-      !homebrewRemoveAsk_ && !homebrewAsk_ && !shortcutRemoveAsk_ && !selfShortcutAsk_)
+      !homebrewRemoveAsk_ && !homebrewAsk_ && !shortcutRemoveAsk_ && !selfShortcutAsk_ && unqueueAsk_ < 0)
     return;
   SDL_RenderSetClipRect(paint_.renderer, nullptr);
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 150});
@@ -194,7 +194,7 @@ void Application::dialogs() {
                     dropboxUnlinkAsk_ * 32 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + homebrewAsk_ * 256 +
                     (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + shopAppSaveAsk_ * 2048 +
                     (serverForm_ && serverForm_->confirmDelete) * 4096 + shortcutRemoveAsk_ * 8192 +
-                    selfShortcutAsk_ * 16384;
+                    selfShortcutAsk_ * 16384 + (unqueueAsk_ >= 0) * 32768;
   if (which != popupKind_) {
     popupKind_ = which;
     popupAt_ = SDL_GetTicks();
@@ -258,6 +258,9 @@ void Application::dialogs() {
     const auto body = modal(700, 24 + 84 + 16, alertTitle_.empty() ? std::string(tr("Cannot install")) : alertTitle_,
                             tr("Close"), "", tr("OK"), 25);
     paint_.fonts.wrapped(alert_, body.x + 32, body.y + 24, 20, Ink, body.w - 64, 3);
+  } else if (unqueueAsk_ >= 0 && unqueueAsk_ < int(installQueue_.size())) {
+    const auto body = modal(700, 24 + 30 + 16, tr("Take it off the download queue?"), tr("Keep it"), "", tr("Take it off"), 25);
+    paint_.fonts.text(installQueue_[size_t(unqueueAsk_)].name, body.x + 32, body.y + 24, 19, Secondary, false, body.w - 64);
   } else if (confirmCancel_ && cancelRetro_) {
     const bool pack = retroBusy_ == "pack";
     const auto body = modal(700, 24 + 30 + 16, pack ? tr("Cancel the RetroArch install?") : tr("Cancel the download?"),

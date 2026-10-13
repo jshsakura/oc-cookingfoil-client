@@ -1003,6 +1003,7 @@ private:
   // back to the front of the queue, which holds until it resumes (from the
   // byte it reached).
   bool retroPausing_ = false, queueHeld_ = false;
+  int unqueueAsk_ = -1; // the queue row whose 취소 asks first
   // Lists load on a thread of their own, so switching systems never waits
   // for a download.
   std::thread retroListWorker_;

@@ -227,7 +227,10 @@ void Application::queueList(float y, float viewTop) {
       paint_.fonts.middle(label, x + 16, ry + 38, 16, Ink, true);
       right = x - 10;
     };
-    button(tr("Cancel"), [this, i] { unqueue(size_t(i)); });
+    button(tr("Cancel"), [this, i] {
+      unqueueAsk_ = i;
+      dialogFocus_ = 0;
+    });
     if (i + 1 < count)
       button(tr("Move down"), [this, i] {
         moveUp(size_t(i) + 1);

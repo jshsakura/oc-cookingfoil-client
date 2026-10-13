@@ -989,6 +989,16 @@ void Application::action(Action a) {
     patchAction(a);
     return;
   }
+  if (unqueueAsk_ >= 0) {
+    // A takes it off (once the popup has settled), B keeps it.
+    if (a == Action::Accept && settled()) {
+      unqueue(size_t(unqueueAsk_));
+      unqueueAsk_ = -1;
+    }
+    if (a == Action::Back || unqueueAsk_ >= int(installQueue_.size()))
+      unqueueAsk_ = -1;
+    return;
+  }
   if (confirmCancel_) {
     // B keeps installing; A cancels, but not one pressed as the popup opened.
     if (a == Action::Accept && settled()) {
@@ -1954,7 +1964,10 @@ void Application::runningAction(Action a) {
   if (a == Action::Down) downloadsRow_ = std::min(rows - 1, downloadsRow_ + 1);
   downloadsRow_ = std::clamp(downloadsRow_, 0, rows - 1);
   if (downloadsRow_ > 0) {
-    if (a == Action::Queue) unqueue(size_t(downloadsRow_ - 1));
+    if (a == Action::Queue) {
+      unqueueAsk_ = downloadsRow_ - 1;
+      dialogFocus_ = 0;
+    }
     if (a == Action::Accept && downloadsRow_ > 1) {
       moveUp(size_t(downloadsRow_ - 1));
       --downloadsRow_;
