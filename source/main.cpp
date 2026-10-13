@@ -70,6 +70,7 @@ int main(int argc, char **argv) {
       padConfigureInput(1, HidNpadStyleSet_NpadStandard);
       padInitializeDefault(&pad);
       uint32_t repeatAt = 0, scrollAt = 0, heartbeatAt = 0;
+      auto shownScreen = ui.current();
       float touchX = 0, touchY = 0, lastY = 0;
       bool dragging = false;
       while (appletMainLoop()) {
@@ -168,7 +169,13 @@ int main(int argc, char **argv) {
         constexpr uint32_t HeartbeatMs = 60000;
         if (SDL_GetTicks() - heartbeatAt >= HeartbeatMs) {
           heartbeatAt = SDL_GetTicks();
-          foil::logLine("heartbeat");
+          foil::logLine(std::string("heartbeat ") + foil::ui::screenLabel(ui.current()));
+        }
+        // Each screen's memory on arrival, so the log shows which one grows
+        // the heap (an album launch has little of it to spare).
+        if (ui.current() != shownScreen) {
+          shownScreen = ui.current();
+          foil::logLine(std::string("screen ") + foil::ui::screenLabel(shownScreen));
         }
         if (ui.shouldQuit())
           break;

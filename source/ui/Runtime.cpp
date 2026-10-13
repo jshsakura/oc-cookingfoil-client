@@ -1,5 +1,6 @@
 #include "ui/Runtime.hpp"
 #include "ui/Theme.hpp"
+#include "core/Log.hpp"
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_ttf.h>
 #include <cstdio>
@@ -16,8 +17,11 @@ Runtime::~Runtime() {
   SDL_Quit();
 }
 bool Runtime::open(int width, int height, bool offscreen) {
+  // Startup memory by step: the graphics stack takes most of an album
+  // launch's heap, and the log says which part.
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) != 0)
     return false;
+  logLine("runtime sdl");
   const int flags = IMG_INIT_PNG | IMG_INIT_JPG;
   if ((IMG_Init(flags) & flags) != flags || TTF_Init() != 0)
     return false;
@@ -38,6 +42,7 @@ bool Runtime::open(int width, int height, bool offscreen) {
 #endif
     if (!window_)
       return false;
+    logLine("runtime window");
     renderer_ = SDL_CreateRenderer(
         window_, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!renderer_)
@@ -45,6 +50,7 @@ bool Runtime::open(int width, int height, bool offscreen) {
   }
   if (!renderer_)
     return false;
+  logLine("runtime renderer");
   SDL_GetRendererOutputSize(renderer_, &width, &height);
   // Explicit scale avoids the SDL console port's logical-size letterboxing.
   SDL_RenderSetScale(renderer_, width / float(Width), height / float(Height));
