@@ -714,8 +714,13 @@ void Application::patchMenu(const PatchRow &row) {
   const auto choices = patchChoices(row);
   constexpr float Width = 760, ChoiceHeight = 64, ChoiceGap = 10, Icon = 80;
   const bool described = !row.patch.description.empty();
-  const float bodyHeight = 24 + Icon + 16 + (described ? 56 : 0) + 8 +
-                           choices.size() * (ChoiceHeight + ChoiceGap) + 14;
+  // The whole description, as many lines as the screen leaves room for
+  // (header, footer and the rows below); measured off screen first.
+  const float fixed = 24 + Icon + 16 + 8 + choices.size() * (ChoiceHeight + ChoiceGap) + 14;
+  const int room = std::max(2, int((720 - 48 - 72 - 60 - fixed) / (18 * 1.3f)));
+  const float describedHeight =
+      described ? paint_.fonts.wrapped(row.patch.description, -10000, -10000, 18, Secondary, Width - 64, room) + 10 : 0;
+  const float bodyHeight = fixed + describedHeight;
   const auto body = modal(Width, bodyHeight, row.game, tr("닫기"), "", "", 32);
   const float x = body.x + 32, w = body.w - 64, textX = x + Icon + 20, textW = w - Icon - 20;
   float y = body.y + 24;
@@ -735,8 +740,8 @@ void Application::patchMenu(const PatchRow &row) {
     paint_.fonts.middle(meta, at + (at > textX ? 6 : 0), y + 57, 17, Secondary, false, x + w - at);
   y += Icon + 16;
   if (described) {
-    paint_.fonts.wrapped(row.patch.description, x, y, 18, Secondary, w, 2);
-    y += 56;
+    paint_.fonts.wrapped(row.patch.description, x, y, 18, Secondary, w, room);
+    y += describedHeight;
   }
   y += 8;
   for (int i = 0; i < int(choices.size()); ++i) {
