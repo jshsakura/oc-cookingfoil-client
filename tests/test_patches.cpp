@@ -143,8 +143,134 @@ static int runPatchOwnerTests() {
   CHECK(foil::patchStep(game, &record) == foil::PatchStep::Update);
   return failures;
 }
+// Three or more patches on one path, removal, power loss and an old ledger.
+static int runPatchLayerTests() {
+  int failures = 0;
+  const auto root = fs::temp_directory_path() / ("cf-patchlayers-" + std::to_string(getpid()));
+  fs::remove_all(root);
+  const auto sd = (root / "sd").string(), storeRoot = (root / "sd/switch/cookingfoil/patches").string();
+  const std::string Stack = std::string("atmosphere/contents/") + Tid + "/romfs/Data/stack.bin";
+  const auto ledger = storeRoot + "/ledger.json";
+  const auto onCard = [&] { return foil::readFile(sd + "/" + Stack); };
+  const auto inStore = [&](const std::string &id) { return foil::readFile(storeRoot + "/" + id + "/" + Stack); };
+  // Rewrites one patch's fields in the ledger, as a power loss would leave it.
+  const auto edit = [&](const std::string &id, bool on, int64_t order, const char *pending) {
+    foil::Error parse;
+    auto json = foil::parseJson(foil::readFile(ledger), parse);
+    auto *p = foil::field(foil::field(json.get(), "patches"), id.c_str());
+    json_object_object_add(p, "on", json_object_new_boolean(on));
+    json_object_object_add(p, "order", json_object_new_int64(order));
+    json_object_object_add(p, "pending", json_object_new_string(pending));
+    if (order) json_object_object_add(json.get(), "order", json_object_new_int64(order));
+    write(ledger, json_object_to_json_string(json.get()));
+  };
+  {
+    foil::PatchStore store(sd, storeRoot);
+    foil::Error error;
+    CHECK(store.load(error));
+    const auto stageOne = [&](const std::string &id, const std::string &body) {
+      return stage(store, id, {{Stack, body}});
+    };
+    CHECK(stageOne("s1", "one") && stageOne("s2", "two") && stageOne("s3", "three"));
+    CHECK(store.enable("s1", error) && store.enable("s2", error) && store.enable("s3", error));
+    CHECK(onCard() == "three" && inStore("s1") == "one" && inStore("s2") == "two");
+    const auto over = store.conflicts("s1");
+    CHECK(over.size() == 2 && over[0].owner == "s2" && over[1].owner == "s3");
+    CHECK(store.find("s1")->shadowed.at(Stack) == "s3" && store.find("s2")->shadowed.at(Stack) == "s3");
+    // The middle one goes off: the top stays.
+    CHECK(store.disable("s2", error) && onCard() == "three" && inStore("s2") == "two");
+    CHECK(store.disable("s3", error) && onCard() == "one");
+    // The latest one still on comes back, not the first.
+    CHECK(store.enable("s2", error) && store.enable("s3", error) && store.disable("s3", error));
+    CHECK(onCard() == "two" && inStore("s1") == "one" && inStore("s3") == "three");
+    CHECK(store.disable("s2", error) && onCard() == "one");
+    CHECK(store.disable("s1", error) && !fs::exists(sd + "/" + Stack));
+    CHECK(inStore("s1") == "one" && inStore("s2") == "two" && inStore("s3") == "three");
+
+    // Removing the patch on top brings back the one under it.
+    CHECK(store.enable("s1", error) && store.enable("s2", error) && store.remove("s2", error));
+    CHECK(onCard() == "one" && !fs::exists(storeRoot + "/s2") && !store.find("s2"));
+    // Removing one underneath leaves the top in place.
+    CHECK(store.enable("s3", error) && store.remove("s1", error));
+    CHECK(onCard() == "three" && !fs::exists(storeRoot + "/s1") && store.find("s3")->shadowed.empty());
+    CHECK(store.disable("s3", error) && !fs::exists(sd + "/" + Stack));
+    CHECK(stageOne("s1", "one") && store.enable("s1", error));
+  }
+  {
+    // Power loss in the middle of enabling s3 over s1: the ledger already
+    // says on with its new place and pending, s1's copy is back in its store
+    // and s3's not yet on the card. load finishes it.
+    edit("s3", true, 50, "enable");
+    fs::rename(sd + "/" + Stack, storeRoot + "/s1/" + Stack);
+    foil::PatchStore store(sd, storeRoot);
+    foil::Error error;
+    CHECK(store.load(error));
+    CHECK(onCard() == "three" && inStore("s1") == "one");
+    CHECK(store.find("s3")->on && store.find("s3")->pending.empty() && store.find("s3")->order == 50);
+    CHECK(store.find("s1")->shadowed.at(Stack) == "s3");
+  }
+  {
+    // Power loss in the middle of turning s3 off: its copy is back in its
+    // store, s1's not yet on the card.
+    edit("s3", false, 50, "disable");
+    fs::rename(sd + "/" + Stack, storeRoot + "/s3/" + Stack);
+    foil::PatchStore store(sd, storeRoot);
+    foil::Error error;
+    CHECK(store.load(error) && !store.find("s3")->on && store.find("s3")->pending.empty());
+    CHECK(onCard() == "one" && inStore("s3") == "three");
+  }
+  {
+    // A ledger from before layering marked a patch going off as still on:
+    // nothing moved yet. load finishes it the same way.
+    foil::PatchStore store(sd, storeRoot);
+    foil::Error error;
+    CHECK(store.load(error) && store.enable("s3", error) && onCard() == "three");
+    edit("s3", true, 60, "disable");
+    foil::PatchStore reopened(sd, storeRoot);
+    CHECK(reopened.load(error) && !reopened.find("s3")->on && onCard() == "one" && inStore("s3") == "three");
+    // And one going on as still off, its order not given yet.
+    edit("s3", false, 0, "enable");
+    foil::PatchStore again(sd, storeRoot);
+    CHECK(again.load(error) && again.find("s3")->on && again.find("s3")->order > again.find("s1")->order);
+    CHECK(onCard() == "three" && inStore("s1") == "one");
+  }
+  fs::remove_all(root);
+  {
+    // An old ledger, written before layering: no shadowed entries; an
+    // enabled patch's file on the card, the user's own file of an app patch
+    // set aside in _base.
+    const std::string Old = std::string("atmosphere/contents/") + Tid + "/romfs/Data/old.bin";
+    const std::string Config = "switch/sm64/config.ini";
+    write(sd + "/" + Old, "old");
+    write(sd + "/" + Config, "patched");
+    write(storeRoot + "/_base/" + Config, "mine");
+    write(storeRoot + "/old/.keep", "");
+    write(storeRoot + "/hb/.keep", "");
+    write(ledger, std::string(R"({"order":2,"cheatPaths":[],"patches":{
+      "old":{"titleId":")") + Tid + R"(","name":"old","version":"1","hash":"","on":true,"pending":"",
+             "files":[")" + Old + R"("],"cheats":[],"bytes":3,"order":1},
+      "hb":{"titleId":"","homebrew":"sm64","name":"hb","version":"1","hash":"","on":true,"pending":"",
+            "files":[")" + Config + R"("],"cheats":[],"bytes":7,"order":2}}})");
+    foil::PatchStore store(sd, storeRoot);
+    foil::Error error;
+    CHECK(store.load(error) && store.records().size() == 2);
+    CHECK(store.find("old")->on && store.find("old")->shadowed.empty() && store.find("hb")->on);
+    CHECK(foil::readFile(sd + "/" + Old) == "old" && foil::readFile(sd + "/" + Config) == "patched");
+    CHECK(foil::readFile(storeRoot + "/_base/" + Config) == "mine");
+    // A new patch layers over the old one.
+    write(store.staging("new") + "/" + Old, "new");
+    CHECK(store.commit(patch("new"), error) && store.enable("new", error));
+    CHECK(foil::readFile(sd + "/" + Old) == "new" && foil::readFile(storeRoot + "/old/" + Old) == "old");
+    CHECK(store.disable("new", error) && foil::readFile(sd + "/" + Old) == "old");
+    CHECK(store.disable("old", error) && !fs::exists(sd + "/" + Old));
+    CHECK(store.disable("hb", error) && foil::readFile(sd + "/" + Config) == "mine");
+    CHECK(!fs::exists(storeRoot + "/_base/" + Config));
+  }
+  fs::remove_all(root);
+  return failures;
+}
 int runPatchTests() {
-  int failures = runPatchOwnerTests();
+  int failures = runPatchOwnerTests() + runPatchLayerTests();
   // An app's patch reads as 홈브류 in the list, not as an unknown kind.
   CHECK(std::string(foil::patchKindLabel("homebrew")) != foil::patchKindLabel("something-else"));
   CHECK(foil::patchPathAllowed(Tid, Romfs));
@@ -200,47 +326,78 @@ int runPatchTests() {
     CHECK(foil::readFile(sd + "/" + Other) == "font");
     CHECK(foil::readFile(sd + "/" + Cheat) == "[user]\n04000000 0 0\n\n[A]\n1\n\n[B]\n2");
 
-    // Two patches that replace the same file cannot both be on.
+    // Two patches that replace the same file layer: the one turned on last
+    // wins, the other's copy goes back to its own store and waits there.
     const auto clash = store.conflicts("texture");
     CHECK(clash.size() == 1 && clash[0].path == Romfs && clash[0].owner == "korean");
-    CHECK(!store.enable("texture", error) && !error.message.empty());
-    error = {};
-    CHECK(foil::readFile(sd + "/" + Romfs) == "ko");
-
+    CHECK(store.enable("texture", error));
+    CHECK(foil::readFile(sd + "/" + Romfs) == "hd");
+    CHECK(foil::readFile(storeRoot + "/korean/" + Romfs) == "ko");
+    CHECK(store.find("korean")->on && store.find("korean")->shadowed.size() == 1 &&
+          store.find("korean")->shadowed.at(Romfs) == "texture");
+    CHECK(store.find("texture")->shadowed.empty());
+    {
+      // The ledger says so too.
+      foil::Error parse;
+      auto json = foil::parseJson(foil::readFile(storeRoot + "/ledger.json"), parse);
+      auto *shadowed = foil::field(foil::field(foil::field(json.get(), "patches"), "korean"), "shadowed");
+      CHECK(foil::stringField(shadowed, Romfs.c_str()) == "texture");
+    }
+    // Cheats still merge in enable order.
+    CHECK(foil::readFile(sd + "/" + Cheat) == "[user]\n04000000 0 0\n\n[A]\n1\n\n[B]\n2");
+    CHECK(store.disable("texture", error));
+    CHECK(foil::readFile(sd + "/" + Romfs) == "ko" && foil::readFile(storeRoot + "/texture/" + Romfs) == "hd");
+    CHECK(store.find("korean")->shadowed.empty());
     CHECK(store.disable("korean", error));
     CHECK(!fs::exists(sd + "/" + Romfs) && fs::exists(storeRoot + "/korean/" + Romfs));
     CHECK(foil::readFile(sd + "/" + Cheat) == "[user]\n04000000 0 0\n\n[B]\n2");
-    CHECK(store.conflicts("texture").empty() && store.enable("texture", error));
-    CHECK(foil::readFile(sd + "/" + Romfs) == "hd");
-    CHECK(store.disable("texture", error) && store.disable("fps", error));
+    // Turning off the one underneath only takes it out of the stack.
+    CHECK(store.enable("korean", error) && store.enable("texture", error) && store.disable("korean", error));
+    CHECK(foil::readFile(sd + "/" + Romfs) == "hd" && foil::readFile(storeRoot + "/korean/" + Romfs) == "ko");
+    CHECK(store.disable("texture", error) && !fs::exists(sd + "/" + Romfs));
+    CHECK(fs::exists(storeRoot + "/korean/" + Romfs) && fs::exists(storeRoot + "/texture/" + Romfs));
+    CHECK(store.disable("fps", error));
     CHECK(foil::readFile(sd + "/" + Cheat) == "[user]\n04000000 0 0");
     CHECK(!fs::exists(storeRoot + "/_base/" + Cheat));
 
-    // A file the user put in place is never overwritten.
+    // A file the user put in place is set aside under _base while any patch
+    // covers the path and comes back when the last one goes off.
     write(sd + "/" + Romfs, "mine");
     const auto mine = store.conflicts("korean");
     CHECK(mine.size() == 1 && mine[0].owner.empty());
-    CHECK(!store.enable("korean", error));
-    error = {};
-    fs::remove(sd + "/" + Romfs);
-
-    // A new version replaces the stored files and stays on.
     CHECK(store.enable("korean", error));
+    CHECK(foil::readFile(sd + "/" + Romfs) == "ko" && foil::readFile(storeRoot + "/_base/" + Romfs) == "mine");
+    CHECK(store.enable("texture", error) && store.disable("korean", error));
+    CHECK(foil::readFile(sd + "/" + Romfs) == "hd" && foil::readFile(storeRoot + "/_base/" + Romfs) == "mine");
+    CHECK(store.disable("texture", error));
+    CHECK(foil::readFile(sd + "/" + Romfs) == "mine" && !fs::exists(storeRoot + "/_base/" + Romfs));
+    CHECK(store.enable("korean", error) && store.enable("texture", error) && store.disable("texture", error));
+    CHECK(foil::readFile(sd + "/" + Romfs) == "ko" && store.disable("korean", error));
+    CHECK(foil::readFile(sd + "/" + Romfs) == "mine");
+
+    // A new version replaces the stored files, stays on and keeps its place:
+    // a patch turned on after it stays on top.
+    CHECK(store.enable("korean", error) && store.enable("texture", error));
     CHECK(stage(store, "korean", {{Romfs, "ko2"}, {Cheat, "[A2]\n1"}}, "2"));
     CHECK(store.find("korean")->on && store.find("korean")->version == "2");
+    CHECK(foil::readFile(sd + "/" + Romfs) == "hd" && foil::readFile(storeRoot + "/korean/" + Romfs) == "ko2");
+    CHECK(store.disable("texture", error));
     CHECK(foil::readFile(sd + "/" + Romfs) == "ko2");
     CHECK(foil::readFile(sd + "/" + Cheat) == "[user]\n04000000 0 0\n\n[A2]\n1");
 
-    // Removing an enabled patch takes its files back first.
+    // Removing an enabled patch takes its files back first; the user's file
+    // comes back with it.
     CHECK(store.remove("korean", error));
-    CHECK(!store.find("korean") && !fs::exists(storeRoot + "/korean") && !fs::exists(sd + "/" + Romfs));
+    CHECK(!store.find("korean") && !fs::exists(storeRoot + "/korean") && foil::readFile(sd + "/" + Romfs) == "mine");
     CHECK(foil::readFile(sd + "/" + Cheat) == "[user]\n04000000 0 0");
+    CHECK(store.remove("texture", error) && foil::readFile(sd + "/" + Romfs) == "mine");
+    fs::remove(sd + "/" + Romfs);
   }
   {
     // Power loss mid-enable: the ledger says "enable", load finishes it.
     foil::PatchStore store(sd, storeRoot);
     foil::Error error;
-    CHECK(store.load(error) && store.records().size() == 2);
+    CHECK(store.load(error) && store.records().size() == 1);
     const auto ledger = storeRoot + "/ledger.json";
     foil::Error parse;
     auto json = foil::parseJson(foil::readFile(ledger), parse);
@@ -340,8 +497,9 @@ int runPatchTests() {
     const auto archive = tar({{Mod, "hd"}, {Config, "patched"}});
     CHECK(unpackApp(store.staging("hb-1"), archive) && store.commit(app, error));
     CHECK(store.find("hb-1") && store.find("hb-1")->homebrewApp == "sm64");
-    // The app's own files are set aside, not a conflict, and come back on disable.
-    CHECK(store.conflicts("hb-1").empty());
+    // The app's own files are reported, set aside on enable and come back on disable.
+    const auto own = store.conflicts("hb-1");
+    CHECK(own.size() == 1 && own[0].path == Config && own[0].owner.empty());
     CHECK(store.enable("hb-1", error));
     CHECK(foil::readFile(hbSd + "/" + Mod) == "hd" && foil::readFile(hbSd + "/" + Config) == "patched");
     foil::PatchStore reopened(hbSd, hbStore);
