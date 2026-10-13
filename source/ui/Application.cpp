@@ -1335,6 +1335,18 @@ void Application::footer(
   paint_.rect(0, 660, 1280, 60, Surface);
   paint_.rect(0, 660, 1280, 1, Line);
   const float left = statusBar();
+  // Until the server first answers the buttons mean little: placeholders,
+  // as the menu shows.
+  if (!menuKnown_ && network_.joinable()) {
+    (void)left;
+    float x = 1248;
+    for (const float w : {96.f, 110.f, 96.f, 110.f}) {
+      x -= w;
+      paint_.skeleton(x, 676, w, 30, 15);
+      x -= 24;
+    }
+    return;
+  }
   // - and + work on every screen; their hints show when there is room.
   auto hints = screenHints;
   hints.erase(std::remove_if(hints.begin(), hints.end(), [](const auto &h) { return h.first == "+" || h.first == "-"; }),
