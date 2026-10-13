@@ -168,9 +168,11 @@ void Application::detail() {
   if (!detail_.description.empty()) {
     y += paint_.fonts.wrapped(detail_.description, 40, y, 20, Ink, 750, 20, false, 1.6f) + 24;
   } else if (detailLoading_) {
-    for (int line = 0; line < 3; ++line)
-      paint_.skeleton(40, y + line * 30, line == 2 ? 420 : 720, 18, 6);
-    y += 110;
+    // Text-shaped bars only while the store answers: the white facts card
+    // would open high and then jump below the description as it arrives.
+    for (int line = 0; line < 9; ++line)
+      paint_.skeleton(40, y + line * 34, line % 4 == 3 ? 420 : 720, 18, 6);
+    y += 9 * 34 + 20;
   } else {
     // No description from the store: a quiet card instead of a gap, so the
     // page still opens with something written.
@@ -183,7 +185,8 @@ void Application::detail() {
                         y + 62, 16, Secondary, false, 630);
     y += Height + 16;
   }
-  y = infoCard(g, publisher, y) + 22;
+  if (!detailLoading_ || !detail_.description.empty())
+    y = infoCard(g, publisher, y) + 22;
   if (detailLoading_ && detail_.screenshots.empty()) {
     paint_.skeleton(40, y, 120, 22, 6);
     for (int i = 0; i < 3; ++i)
