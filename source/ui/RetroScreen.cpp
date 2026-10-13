@@ -354,6 +354,7 @@ bool Application::installShortcut(const std::string &name, const std::string &ic
   shortcut.titleId = shortcut.baseId = titleId;
   shortcut.size = size;
   shortcut.icon = icon;
+  shortcut.type = "shortcut"; // an extra of what came down: no row of its own in 다운로드
   // Next in the queue, ahead of what waits: it belongs to what just came down.
   const bool waits = downloadRunning();
   if (auto error = startInstall({shortcut}, trf("{0} shortcut", {name}), icon, "sd", {}, true)) {

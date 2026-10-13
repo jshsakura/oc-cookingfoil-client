@@ -271,8 +271,14 @@ void Application::dialogs() {
     else
       paint_.fonts.wrapped(bugMessage_, body.x + 52, fy + 14, 19, Ink, body.w - 104, 3);
   } else if (unqueueAsk_ >= 0 && unqueueAsk_ < int(installQueue_.size())) {
-    const auto body = modal(700, 24 + 30 + 16, tr("Take it off the download queue?"), tr("Keep it"), "", tr("Take it off"), 25);
-    paint_.fonts.text(installQueue_[size_t(unqueueAsk_)].name, body.x + 32, body.y + 24, 19, Secondary, false, body.w - 64);
+    // As the running download's: the same question, then which one it is
+    // (its cover, name and what it is) and where it goes.
+    const auto &q = installQueue_[size_t(unqueueAsk_)];
+    const auto body = modal(720, 24 + 72 + 24, tr("Cancel the download task"), tr("Keep it"), "", tr("Cancel download"), 25);
+    cover(q.icon, body.x + 32, body.y + 24, 72, false, q.name);
+    paint_.fonts.text(q.name, body.x + 124, body.y + 30, 21, Ink, true, body.w - 156);
+    paint_.fonts.text(q.file.size ? formatBytes(q.file.size) : std::string(), body.x + 124, body.y + 64, 18, Secondary,
+                      false, body.w - 156);
   } else if (confirmCancel_ && cancelRetro_) {
     const bool pack = retroBusy_ == "pack";
     const auto body = modal(700, 24 + 30 + 16, pack ? tr("Cancel the RetroArch install?") : tr("Cancel the download?"),

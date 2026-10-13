@@ -661,6 +661,8 @@ private:
   bool topCardNow(const install::Progress &p, TopCard &card);
   void topCard(const TopCard &card);
   std::string topCardKey_;
+  uint64_t topCardBytes_ = 0;
+  double topCardMovedAt_ = 0; // when its byte count last moved
   // A paused app or retro game sits on the card, not again in the list.
   size_t queueSkip() const { return queueHeld_ && !installQueue_.empty() && !installer_.running() && !retroDownloading() ? 1 : 0; }
   void patchGame(const UserPatch &patch, std::string &name, std::string &icon) const;
@@ -1091,6 +1093,17 @@ private:
   // 대기 중's rows from `y`; rows above `viewTop` are scrolled away.
   void queueList(float y, float viewTop);
   float queueHeight() const;
+  std::string queueRowDetail(const QueuedInstall &q) const;
+  // A HOME Menu shortcut comes with what was downloaded: it waits its turn in
+  // the queue but has no row in 다운로드's lists or counts.
+  static bool extraJob(const std::string &kind, const Item &file) { return kind == "shortcut" || file.type == "shortcut"; }
+  static bool extraJob(const history::Entry &e) {
+    return extraJob(e.kind, e.install.files.empty() ? Item{} : e.install.files.front());
+  }
+  // The queue's rows as 진행 중 lists them (their places in installQueue_):
+  // no extras, and not a paused item that is on the card at the top.
+  std::vector<size_t> shownQueue() const;
+  void moveShown(int row, bool up);
   static constexpr float QueueTitle = 0, QueueStep = 88; // the queue has no title: its cards follow the one above
   // 진행 중 below the installer's card: the retro and patch cards and the
   // queue, gliding as one under a finger.

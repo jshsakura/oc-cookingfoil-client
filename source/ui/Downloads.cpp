@@ -16,14 +16,15 @@ void Application::downloads() {
   const auto queued = p.status == install::Status::Idle
                           ? std::string()
                           : trf("{0} left · {1} total",
-                                {std::to_string(installQueue_.size() + (installer_.running() ? 1 : 0)),
+                                {std::to_string(shownQueue().size() + (installer_.running() ? 1 : 0)),
                                  formatBytes(p.total + queuedBytes())});
   pageTitle(tr("Downloads"), downloadsTab_ == 0 ? queued : std::string());
   // Tabs with their counts: what runs now, what finished, what did not.
-  const int running = int(installQueue_.size()) + (installer_.running() ? 1 : 0) + (retroDownloading() ? 1 : 0) +
+  const int running = int(shownQueue().size()) + (installer_.running() || retroDownloading() || queueSkip() ? 1 : 0) +
                       int(patchQueue_.size()) + (patchWorker_.joinable() && !patchBusy_.empty() ? 1 : 0);
   int done = 0, failed = 0, cancelled = 0;
   for (const auto &e : history_) {
+    if (extraJob(e)) continue;
     done += e.outcome == history::Outcome::Done;
     failed += e.outcome == history::Outcome::Failed;
     cancelled += e.outcome == history::Outcome::Cancelled;
@@ -154,6 +155,8 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
 void Application::topCard(const TopCard &c) {
   if (c.key != topCardKey_) {
     topCardKey_ = c.key;
+    topCardBytes_ = c.bytes;
+    topCardMovedAt_ = SDL_GetTicks() / 1000.;
     shownPercent_ = -1;
     downloadSpeed_.reset();
     timeLeft_.reset();
@@ -186,7 +189,17 @@ void Application::topCard(const TopCard &c) {
   std::string status = c.phase;
   const double now = SDL_GetTicks() / 1000.;
   downloadSeen_ = now;
-  if (!c.paused && c.measure) {
+  // Nothing arriving for a while: said so, with how long, instead of a
+  // number that just stops.
+  if (c.bytes != topCardBytes_) {
+    topCardBytes_ = c.bytes;
+    topCardMovedAt_ = now;
+  }
+  const double still = now - topCardMovedAt_;
+  if (!c.paused && c.measure && c.bytes > 0 && still >= 6) {
+    status += " · " + trf("No data from the server for {0} s. It reconnects by itself.", {std::to_string(int(still))});
+    downloadSpeed_.add(now, c.bytes);
+  } else if (!c.paused && c.measure) {
     downloadSpeed_.add(now, c.bytes);
     const double steady = downloadSpeed_.speed(now);
     if (steady < 0) {
@@ -214,16 +227,8 @@ void Application::topCard(const TopCard &c) {
     paint_.fonts.text(label, x + 12 + mark, 220, 15, done ? Okay : active ? Surface : Secondary, true);
     x += width + 10;
   }
+  // 취소 always at the right end, as on every row; 일시정지 (or 이어받기) left of it.
   float bx = 1228;
-  if (c.onPause) {
-    const std::string label = c.paused ? tr("Resume") : tr("Pause");
-    const float w = paint_.fonts.measure(label, 16, true) + 32;
-    bx -= w;
-    hit(bx, 212, w, 40, c.onPause);
-    paint_.rect(bx, 216, w, 32, c.paused ? Butter : Ground, 8);
-    paint_.fonts.middle(label, bx + 16, 232, 16, Ink, true);
-    bx -= 10;
-  }
   if (c.onCancel) {
     const std::string stop = tr("Cancel");
     const float cw = paint_.fonts.measure(stop, 16, true) + 32;
@@ -231,6 +236,15 @@ void Application::topCard(const TopCard &c) {
     hit(bx, 212, cw, 40, c.onCancel);
     paint_.rect(bx, 216, cw, 32, Ground, 8);
     paint_.fonts.middle(stop, bx + 16, 232, 16, Ink, true);
+    bx -= 10;
+  }
+  if (c.onPause) {
+    const std::string label = c.paused ? tr("Resume") : tr("Pause");
+    const float w = paint_.fonts.measure(label, 16, true) + 32;
+    bx -= w;
+    hit(bx, 212, w, 40, c.onPause);
+    paint_.rect(bx, 216, w, 32, c.paused ? Butter : Ground, 8);
+    paint_.fonts.middle(label, bx + 16, 232, 16, Ink, true);
   }
 }
 // Under the installer's card (or from the top): the retro and patch cards
@@ -251,23 +265,55 @@ void Application::runningList(float y) {
   unclip();
 }
 float Application::queueHeight() const {
-  const size_t rows = installQueue_.size() - std::min(installQueue_.size(), queueSkip());
+  const size_t rows = shownQueue().size();
   return rows ? QueueTitle + float(rows) * QueueStep : 0;
 }
 // 대기 중: what comes next, in order, scrolling under the title. On a row A
 // moves it sooner, X later and Y takes it off; the row's buttons do the same.
+std::vector<size_t> Application::shownQueue() const {
+  std::vector<size_t> out;
+  for (size_t i = queueSkip(); i < installQueue_.size(); ++i)
+    if (!extraJob(installQueue_[i].kind, installQueue_[i].file)) out.push_back(i);
+  return out;
+}
+// A row one place up or down among the rows shown (extras keep their turns).
+void Application::moveShown(int row, bool up) {
+  const auto shown = shownQueue();
+  const int other = up ? row - 1 : row + 1;
+  if (row < 0 || other < 0 || row >= int(shown.size()) || other >= int(shown.size())) return;
+  if (history::swapTurns(history_, installQueue_[shown[size_t(other)]].entry, installQueue_[shown[size_t(row)]].entry)) {
+    saveHistory();
+    rebuildQueue();
+  } else
+    std::swap(installQueue_[shown[size_t(other)]], installQueue_[shown[size_t(row)]]); // a preview row with no history
+  downloadsRow_ = other + 1;
+}
+// "본편 · SD 카드 · 4.1 GB": what a queued item is, where it goes, its size.
+std::string Application::queueRowDetail(const QueuedInstall &q) const {
+  const auto part = q.kind == "homebrew"    ? std::string(tr("Homebrew"))
+                    : q.kind == "retro"     ? std::string(tr("Retro game"))
+                    : q.kind == "retroarch" ? std::string("RetroArch")
+                    : q.kind == "patch" || q.kind == "reapply" ? std::string(tr("Patch"))
+                    : q.kind == "shortcut"  ? std::string(tr("HOME Menu shortcut"))
+                    : q.file.type == "update" ? std::string(tr("Update|item"))
+                    : q.file.type == "dlc"    ? std::string("DLC")
+                                              : std::string(tr("Base game"));
+  const auto where = q.target == "nand" ? tr("Console") : tr("SD card");
+  return part + " · " + where + (q.file.size ? " · " + formatBytes(q.file.size) : std::string());
+}
 void Application::queueList(float y, float viewTop) {
   if (installQueue_.empty())
     return;
   constexpr float Row = 76, Step = QueueStep, Bottom = 660;
-  const int count = int(installQueue_.size()), skip = int(queueSkip());
-  for (int i = skip; i < count; ++i) {
-    const int r = i - skip; // its row under the card
+  const auto shown = shownQueue();
+  const int count = int(shown.size());
+  for (int r = 0; r < count; ++r) {
+    const size_t i = shown[size_t(r)]; // its place in the queue
     const float ry = y + r * Step;
     // Out of view: neither drawn nor answering a tap (the card above is there).
     if (ry < viewTop - 8 || ry > Bottom)
       continue;
-    const auto &q = installQueue_[size_t(i)];
+    const auto &q = installQueue_[i];
     hit(260, ry, 992, Row, [this, r] {
       sidebar_ = false;
       headerFocus_.clear();
@@ -277,16 +323,7 @@ void Application::queueList(float y, float viewTop) {
     paint_.rect(260, ry, 992, Row, Surface, 16);
     cover(q.icon, 280, ry + 10, 56, false, q.name);
     paint_.fonts.text(q.name, 356, ry + 12, 20, Ink, true, 560);
-    const auto part = q.kind == "homebrew"    ? std::string(tr("Homebrew"))
-                      : q.kind == "retro"     ? std::string(tr("Retro game"))
-                      : q.kind == "retroarch" ? std::string("RetroArch")
-                      : q.kind == "patch" || q.kind == "reapply" ? std::string(tr("Patch"))
-                      : q.kind == "shortcut"  ? std::string(tr("HOME Menu shortcut"))
-                      : q.file.type == "update" ? std::string(tr("Update|item"))
-                      : q.file.type == "dlc"    ? std::string("DLC")
-                                                : std::string(tr("Base game"));
-    const auto where = q.target == "nand" ? tr("Console") : tr("SD card");
-    paint_.fonts.text(part + " · " + where + " · " + formatBytes(q.file.size), 356, ry + 44, 16, Secondary, false, 560);
+    paint_.fonts.text(queueRowDetail(q), 356, ry + 44, 16, Secondary, false, 560);
     // Buttons right to left: 취소, 아래로 (not on the last), 위로 (not on the first).
     float right = 1228;
     const auto button = [&](const std::string &label, std::function<void()> run) {
@@ -297,24 +334,19 @@ void Application::queueList(float y, float viewTop) {
       right = x - 10;
     };
     button(tr("Cancel"), [this, i] {
-      unqueueAsk_ = i;
+      unqueueAsk_ = int(i);
       dialogFocus_ = 0;
     });
-    if (i + 1 < count)
-      button(tr("Move down"), [this, i, r] {
-        moveUp(size_t(i) + 1);
-        downloadsRow_ = r + 2;
-      });
-    if (i > skip)
-      button(tr("Move up"), [this, i, r] {
-        moveUp(size_t(i));
-        downloadsRow_ = r;
-      });
+    if (r + 1 < count)
+      button(tr("Move down"), [this, r] { moveShown(r, false); });
+    if (r > 0)
+      button(tr("Move up"), [this, r] { moveShown(r, true); });
   }
 }
 std::vector<int> Application::downloadsList() const {
   std::vector<int> out;
   for (int i = 0; i < int(history_.size()); ++i) {
+    if (extraJob(history_[i])) continue;
     const auto o = history_[i].outcome;
     if (o == (downloadsTab_ == 1   ? history::Outcome::Failed
               : downloadsTab_ == 2 ? history::Outcome::Cancelled
@@ -374,11 +406,22 @@ void Application::downloadsHistory() {
     localtime_r(&at, &local);
     char when[32];
     std::strftime(when, sizeof(when), "%m-%d %H:%M", &local);
-    std::string meta = std::string(e.install.target == "nand" ? tr("Console") : tr("SD card")) + " · " + when;
+    uint64_t fileBytes = 0;
+    for (const auto &file : e.install.files) fileBytes += file.size;
+    std::string meta = std::string(e.install.target == "nand" ? tr("Console") : tr("SD card")) +
+                       (fileBytes ? " · " + formatBytes(fileBytes) : std::string()) + " · " + when;
     if (e.kind == "retro") meta = std::string(tr("Retro game")) + " · " + meta;
     if (e.kind == "homebrew") meta = std::string(tr("Homebrew")) + " · " + meta;
     if (e.kind == "patch" || e.kind == "reapply") meta = std::string(tr("Patch")) + " · " + meta;
     if (!e.error.empty()) meta += " · " + e.error;
+    // Its HOME Menu shortcut, made right after it, says so here (it has no row).
+    if (e.outcome == history::Outcome::Done) {
+      const auto shortcutName = trf("{0} shortcut", {e.install.name});
+      if (std::any_of(history_.begin(), history_.end(), [&](const history::Entry &x) {
+            return extraJob(x) && x.outcome == history::Outcome::Done && x.install.name == shortcutName;
+          }))
+        meta += " · " + std::string(tr("HOME Menu shortcut made"));
+    }
     // What a finished install took: average speed, the download, the install.
     if (e.outcome == history::Outcome::Done && e.downloadSeconds > 0) {
       char speed[32];
