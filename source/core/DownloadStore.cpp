@@ -132,6 +132,7 @@ bool DownloadStore::open(const std::string &path, std::string &error) {
   return true;
 }
 std::vector<history::Entry> DownloadStore::load() {
+  std::lock_guard<std::mutex> held(lock_);
   std::vector<history::Entry> out;
   written_.clear();
   if (!db_)
@@ -164,6 +165,7 @@ std::vector<history::Entry> DownloadStore::load() {
   return out;
 }
 bool DownloadStore::save(const std::vector<history::Entry> &entries, std::string &error) {
+  std::lock_guard<std::mutex> held(lock_);
   if (!db_) {
     error = "closed";
     return false;
@@ -224,6 +226,7 @@ bool DownloadStore::save(const std::vector<history::Entry> &entries, std::string
   return true;
 }
 std::optional<DownloadStore::ResumePoint> DownloadStore::resumePoint(const std::string &key) {
+  std::lock_guard<std::mutex> held(lock_);
   if (!db_)
     return std::nullopt;
   Statement read(db_, "SELECT url, etag, total, plan FROM resume_points WHERE key=?");
@@ -235,6 +238,7 @@ std::optional<DownloadStore::ResumePoint> DownloadStore::resumePoint(const std::
   return ResumePoint{read.column(0), read.column(1), uint64_t(sqlite3_column_int64(read.get(), 2)), read.column(3)};
 }
 bool DownloadStore::saveResumePoint(const std::string &key, const ResumePoint &point) {
+  std::lock_guard<std::mutex> held(lock_);
   if (!db_)
     return false;
   Statement write(db_, "INSERT INTO resume_points(key, url, etag, total, plan, updated_at) VALUES(?,?,?,?,?,?)"
@@ -251,6 +255,7 @@ bool DownloadStore::saveResumePoint(const std::string &key, const ResumePoint &p
   return write.step() == SQLITE_DONE;
 }
 void DownloadStore::forgetResumePoint(const std::string &key) {
+  std::lock_guard<std::mutex> held(lock_);
   if (!db_)
     return;
   Statement remove(db_, "DELETE FROM resume_points WHERE key=?");

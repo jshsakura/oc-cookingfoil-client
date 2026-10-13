@@ -1929,6 +1929,7 @@ void Application::openDownloads(const std::string &sd) {
     return;
   }
   history_ = store_.load();
+  installer_.setStore(&store_);
   const auto old = sd + "/switch/cookingfoil/downloads.json";
   if (history_.empty() && std::filesystem::exists(old)) {
     history_ = history::parse(readFile(old));

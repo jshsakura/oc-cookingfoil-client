@@ -13,6 +13,9 @@
 #include "util/config.hpp"
 #include "util/network_util.hpp"
 #include "net/Segmented.hpp"
+#include <cctype>
+#include "net/Segments.hpp"
+#include "core/DownloadStore.hpp"
 #include "net/Socket.hpp"
 #include <cstdio>
 #include "core/Log.hpp"
@@ -166,8 +169,32 @@ void nativeInstall(const Item &item, const std::string &target,
     task.Begin();
   }
 }
+namespace {
+// "sd:0123abcd…": the install's storage and the NCA's id, from its id or its
+// file name, so the engine and the download agree on it.
+std::string resumeKey(const std::string &nca) {
+  auto *sink = engineSink();
+  auto id = nca.substr(0, nca.find('.'));
+  for (auto &c : id)
+    c = char(std::tolower(static_cast<unsigned char>(c)));
+  return (sink ? sink->target() : std::string("sd")) + ":" + id;
+}
+DownloadStore *store() {
+  auto *sink = engineSink();
+  return sink ? sink->store() : nullptr;
+}
+} // namespace
+bool resumable(const std::string &nca) {
+  auto *db = store();
+  return db && db->resumePoint(resumeKey(nca)).has_value();
+}
+void forgetResume(const std::string &nca) {
+  if (auto *db = store())
+    db->forgetResumePoint(resumeKey(nca));
+}
 Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, const std::function<bool()> &prepare,
-                     const std::function<bool(uint64_t, const char *, size_t)> &write) {
+                     const std::function<bool(uint64_t, const char *, size_t)> &write,
+                     const std::function<void()> &flush) {
   if (current.url.empty() || size == 0)
     return Placed::NotUsed;
   auto *sink = engineSink();
@@ -198,16 +225,47 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
     reportBytes(content, got, speed);
   };
   options.log = [](const std::string &line) { logLine(line); };
+  // Cut off before: on from where each part stood, if the file is the same
+  // one (the server's validator says so, or it starts over).
+  const auto key = resumeKey(content);
+  auto *db = store();
+  if (db)
+    if (const auto point = db->resumePoint(key);
+        point && point->url == current.url && point->total == from + size &&
+        foil::net::SegmentPlan::load(point->plan, options.resume)) {
+      options.resumeTotal = point->total;
+      options.etag = point->etag;
+      logLine("download resumes at " + std::to_string(foil::net::SegmentPlan(options.resume).received() >> 20) +
+              " MB: " + content);
+    }
+  // Where it stands, every few seconds, once the bytes are on the card.
+  uint64_t savedTick = 0;
+  if (db)
+    options.checkpoint = [&](const std::string &etag, uint64_t total, const std::string &plan) {
+      const uint64_t now = svcGetSystemTick();
+      if (savedTick && now - savedTick < 5ull * 19200000)
+        return;
+      savedTick = now;
+      if (flush)
+        flush();
+      db->saveResumePoint(key, {current.url, etag, total, plan});
+    };
   const auto result = foil::net::segmentedFetch(
       current.url, [&](uint64_t) { return prepare(); },
       [&](uint64_t offset, const char *data, size_t length) { return offset >= from && write(offset - from, data, length); },
       options);
-  if (result.cancelled)
+  if (result.cancelled) {
+    if (db)
+      db->forgetResumePoint(key);
     return Placed::Cancelled;
+  }
   if (!result.ok) {
+    // The point stays: the next try goes on from it.
     logLine("segmented download failed: " + result.error + " status=" + std::to_string(result.status));
     return Placed::Failed;
   }
+  if (db)
+    db->forgetResumePoint(key);
   reportBytes(content, size, speed);
   return Placed::Done;
 }

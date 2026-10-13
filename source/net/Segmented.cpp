@@ -212,6 +212,10 @@ size_t onBody(char *data, size_t size, size_t count, void *user) {
     } else if (c.status != 206 || start != c.pos) {
       c.bad = true;
       return 0;
+    } else if (s.etag.empty() && !c.etag.empty()) {
+      // A known stretch has no first probe: its first reply gives the
+      // validator a resume point keeps.
+      s.etag = c.etag;
     }
   }
   const uint64_t room = c.stop > c.pos ? c.stop - c.pos : 0;

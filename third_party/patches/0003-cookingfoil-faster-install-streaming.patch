@@ -54,6 +54,22 @@ index 8e5b7e5..c4fb307 100755
  };
  
  class NcaWriter : public CloseableWriter
+diff --git a/include/nx/ncm.hpp b/include/nx/ncm.hpp
+index 2301850..ae3ed63 100755
+--- a/include/nx/ncm.hpp
++++ b/include/nx/ncm.hpp
+@@ -53,6 +53,10 @@ namespace nx::ncm
+             void Register(const NcmPlaceHolderId &placeholderId, const NcmContentId &registeredId);
+             void Delete(const NcmContentId &registeredId);
+             bool Has(const NcmContentId &registeredId);
++            // CookingFoil: a placeholder kept from a cut-off download, and
++            // making what was written to placeholders stay on the card.
++            bool HasPlaceholder(const NcmPlaceHolderId &placeholderId);
++            void FlushPlaceholder();
+             std::string GetPath(const NcmContentId &registeredId);
+     };
+ }
+\ No newline at end of file
 diff --git a/include/util/network_util.hpp b/include/util/network_util.hpp
 index a4c62f2..d917b1a 100755
 --- a/include/util/network_util.hpp
@@ -78,7 +94,7 @@ index a4c62f2..d917b1a 100755
      void ClearBasicAuth();
  
 diff --git a/source/install/http_nsp.cpp b/source/install/http_nsp.cpp
-index 50d2f4a..5d2842e 100755
+index 50d2f4a..fc1842f 100755
 --- a/source/install/http_nsp.cpp
 +++ b/source/install/http_nsp.cpp
 @@ -84,7 +84,7 @@ namespace tin::install::nsp
@@ -160,7 +176,7 @@ index 50d2f4a..5d2842e 100755
      void HTTPNSP::StreamToPlaceholder(std::shared_ptr<nx::ncm::ContentStorage>& contentStorage, NcmContentId placeholderId)
      {
          const PFS0FileEntry* fileEntry = this->GetFileEntryByNcaId(placeholderId);
-@@ -173,6 +206,33 @@ namespace tin::install::nsp
+@@ -173,6 +206,37 @@ namespace tin::install::nsp
          LOG_DEBUG("Retrieving %s\n", displayFileName.c_str());
          size_t ncaSize = fileEntry->fileSize;
  
@@ -169,7 +185,8 @@ index 50d2f4a..5d2842e 100755
 +            const u64 placeFrom = this->GetDataOffset() + fileEntry->dataOffset;
 +            const auto placed = foil::install::streamToPlace(displayFileName, placeFrom, ncaSize,
 +                [&] {
-+                    contentStorage->CreatePlaceholder(placeholderId, *(NcmPlaceHolderId*)&placeholderId, ncaSize);
++                    if (!contentStorage->HasPlaceholder(*(NcmPlaceHolderId*)&placeholderId)) // kept from a cut-off try
++                        contentStorage->CreatePlaceholder(placeholderId, *(NcmPlaceHolderId*)&placeholderId, ncaSize);
 +                    return true;
 +                },
 +                [&](uint64_t offset, const char* data, size_t length) {
@@ -179,6 +196,9 @@ index 50d2f4a..5d2842e 100755
 +                    } catch (...) {
 +                        return false;
 +                    }
++                },
++                [&] {
++                    try { contentStorage->FlushPlaceholder(); } catch (...) {}
 +                });
 +            if (placed == foil::install::Placed::Done)
 +            {
@@ -194,7 +214,7 @@ index 50d2f4a..5d2842e 100755
          tin::data::BufferedPlaceholderWriter bufferedPlaceholderWriter(contentStorage, placeholderId, ncaSize);
          StreamFuncArgs args;
          args.download = &m_download;
-@@ -194,6 +254,7 @@ namespace tin::install::nsp
+@@ -194,6 +258,7 @@ namespace tin::install::nsp
          inst::ui::instPage::setInstBarPerc(0);
          while (!bufferedPlaceholderWriter.IsBufferDataComplete() && !stopThreadsHttpNsp)
          {
@@ -202,7 +222,7 @@ index 50d2f4a..5d2842e 100755
              if (inst::ui::instPage::isInstallCancelRequested()) {
                  args.retryConfirm.approved.store(false);
                  args.retryConfirm.pending.store(false);
-@@ -216,7 +277,7 @@ namespace tin::install::nsp
+@@ -216,7 +281,7 @@ namespace tin::install::nsp
              if (newTime - startTime >= freq * 0.5)
              {
                  size_t newSizeBuffered = bufferedPlaceholderWriter.GetSizeBuffered();
@@ -211,7 +231,7 @@ index 50d2f4a..5d2842e 100755
                  double duration = ((double)(newTime - startTime) / (double)freq);
                  double speed =  mbBuffered / duration;
  
-@@ -260,6 +321,7 @@ namespace tin::install::nsp
+@@ -260,6 +325,7 @@ namespace tin::install::nsp
          inst::ui::instPage::setInstBarPerc(0);
          while (!bufferedPlaceholderWriter.IsPlaceholderComplete() && !stopThreadsHttpNsp)
          {
@@ -220,7 +240,7 @@ index 50d2f4a..5d2842e 100755
                  args.retryConfirm.approved.store(false);
                  args.retryConfirm.pending.store(false);
 diff --git a/source/install/http_xci.cpp b/source/install/http_xci.cpp
-index 325c6b9..7568a32 100755
+index 325c6b9..70a8738 100755
 --- a/source/install/http_xci.cpp
 +++ b/source/install/http_xci.cpp
 @@ -21,6 +21,12 @@ SOFTWARE.
@@ -256,7 +276,7 @@ index 325c6b9..7568a32 100755
      void HTTPXCI::StreamToPlaceholder(std::shared_ptr<nx::ncm::ContentStorage>& contentStorage, NcmContentId ncaId)
      {
          const HFS0FileEntry* fileEntry = this->GetFileEntryByNcaId(ncaId);
-@@ -45,13 +64,98 @@ namespace tin::install::xci
+@@ -45,13 +64,102 @@ namespace tin::install::xci
          LOG_DEBUG("Retrieving %s\n", ncaFileName.c_str());
          size_t ncaSize = fileEntry->fileSize;
  
@@ -265,7 +285,8 @@ index 325c6b9..7568a32 100755
 +            const u64 placeFrom = GetDataOffset() + fileEntry->dataOffset;
 +            const auto placed = foil::install::streamToPlace(ncaFileName, placeFrom, ncaSize,
 +                [&] {
-+                    contentStorage->CreatePlaceholder(ncaId, *(NcmPlaceHolderId*)&ncaId, ncaSize);
++                    if (!contentStorage->HasPlaceholder(*(NcmPlaceHolderId*)&ncaId)) // kept from a cut-off try
++                        contentStorage->CreatePlaceholder(ncaId, *(NcmPlaceHolderId*)&ncaId, ncaSize);
 +                    return true;
 +                },
 +                [&](uint64_t offset, const char* data, size_t length) {
@@ -275,6 +296,9 @@ index 325c6b9..7568a32 100755
 +                    } catch (...) {
 +                        return false;
 +                    }
++                },
++                [&] {
++                    try { contentStorage->FlushPlaceholder(); } catch (...) {}
 +                });
 +            if (placed == foil::install::Placed::Done)
 +            {
@@ -358,7 +382,7 @@ index 325c6b9..7568a32 100755
  
          try {
              inst::ui::instPage::setInstInfoText("inst.info_page.top_info0"_lang + ncaFileName + "...");
-@@ -60,26 +164,34 @@ namespace tin::install::xci
+@@ -60,26 +168,34 @@ namespace tin::install::xci
                  if (inst::ui::instPage::isInstallCancelRequested()) {
                      THROW_FORMAT("Installation canceled.");
                  }
@@ -405,6 +429,131 @@ index 325c6b9..7568a32 100755
          }
  
          writer.close();
+diff --git a/source/install/install.cpp b/source/install/install.cpp
+index 422208b..fef9555 100755
+--- a/source/install/install.cpp
++++ b/source/install/install.cpp
+@@ -28,6 +28,8 @@ SOFTWARE.
+ #include <algorithm>
+ #include "util/error.hpp"
+ #include "util/install_diagnostics.hpp"
++#include "install/EngineHooks.hpp"
++#include "util/title_util.hpp"
+ #include "ui/instPage.hpp"
+ 
+ #include "nx/ncm.hpp"
+@@ -71,6 +73,9 @@ namespace tin::install
+ 
+         nx::ncm::ContentStorage contentStorage(m_destStorageId);
+         for (const NcmContentId& ncaId : m_sessionInstalledNcas) {
++            // CookingFoil: a placeholder that can resume stays for the next try.
++            if (keepFinished && foil::install::resumable(tin::util::GetNcaIdString(ncaId)))
++                continue;
+             try {
+                 contentStorage.DeletePlaceholder(*(const NcmPlaceHolderId*)&ncaId);
+             } catch (...) {}
+diff --git a/source/install/install_nsp.cpp b/source/install/install_nsp.cpp
+index 3be09b7..64b8226 100755
+--- a/source/install/install_nsp.cpp
++++ b/source/install/install_nsp.cpp
+@@ -38,6 +38,8 @@ SOFTWARE.
+ #include "util/util.hpp"
+ #include "util/lang.hpp"
+ #include "ui/MainApplication.hpp"
++#include "install/EngineHooks.hpp"
++#include "ui/instPage.hpp"
+ 
+ namespace inst::ui {
+      extern MainApplication *mainApp;
+@@ -91,11 +93,21 @@ namespace tin::install::nsp
+ 
+         std::shared_ptr<nx::ncm::ContentStorage> contentStorage(new nx::ncm::ContentStorage(m_destStorageId));
+ 
+-        // Attempt to delete any leftover placeholders
+-        try {
+-            contentStorage->DeletePlaceholder(*(NcmPlaceHolderId*)&ncaId);
++        // Attempt to delete any leftover placeholders. CookingFoil: one cut
++        // off mid-download stays while its resume point does, and the
++        // download goes on from there.
++        const std::string ncaIdText = tin::util::GetNcaIdString(ncaId);
++        bool resuming = foil::install::resumable(ncaIdText);
++        if (resuming && !contentStorage->HasPlaceholder(*(NcmPlaceHolderId*)&ncaId)) {
++            foil::install::forgetResume(ncaIdText);
++            resuming = false;
++        }
++        if (!resuming) {
++            try {
++                contentStorage->DeletePlaceholder(*(NcmPlaceHolderId*)&ncaId);
++            }
++            catch (...) {}
+         }
+-        catch (...) {}
+ 
+         LOG_DEBUG("Size: 0x%lx\n", fileEntry->fileSize);
+ 
+@@ -153,7 +165,10 @@ namespace tin::install::nsp
+         }
+         catch (...)
+         {
+-            try { contentStorage->DeletePlaceholder(*(NcmPlaceHolderId*)&ncaId); } catch (...) {}
++            // CookingFoil: kept for the next try when it can go on from where it stopped.
++            const bool keep = !inst::ui::instPage::isInstallCancelRequested() && foil::install::resumable(ncaIdText);
++            if (!keep)
++                try { contentStorage->DeletePlaceholder(*(NcmPlaceHolderId*)&ncaId); } catch (...) {}
+             try {
+                 if (contentStorage->Has(ncaId))
+                     contentStorage->Delete(ncaId);
+diff --git a/source/install/install_xci.cpp b/source/install/install_xci.cpp
+index 59c4417..bd7aeca 100755
+--- a/source/install/install_xci.cpp
++++ b/source/install/install_xci.cpp
+@@ -34,6 +34,8 @@ SOFTWARE.
+ #include "util/lang.hpp"
+ #include "install/nca.hpp"
+ #include "ui/MainApplication.hpp"
++#include "install/EngineHooks.hpp"
++#include "ui/instPage.hpp"
+ 
+ namespace inst::ui {
+     extern MainApplication *mainApp;
+@@ -86,11 +88,21 @@ namespace tin::install::xci
+ 
+         std::shared_ptr<nx::ncm::ContentStorage> contentStorage(new nx::ncm::ContentStorage(m_destStorageId));
+ 
+-        // Attempt to delete any leftover placeholders
+-        try {
+-            contentStorage->DeletePlaceholder(*(NcmPlaceHolderId*)&ncaId);
++        // Attempt to delete any leftover placeholders. CookingFoil: one cut
++        // off mid-download stays while its resume point does, and the
++        // download goes on from there.
++        const std::string ncaIdText = tin::util::GetNcaIdString(ncaId);
++        bool resuming = foil::install::resumable(ncaIdText);
++        if (resuming && !contentStorage->HasPlaceholder(*(NcmPlaceHolderId*)&ncaId)) {
++            foil::install::forgetResume(ncaIdText);
++            resuming = false;
++        }
++        if (!resuming) {
++            try {
++                contentStorage->DeletePlaceholder(*(NcmPlaceHolderId*)&ncaId);
++            }
++            catch (...) {}
+         }
+-        catch (...) {}
+ 
+         LOG_DEBUG("Size: 0x%lx\n", fileEntry->fileSize);
+ 
+@@ -150,7 +162,10 @@ namespace tin::install::xci
+         }
+         catch (...)
+         {
+-            try { contentStorage->DeletePlaceholder(*(NcmPlaceHolderId*)&ncaId); } catch (...) {}
++            // CookingFoil: kept for the next try when it can go on from where it stopped.
++            const bool keep = !inst::ui::instPage::isInstallCancelRequested() && foil::install::resumable(ncaIdText);
++            if (!keep)
++                try { contentStorage->DeletePlaceholder(*(NcmPlaceHolderId*)&ncaId); } catch (...) {}
+             try {
+                 if (contentStorage->Has(ncaId))
+                     contentStorage->Delete(ncaId);
 diff --git a/source/nx/nca_writer.cpp b/source/nx/nca_writer.cpp
 index 0ba55bd..c19531f 100755
 --- a/source/nx/nca_writer.cpp
@@ -509,6 +658,30 @@ index 0ba55bd..c19531f 100755
       }
  
       m_contentBuffer.resize(0);
+diff --git a/source/nx/ncm.cpp b/source/nx/ncm.cpp
+index 643c236..cc42774 100755
+--- a/source/nx/ncm.cpp
++++ b/source/nx/ncm.cpp
+@@ -50,6 +50,19 @@ namespace nx::ncm
+         ASSERT_OK(ncmContentStorageWritePlaceHolder(&m_contentStorage, &placeholderId, offset, buffer, bufSize), "Failed to write to placeholder");
+     }
+ 
++    bool ContentStorage::HasPlaceholder(const NcmPlaceHolderId &placeholderId)
++    {
++        bool has = false;
++        if (R_FAILED(ncmContentStorageHasPlaceHolder(&m_contentStorage, &has, &placeholderId)))
++            return false;
++        return has;
++    }
++
++    void ContentStorage::FlushPlaceholder()
++    {
++        ncmContentStorageFlushPlaceHolder(&m_contentStorage);
++    }
++
+     void ContentStorage::Register(const NcmPlaceHolderId &placeholderId, const NcmContentId &registeredId)
+     {
+         ASSERT_OK(ncmContentStorageRegister(&m_contentStorage, &registeredId, &placeholderId), "Failed to register placeholder NCA");
 diff --git a/source/util/network_util.cpp b/source/util/network_util.cpp
 index ea0dad8..cde78c2 100755
 --- a/source/util/network_util.cpp

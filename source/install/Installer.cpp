@@ -78,6 +78,10 @@ bool Installer::running() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return progress_.status == Status::Running;
 }
+std::string Installer::target() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return progress_.target;
+}
 Progress Installer::progress() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return progress_;

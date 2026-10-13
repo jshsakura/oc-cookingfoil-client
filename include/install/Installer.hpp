@@ -7,6 +7,9 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+namespace foil {
+class DownloadStore;
+}
 namespace foil::install {
 enum class Status { Idle, Running, Succeeded, Failed, Cancelled };
 struct Progress {
@@ -75,6 +78,11 @@ public:
   // Set from 설정 when the install starts; the engine reads it per file.
   bool skipSignatureCheck() const { return skipSignature_; }
   bool skipFirmwareCheck() const { return skipFirmware_; }
+  // 다운로드's database: where a cut-off file stands (EngineHooks).
+  void setStore(DownloadStore *store) { store_ = store; }
+  DownloadStore *store() const { return store_; }
+  // "sd" or "nand", as the install was started.
+  std::string target() const;
   bool running() const;
   Progress progress() const;
   void phase(const std::string &text);
@@ -94,6 +102,7 @@ private:
   Progress progress_;
   uint64_t completed_ = 0;
   std::map<std::string, uint64_t> contents_;
+  DownloadStore *store_ = nullptr;
 };
 void nativeInstall(const Item &item, const std::string &target,
                    const std::vector<std::string> &headers);

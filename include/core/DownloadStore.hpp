@@ -1,9 +1,11 @@
 #pragma once
 // 다운로드's records in SQLite (cookingfoil.db on the SD card): the queue and
 // every download that ran, in list order, and where a file that was cut off
-// stands so it picks up at that byte. One connection, used from the UI thread.
+// stands so it picks up at that byte. One connection; the UI and the install
+// thread both use it, one at a time.
 #include "core/DownloadHistory.hpp"
 #include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -35,6 +37,7 @@ public:
 
 private:
   bool exec(const char *sql, std::string &error);
+  std::mutex lock_;
   sqlite3 *db_ = nullptr;
   std::map<uint64_t, std::string> written_; // each row as last written, to skip the unchanged
 };
