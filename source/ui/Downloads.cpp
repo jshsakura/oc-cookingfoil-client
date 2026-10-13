@@ -206,7 +206,7 @@ void Application::downloadsHistory() {
                           float((count) - (Visible)), Step);
   const int first = int(top);
   paint_.scrollbar(1266, Top, Step * Visible - 12, top, Visible, float(count));
-  clipTo(232, Top, 1048, 660 - (Top));
+  clipTo(232, Top - 8, 1048, 660 - Top + 8);
   for (int n = first; n < count && n <= first + Visible + 1; ++n) {
     const auto &e = history_[list[n]];
     const float y = Top + (n - top) * Step;

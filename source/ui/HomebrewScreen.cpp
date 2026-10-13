@@ -411,7 +411,7 @@ void Application::homebrewScreen() {
     homebrewTab_ = n;
     selected_ = 0;
   }, SearchX - 16, 0, {updates[0], updates[1], updates[2]});
-  pageTitle(tr("홈브류"), homebrewLoaded_ ? std::to_string(rows.size()) : std::string(), tabsLeft);
+  pageTitle(tr("홈브류"), homebrewLoaded_ ? countLabel(rows.size(), homebrewQuery_) : std::string(), tabsLeft);
   if (!connected_) {
     notice(tr("서버에 연결되어 있지 않습니다."), tr("서버에 연결한 뒤 홈브류를 확인합니다."), 21);
     return;

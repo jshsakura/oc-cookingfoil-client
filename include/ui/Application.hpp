@@ -664,6 +664,9 @@ private:
   // Returns the x after the meta text.
   // `metaRight`: where header buttons start, so long meta text stops short.
   float pageTitle(const std::string &title, const std::string &meta = "", float metaRight = 0);
+  // The count beside a title: while searching it says what it counts (the
+  // words themselves stay in the search box).
+  std::string countLabel(size_t count, const std::string &query) const;
   void connect(size_t server);
   void clearCatalog();
   // `prefer`: the server to connect to when it is on, else the first one on.

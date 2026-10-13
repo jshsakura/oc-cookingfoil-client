@@ -427,7 +427,7 @@ void Application::dropboxTab() {
   const int first = int(top);
   paint_.scrollbar(1266, ListTop, RowStep * Visible - 12, top, Visible, float(count));
   const auto root = saves::keeperRoot(sdRoot_);
-  clipTo(232, ListTop, 1048, 660 - (ListTop));
+  clipTo(232, ListTop - 8, 1048, 660 - ListTop + 8);
   for (int n = first; n < count && n <= first + Visible + 1; ++n) {
     const auto &g = rows[n];
     const auto id = g.applicationId;

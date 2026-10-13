@@ -648,7 +648,7 @@ void Application::patchesScreen() {
                    selected_ = 0;
                  }, searchX - 16);
   const float titleEnd =
-      pageTitle(tr("패치|메뉴"), on ? trf("{0} · 켜짐 {1}", {std::to_string(rows.size()), std::to_string(on)}) : std::to_string(rows.size()), tabsLeft);
+      pageTitle(tr("패치|메뉴"), !patchQuery_.empty() ? countLabel(rows.size(), patchQuery_) : on ? trf("{0} · 켜짐 {1}", {std::to_string(rows.size()), std::to_string(on)}) : std::to_string(rows.size()), tabsLeft);
   // The background file check says it is running, quietly: a pulsing dot
   // and a word beside the title, while the list stays usable.
   if (patchChecking()) {
@@ -693,7 +693,7 @@ void Application::patchesScreen() {
   paint_.scrollbar(1266, RowTop, RowStep * VisibleRows - 16, top, VisibleRows, float(games.size()));
   // One more row than fits, cut off by the footer, so a longer list looks
   // like it goes on instead of looking like four games in all.
-  clipTo(232, RowTop, 1048, 660 - (RowTop));
+  clipTo(232, RowTop - 8, 1048, 660 - RowTop + 8);
   for (int i = first; i < int(games.size()) && i <= first + VisibleRows + 1; ++i) {
     const auto &game = games[i];
     const float y = RowTop + (i - top) * RowStep;

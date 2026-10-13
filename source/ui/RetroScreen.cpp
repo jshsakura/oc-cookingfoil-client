@@ -662,7 +662,7 @@ void Application::retroList() {
   const int first = int(top);
   paint_.scrollbar(1266, Top, RowStep * Visible - 12, top, Visible, float(std::max(retroTotal_, count)));
   // One row past the footer so a long list looks like it goes on.
-  clipTo(232, Top, 1048, 660 - (Top));
+  clipTo(232, Top - 8, 1048, 660 - Top + 8);
   for (int i = first; i < count && i <= first + Visible + 1; ++i) {
     const auto &game = retroGames_[i];
     const float y = Top + (i - top) * RowStep;

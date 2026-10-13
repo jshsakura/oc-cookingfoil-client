@@ -102,8 +102,8 @@ void Application::savesScreen() {
     if (n == 2) dropboxEnter();
   }, searchX - 16);
   pageTitle(tr("세이브"),
-            shop ? (shopSavesLoaded_ ? std::to_string(shopSaveGroups().size()) : std::string())
-            : savesTab_ == 0 && installed_.installed.complete ? std::to_string(saveGameRows().size())
+            shop ? (shopSavesLoaded_ ? countLabel(shopSaveGroups().size(), savesQuery_) : std::string())
+            : savesTab_ == 0 && installed_.installed.complete ? countLabel(saveGameRows().size(), savesQuery_)
                                                              : "",
             tabsLeft);
   if (savesTab_ == 2) {
@@ -140,7 +140,7 @@ void Application::savesScreen() {
   const int first = int(top);
   paint_.scrollbar(1266, Top, RowStep * Visible - 12, top, Visible, float(count));
   const auto backupsRoot = saves::keeperRoot(sdRoot_);
-  clipTo(232, Top, 1048, 660 - (Top));
+  clipTo(232, Top - 8, 1048, 660 - Top + 8);
   for (int i = first; i < count && i <= first + Visible + 1; ++i) {
     const auto &g = installed_.games[rows[i]];
     const float y = Top + (i - top) * RowStep;
@@ -378,7 +378,7 @@ void Application::shopSavesList() {
                           float((count) - (Visible)), RowStep);
   const int first = int(top);
   paint_.scrollbar(1266, Top, RowStep * Visible - 12, top, Visible, float(count));
-  clipTo(232, Top, 1048, 660 - (Top));
+  clipTo(232, Top - 8, 1048, 660 - Top + 8);
   for (int i = first; i < count && i <= first + Visible + 1; ++i) {
     const auto [start, saves] = groups[i];
     const auto &save = shopSaves_[start];

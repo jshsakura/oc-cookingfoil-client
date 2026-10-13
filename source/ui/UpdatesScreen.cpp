@@ -77,7 +77,7 @@ void Application::updates() {
   paint_.fonts.middle(yLabel, buttonX + 88, 48, 18, ink, true, w - 106);
   const float tabsLeft = myGamesTabs(buttonX - 16);
   pageTitle(tr("내 게임"),
-            bytes ? std::to_string(rows.size()) + " · " + formatBytes(bytes) : std::to_string(rows.size()),
+            !updatesQuery_.empty() ? countLabel(rows.size(), updatesQuery_) : bytes ? std::to_string(rows.size()) + " · " + formatBytes(bytes) : std::to_string(rows.size()),
             tabsLeft);
   if (!connected_) {
     notice(tr("서버에 연결되어 있지 않습니다."), tr("서버에 연결한 뒤 업데이트를 확인합니다."), 21);
@@ -111,7 +111,7 @@ void Application::updates() {
                           float((int(rows.size())) - (4)), 124);
   const int first = int(top);
   paint_.scrollbar(1266, 90, 480, top, 4, float(rows.size()));
-  clipTo(232, 90, 1048, 660 - (90));
+  clipTo(232, 90 - 8, 1048, 660 - 90 + 8);
   for (int i = first; i < int(rows.size()) && i <= first + 5; ++i) {
     const auto &row = rows[i];
     const auto *group = findGroup(row.baseId);

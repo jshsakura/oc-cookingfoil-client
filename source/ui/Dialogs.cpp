@@ -107,6 +107,9 @@ float Application::pageTitle(const std::string &title, const std::string &meta, 
     x += 14 + paint_.pill(meta, x + 14, HeaderCenter - 13);
   return x;
 }
+std::string Application::countLabel(size_t count, const std::string &query) const {
+  return query.empty() ? std::to_string(count) : trf("{0}건의 검색 결과", {std::to_string(count)});
+}
 void Application::notice(const std::string &title, const std::string &body, int icon) {
   // Centered between the page header and the footer.
   constexpr float Width = 640, Left = 260 + (992 - Width) / 2, BodyTop = 110,

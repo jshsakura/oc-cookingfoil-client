@@ -15,9 +15,7 @@ void Application::library() {
   const auto &list = libraryList();
   // Nothing listed: the cursor waits on the search box.
   if (list.empty() && inContent()) headerFocus_ = "search";
-  auto count = std::to_string(list.size());
-  if (!query_.empty())
-    count += " · " + trf("'{0}' 검색 결과", {query_});
+  const auto count = countLabel(list.size(), query_);
   searchBar(query_);
   // Filter and sort live in a popup (Y); the button says what is applied.
   std::string chipTitle = tr("전체");

@@ -180,7 +180,7 @@ void Application::installedScreen() {
   paint_.icon(10, sortX + 60, 38, Ink, 20);
   paint_.fonts.middle(sort, sortX + 88, 48, 18, Ink, true, sortW - 106);
   const float tabsLeft = myGamesTabs(sortX - 16);
-  pageTitle(tr("내 게임"), !firstRead || managedGame_ ? std::to_string(rows.size()) : std::string(),
+  pageTitle(tr("내 게임"), !firstRead || managedGame_ ? countLabel(rows.size(), installedQuery_) : std::string(),
             tabsLeft);
   if (firstRead && !managedGame_) {
     paint_.skeletonCards(260, 104, 12);
