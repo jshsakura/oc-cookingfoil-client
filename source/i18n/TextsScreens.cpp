@@ -126,7 +126,6 @@ const Translation rows[] = {
     {"Could not download the update. HTTP {0}", "업데이트를 받지 못했습니다. HTTP {0}", "更新を入手できませんでした。HTTP {0}", "无法下载更新。HTTP {0}"},
     {"Could not write the update file.", "업데이트 파일을 쓰지 못했습니다.", "更新ファイルを書き込めませんでした。", "无法写入更新文件。"},
     {"The downloaded file does not match the server's. Try again.", "받은 파일이 서버의 것과 다릅니다. 다시 시도합니다.", "入手したファイルがサーバーのものと違います。もう一度試します。", "下载的文件与服务器上的不一致。请重试。"},
-    {"Could not put the update in place.", "업데이트 파일을 바꾸지 못했습니다.", "更新ファイルを置き換えられませんでした。", "无法替换为更新文件。"},
     {"Connect to a server to check.", "서버에 연결한 뒤 확인합니다.", "サーバーに接続してから確認します。", "连接服务器后再检查。"},
     {"Cannot update", "업데이트할 수 없습니다", "更新できません", "无法更新"},
     {"Cancelled the update.", "업데이트를 취소했습니다.", "更新を中止しました。", "已取消更新。"},

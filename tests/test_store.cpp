@@ -218,30 +218,12 @@ int runStoreTests() {
       CHECK(store.save(committed, error));
       CHECK(store.saveResumePoint("nca:kept", {"https://shop.example/f/kept", "e", 9, "plan"}));
     }
-    const auto before = slurp(hot);
-    std::cout.flush();
-    std::cerr.flush();
-    const pid_t child = fork();
-    if (child == 0) {
-      sqlite3 *db = nullptr;
-      if (sqlite3_open_v2(hot.c_str(), &db, SQLITE_OPEN_READWRITE, "unix-none") != SQLITE_OK)
-        _exit(2);
-      // A tiny cache spills changed pages into the file before the commit,
-      // which is what a cut-off write leaves: a half-new file and its journal.
-      sqlite3_exec(db, "PRAGMA journal_mode=TRUNCATE; PRAGMA synchronous=FULL; PRAGMA cache_size=1; BEGIN;"
-                       "DELETE FROM downloads; DELETE FROM resume_points;", nullptr, nullptr, nullptr);
-      for (int i = 0; i < 400; ++i) {
-        const std::string sql = "INSERT INTO downloads(id, position, outcome, install, error) VALUES(" +
-                                std::to_string(1000 + i) + ", " + std::to_string(i) + ", 'done', '{}', '" +
-                                std::string(500, 'y') + "')";
-        sqlite3_exec(db, sql.c_str(), nullptr, nullptr, nullptr);
-      }
-      _exit(0); // no commit, no close
+    // A write cut off part way leaves its temporary file (half written) and
+    // perhaps an older build's journal: neither touches the file.
+    {
+      std::ofstream(hot + ".tmp", std::ios::binary) << std::string(3000, 'x');
+      std::ofstream(hot + "-journal", std::ios::binary) << std::string(4096, 'j');
     }
-    int status = 0;
-    CHECK(child > 0 && waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
-    CHECK(std::filesystem::file_size(hot + "-journal") > 0);
-    CHECK(slurp(hot) != before); // the cut-off write did reach the file
     DownloadStore store;
     std::string error;
     CHECK(store.open(hot, error));
@@ -251,7 +233,12 @@ int runStoreTests() {
       CHECK(back.front().install.name == committed.front().install.name &&
             back.back().install.name == committed.back().install.name);
     CHECK(store.resumePoint("nca:kept") && store.resumePoint("nca:kept")->plan == "plan");
-    CHECK(!exists(hot + ".broken"));
+    CHECK(!exists(hot + ".broken") && !exists(hot + "-journal"));
+    // Cut between the two renames of a write: the file gone, its .old there.
+    std::filesystem::rename(hot, hot + ".old");
+    DownloadStore again;
+    CHECK(again.open(hot, error));
+    CHECK(again.load().size() == committed.size());
   }
   {
     // A statement that fails mid-save rolls the whole save back: nothing is
@@ -426,22 +413,13 @@ int runStoreTests() {
       if (::write(fd, token.data(), token.size()) != ssize_t(token.size()))
         _exit(4);
       ::close(fd);
-      sqlite3 *db = nullptr;
-      if (sqlite3_open_v2(killed.c_str(), &db, SQLITE_OPEN_READWRITE, "unix-none") != SQLITE_OK)
-        _exit(2);
-      sqlite3_exec(db, "PRAGMA journal_mode=TRUNCATE; PRAGMA cache_size=1; BEGIN IMMEDIATE; DELETE FROM downloads;",
-                   nullptr, nullptr, nullptr);
-      for (int i = 0; i < 300; ++i) {
-        const std::string sql = "INSERT INTO downloads(id, position, outcome, install, error) VALUES(" +
-                                std::to_string(5000 + i) + ", " + std::to_string(i) + ", 'done', '{}', '" +
-                                std::string(500, 'z') + "')";
-        sqlite3_exec(db, sql.c_str(), nullptr, nullptr, nullptr);
-      }
-      _exit(0); // killed: lock, journal and half-written pages left behind
+      // Killed while writing the new file: its temporary file, half written.
+      std::ofstream(killed + ".tmp", std::ios::binary) << std::string(5000, 'z');
+      _exit(0);
     }
     int status = 0;
     CHECK(child > 0 && waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
-    CHECK(exists(killed + ".lock") && std::filesystem::file_size(killed + "-journal") > 0);
+    CHECK(exists(killed + ".lock"));
     CHECK(store.load().empty()); // its lock is fresh: not taken yet
     heldLock(killed, 60);         // ...and later it is stale
     const auto back = store.load();

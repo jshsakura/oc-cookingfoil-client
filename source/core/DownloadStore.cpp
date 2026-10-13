@@ -1,5 +1,6 @@
 #include "core/DownloadStore.hpp"
 #include "core/State.hpp"
+#include "core/Json.hpp"
 #include <sqlite3.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -250,8 +251,19 @@ void DownloadStore::close() {
   readOnly_ = false;
   known_.clear();
 }
+// The database in memory, written to `file` whole.
+bool persist(sqlite3 *db, const std::string &file, std::string &error) {
+  sqlite3_int64 size = 0;
+  unsigned char *bytes = sqlite3_serialize(db, "main", &size, 0);
+  if (!bytes) {
+    error = "could not serialize the database";
+    return false;
+  }
+  const bool ok = atomicWrite(file, std::string(reinterpret_cast<const char *>(bytes), size_t(size)), error);
+  sqlite3_free(bytes);
+  return ok;
+}
 // Opens the file and brings it up to date; `check` also runs quick_check.
-// A journal left by a cut-off write is rolled back here, on the first read.
 DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&db, bool check, bool &newer,
                                              std::string &error) {
   auto failed = [&](int rc) {
@@ -262,16 +274,31 @@ DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&
   };
   error.clear();
   newer = false;
-  // No file locks in SQLite (the console's file system has none it can use);
-  // the lock file stands in for them.
-  const int opened = sqlite3_open_v2(file.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, "unix-none");
+  // The file is read whole into a database in memory and written back whole
+  // (atomicWrite: a temporary file, then a rename) after each change. The
+  // console's card did not keep SQLite's own file and journal intact (every
+  // start found it malformed, and a fresh one too); a whole-file write is
+  // what the app's other files use, and it holds there.
+  const int opened = sqlite3_open_v2(":memory:", &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
   if (opened != SQLITE_OK)
     return failed(opened);
   sqlite3_extended_result_codes(db, 1);
-  sqlite3_busy_timeout(db, 2000);
-  // A power cut mid-write keeps the last committed state: the journal holds
-  // the pages as they were until the commit. No temporary files on the card.
-  if (!exec(db, "PRAGMA journal_mode=TRUNCATE; PRAGMA synchronous=FULL; PRAGMA temp_store=MEMORY;", error))
+  {
+    std::string bytes = readFile(file);
+    if (bytes.empty())
+      bytes = readFile(file + ".old"); // a write cut off between its two renames
+    if (!bytes.empty()) {
+      auto *copy = static_cast<unsigned char *>(sqlite3_malloc64(bytes.size()));
+      if (!copy)
+        return failed(SQLITE_NOMEM);
+      std::memcpy(copy, bytes.data(), bytes.size());
+      const int rc = sqlite3_deserialize(db, "main", copy, sqlite3_int64(bytes.size()), sqlite3_int64(bytes.size()),
+                                         SQLITE_DESERIALIZE_FREEONCLOSE | SQLITE_DESERIALIZE_RESIZEABLE);
+      if (rc != SQLITE_OK)
+        return failed(rc);
+    }
+  }
+  if (!exec(db, "PRAGMA temp_store=MEMORY;", error))
     return failed(sqlite3_errcode(db));
   if (check) {
     Statement quick(db, "PRAGMA quick_check");
@@ -305,7 +332,8 @@ DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&
       return failed(sqlite3_errcode(db));
     return Opened::Ok;
   }
-  // Each step and its version number commit together, or not at all.
+  // Each step and its version number commit together, or not at all; the
+  // file is written once they all have.
   for (int step = version; step < Latest; ++step) {
     const std::string sql = std::string("BEGIN IMMEDIATE;") + Migrations[step] + "PRAGMA user_version=" +
                             std::to_string(step + 1) + ";COMMIT;";
@@ -314,6 +342,10 @@ DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&
       closeDb(db);
       return Opened::Failed;
     }
+  }
+  if (version < Latest && !persist(db, file, error)) {
+    closeDb(db);
+    return Opened::Failed;
   }
   return Opened::Ok;
 }
@@ -334,8 +366,7 @@ bool DownloadStore::open(const std::string &path, std::string &error) {
     return false; // an error of the moment leaves the file alone
   if (first == Opened::Broken) {
     // Damaged: kept as .broken (an older one replaced) for whoever wants to
-    // look, and a fresh one made so the app goes on. Its journal goes with
-    // it, or the fresh file would have the old pages "rolled back" into it.
+    // look, and a fresh one made so the app goes on.
     const std::string reason = error;
     const std::string aside = file + ".broken";
     std::remove(aside.c_str());
@@ -343,16 +374,7 @@ bool DownloadStore::open(const std::string &path, std::string &error) {
       error = reason + "; cannot set it aside";
       return false;
     }
-    const std::string journal = file + "-journal";
-    const std::string journalAside = aside + "-journal";
-    std::remove(journalAside.c_str());
-    if (std::rename(journal.c_str(), journalAside.c_str()) != 0)
-      std::remove(journal.c_str());
-    if (FILE *left = std::fopen(journal.c_str(), "rb")) {
-      std::fclose(left);
-      error = reason + "; cannot move its journal";
-      return false;
-    }
+    std::remove((file + ".old").c_str());
     const auto fresh = connect(file, db, true, newer, error);
     closeDb(db);
     if (fresh != Opened::Ok) {
@@ -360,6 +382,8 @@ bool DownloadStore::open(const std::string &path, std::string &error) {
       return false;
     }
   }
+  // Left by builds that let SQLite write the file itself: nothing reads it now.
+  std::remove((file + "-journal").c_str());
   file_ = file;
   readOnly_ = newer;
   return true;
@@ -392,6 +416,10 @@ bool DownloadStore::run(bool writes, std::string &error, const std::function<boo
     ok = false;
   }
   ok = ok && exec(db, "COMMIT;", error);
+  // Committed in memory: the file takes it whole, or the change is lost
+  // (and reported) with the file as it was.
+  if (ok && writes)
+    ok = persist(db, file_, error);
   if (!ok && error.empty())
     error = sqlite3_errmsg(db);
   closeDb(db); // rolls back whatever did not commit

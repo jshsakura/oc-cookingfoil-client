@@ -52,8 +52,8 @@ bool installClient(const Server &server, const State &state, const update::Relea
     return fail(trf("Could not download the update. HTTP {0}", {std::to_string(got.response.status)}));
   if (got.size != release.size || got.sha256 != release.sha256)
     return fail(tr("The downloaded file does not match the server's. Try again."));
-  // Checked and complete: platform::replaceSelf puts it in place on the
-  // main thread, where the app can let go of its own file.
+  // Checked and complete: platform::finishUpdate puts it in place at the
+  // next start, before anything opens the app's own file.
   std::error_code ec;
   std::filesystem::remove(partInfoPath(part), ec);
   return true;

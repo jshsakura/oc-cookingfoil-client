@@ -32,11 +32,13 @@ int runClientUpdateTests() {
       std::string ignored, reason;
       foil::atomicWrite(target, "old build", ignored);
       foil::atomicWrite(target + ".new", "new build", ignored);
-      CHECK(foil::platform::replaceSelf(target + ".new", target, reason) && reason.empty());
+      // At the next start, before anything opens the app's file.
+      CHECK(foil::platform::finishUpdate(target, reason) && reason.find("swapped") != std::string::npos);
       CHECK(foil::readFile(target) == "new build" && !std::filesystem::exists(target + ".new") &&
             !std::filesystem::exists(target + ".old"));
-      // Nothing downloaded: the app's file stays as it was.
-      CHECK(!foil::platform::replaceSelf(target + ".new", target, reason) && !reason.empty());
+      // Nothing downloaded: the app's file stays as it was, and nothing is said.
+      reason.clear();
+      CHECK(!foil::platform::finishUpdate(target, reason) && reason.empty());
       CHECK(foil::readFile(target) == "new build");
       std::filesystem::remove_all(root);
     }

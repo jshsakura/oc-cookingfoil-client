@@ -80,16 +80,9 @@ void Application::installAppUpdate() {
         }
         return;
       }
-      // Downloaded and checked; the swap happens here, on the main thread,
-      // while nothing else reads the app's own file.
-      std::string reason;
-      if (!platform::replaceSelf(target + ".new", target, reason)) {
-        logLine("update swap failed: " + reason);
-        appUpdate_ = AppUpdate::Available;
-        alertTitle_ = tr("Update failed");
-        alert_ = tr("Could not put the update in place.") + std::string(" ") + reason;
-        return;
-      }
+      // Downloaded and checked as target + ".new"; the next start puts it in
+      // place before anything opens the app's file (main.cpp). Swapping it
+      // here, with the fonts still reading the running file, failed.
       appUpdate_ = AppUpdate::Latest;
       // The loader starts the new build as this one closes; without one the
       // player starts it again.

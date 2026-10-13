@@ -136,29 +136,27 @@ void keepAwake(bool on) {
   (void)on;
 #endif
 }
-bool replaceSelf(const std::string &part, const std::string &target, std::string &error) {
-  const std::string old = target + ".old";
+bool finishUpdate(const std::string &self, std::string &note) {
+  const std::string part = self + ".new", old = self + ".old";
   std::error_code ec;
-#ifdef __SWITCH__
-  romfsExit(); // let go of the running file
-#endif
+  if (!std::filesystem::exists(part, ec)) return false;
   std::filesystem::remove(old, ec);
   ec.clear();
-  std::filesystem::rename(target, old, ec);
+  // The card does not rename over an existing file: the old one goes aside
+  // first, and comes back if the new one cannot take its place.
+  std::filesystem::rename(self, old, ec);
   const bool hadOld = !ec;
   ec.clear();
-  std::filesystem::rename(part, target, ec);
+  std::filesystem::rename(part, self, ec);
   if (ec) {
-    error = ec.message();
+    note = "update swap failed: " + ec.message();
     std::error_code ignored;
-    if (hadOld) std::filesystem::rename(old, target, ignored);
-  } else {
-    std::filesystem::remove(old, ec);
+    if (hadOld) std::filesystem::rename(old, self, ignored);
+    return false;
   }
-#ifdef __SWITCH__
-  romfsInit(); // the new file now, or the old one put back
-#endif
-  return error.empty();
+  std::filesystem::remove(old, ec);
+  note = "update swapped in: " + self;
+  return true;
 }
 bool serviceApplet() {
 #ifdef __SWITCH__

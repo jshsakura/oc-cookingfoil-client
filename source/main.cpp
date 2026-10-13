@@ -1,3 +1,4 @@
+#include "platform/Storage.hpp"
 #include "net/Socket.hpp"
 #include "ui/Application.hpp"
 #include "ui/Runtime.hpp"
@@ -51,6 +52,15 @@ int main(int argc, char **argv) {
   // (every request failed with curl 7), so the start stays at 1 MB, the
   // values 0.2.155 ran with. The transfer memory is sb_efficiency times the
   // largest buffers, taken from the heap.
+  // An update waiting beside the app goes in first, before the app's own file
+  // is opened (romfs, fonts); then the loader starts the new build.
+  const std::string self = argc > 0 && argv[0] && std::string(argv[0]).rfind("sdmc:/", 0) == 0
+                               ? std::string(argv[0])
+                               : std::string("sdmc:/switch/cookingfoil/cookingfoil.nro");
+  std::string updateNote;
+  if (foil::platform::finishUpdate(self, updateNote) && envHasNextLoad() &&
+      R_SUCCEEDED(envSetNextLoad(self.c_str(), self.c_str())))
+    return 0;
   SocketInitConfig sockets = *socketGetDefaultInitConfig();
   const bool application = appletGetAppletType() == AppletType_Application;
   sockets.tcp_rx_buf_size = 0x100000;
@@ -66,7 +76,8 @@ int main(int argc, char **argv) {
   }
   curl_global_init(CURL_GLOBAL_DEFAULT);
   foil::openLog("sdmc:/switch/cookingfoil/log.txt");
-  foil::logLine(std::string("start " COOKINGFOIL_VERSION " ") + (appletGetAppletType() == AppletType_Application ? "application" : "applet") + " mode");
+  foil::logLine(std::string("start " COOKINGFOIL_VERSION " ") + (appletGetAppletType() == AppletType_Application ? "application" : "applet") + " mode, " + self);
+  if (!updateNote.empty()) foil::logLine(updateNote);
   int result = 0;
   {
     foil::ui::Runtime app;

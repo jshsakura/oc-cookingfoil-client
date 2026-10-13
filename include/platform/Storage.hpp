@@ -22,10 +22,10 @@ std::string systemLanguage();
 // While on, the console does not dim the screen or fall asleep on its own
 // (used during downloads).
 void keepAwake(bool on);
-// Puts the downloaded build `part` in place of `target`, the running app's
-// own file. The app's RomFS keeps that file open, so it is closed for the
-// swap and opened again after; `error` gets the system's reason on failure.
-bool replaceSelf(const std::string &part, const std::string &target, std::string &error);
+// At start, before anything opens the app's own file: an update downloaded
+// as `self` + ".new" takes its place. True when it did (`note` says what
+// happened either way, for the log once it is open).
+bool finishUpdate(const std::string &self, std::string &note);
 // Starts `nro` again once this app exits (the homebrew loader's next load);
 // false where that is not possible (off the console, or no loader).
 bool relaunch(const std::string &nro);
