@@ -39,9 +39,19 @@ namespace {
 bool fetchFile(const Server &server, const State &state, const std::string &url, const std::string &sd,
                const std::string &path, std::string sha256, uint64_t size, std::atomic<uint64_t> &received,
                Error &error, const std::atomic<bool> *cancel) {
-  const auto target = sd + "/" + path, part = target + ".part";
+  // The part file has a short plain name beside the target ("설치-스위치.md"
+  // could not be created as "설치-스위치.md.part" on the console); the
+  // finished file takes the listed name.
+  const auto target = sd + "/" + path;
+  const auto folder = std::filesystem::path(target).parent_path().string();
+  Sha256 name;
+  name.update(path.data(), path.size());
+  const auto part = folder + "/.cf-" + name.hex().substr(0, 16) + ".part";
   std::error_code ec;
-  makeDirectories(std::filesystem::path(target).parent_path().string());
+  if (!makeDirectories(folder)) {
+    error.message = trf("Could not create file: {0}", {path}) + " (" + std::strerror(errno) + ")";
+    return false;
+  }
   PartInfo wanted;
   wanted.url = url;
   wanted.tag = sha256;
@@ -53,7 +63,7 @@ bool fetchFile(const Server &server, const State &state, const std::string &url,
     return false;
   };
   if (got.tooLong) return fail(tr("The downloaded file does not match the server's. Try again."));
-  if (!got.failure.empty()) return fail(got.failure);
+  if (!got.failure.empty()) return fail(got.failure + " · " + path); // the listed name, not the part's
   if (!got.response.error.empty()) return fail(got.response.error);
   if (!rangedOk(got.response))
     return fail(trf("Could not get the file. HTTP {0}", {std::to_string(got.response.status)}));
@@ -63,7 +73,7 @@ bool fetchFile(const Server &server, const State &state, const std::string &url,
   std::filesystem::remove(target, ec);
   ec.clear();
   std::filesystem::rename(part, target, ec);
-  if (ec) return fail(trf("Could not write the file: {0}", {path}));
+  if (ec) return fail(trf("Could not write the file: {0}", {path}) + " (" + ec.message() + ")");
   std::filesystem::remove(partInfoPath(part), ec);
   return true;
 }
