@@ -23,6 +23,35 @@ int runNetworkTests() {
         CHECK(sections.value[0].addedAt == 1728000000);
         CHECK(sections.value[0].languages.size() == 2);
     }
+    {
+        // Game by game: strings holding braces, brackets and escaped quotes,
+        // nested objects, a file repeated in another section, and the small
+        // tables beside the sections all read as from one tree.
+        const auto catalog = foil::net::parseCatalog(R"( {
+          "genres": {"Action": {"en": "Action", "ko": "액션"}},
+          "sections": [
+            {"id": "new", "items": [
+              {"url": "https://h/a.nsp", "name": "A \"quoted\" {brace} [x]", "icons": {"ko": "https://h/i.jpg"},
+               "categories": ["Action"], "size": 10},
+              {"url": "https://h/b.nsp", "name": "B\\path", "size": 20}
+            ]},
+            {"id": "all", "items": [{"url": "https://h/a.nsp", "name": "again"}, {"url": "ftp://bad"}]}
+          ],
+          "featured": [],
+          "score_labels": {}
+        } )");
+        CHECK(!catalog.error);
+        CHECK(catalog.value.items.size() == 2);
+        CHECK(catalog.value.items[0].name == "A \"quoted\" {brace} [x]");
+        CHECK(catalog.value.items[0].categories.size() == 1);
+        CHECK(catalog.value.items[1].name == "B\\path");
+        CHECK(catalog.value.items[1].size == 20);
+        CHECK(catalog.value.genres.count("Action") && catalog.value.genres.at("Action").at("ko") == "액션");
+        // Cut short, or no sections at all: the list's format error.
+        CHECK(foil::net::parseCatalog(R"({"sections":[{"items":[{"url":"https://h/a.nsp")").error);
+        CHECK(foil::net::parseCatalog(R"({"genres":{}})").error);
+        CHECK(foil::net::parseCatalog("[]").error);
+    }
     CHECK(foil::net::parseSections("{}").error);
     {
         // Contract with the server: optional price summary, extra fields,

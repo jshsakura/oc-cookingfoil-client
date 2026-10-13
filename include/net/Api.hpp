@@ -55,13 +55,19 @@ struct Featured {
 };
 std::vector<Featured> parseFeatured(const std::string& json);
 Parsed<std::vector<Item>> parseSections(const std::string& json);
-Parsed<std::vector<Item>> parseSections(json_object* root);
 std::vector<Featured> parseFeatured(json_object* root);
 // Top-level name tables (`genres`, `score_labels`): key -> {en, ko, ja, zh};
 // returns key -> name in `lang`.
 std::map<std::string, std::string> parseNames(const std::string& json, const char* table, const std::string& lang = "ko");
 // The same table for every language at once: key -> lang -> name.
 using NameTable = std::map<std::string, std::map<std::string, std::string>>;
+// The whole /api/shop/sections answer, read one game at a time.
+struct Catalog {
+    std::vector<Item> items;
+    std::vector<Featured> featured;
+    NameTable genres, scoreLabels;
+};
+Parsed<Catalog> parseCatalog(const std::string& json);
 NameTable parseNameTable(const std::string& json, const char* table);
 NameTable parseNameTable(json_object* root, const char* table);
 // key -> name in lang; a key without that language falls back to English.

@@ -430,81 +430,178 @@ std::string fileTitle(const std::string& url) {
     const auto first = result.find_first_not_of(' '), last = result.find_last_not_of(' ');
     return first == std::string::npos ? "" : result.substr(first, last - first + 1);
 }
-Parsed<std::vector<Item>> parseSections(const std::string& json) {
-    Error error;
-    auto root = parseJson(json, error);
-    if (error) return {{}, error};
-    return parseSections(root.get());
-}
-Parsed<std::vector<Item>> parseSections(json_object* root) {
-    Parsed<std::vector<Item>> result;
-    auto* sections = field(root, "sections");
-    if (!json_object_is_type(sections, json_type_array)) { result.error.message = tr("서버 목록 형식을 확인해 주세요."); return result; }
-    // Sections may repeat a file (a tab and "all"); each file is listed once.
-    std::set<std::string> seen;
-    for (size_t i = 0; i < json_object_array_length(sections); ++i) {
-        auto* entries = field(json_object_array_get_idx(sections, i), "items");
-        if (!json_object_is_type(entries, json_type_array)) continue;
-        for (size_t j = 0; j < json_object_array_length(entries); ++j) {
-            auto* object = json_object_array_get_idx(entries, j);
-            Item item; item.url = stringField(object, "url"); if (!isHttp(item.url) || !seen.insert(item.url).second) continue;
-            item.name = stringField(object, "name", "CookingFoil");
-            if (item.name.empty() || item.name == "Unknown" || item.name == "CookingFoil") {
-                const auto fromFile = fileTitle(stringField(object, "url"));
-                if (!fromFile.empty()) item.name = fromFile;
-            }
-            item.titleId = titleId(object, "title_id"); item.baseId = titleId(object, "base_title_id");
-            item.type = stringField(object, "app_type", "base");
-            if (item.type != "update" && item.type != "dlc") item.type = "base";
-            item.version = static_cast<uint32_t>(std::min<uint64_t>(positive(object, "app_version"), UINT32_MAX));
-            item.size = positive(object, "size"); item.addedAt = positive(object, "added_at"); item.releaseDate = positive(object, "release_date");
-            item.rank = int(std::min<uint64_t>(positive(object, "rank"), INT32_MAX));
-            item.players = int(std::min<uint64_t>(positive(object, "players"), 64));
-            item.priceRegular = stringField(object, "price_regular");
-            item.priceDiscount = stringField(object, "price_discount");
-            item.priceDiscountEnds = stringField(object, "price_discount_ends");
-            item.priceCountry = stringField(object, "price_country");
-            item.requiredFirmware = textField(object, "required_firmware");
-            item.installSize = positive(object, "install_size");
-            item.latestVersion = static_cast<uint32_t>(std::min<uint64_t>(positive(object, "latest_version"), UINT32_MAX));
-            item.dlcTotal = int(std::min<uint64_t>(positive(object, "dlc_total"), 9999));
-            item.score = int(std::min<uint64_t>(positive(object, "score"), 100));
-            item.scoreCount = int(std::min<uint64_t>(positive(object, "score_count"), INT32_MAX));
-            item.scoreLabel = stringField(object, "score_label");
-            item.scoreSource = stringField(object, "score_source");
-            item.patches = int(std::min<uint64_t>(positive(object, "patches"), 999));
-            if (auto* icons = field(object, "icons"); json_object_is_type(icons, json_type_object)) {
-                static const char* codes[] = {"ko", "en", "ja", "zh"};
-                for (int k = 0; k < 4; ++k)
-                    if (const auto url = stringField(icons, codes[k]); isHttp(url)) {
-                        item.icons.resize(4);
-                        item.icons[k] = url;
-                    }
-            }
-            if (auto* names = field(object, "names"); json_object_is_type(names, json_type_object)) {
-                static const char* codes[] = {"ko", "en", "ja", "zh"};
-                for (int k = 0; k < 4; ++k)
-                    if (const auto name = stringField(names, codes[k]); !name.empty()) {
-                        item.names.resize(4);
-                        item.names[k] = name;
-                    }
-            }
-            item.icon = stringField(object, "icon_url"); if (!isHttp(item.icon)) item.icon.clear();
-            item.publisher = stringField(object, "publisher"); item.region = stringField(object, "region"); item.versionName = stringField(object, "version_name", stringField(object, "display_version"));
-            auto* categories = field(object, "categories");
-            if (json_object_is_type(categories, json_type_array)) for (size_t k = 0; k < json_object_array_length(categories); ++k) {
-                auto* genre = json_object_array_get_idx(categories, k);
-                if (json_object_is_type(genre, json_type_string)) item.categories.emplace_back(json_object_get_string(genre));
-            }
-            auto* languages = field(object, "languages");
-            if (json_object_is_type(languages, json_type_array)) for (size_t k = 0; k < json_object_array_length(languages); ++k) {
-                auto* code = json_object_array_get_idx(languages, k);
-                if (json_object_is_type(code, json_type_string)) item.languages.emplace_back(json_object_get_string(code));
-            }
-            result.value.push_back(item);
-        }
+namespace {
+// One game of the catalog; false for one without a download link.
+bool parseItem(json_object* object, Item& item) {
+    item.url = stringField(object, "url"); if (!isHttp(item.url)) return false;
+    item.name = stringField(object, "name", "CookingFoil");
+    if (item.name.empty() || item.name == "Unknown" || item.name == "CookingFoil") {
+        const auto fromFile = fileTitle(stringField(object, "url"));
+        if (!fromFile.empty()) item.name = fromFile;
     }
+    item.titleId = titleId(object, "title_id"); item.baseId = titleId(object, "base_title_id");
+    item.type = stringField(object, "app_type", "base");
+    if (item.type != "update" && item.type != "dlc") item.type = "base";
+    item.version = static_cast<uint32_t>(std::min<uint64_t>(positive(object, "app_version"), UINT32_MAX));
+    item.size = positive(object, "size"); item.addedAt = positive(object, "added_at"); item.releaseDate = positive(object, "release_date");
+    item.rank = int(std::min<uint64_t>(positive(object, "rank"), INT32_MAX));
+    item.players = int(std::min<uint64_t>(positive(object, "players"), 64));
+    item.priceRegular = stringField(object, "price_regular");
+    item.priceDiscount = stringField(object, "price_discount");
+    item.priceDiscountEnds = stringField(object, "price_discount_ends");
+    item.priceCountry = stringField(object, "price_country");
+    item.requiredFirmware = textField(object, "required_firmware");
+    item.installSize = positive(object, "install_size");
+    item.latestVersion = static_cast<uint32_t>(std::min<uint64_t>(positive(object, "latest_version"), UINT32_MAX));
+    item.dlcTotal = int(std::min<uint64_t>(positive(object, "dlc_total"), 9999));
+    item.score = int(std::min<uint64_t>(positive(object, "score"), 100));
+    item.scoreCount = int(std::min<uint64_t>(positive(object, "score_count"), INT32_MAX));
+    item.scoreLabel = stringField(object, "score_label");
+    item.scoreSource = stringField(object, "score_source");
+    item.patches = int(std::min<uint64_t>(positive(object, "patches"), 999));
+    if (auto* icons = field(object, "icons"); json_object_is_type(icons, json_type_object)) {
+        static const char* codes[] = {"ko", "en", "ja", "zh"};
+        for (int k = 0; k < 4; ++k)
+            if (const auto url = stringField(icons, codes[k]); isHttp(url)) {
+                item.icons.resize(4);
+                item.icons[k] = url;
+            }
+    }
+    if (auto* names = field(object, "names"); json_object_is_type(names, json_type_object)) {
+        static const char* codes[] = {"ko", "en", "ja", "zh"};
+        for (int k = 0; k < 4; ++k)
+            if (const auto name = stringField(names, codes[k]); !name.empty()) {
+                item.names.resize(4);
+                item.names[k] = name;
+            }
+    }
+    item.icon = stringField(object, "icon_url"); if (!isHttp(item.icon)) item.icon.clear();
+    item.publisher = stringField(object, "publisher"); item.region = stringField(object, "region"); item.versionName = stringField(object, "version_name", stringField(object, "display_version"));
+    auto* categories = field(object, "categories");
+    if (json_object_is_type(categories, json_type_array)) for (size_t k = 0; k < json_object_array_length(categories); ++k) {
+        auto* genre = json_object_array_get_idx(categories, k);
+        if (json_object_is_type(genre, json_type_string)) item.categories.emplace_back(json_object_get_string(genre));
+    }
+    auto* languages = field(object, "languages");
+    if (json_object_is_type(languages, json_type_array)) for (size_t k = 0; k < json_object_array_length(languages); ++k) {
+        auto* code = json_object_array_get_idx(languages, k);
+        if (json_object_is_type(code, json_type_string)) item.languages.emplace_back(json_object_get_string(code));
+    }
+    return true;
+}
+// A small scanner over the catalog's text, so each game is parsed into a
+// tree of its own and let go. The whole catalog as one json-c tree was
+// about seven times its text (30MB for 4MB), more than an album launch
+// can spare next to the list it was being turned into.
+size_t skipSpace(const std::string& s, size_t i) {
+    while (i < s.size() && (s[i] == ' ' || s[i] == '\n' || s[i] == '\r' || s[i] == '\t')) ++i;
+    return i;
+}
+// Where the value starting at i ends, npos when it is cut short.
+size_t valueEnd(const std::string& s, size_t i) {
+    if (i >= s.size()) return std::string::npos;
+    if (s[i] == '"') {
+        for (++i; i < s.size(); ++i) {
+            if (s[i] == '\\') ++i;
+            else if (s[i] == '"') return i + 1;
+        }
+        return std::string::npos;
+    }
+    if (s[i] == '{' || s[i] == '[') {
+        int depth = 0;
+        for (; i < s.size(); ++i) {
+            if (s[i] == '"') {
+                const auto end = valueEnd(s, i);
+                if (end == std::string::npos) return end;
+                i = end - 1;
+            } else if (s[i] == '{' || s[i] == '[') ++depth;
+            else if ((s[i] == '}' || s[i] == ']') && --depth == 0) return i + 1;
+        }
+        return std::string::npos;
+    }
+    const auto start = i;
+    while (i < s.size() && s[i] != ',' && s[i] != '}' && s[i] != ']' && s[i] != ' ' && s[i] != '\n' && s[i] != '\r' && s[i] != '\t') ++i;
+    return i == start ? std::string::npos : i;
+}
+// Each member of the object at i: visit(key, value start, value end).
+// False when the text is not an object or is cut short.
+template <class Visit> bool members(const std::string& s, size_t i, Visit visit) {
+    if (i >= s.size() || s[i] != '{') return false;
+    i = skipSpace(s, i + 1);
+    if (i < s.size() && s[i] == '}') return true;
+    while (i < s.size() && s[i] == '"') {
+        const auto keyEnd = valueEnd(s, i);
+        if (keyEnd == std::string::npos) return false;
+        const auto key = s.substr(i + 1, keyEnd - i - 2);
+        i = skipSpace(s, keyEnd);
+        if (i >= s.size() || s[i] != ':') return false;
+        i = skipSpace(s, i + 1);
+        const auto end = valueEnd(s, i);
+        if (end == std::string::npos || !visit(key, i, end)) return false;
+        i = skipSpace(s, end);
+        if (i < s.size() && s[i] == '}') return true;
+        if (i >= s.size() || s[i] != ',') return false;
+        i = skipSpace(s, i + 1);
+    }
+    return false;
+}
+// Each element of the array at i: visit(start, end).
+template <class Visit> bool elements(const std::string& s, size_t i, Visit visit) {
+    if (i >= s.size() || s[i] != '[') return false;
+    i = skipSpace(s, i + 1);
+    if (i < s.size() && s[i] == ']') return true;
+    while (i < s.size()) {
+        const auto end = valueEnd(s, i);
+        if (end == std::string::npos || !visit(i, end)) return false;
+        i = skipSpace(s, end);
+        if (i < s.size() && s[i] == ']') return true;
+        if (i >= s.size() || s[i] != ',') return false;
+        i = skipSpace(s, i + 1);
+    }
+    return false;
+}
+} // namespace
+Parsed<Catalog> parseCatalog(const std::string& json) {
+    Parsed<Catalog> result;
+    // Everything but the games is small: kept as one tree for the readers
+    // that take the whole document (featured shelves, name tables).
+    Json rest(json_object_new_object());
+    bool sawSections = false;
+    std::set<std::string> seen;
+    Error error;
+    const auto parseValue = [&](size_t from, size_t to) { return parseJson(json.substr(from, to - from), error); };
+    const auto readItem = [&](size_t from, size_t to) {
+        auto object = parseValue(from, to);
+        if (error) return false;
+        Item item;
+        // Sections may repeat a file (a tab and "all"); each file is listed once.
+        if (parseItem(object.get(), item) && seen.insert(item.url).second) result.value.items.push_back(std::move(item));
+        return true;
+    };
+    const bool ok = members(json, skipSpace(json, 0), [&](const std::string& key, size_t from, size_t to) {
+        if (key != "sections") {
+            auto value = parseValue(from, to);
+            if (error) return false;
+            json_object_object_add(rest.get(), key.c_str(), value.release());
+            return true;
+        }
+        sawSections = json[from] == '[';
+        return !sawSections || elements(json, from, [&](size_t sectionFrom, size_t) {
+            return members(json, sectionFrom, [&](const std::string& part, size_t partFrom, size_t) {
+                return part != "items" || json[partFrom] != '[' || elements(json, partFrom, readItem);
+            });
+        });
+    });
+    if (error) { result.error = error; return result; }
+    if (!ok || !sawSections) { result.error.message = tr("서버 목록 형식을 확인해 주세요."); result.value = {}; return result; }
+    result.value.featured = parseFeatured(rest.get());
+    result.value.genres = parseNameTable(rest.get(), "genres");
+    result.value.scoreLabels = parseNameTable(rest.get(), "score_labels");
     return result;
+}
+Parsed<std::vector<Item>> parseSections(const std::string& json) {
+    auto catalog = parseCatalog(json);
+    return {std::move(catalog.value.items), catalog.error};
 }
 std::vector<Featured> parseFeatured(const std::string& json) {
     Error error;
@@ -764,18 +861,15 @@ bool Session::refresh(Error& error) {
     unchanged_ = response.status == 304;
     if (unchanged_) return true;
     if (response.status != 200) { error.message = trf("서버 연결을 확인해 주세요. HTTP {0}", {std::to_string(response.status)}); return false; }
-    // The catalog is several MB of JSON and its parsed tree several times
-    // that: parse it once, drop the text right away, read every table from
-    // the one tree, then let the tree go before anything else allocates.
-    Json root = parseJson(response.body, error);
+    // Read game by game (parseCatalog), then the text goes.
+    auto parsed = parseCatalog(response.body);
     std::string().swap(response.body);
-    if (error) return false;
-    auto parsed = parseSections(root.get()); if (parsed.error) { error = parsed.error; return false; }
+    if (parsed.error) { error = parsed.error; return false; }
     items_.clear(); items_.shrink_to_fit();
-    items_ = std::move(parsed.value);
-    featured_ = parseFeatured(root.get());
-    genres_ = parseNameTable(root.get(), "genres");
-    scoreLabels_ = parseNameTable(root.get(), "score_labels");
+    items_ = std::move(parsed.value.items);
+    featured_ = std::move(parsed.value.featured);
+    genres_ = std::move(parsed.value.genres);
+    scoreLabels_ = std::move(parsed.value.scoreLabels);
     logLine("catalog read " + since(asked) + " total, " + std::to_string(items_.size()) + " items");
     etag_ = response.etag;
     return true;
