@@ -432,7 +432,7 @@ const Translation rows[] = {
      "パッチの処理中にエラーが発生しました。log.txt を確認してください。", "处理补丁时出错。请查看 log.txt。"},
     {"패치를 처리하지 못했습니다", "Patch failed", "パッチを処理できませんでした", "无法处理补丁"},
     {"다운로드 및 적용", "Download and apply", "ダウンロードして適用", "下载并应用"},
-    {"SD 카드에 받아 바로 적용합니다. 겹치는 다른 패치는 꺼 둡니다.", "Downloads it to the SD card and applies it right away. Another patch that overlaps is turned off.", "SDカードに入手してすぐに適用します。重なるほかのパッチはオフにします。", "下载到 SD 卡并立即应用。与之重叠的其他补丁会被关闭。"},
+    {"SD 카드에 받아 바로 적용합니다. 이미 켠 다른 패치와 같은 파일을 바꾸면 받기만 하고 꺼 둡니다.", "Downloads it to the SD card and turns it on. If it changes the same files as a patch already on, it is only downloaded and stays off.", "SDカードに入手してすぐに適用します。オンになっているほかのパッチと同じファイルを書き換える場合は、入手だけしてオフのままにします。", "下载到 SD 卡并立即应用。如果与已开启的其他补丁修改相同的文件，则只下载并保持关闭。"},
     {"켜져 있던 패치는 바꾼 뒤 다시 켭니다.", "A patch that was on is turned on again after the update.",
      "オンだったパッチは更新後に再びオンにします。", "已开启的补丁更新后会重新开启。"},
     {"끄기", "Turn off", "オフにする", "关闭"},
