@@ -36,31 +36,143 @@ void Application::downloads() {
     downloadsHistory();
     return;
   }
-  // The installer's card shows only while it runs: a finished install goes
-  // to 완료 (or 실패, 취소) at once, and what is next takes its place.
-  if (p.status != install::Status::Running) {
-    if (!installQueue_.empty() || retroDownloading() || patchDownloading())
+  // One download at a time, so one card at the top for whatever runs (a
+  // game, an app, a retro game, a patch), and the queue under it.
+  TopCard card;
+  if (!topCardNow(p, card)) {
+    if (!installQueue_.empty())
       runningList(90);
     else
       notice(tr("Nothing is downloading."), tr("Pick items on a game's page, then press A to install."), 4);
     return;
   }
-  // The card answers a tap with the cursor (its buttons sit on top).
+  topCard(card);
+  runningList(294);
+}
+// What the top card shows now; false when nothing runs or waits paused.
+bool Application::topCardNow(const install::Progress &p, TopCard &card) {
+  if (p.status == install::Status::Running) {
+    card.key = "install:" + p.name;
+    card.name = p.name;
+    card.icon = p.icon;
+    card.phase = p.phase;
+    card.percent = p.percent;
+    card.bytes = net::receivedBytes();
+    card.left = p.total > p.received ? p.total - p.received : 0;
+    card.paused = installer_.paused();
+    card.onPause = [this] { installer_.setPaused(!installer_.paused()); };
+    card.onCancel = [this] {
+      cancelRetro_ = false;
+      confirmExit_ = false;
+      confirmCancel_ = true;
+    };
+    // The game's parts: done (a check), the one coming down, the rest.
+    for (size_t i = 0; i < p.parts.size() && i < 4; ++i) {
+      const auto &part = p.parts[i];
+      if (part.type == "dlc" &&
+          std::any_of(p.parts.begin(), p.parts.begin() + i, [](const Item &item) { return item.type == "dlc"; }))
+        continue;
+      std::string type = part.type == "update" ? tr("Update|item") : part.type == "dlc" ? "DLC" : tr("Base game");
+      size_t last = i;
+      if (part.type == "dlc") {
+        size_t count = 0;
+        for (size_t j = i; j < p.parts.size(); ++j)
+          if (p.parts[j].type == "dlc") {
+            ++count;
+            last = j;
+          }
+        type += " " + std::to_string(count);
+      }
+      const bool done = last < p.index;
+      const bool active = p.index >= i && p.index <= last;
+      card.chips.push_back({done ? type : active ? trf("{0} in progress", {type}) : trf("{0} queued", {type}),
+                            done ? 2 : active ? 1 : 0});
+    }
+    return true;
+  }
+  const auto running = std::find_if(history_.begin(), history_.end(), [](const history::Entry &e) {
+    return !e.kind.empty() && e.kind != "patch" && e.kind != "reapply" && e.outcome == history::Outcome::Running;
+  });
+  const bool held = queueHeld_ && !installQueue_.empty() && !retroDownloading();
+  if (retroDownloading() || held) {
+    const bool pack = retroBusy_ == "pack";
+    const std::string kind = held ? installQueue_.front().kind : running != history_.end() ? running->kind : "";
+    card.key = "small:" + (held ? installQueue_.front().name : running != history_.end() ? running->install.name : retroBusy_);
+    card.name = held ? installQueue_.front().name : running != history_.end() ? running->install.name : pack ? "RetroArch" : "";
+    card.icon = held ? installQueue_.front().icon : running != history_.end() ? running->install.icon : "";
+    const auto what = pack || kind == "retroarch" ? std::string("RetroArch")
+                      : kind == "homebrew"         ? std::string(tr("Homebrew"))
+                                                   : std::string(tr("Retro game"));
+    const uint64_t got = retroReceived_, total = retroBytes_;
+    card.percent = total ? std::min(100.0, 100.0 * double(got) / double(total)) : 0;
+    card.bytes = got;
+    card.left = total > got ? total - got : 0;
+    card.paused = held;
+    card.phase = held ? std::string(tr("Paused.")) : total ? formatBytes(got) + " / " + formatBytes(total)
+                                                         : std::string(tr("Checking which files to get"));
+    card.chips.push_back({what, 1});
+    card.onPause = [this, held] { pauseSmallDownload(!held); };
+    if (!held)
+      card.onCancel = [this] {
+        cancelRetro_ = true;
+        confirmExit_ = false;
+        confirmCancel_ = true;
+      };
+    return true;
+  }
+  if (patchDownloading()) {
+    const bool busy = patchWorker_.joinable() && !patchBusy_.empty();
+    UserPatch patch = !patchQueue_.empty() ? patchQueue_.front() : UserPatch{};
+    if (busy) {
+      const auto known = std::find_if(serverPatches_.begin(), serverPatches_.end(),
+                                      [&](const UserPatch &q) { return q.id == patchBusy_; });
+      patch = patchQueueNow_.id == patchBusy_ ? patchQueueNow_ : known != serverPatches_.end() ? *known : UserPatch{};
+      if (patch.name.empty()) patch.name = patchBusy_;
+    }
+    std::string game;
+    patchGame(patch, game, card.icon);
+    card.key = "patch:" + patch.id;
+    card.name = game + " · " + patch.name;
+    const bool fetching = busy && (patchBusyLabel_ == "Downloading" || patchBusyLabel_ == "Updating");
+    const uint64_t got = fetching ? patchReceived_.load() : 0, moving = patchMoving_.load();
+    card.percent = !busy ? 0 : !fetching ? (moving ? std::min(100.0, 100.0 * double(patchReceived_.load()) / double(moving)) : 100.0)
+                   : patch.size ? std::min(100.0, 100.0 * double(got) / double(patch.size)) : 0;
+    card.bytes = got;
+    card.left = fetching && patch.size > got ? patch.size - got : 0;
+    card.measure = fetching;
+    card.phase = !busy ? std::string(tr("Downloads once the game is installed."))
+                 : fetching ? formatBytes(got) + " / " + formatBytes(patch.size)
+                            : std::string(tr(patchBusyLabel_.c_str()));
+    card.chips.push_back({tr("Patch"), 1});
+    return true;
+  }
+  return false;
+}
+// The card at the top of 진행 중: cover, name, percent (one decimal) and a
+// bar that glides, what it is doing with its speed and time left, its
+// parts, and 취소 and 일시정지 bottom right (A and Y do the same).
+void Application::topCard(const TopCard &c) {
+  if (c.key != topCardKey_) {
+    topCardKey_ = c.key;
+    shownPercent_ = -1;
+    downloadSpeed_.reset();
+    timeLeft_.reset();
+  }
   hit(260, 90, 992, 180, [this] {
     sidebar_ = false;
     headerFocus_.clear();
     downloadsRow_ = 0;
   });
-  if (p.status == install::Status::Running && inContent() && downloadsRow_ == 0)
+  if (inContent() && downloadsRow_ == 0)
     paint_.ring(260, 90, 992, 180, 20);
   paint_.rect(260, 90, 992, 180, Surface, 20);
-  cover(p.icon, 284, 112, 112, false, p.name);
-  paint_.fonts.text(p.name, 418, 112, 26, Ink, true, 680);
-  // The bar glides toward the engine's figure, which a compressed file moves
-  // a whole piece at a time; going back (the next file) or ending it jumps.
+  cover(c.icon, 284, 112, 112, false, c.name);
+  paint_.fonts.text(c.name, 418, 112, 26, Ink, true, 680);
+  // The bar glides toward the figure, which a compressed file moves a whole
+  // piece at a time; going back (the next file) jumps.
   const double frameAt = SDL_GetTicks() / 1000.;
-  const double goal = std::clamp(p.percent, 0., 100.);
-  if (shownPercent_ < 0 || goal < shownPercent_ - 1 || p.status != install::Status::Running)
+  const double goal = std::clamp(c.percent, 0., 100.);
+  if (shownPercent_ < 0 || goal < shownPercent_ - 1)
     shownPercent_ = goal;
   else
     shownPercent_ += (goal - shownPercent_) * (1 - std::exp(-std::max(0., frameAt - shownPercentAt_) / 0.8));
@@ -68,19 +180,14 @@ void Application::downloads() {
   // One decimal: a slow download still visibly moves.
   char percent[16];
   std::snprintf(percent, sizeof(percent), "%.1f%%", std::floor(shownPercent_ * 10) / 10);
-  paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 26, true),
-                    114, 26, Ink, true);
+  paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 26, true), 114, 26, Ink, true);
   paint_.rect(418, 154, 810, 14, Line, 7);
-  const auto filled = 810 * shownPercent_ / 100.;
-  const bool paused = p.status == install::Status::Running && installer_.paused();
-  paint_.rect(418, 154, filled, 14, p.status == install::Status::Succeeded ? Okay : Butter, 7);
-  std::string status = p.phase;
+  paint_.rect(418, 154, 810 * shownPercent_ / 100., 14, Butter, 7);
+  std::string status = c.phase;
   const double now = SDL_GetTicks() / 1000.;
-  // Away from this screen for a while: the bytes counted meanwhile land in
-  // the next sample, so the average over the whole download still holds.
   downloadSeen_ = now;
-  if (p.status == install::Status::Running && !paused) {
-    downloadSpeed_.add(now, net::receivedBytes());
+  if (!c.paused && c.measure) {
+    downloadSpeed_.add(now, c.bytes);
     const double steady = downloadSpeed_.speed(now);
     if (steady < 0) {
       status += std::string(" · ") + tr("Measuring speed");
@@ -88,8 +195,7 @@ void Application::downloads() {
       char speed[64];
       std::snprintf(speed, sizeof(speed), " · %.1f MB/s", steady);
       status += speed;
-      const double left = timeLeft_.update(now, p.total > p.received ? p.total - p.received : 0, steady);
-      status += " · " + install::timeLeftText(left);
+      status += " · " + install::timeLeftText(timeLeft_.update(now, c.left, steady));
     }
   } else {
     downloadSpeed_.reset();
@@ -97,94 +203,56 @@ void Application::downloads() {
   }
   paint_.fonts.text(status, 418, 181, 18, Secondary, false, 810);
   float x = 418;
-  for (size_t i = 0; i < p.parts.size() && i < 4; ++i) {
-    const auto &part = p.parts[i];
-    if (part.type == "dlc" &&
-        std::any_of(p.parts.begin(), p.parts.begin() + i,
-                    [](const Item &item) { return item.type == "dlc"; }))
-      continue;
-    std::string type = part.type == "update" ? tr("Update|item")
-                       : part.type == "dlc"  ? "DLC"
-                                             : tr("Base game");
-    size_t last = i;
-    if (part.type == "dlc") {
-      size_t count = 0;
-      for (size_t j = i; j < p.parts.size(); ++j)
-        if (p.parts[j].type == "dlc") {
-          ++count;
-          last = j;
-        }
-      type += " " + std::to_string(count);
-    }
-    const bool done = last < p.index || p.status == install::Status::Succeeded;
-    const bool active =
-        p.index >= i && p.index <= last && p.status == install::Status::Running;
-    const auto label = done     ? type
-                       : active ? trf("{0} in progress", {type})
-                                : trf("{0} queued", {type});
+  for (const auto &[label, state] : c.chips) {
     // A finished part leads with the check mark icon (the font has no ✓).
+    const bool done = state == 2, active = state == 1;
     const float mark = done ? 22 : 0;
     const auto width = paint_.fonts.measure(label, 15, true) + 24 + mark;
-    paint_.rect(x, 216, width, 32,
-                done     ? SDL_Color{227, 242, 234, 255}
-                : active ? Ink
-                         : Ground,
-                8);
+    paint_.rect(x, 216, width, 32, done ? SDL_Color{227, 242, 234, 255} : active ? Ink : Ground, 8);
     if (done)
       paint_.icon(8, x + 10, 223, Okay, 18);
-    paint_.fonts.text(label, x + 12 + mark, 220, 15,
-                      done     ? Okay
-                      : active ? Surface
-                               : Secondary,
-                      true);
+    paint_.fonts.text(label, x + 12 + mark, 220, 15, done ? Okay : active ? Surface : Secondary, true);
     x += width + 10;
   }
-  // Pause or resume, and cancel, bottom right of the card (A and B do the same).
-  if (p.status == install::Status::Running) {
-    const std::string label = paused ? tr("Resume") : tr("Pause");
+  float bx = 1228;
+  if (c.onPause) {
+    const std::string label = c.paused ? tr("Resume") : tr("Pause");
     const float w = paint_.fonts.measure(label, 16, true) + 32;
-    const float bx = 1228 - w;
-    hit(bx, 212, w, 40, [this] { installer_.setPaused(!installer_.paused()); });
-    paint_.rect(bx, 216, w, 32, paused ? Butter : Ground, 8);
+    bx -= w;
+    hit(bx, 212, w, 40, c.onPause);
+    paint_.rect(bx, 216, w, 32, c.paused ? Butter : Ground, 8);
     paint_.fonts.middle(label, bx + 16, 232, 16, Ink, true);
+    bx -= 10;
+  }
+  if (c.onCancel) {
     const std::string stop = tr("Cancel");
     const float cw = paint_.fonts.measure(stop, 16, true) + 32;
-    const float cx = bx - 10 - cw;
-    hit(cx, 212, cw, 40, [this] {
-      cancelRetro_ = false;
-      confirmExit_ = false;
-      confirmCancel_ = true;
-    });
-    paint_.rect(cx, 216, cw, 32, Ground, 8);
-    paint_.fonts.middle(stop, cx + 16, 232, 16, Ink, true);
+    bx -= cw;
+    hit(bx, 212, cw, 40, c.onCancel);
+    paint_.rect(bx, 216, cw, 32, Ground, 8);
+    paint_.fonts.middle(stop, bx + 16, 232, 16, Ink, true);
   }
-  runningList(294);
 }
 // Under the installer's card (or from the top): the retro and patch cards
 // and 대기 중, one area that glides under a finger or the right stick.
 void Application::runningList(float y) {
-  constexpr float Bottom = 660, Card = 120, Gap = 30;
-  if (retroDownloading() || patchDownloading() || !installQueue_.empty()) {
-    const bool held = queueHeld_ && !installQueue_.empty() && !installer_.running() && !retroDownloading();
-    const float cards = (retroDownloading() || held ? Card + Gap : 0) + (patchDownloading() ? Card + Gap : 0);
-    const float content = cards + queueHeight();
-    // The picked queue row stays in view; the cards come first.
-    const int picked = downloadsRow_ - 1;
-    const float focus = picked < 0 ? 0 : cards + QueueTitle + picked * QueueStep - (Bottom - y) / 2 + QueueStep / 2;
-    const float max = std::max(0.f, content - (Bottom - y));
-    const float top = glide("running", 232, y, 1048, Bottom - y, std::clamp(focus, 0.f, max), max, 1);
-    if (max > 0) paint_.scrollbar(1266, y, Bottom - y - 12, top, Bottom - y, content);
-    clipTo(232, y - 8, 1048, Bottom - y + 8);
-    float at = y - top;
-    if (retroDownloading()) at += retroDownloadCard(at) + Gap;
-    else if (queueHeld_ && !installQueue_.empty() && !installer_.running()) at += heldDownloadCard(at) + Gap;
-    if (patchDownloading()) at += patchDownloadCard(at) + Gap;
-    queueList(at, y);
-    unclip();
-  }
+  constexpr float Bottom = 660;
+  if (installQueue_.empty())
+    return;
+  // The queue, without the paused item already on the card at the top.
+  const float content = queueHeight();
+  const int picked = downloadsRow_ - 1;
+  const float focus = picked < 0 ? 0 : QueueTitle + picked * QueueStep - (Bottom - y) / 2 + QueueStep / 2;
+  const float max = std::max(0.f, content - (Bottom - y));
+  const float top = glide("running", 232, y, 1048, Bottom - y, std::clamp(focus, 0.f, max), max, 1);
+  if (max > 0) paint_.scrollbar(1266, y, Bottom - y - 12, top, Bottom - y, content);
+  clipTo(232, y - 8, 1048, Bottom - y + 8);
+  queueList(y - top, y);
+  unclip();
 }
 float Application::queueHeight() const {
-  return installQueue_.empty() ? 0 : QueueTitle + float(installQueue_.size()) * QueueStep;
+  const size_t rows = installQueue_.size() - std::min(installQueue_.size(), queueSkip());
+  return rows ? QueueTitle + float(rows) * QueueStep : 0;
 }
 // 대기 중: what comes next, in order, scrolling under the title. On a row A
 // moves it sooner, X later and Y takes it off; the row's buttons do the same.
@@ -192,19 +260,20 @@ void Application::queueList(float y, float viewTop) {
   if (installQueue_.empty())
     return;
   constexpr float Row = 76, Step = QueueStep, Bottom = 660;
-  const int count = int(installQueue_.size());
-  for (int i = 0; i < count; ++i) {
-    const float ry = y + i * Step;
+  const int count = int(installQueue_.size()), skip = int(queueSkip());
+  for (int i = skip; i < count; ++i) {
+    const int r = i - skip; // its row under the card
+    const float ry = y + r * Step;
     // Out of view: neither drawn nor answering a tap (the card above is there).
     if (ry < viewTop - 8 || ry > Bottom)
       continue;
     const auto &q = installQueue_[size_t(i)];
-    hit(260, ry, 992, Row, [this, i] {
+    hit(260, ry, 992, Row, [this, r] {
       sidebar_ = false;
       headerFocus_.clear();
-      downloadsRow_ = i + 1;
+      downloadsRow_ = r + 1;
     });
-    if (inContent() && downloadsRow_ == i + 1) paint_.ring(260, ry, 992, Row, 16);
+    if (inContent() && downloadsRow_ == r + 1) paint_.ring(260, ry, 992, Row, 16);
     paint_.rect(260, ry, 992, Row, Surface, 16);
     cover(q.icon, 280, ry + 10, 56, false, q.name);
     paint_.fonts.text(q.name, 356, ry + 12, 20, Ink, true, 560);
@@ -218,7 +287,7 @@ void Application::queueList(float y, float viewTop) {
                                                 : std::string(tr("Base game"));
     const auto where = q.target == "nand" ? tr("Console") : tr("SD card");
     paint_.fonts.text(part + " · " + where + " · " + formatBytes(q.file.size), 356, ry + 44, 16, Secondary, false, 560);
-    // Buttons right to left: 취소, 뒤로 (not on the last), 앞으로 (not on the first).
+    // Buttons right to left: 취소, 아래로 (not on the last), 위로 (not on the first).
     float right = 1228;
     const auto button = [&](const std::string &label, std::function<void()> run) {
       const float w = paint_.fonts.measure(label, 16, true) + 32, x = right - w;
@@ -232,70 +301,16 @@ void Application::queueList(float y, float viewTop) {
       dialogFocus_ = 0;
     });
     if (i + 1 < count)
-      button(tr("Move down"), [this, i] {
+      button(tr("Move down"), [this, i, r] {
         moveUp(size_t(i) + 1);
-        downloadsRow_ = i + 2;
+        downloadsRow_ = r + 2;
       });
-    if (i > 0)
-      button(tr("Move up"), [this, i] {
+    if (i > skip)
+      button(tr("Move up"), [this, i, r] {
         moveUp(size_t(i));
-        downloadsRow_ = i;
+        downloadsRow_ = r;
       });
   }
-}
-// A retro game, RetroArch or a homebrew app coming down beside the installer: what it is,
-// how far, and B to stop it.
-float Application::retroDownloadCard(float y) {
-  constexpr float Height = 120;
-  const auto running = std::find_if(history_.begin(), history_.end(), [](const history::Entry &e) {
-    return !e.kind.empty() && e.kind != "patch" && e.kind != "reapply" && e.outcome == history::Outcome::Running;
-  });
-  const bool pack = retroBusy_ == "pack";
-  const std::string name = running != history_.end() ? running->install.name : pack ? "RetroArch" : "";
-  const std::string icon = running != history_.end() ? running->install.icon : "";
-  const uint64_t got = retroReceived_, total = retroBytes_;
-  const double ratio = total ? std::min(1.0, double(got) / double(total)) : 0.0;
-  if (!installer_.running()) paint_.ring(260, y, 992, Height, 18);
-  paint_.rect(260, y, 992, Height, Surface, 18);
-  if (icon.empty()) {
-    paint_.rect(284, y + 20, 80, 80, Ground, 14);
-    paint_.icon(running != history_.end() && running->kind == "homebrew" ? 22 : 35, 308, y + 44, Ink, 32);
-  } else
-    cover(icon, 284, y + 20, 80, false, name, true);
-  paint_.fonts.text(name, 386, y + 20, 22, Ink, true, 700);
-  const auto percent = std::to_string(int(std::round(ratio * 100))) + "%";
-  paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 22, true), y + 20, 22, Ink, true);
-  paint_.rect(386, y + 60, 842, 10, Line, 5);
-  paint_.rect(386, y + 60, std::max(10.0, 842 * ratio), 10, Butter, 5);
-  const bool app = running != history_.end() && running->kind == "homebrew";
-  const auto what = pack ? std::string(tr("Install RetroArch")) : app ? std::string(tr("Homebrew")) : std::string(tr("Retro game"));
-  const auto line = total ? trf("{0} · SD card · {1} / {2}", {what, formatBytes(got), formatBytes(total)})
-                          : trf("{0} · Checking which files to get", {what});
-  paint_.fonts.text(line, 386, y + 82, 17, Secondary, false, 760);
-  pauseButton(y + 72, false);
-  return Height;
-}
-// A small download paused: it waits first in line, and the queue holds
-// until it goes on from the byte it reached.
-float Application::heldDownloadCard(float y) {
-  constexpr float Height = 120;
-  const auto &q = installQueue_.front();
-  if (!installer_.running()) paint_.ring(260, y, 992, Height, 18);
-  paint_.rect(260, y, 992, Height, Surface, 18);
-  cover(q.icon, 284, y + 20, 80, false, q.name, true);
-  paint_.fonts.text(q.name, 386, y + 20, 22, Ink, true, 700);
-  paint_.fonts.text(tr("Paused."), 386, y + 60, 17, Secondary, false, 700);
-  pauseButton(y + 60, true);
-  return Height;
-}
-// 일시정지 or 계속, bottom right of a small download's card (A does the same).
-void Application::pauseButton(float y, bool held) {
-  const std::string label = held ? tr("Resume") : tr("Pause");
-  const float w = paint_.fonts.measure(label, 16, true) + 32;
-  const float bx = 1228 - w;
-  hit(bx, y, w, 40, [this, held] { pauseSmallDownload(!held); });
-  paint_.rect(bx, y, w, 40, Ground, 10);
-  paint_.fonts.middle(label, bx + 16, y + 20, 16, Ink, true);
 }
 std::vector<int> Application::downloadsList() const {
   std::vector<int> out;

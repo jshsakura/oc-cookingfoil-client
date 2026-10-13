@@ -524,47 +524,6 @@ void Application::pumpPatchQueue() {
     else startPatchGet(patch, step == PatchStep::Get);
   }
 }
-// The patch the worker fetches or switches on, and the ones queued after it.
-float Application::patchDownloadCard(float y) {
-  constexpr float Height = 120;
-  const bool running = patchWorker_.joinable() && !patchBusy_.empty();
-  UserPatch patch = !patchQueue_.empty() ? patchQueue_.front() : UserPatch{};
-  if (running) {
-    const auto known = std::find_if(serverPatches_.begin(), serverPatches_.end(),
-                                    [&](const UserPatch &p) { return p.id == patchBusy_; });
-    patch = patchQueueNow_.id == patchBusy_ ? patchQueueNow_ : known != serverPatches_.end() ? *known : UserPatch{};
-    if (patch.name.empty()) patch.name = patchBusy_;
-  }
-  std::string icon;
-  if (const auto *group = findGroup(baseTitleId(patch.titleId))) icon = group->representative.icon;
-  else if (!patch.gameIcon.empty())
-    icon = patch.gameIcon[0] == '/' && session_ ? session_->server().url + patch.gameIcon : patch.gameIcon;
-  if (!installer_.running() && !retroDownloading()) paint_.ring(260, y, 992, Height, 18);
-  paint_.rect(260, y, 992, Height, Surface, 18);
-  if (icon.empty()) {
-    paint_.rect(284, y + 20, 80, 80, Ground, 14);
-    paint_.icon(32, 308, y + 44, Ink, 32);
-  } else
-    cover(icon, 284, y + 20, 80, false, patch.name);
-  marquee(patch.name, 386, y + 20, 22, 700);
-  const bool fetching = running && (patchBusyLabel_ == Getting || patchBusyLabel_ == Updating);
-  const uint64_t got = fetching ? patchReceived_.load() : 0, total = patch.size, moving = patchMoving_.load();
-  const double ratio = !running ? 0.0
-                       : !fetching ? (moving ? std::min(1.0, double(patchReceived_.load()) / double(moving)) : 1.0)
-                       : total     ? std::min(1.0, double(got) / double(total))
-                                   : 0.0;
-  const auto percent = std::to_string(int(ratio * 100 + 0.5)) + "%";
-  paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 22, true), y + 20, 22, Ink, true);
-  paint_.rect(386, y + 60, 842, 10, Line, 5);
-  if (running) paint_.rect(386, y + 60, std::max(10.0, 842 * ratio), 10, Butter, 5);
-  std::string line = !running   ? std::string(tr("Downloads once the game is installed."))
-                     : fetching ? trf("{0} · SD card · {1} / {2}", {tr("Patch"), formatBytes(got), formatBytes(total)})
-                                : std::string(tr(patchBusyLabel_.c_str()));
-  const size_t waiting = patchQueue_.size() - (running ? 0 : 1);
-  if (waiting) line += " · " + trf("{0} patches waiting", {std::to_string(waiting)});
-  paint_.fonts.text(line, 386, y + 82, 17, Secondary, false, 842);
-  return Height;
-}
 // Files moved so far, for the busy row's bar.
 static void trackMoves(PatchStore &store, std::atomic<uint64_t> &done, std::atomic<uint64_t> &total) {
   store.progress([&done, &total](size_t moved, size_t all) {

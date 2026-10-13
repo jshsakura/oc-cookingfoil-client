@@ -482,7 +482,6 @@ private:
   bool finishRetroEntry(const std::string &kind, history::Outcome outcome, const std::string &error, uint64_t bytes);
   // A retro game or RetroArch downloading (not a list loading).
   bool retroDownloading() const { return !retroBusy_.empty(); }
-  float retroDownloadCard(float y); // 다운로드 > 진행 중; returns the height drawn
   int signal_ = 3;          // net::signalStrength(), refreshed by statusBar
   uint32_t signalAt_ = 0;
   bool installRetroShortcut(const retro::Game &game);
@@ -598,7 +597,6 @@ private:
   void syncDetailPatches();
   // The patch whose turn came in the queue goes to the patch worker.
   void pumpPatchQueue();
-  float patchDownloadCard(float y);
   // A patch job or patches still queued: 다운로드 shows them while they run.
   bool patchDownloading() const { return !patchQueue_.empty() || (patchWorker_.joinable() && !patchBusy_.empty()); }
   std::deque<UserPatch> patchQueue_;
@@ -651,8 +649,20 @@ private:
   // its store lacks them too.
   bool startPatchReapply(const UserPatch &patch, bool onServer);
   void pauseSmallDownload(bool pause);
-  float heldDownloadCard(float y);
-  void pauseButton(float y, bool held);
+  // 진행 중's one card at the top, for whatever downloads now.
+  struct TopCard {
+    std::string key, name, icon, phase;
+    double percent = 0;
+    uint64_t bytes = 0, left = 0; // a running byte count (for the speed) and what is left
+    bool paused = false, measure = true;
+    std::vector<std::pair<std::string, int>> chips; // label, 0 waits / 1 now / 2 done
+    std::function<void()> onPause, onCancel;
+  };
+  bool topCardNow(const install::Progress &p, TopCard &card);
+  void topCard(const TopCard &card);
+  std::string topCardKey_;
+  // A paused app or retro game sits on the card, not again in the list.
+  size_t queueSkip() const { return queueHeld_ && !installQueue_.empty() && !installer_.running() && !retroDownloading() ? 1 : 0; }
   void patchGame(const UserPatch &patch, std::string &name, std::string &icon) const;
   void patchDialog();
   // 설정 > 남은 파일 정리: scan, confirm, then delete on a worker thread.

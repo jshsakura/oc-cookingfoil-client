@@ -1968,21 +1968,23 @@ void Application::dropGroup(int group, const std::string &why) {
 // On the card A pauses or resumes and Y cancels (after asking); on a queued
 // row Y takes it off the queue.
 void Application::runningAction(Action a) {
-  const int rows = 1 + int(installQueue_.size());
+  const int skip = int(queueSkip()); // a paused item on the card is not a row below
+  const int rows = 1 + int(installQueue_.size()) - skip;
   if (a == Action::Up) downloadsRow_ = std::max(0, downloadsRow_ - 1);
   if (a == Action::Down) downloadsRow_ = std::min(rows - 1, downloadsRow_ + 1);
   downloadsRow_ = std::clamp(downloadsRow_, 0, rows - 1);
   if (downloadsRow_ > 0) {
+    const int index = downloadsRow_ - 1 + skip; // in installQueue_
     if (a == Action::Queue) {
-      unqueueAsk_ = downloadsRow_ - 1;
+      unqueueAsk_ = index;
       dialogFocus_ = 0;
     }
     if (a == Action::Accept && downloadsRow_ > 1) {
-      moveUp(size_t(downloadsRow_ - 1));
+      moveUp(size_t(index));
       --downloadsRow_;
     }
-    if (a == Action::Search && downloadsRow_ < int(installQueue_.size())) {
-      moveUp(size_t(downloadsRow_));
+    if (a == Action::Search && index + 1 < int(installQueue_.size())) {
+      moveUp(size_t(index) + 1);
       ++downloadsRow_;
     }
     return;
