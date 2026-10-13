@@ -106,6 +106,10 @@ struct PatchRecord {
   // Paths where a patch turned on later puts its own copy instead, and which
   // one. Worked out from the enable order; the ledger keeps a copy to read.
   std::map<std::string, std::string> shadowed;
+  // Folders the pending enable or disable plans to move whole, one rename
+  // each, instead of file by file. Kept with the pending mark so a move cut
+  // short finishes the same way.
+  std::vector<std::string> roots;
 };
 // What a patch picked with a game install still needs, given what the SD
 // store holds of it: fetch it, fetch its newer build, switch it on, or nothing.
@@ -143,6 +147,9 @@ public:
   bool enable(const std::string &id, Error &error);
   bool disable(const std::string &id, Error &error);
   bool remove(const std::string &id, Error &error);
+  // Called as enable or disable moves files: files done so far, and all of
+  // them. A folder moved whole counts every file in it at once.
+  void progress(std::function<void(size_t, size_t)> report) { progress_ = std::move(report); }
 
 private:
   std::string sd(const std::string &path) const;
@@ -164,7 +171,16 @@ private:
   // when no patch covers the path, or nothing.
   bool place(const std::string &path, Error &error);
   void markShadows();
+  // The folders of record that may move whole: none of them on the card yet
+  // (enabling) or back in its store yet (disabling), and no other patch on
+  // or moving and no set-aside user file under them.
+  std::vector<std::string> wholeRoots(const PatchRecord &record, bool enabling) const;
+  // Whether the folder at dir holds exactly the record's files below root.
+  bool holdsOnly(const PatchRecord &record, const std::string &root, const std::string &dir) const;
+  // Places each file not under a folder that moved whole, reporting progress.
+  bool placeRest(const PatchRecord &record, const std::vector<std::string> &whole, Error &error);
   std::string sdRoot_, storeRoot_;
+  std::function<void(size_t, size_t)> progress_;
   std::map<std::string, PatchRecord> records_;
   std::set<std::string> cheatPaths_; // cheat files we currently write
   int64_t order_ = 0;

@@ -97,6 +97,38 @@ json_object *array(const std::vector<std::string> &values) {
 bool lists(const PatchRecord &record, const std::string &path) {
   return std::binary_search(record.files.begin(), record.files.end(), path);
 }
+// The folder right under a path's fixed prefix, which a patch may move whole:
+// atmosphere/contents/<TID>/<folder>, atmosphere/exefs_patches/<name>,
+// SaltySD/plugins/FPSLocker/patches/<TID> and switch/<app>/<folder>. Empty
+// for a file sitting directly in the prefix, for cheats (merged, never moved)
+// and for paths outside these layouts.
+std::string wholeRoot(const std::string &path) {
+  const auto parts = split(path);
+  size_t depth = 0;
+  if (parts.size() >= 5 && same(parts[0], "atmosphere") && same(parts[1], "contents") && !same(parts[3], "cheats"))
+    depth = 4;
+  else if (parts.size() >= 4 && same(parts[0], "atmosphere") && same(parts[1], "exefs_patches"))
+    depth = 3;
+  else if (parts.size() >= 6 && same(parts[0], "SaltySD") && same(parts[1], "plugins") &&
+           same(parts[2], "FPSLocker") && same(parts[3], "patches"))
+    depth = 5;
+  else if (parts.size() >= 4 && same(parts[0], "switch"))
+    depth = 3;
+  std::string root;
+  for (size_t i = 0; i < depth; ++i)
+    root += (i ? "/" : "") + parts[i];
+  return root;
+}
+// Whether path lies below root; case does not matter on the card.
+bool under(const std::string &path, const std::string &root) {
+  return path.size() > root.size() && path[root.size()] == '/' && upper(path.substr(0, root.size())) == upper(root);
+}
+bool anyUnder(const std::vector<std::string> &paths, const std::string &root) {
+  return std::any_of(paths.begin(), paths.end(), [&](const std::string &p) { return under(p, root); });
+}
+bool inWhole(const std::string &path, const std::vector<std::string> &whole) {
+  return std::any_of(whole.begin(), whole.end(), [&](const std::string &root) { return under(path, root); });
+}
 } // namespace
 
 bool patchPathAllowed(const std::string &titleId, const std::string &path) {
@@ -427,6 +459,8 @@ bool PatchStore::save(Error &error) {
     json_object_object_add(p, "cheats", array(r.cheats));
     json_object_object_add(p, "bytes", json_object_new_int64(int64_t(r.bytes)));
     json_object_object_add(p, "order", json_object_new_int64(r.order));
+    if (!r.roots.empty())
+      json_object_object_add(p, "roots", array(r.roots));
     if (!r.shadowed.empty()) {
       auto *shadowed = json_object_new_object();
       for (const auto &[path, by] : r.shadowed)
@@ -492,6 +526,10 @@ bool PatchStore::load(Error &error) {
         r.cheats = strings(field(p, "cheats"));
         r.bytes = uint64_t(std::max<int64_t>(0, integerField(p, "bytes")));
         r.order = integerField(p, "order");
+        // Only folders of the known layouts; anything else moves file by file.
+        for (const auto &root : strings(field(p, "roots")))
+          if (wholeRoot(root + "/x/x") == root)
+            r.roots.push_back(root);
         records_[r.id] = std::move(r);
       }
     }
@@ -668,9 +706,78 @@ std::vector<PatchConflict> PatchStore::conflicts(const std::string &id) const {
   }
   return out;
 }
+std::vector<std::string> PatchStore::wholeRoots(const PatchRecord &record, bool enabling) const {
+  std::vector<std::string> out;
+  std::error_code ec;
+  for (const auto &file : record.files) {
+    const auto root = wholeRoot(file);
+    if (root.empty() || std::find(out.begin(), out.end(), root) != out.end())
+      continue;
+    // Never the store itself, nor a folder holding it.
+    if (upper(storeRoot_ + "/").rfind(upper(sd(root) + "/"), 0) == 0)
+      continue;
+    if (fs::exists(enabling ? sd(root) : stored(record.id, root), ec) || fs::exists(base(root), ec))
+      continue;
+    bool shared = false;
+    for (const auto &[id, r] : records_)
+      if (id != record.id && (r.on || !r.pending.empty()) && (anyUnder(r.files, root) || anyUnder(r.cheats, root)))
+        shared = true;
+    if (!shared)
+      out.push_back(root);
+  }
+  return out;
+}
+bool PatchStore::holdsOnly(const PatchRecord &record, const std::string &root, const std::string &dir) const {
+  std::error_code ec;
+  if (!fs::is_directory(dir, ec) || fs::is_symlink(dir, ec))
+    return false;
+  std::vector<std::string> found;
+  for (auto it = fs::recursive_directory_iterator(dir, ec); it != fs::recursive_directory_iterator();
+       it.increment(ec)) {
+    if (ec)
+      return false;
+    if (it->is_symlink(ec))
+      return false; // a link: leave it to the file by file path
+    if (it->is_regular_file(ec))
+      found.push_back(root + "/" + it->path().string().substr(dir.size() + 1));
+    else if (!it->is_directory(ec))
+      return false;
+  }
+  if (ec)
+    return false;
+  std::vector<std::string> mine;
+  for (const auto &file : record.files)
+    if (under(file, root))
+      mine.push_back(file);
+  std::sort(found.begin(), found.end());
+  return found == mine;
+}
+bool PatchStore::placeRest(const PatchRecord &record, const std::vector<std::string> &whole, Error &error) {
+  const size_t total = record.files.size();
+  size_t done = 0;
+  for (const auto &file : record.files)
+    if (inWhole(file, whole))
+      ++done;
+  if (progress_)
+    progress_(done, total);
+  for (const auto &file : record.files) {
+    if (inWhole(file, whole))
+      continue;
+    if (!place(file, error))
+      return false;
+    if (progress_)
+      progress_(++done, total);
+  }
+  return true;
+}
 // Both finish steps only move files towards what the ledger says, so running
 // one again after a power loss completes it. Ledgers from before layering
 // left `on` as it was until the end; that is caught up here first.
+//
+// A folder in `roots` moves with one rename when its files are all on one
+// side and nothing else is in it. A rename either happened or did not, so
+// after a power loss the folder is found on one side and the check repeats.
+// Otherwise its files go one by one like the rest.
 bool PatchStore::finishEnable(PatchRecord &record, Error &error) {
   if (!record.on) {
     record.on = true;
@@ -678,10 +785,19 @@ bool PatchStore::finishEnable(PatchRecord &record, Error &error) {
     if (!save(error))
       return false;
   }
-  for (const auto &file : record.files)
-    if (!place(file, error))
+  std::error_code ec;
+  std::vector<std::string> whole;
+  for (const auto &root : record.roots) {
+    const auto from = stored(record.id, root), to = sd(root);
+    if (!fs::exists(to, ec) && holdsOnly(record, root, from) && !move(from, to, error))
       return false;
+    if (!fs::exists(from, ec) && fs::is_directory(to, ec))
+      whole.push_back(root);
+  }
+  if (!placeRest(record, whole, error))
+    return false;
   record.pending.clear();
+  record.roots.clear();
   if (!save(error))
     return false;
   for (const auto &cheat : record.cheats)
@@ -695,10 +811,24 @@ bool PatchStore::finishDisable(PatchRecord &record, Error &error) {
     if (!save(error))
       return false;
   }
-  for (const auto &file : record.files)
-    if (!place(file, error))
-      return false;
+  std::error_code ec;
+  std::vector<std::string> whole;
+  for (const auto &root : record.roots) {
+    const auto from = sd(root), to = stored(record.id, root);
+    // A file the user added below the folder keeps it on the card; then the
+    // patch's files leave one by one and the user's stays.
+    if (!fs::exists(to, ec) && holdsOnly(record, root, from)) {
+      if (!move(from, to, error))
+        return false;
+      prune(from);
+    }
+    if (!fs::exists(from, ec) && fs::is_directory(to, ec))
+      whole.push_back(root);
+  }
+  if (!placeRest(record, whole, error))
+    return false;
   record.pending.clear();
+  record.roots.clear();
   if (!save(error))
     return false;
   for (const auto &cheat : record.cheats)
@@ -722,6 +852,7 @@ bool PatchStore::turnOn(PatchRecord &record, int64_t order, Error &error) {
   record.on = true;
   record.order = order;
   record.pending = "enable";
+  record.roots = wholeRoots(record, true);
   return save(error) && finishEnable(record, error);
 }
 bool PatchStore::disable(const std::string &id, Error &error) {
@@ -730,6 +861,7 @@ bool PatchStore::disable(const std::string &id, Error &error) {
     return true;
   it->second.on = false;
   it->second.pending = "disable";
+  it->second.roots = wholeRoots(it->second, false);
   return save(error) && finishDisable(it->second, error);
 }
 bool PatchStore::remove(const std::string &id, Error &error) {

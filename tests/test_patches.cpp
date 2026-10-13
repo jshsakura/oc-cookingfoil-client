@@ -4,6 +4,7 @@
 #include "net/Api.hpp"
 #include <cstring>
 #include <filesystem>
+#include <sys/stat.h>
 #include <unistd.h>
 namespace fs = std::filesystem;
 namespace {
@@ -75,6 +76,12 @@ void write(const std::string &path, const std::string &body) {
   fs::create_directories(fs::path(path).parent_path());
   std::string ignored;
   foil::atomicWrite(path, body, ignored);
+}
+// Moves one file as the store would, making its folder first: a patch moved
+// whole leaves no folders behind in its store.
+void moveFile(const std::string &from, const std::string &to) {
+  fs::create_directories(fs::path(to).parent_path());
+  fs::rename(from, to);
 }
 foil::UserPatch patch(const std::string &id, const std::string &version = "1") {
   foil::UserPatch p;
@@ -201,7 +208,7 @@ static int runPatchLayerTests() {
     // says on with its new place and pending, s1's copy is back in its store
     // and s3's not yet on the card. load finishes it.
     edit("s3", true, 50, "enable");
-    fs::rename(sd + "/" + Stack, storeRoot + "/s1/" + Stack);
+    moveFile(sd + "/" + Stack, storeRoot + "/s1/" + Stack);
     foil::PatchStore store(sd, storeRoot);
     foil::Error error;
     CHECK(store.load(error));
@@ -213,7 +220,7 @@ static int runPatchLayerTests() {
     // Power loss in the middle of turning s3 off: its copy is back in its
     // store, s1's not yet on the card.
     edit("s3", false, 50, "disable");
-    fs::rename(sd + "/" + Stack, storeRoot + "/s3/" + Stack);
+    moveFile(sd + "/" + Stack, storeRoot + "/s3/" + Stack);
     foil::PatchStore store(sd, storeRoot);
     foil::Error error;
     CHECK(store.load(error) && !store.find("s3")->on && store.find("s3")->pending.empty());
@@ -269,8 +276,142 @@ static int runPatchLayerTests() {
   fs::remove_all(root);
   return failures;
 }
+// A folder no one else touches moves with one rename; anything shared or
+// added by the user falls back to moving file by file.
+static int runPatchWholeTests() {
+  int failures = 0;
+  const auto root = fs::temp_directory_path() / ("cf-patchwhole-" + std::to_string(getpid()));
+  fs::remove_all(root);
+  const auto sd = (root / "sd").string(), storeRoot = (root / "sd/switch/cookingfoil/patches").string();
+  const auto ledger = storeRoot + "/ledger.json";
+  const std::string Dir = std::string("atmosphere/contents/") + Tid + "/romfs";
+  const std::string First = Dir + "/Data/f000.bin";
+  // Directory identity on the host: a folder renamed whole keeps its inode,
+  // one rebuilt file by file gets a new one.
+  const auto inode = [](const std::string &path) {
+    struct stat st {};
+    return ::stat(path.c_str(), &st) == 0 ? st.st_ino : ino_t(0);
+  };
+  std::vector<Entry> big;
+  for (int n = 0; n < 300; ++n) {
+    char name[64];
+    std::snprintf(name, sizeof name, "/%s/f%03d.bin", n % 3 ? "Data" : "Data/Deep", n);
+    big.push_back({Dir + (n == 0 ? "/Data/f000.bin" : name), "big" + std::to_string(n)});
+  }
+  std::vector<std::string> bigFiles;
+  for (const auto &e : big) bigFiles.push_back(e.path);
+  const auto allOnCard = [&] {
+    for (size_t n = 0; n < big.size(); ++n)
+      if (foil::readFile(sd + "/" + big[n].path) != big[n].body) return false;
+    return true;
+  };
+  const auto allInStore = [&] {
+    for (size_t n = 0; n < big.size(); ++n)
+      if (foil::readFile(storeRoot + "/big/" + big[n].path) != big[n].body) return false;
+    return true;
+  };
+  // Rewrites one patch's state in the ledger, as a power loss would leave it.
+  const auto edit = [&](const std::string &id, bool on, const char *pending, bool withRoots) {
+    foil::Error parse;
+    auto json = foil::parseJson(foil::readFile(ledger), parse);
+    auto *p = foil::field(foil::field(json.get(), "patches"), id.c_str());
+    json_object_object_add(p, "on", json_object_new_boolean(on));
+    json_object_object_add(p, "pending", json_object_new_string(pending));
+    if (withRoots) {
+      auto *roots = json_object_new_array();
+      json_object_array_add(roots, json_object_new_string(Dir.c_str()));
+      json_object_object_add(p, "roots", roots);
+    }
+    write(ledger, json_object_to_json_string(json.get()));
+  };
+  {
+    foil::PatchStore store(sd, storeRoot);
+    foil::Error error;
+    CHECK(store.load(error));
+    CHECK(stage(store, "big", big));
+    size_t done = 0, total = 0;
+    store.progress([&](size_t d, size_t t) { done = d, total = t; });
+    // Round trip: one rename each way.
+    const auto folder = inode(storeRoot + "/big/" + Dir);
+    CHECK(folder != 0 && store.enable("big", error));
+    CHECK(inode(sd + "/" + Dir) == folder && !fs::exists(storeRoot + "/big/" + Dir) && allOnCard());
+    CHECK(done == 300 && total == 300);
+    CHECK(store.find("big")->pending.empty() && store.find("big")->roots.empty());
+    CHECK(foil::field(foil::field(foil::field(foil::parseJson(foil::readFile(ledger), error).get(), "patches"),
+                                  "big"), "roots") == nullptr);
+    done = total = 0;
+    CHECK(store.disable("big", error));
+    CHECK(inode(storeRoot + "/big/" + Dir) == folder && allInStore() && done == 300 && total == 300);
+    CHECK(!fs::exists(sd + "/atmosphere/contents/" + Tid) && fs::is_directory(sd + "/atmosphere/contents"));
+    store.progress(nullptr);
+
+    // Another patch already covers the folder: file by file, and they layer.
+    CHECK(stage(store, "small", {{First, "small"}}));
+    CHECK(store.enable("small", error) && store.enable("big", error));
+    CHECK(inode(sd + "/" + Dir) != folder && allOnCard());
+    CHECK(foil::readFile(storeRoot + "/small/" + First) == "small");
+    CHECK(store.find("small")->shadowed.at(First) == "big");
+    CHECK(store.disable("big", error) && allInStore() && foil::readFile(sd + "/" + First) == "small");
+    CHECK(store.disable("small", error) && !fs::exists(sd + "/" + Dir));
+    // The other one is off: the folder moves whole again.
+    const auto again = inode(storeRoot + "/big/" + Dir);
+    CHECK(store.enable("big", error) && inode(sd + "/" + Dir) == again && allOnCard());
+
+    // A file the user added below the folder stays on the card.
+    write(sd + "/" + Dir + "/Data/mine.txt", "mine");
+    CHECK(store.disable("big", error) && allInStore());
+    CHECK(foil::readFile(sd + "/" + Dir + "/Data/mine.txt") == "mine");
+    CHECK(!fs::exists(sd + "/" + First) && !fs::exists(storeRoot + "/big/" + Dir + "/Data/mine.txt"));
+    // The card's folder is the user's now: enabling goes file by file and
+    // turning off leaves it as the user left it.
+    CHECK(store.enable("big", error) && allOnCard() && store.disable("big", error));
+    CHECK(foil::readFile(sd + "/" + Dir + "/Data/mine.txt") == "mine" && allInStore());
+    fs::remove_all(sd + "/atmosphere/contents/" + std::string(Tid));
+  }
+  {
+    // Power loss after the ledger planned a whole enable, before the rename.
+    edit("big", true, "enable", true);
+    const auto folder = inode(storeRoot + "/big/" + Dir);
+    foil::PatchStore store(sd, storeRoot);
+    foil::Error error;
+    CHECK(store.load(error) && store.find("big")->on && store.find("big")->pending.empty());
+    CHECK(store.find("big")->roots.empty() && inode(sd + "/" + Dir) == folder && allOnCard());
+  }
+  {
+    // Power loss after the rename, before the ledger caught up.
+    edit("big", true, "enable", true);
+    foil::PatchStore store(sd, storeRoot);
+    foil::Error error;
+    CHECK(store.load(error) && store.find("big")->on && store.find("big")->pending.empty() && allOnCard());
+  }
+  {
+    // Power loss in a whole disable, before the rename: it moves back whole.
+    edit("big", false, "disable", true);
+    const auto folder = inode(sd + "/" + Dir);
+    foil::PatchStore store(sd, storeRoot);
+    foil::Error error;
+    CHECK(store.load(error) && !store.find("big")->on && store.find("big")->pending.empty());
+    CHECK(inode(storeRoot + "/big/" + Dir) == folder && allInStore() && !fs::exists(sd + "/" + Dir));
+  }
+  {
+    // Half done file by file: some files already back in the store. The rest
+    // follow one by one.
+    foil::PatchStore store(sd, storeRoot);
+    foil::Error error;
+    CHECK(store.load(error) && store.enable("big", error) && allOnCard());
+    edit("big", false, "disable", true);
+    for (int n = 0; n < 10; ++n) {
+      const auto &path = bigFiles[size_t(n)];
+      moveFile(sd + "/" + path, storeRoot + "/big/" + path);
+    }
+    foil::PatchStore reopened(sd, storeRoot);
+    CHECK(reopened.load(error) && !reopened.find("big")->on && allInStore() && !fs::exists(sd + "/" + Dir));
+  }
+  fs::remove_all(root);
+  return failures;
+}
 int runPatchTests() {
-  int failures = runPatchOwnerTests() + runPatchLayerTests();
+  int failures = runPatchOwnerTests() + runPatchLayerTests() + runPatchWholeTests();
   // An app's patch reads as 홈브류 in the list, not as an unknown kind.
   CHECK(std::string(foil::patchKindLabel("homebrew")) != foil::patchKindLabel("something-else"));
   CHECK(foil::patchPathAllowed(Tid, Romfs));
@@ -518,7 +659,7 @@ int runPatchTests() {
       json_object_object_add(foil::field(foil::field(json.get(), "patches"), "hb-1"), "pending",
                              json_object_new_string("disable"));
       write(ledger, json_object_to_json_string(json.get()));
-      fs::rename(hbSd + "/" + Config, hbStore + "/hb-1/" + Config);
+      moveFile(hbSd + "/" + Config, hbStore + "/hb-1/" + Config);
       foil::PatchStore again(hbSd, hbStore);
       CHECK(again.load(error) && !again.find("hb-1")->on);
       CHECK(foil::readFile(hbSd + "/" + Config) == "mine" && !fs::exists(hbSd + "/" + Mod));
