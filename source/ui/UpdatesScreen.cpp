@@ -177,7 +177,7 @@ void Application::installUpdates(bool all) {
       return;
     }
   }
-  downloadsTab_ = 0;
-  screen_ = Screen::Downloads; nav_ = menuIndex(Screen::Downloads);
+  // The list stays (what was queued leaves it); 다운로드 shows the queue.
+  selected_ = 0;
 }
 } // namespace foil::ui

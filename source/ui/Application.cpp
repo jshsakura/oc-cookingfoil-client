@@ -1793,13 +1793,11 @@ void Application::installSelected() {
     const bool waits = downloadRunning() || installQueue_.size() > 1;
     if (auto error = launchQueued())
       alert_ = error.message;
-    else if (waits)
-      message(tr("Added to the download queue."));
+    else
+      message(waits ? tr("Added to the download queue.") : tr("Download started."));
   }
+  // The page stays: more can be picked right after; 다운로드 shows the rest.
   notice_.clear();
-  downloadsTab_ = 0;
-  screen_ = Screen::Downloads;
-  nav_ = menuIndex(Screen::Downloads);
 }
 void Application::saveStateQuietly() {
   if (statePath_.empty())
@@ -1860,8 +1858,7 @@ Error Application::startInstall(const std::vector<Item> &files, const std::strin
   const bool waits = downloadRunning();
   if (auto error = launchQueued())
     return error;
-  if (waits)
-    message(tr("Added to the download queue."));
+  message(waits ? tr("Added to the download queue.") : tr("Download started."));
   return {};
 }
 // The rows of 다운로드 that wait, in their turn, as the queue the screens and
@@ -1920,8 +1917,8 @@ bool Application::queueJob(const std::string &kind, const std::string &name, con
   const bool waits = downloadRunning() || installQueue_.size() > 1;
   if (auto error = launchQueued())
     alert_ = error.message;
-  if (waits)
-    message(tr("Added to the download queue."));
+  else
+    message(waits ? tr("Added to the download queue.") : tr("Download started."));
   return true;
 }
 void Application::queuePatchJobs(const std::vector<UserPatch> &patches, int group) {
