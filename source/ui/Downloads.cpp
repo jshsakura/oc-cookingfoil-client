@@ -36,7 +36,6 @@ void Application::downloads() {
     downloadsHistory();
     return;
   }
-  const auto target = p.target == "nand" ? tr("Console") : tr("SD card");
   // The installer's card shows only while it runs: a finished install goes
   // to 완료 (or 실패, 취소) at once, and what is next takes its place.
   if (p.status != install::Status::Running) {
