@@ -50,8 +50,11 @@ void Application::gallery() {
         {64, 7, Action::Previous}, {1216 - Size, 9, Action::Next}};
     for (const auto &arrow : arrows) {
       hit(arrow.x, Middle - Size / 2, Size, Size, [this, move = arrow.move] { action(move); });
-      paint_.rect(arrow.x, Middle - Size / 2, Size, Size, {22, 22, 26, 200}, int(Size / 2));
-      paint_.icon(arrow.icon, arrow.x + (Size - 30) / 2, Middle - 15, Surface, 30);
+      // Light buttons with a dark arrow: they stand out on the black
+      // backdrop and on dark photos alike.
+      paint_.rect(arrow.x - 2, Middle - Size / 2 - 2, Size + 4, Size + 4, {0, 0, 0, 90}, int(Size / 2) + 2);
+      paint_.rect(arrow.x, Middle - Size / 2, Size, Size, {Surface.r, Surface.g, Surface.b, 235}, int(Size / 2));
+      paint_.icon(arrow.icon, arrow.x + (Size - 30) / 2, Middle - 15, Ink, 30);
     }
   }
 }
