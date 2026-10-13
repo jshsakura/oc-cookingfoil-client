@@ -66,6 +66,11 @@ enum class Action {
 int themeIcon(const Theme &theme);
 class Application {
 public:
+  // The approval message kept for a server address (tests and the form).
+  std::string pairMessageFor(const std::string &url) const {
+    const auto found = state_.pairMessages.find(url);
+    return found == state_.pairMessages.end() ? "" : found->second;
+  }
   Application(SDL_Renderer *renderer, std::string configPath = "",
               std::string statePath = "", std::string fixture = "");
   ~Application();
@@ -644,11 +649,12 @@ private:
   struct ServerForm {
     int index = -1; // the server edited; -1 a new one
     Server server;  // the edited copy
-    int row = 0;    // 0 주소, 1 아이디, 2 비밀번호, 3 이름, 4 저장, 5 삭제
+    std::string note; // the approval message, kept in state.json by address
+    int row = 0;    // 0 주소, 1 아이디, 2 비밀번호, 3 이름, 4 메시지
     std::string error;
     bool confirmDelete = false;
   };
-  static constexpr int ServerFields = 4;
+  static constexpr int ServerFields = 5;
   std::optional<ServerForm> serverForm_;
   std::optional<TextRequest> textRequest_;
   int textField_ = -1; // the form field the keyboard types into

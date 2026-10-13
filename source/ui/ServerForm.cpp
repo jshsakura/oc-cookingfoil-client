@@ -2,6 +2,7 @@
 #include "core/Config.hpp"
 #include "core/Json.hpp"
 #include "core/Log.hpp"
+#include "net/Api.hpp"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -27,12 +28,14 @@ bool sameServer(const Server &a, const Server &b) {
   return a.title == b.title && a.url == b.url && a.username == b.username && a.password == b.password &&
          a.cfClientId == b.cfClientId && a.cfClientSecret == b.cfClientSecret && a.enabled == b.enabled;
 }
-std::string &fieldOf(Server &server, int field) {
+// The form's rows: the server's four fields, then the approval message.
+std::string &fieldOf(Server &server, std::string &note, int field) {
   switch (field) {
   case 0: return server.url;
   case 1: return server.username;
   case 2: return server.password;
-  default: return server.title;
+  case 3: return server.title;
+  default: return note;
   }
 }
 } // namespace
@@ -42,16 +45,19 @@ void Application::openServerForm(int index) {
   if (index >= 0 && size_t(index) < config_.servers.size()) {
     form.index = index;
     form.server = config_.servers[index];
+    if (const auto found = state_.pairMessages.find(form.server.url); found != state_.pairMessages.end())
+      form.note = found->second;
   }
   serverForm_ = form;
   textField_ = -1;
 }
 void Application::askServerField(int field) {
-  static const int lengths[ServerFields] = {512, 128, 128, 64};
+  static const int lengths[ServerFields] = {512, 128, 128, 64, int(net::PairMessageLimit)};
   TextRequest request;
   request.guide = field == 0 ? tr("서버 주소를 입력합니다") : field == 1 ? tr("아이디를 입력합니다")
-                : field == 2 ? tr("비밀번호를 입력합니다") : tr("목록에 보일 이름을 입력합니다");
-  request.initial = fieldOf(serverForm_->server, field);
+                : field == 2 ? tr("비밀번호를 입력합니다") : field == 3 ? tr("목록에 보일 이름을 입력합니다")
+                             : tr("관리자에게 보낼 메시지를 입력합니다");
+  request.initial = fieldOf(serverForm_->server, serverForm_->note, field);
   request.password = field == 2;
   request.maxLength = lengths[field];
   textRequest_ = request;
@@ -64,7 +70,7 @@ void Application::enterText(const std::string &text) {
     return;
   }
   if (!serverForm_ || textField_ < 0 || textField_ >= ServerFields) return;
-  fieldOf(serverForm_->server, textField_) = text;
+  fieldOf(serverForm_->server, serverForm_->note, textField_) = text;
   serverForm_->error.clear();
 }
 void Application::serverFormAction(Action a) {
@@ -103,9 +109,18 @@ void Application::saveServerForm() {
     return fail(tr("주소는 http:// 또는 https://로 시작해야 합니다."), 0);
   server.url = normalizeUrl(scheme ? url : "https://" + url); // trailing slashes go here
   if (server.url.empty()) return fail(tr("주소를 확인해 주세요."), 0);
-  for (int field = 1; field < ServerFields; ++field)
-    if (fieldOf(server, field).find_first_of("\r\n") != std::string::npos)
+  for (int field = 1; field < 4; ++field)
+    if (fieldOf(server, form.note, field).find_first_of("\r\n") != std::string::npos)
       return fail(tr("줄바꿈 없이 입력해 주세요."), field);
+  // The approval message goes to state.json under the address; the server
+  // reads it with the next approval request.
+  const auto note = net::cleanPairMessage(form.note);
+  const bool noteChanged = note != (state_.pairMessages.count(server.url) ? state_.pairMessages[server.url] : "");
+  if (noteChanged) {
+    if (note.empty()) state_.pairMessages.erase(server.url);
+    else state_.pairMessages[server.url] = note;
+    saveStateQuietly();
+  }
   server.title = trimmed(server.title);
   if (server.title.empty()) server.title = hostOf(server.url);
   auto next = config_;
@@ -118,7 +133,14 @@ void Application::saveServerForm() {
     // Nothing changed: 저장 just connects to it, as A on the row used to.
     if (sameServer(next.servers[index], server)) {
       serverForm_.reset();
+      // A new message for a server already open is asked with again.
       if (!(size_t(index) == serverIndex_ && session_)) connect(index);
+      else if (noteChanged && !note.empty()) {
+        message(tr("메시지를 담아 승인을 다시 요청합니다."));
+        pairSince_ = SDL_GetTicks();
+        pairPollAt_ = 0;
+        refresh();
+      }
       return;
     }
     next.servers[index] = server;
@@ -185,11 +207,11 @@ void Application::serverFormDialog() {
   const bool existing = form.index >= 0;
   constexpr float Width = 760, Row = 56, Gap = 8;
   const float errorSpace = form.error.empty() ? 0 : 30;
-  const float bodyH = 20 + ServerFields * (Row + Gap) - Gap + 18 + 26 + errorSpace + 18;
+  const float bodyH = 20 + ServerFields * (Row + Gap) - Gap + 18 + 50 + errorSpace + 18;
   const auto body = modal(Width, bodyH, existing ? tr("서버 편집") : tr("서버 추가"), tr("취소"), tr("저장"),
                           tr("입력"), 21, existing ? tr("삭제") : "");
   const float x = body.x + 32, w = body.w - 64, valueX = x + 170, valueW = w - 190;
-  const char *labels[ServerFields] = {tr("주소"), tr("아이디"), tr("비밀번호"), tr("이름")};
+  const char *labels[ServerFields] = {tr("주소"), tr("아이디"), tr("비밀번호"), tr("이름"), tr("메시지")};
   for (int field = 0; field < ServerFields; ++field) {
     const float y = body.y + 20 + field * (Row + Gap), mid = y + Row / 2;
     hit(x, y, w, Row, [this, field] {
@@ -199,11 +221,12 @@ void Application::serverFormDialog() {
     if (form.row == field) paint_.focusRow(x, y, w, Row, Ground, 12);
     else paint_.rect(x, y, w, Row, Ground, 12);
     paint_.fonts.middle(labels[field], x + 20, mid, 18, Secondary, true, 140);
-    const auto &value = fieldOf(form.server, field);
+    const auto &value = fieldOf(form.server, form.note, field);
     if (value.empty()) {
       // A placeholder per field; 이름 shows the host it falls back to.
       const char *placeholders[ServerFields] = {tr("서버 주소 (예: example.com)"), tr("로그인 아이디"),
-                                                tr("로그인 비밀번호"), tr("서버 이름")};
+                                                tr("로그인 비밀번호"), tr("서버 이름"),
+                                                tr("관리자에게 보낼 메시지 (선택)")};
       const auto host = field == 3 ? hostOf(normalizeUrl(trimmed(form.server.url))) : "";
       const std::string hint = host.empty() ? placeholders[field] : host;
       paint_.fonts.middle(hint, valueX, mid, 19, Secondary, false, valueW);
@@ -220,8 +243,8 @@ void Application::serverFormDialog() {
     paint_.fonts.text(form.error, x, lineY, 18, Bad, true, w);
     lineY += errorSpace;
   }
-  paint_.fonts.text(tr("기기 승인을 쓰는 서버는 저장한 뒤 QR 승인 화면으로 이어집니다."), x, lineY, 17, Secondary,
-                    false, w);
+  paint_.fonts.wrapped(tr("기기 승인을 쓰는 서버는 주소만 넣고 저장하면 QR 승인 화면으로 이어지고, 메시지는 승인 요청과 함께 관리자에게 전달됩니다."),
+                       x, lineY, 17, Secondary, w, 2);
   if (!form.confirmDelete) return;
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 120});
   blockTouch();

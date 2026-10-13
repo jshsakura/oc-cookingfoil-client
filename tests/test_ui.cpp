@@ -474,9 +474,18 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(request && request->password);
     form.enterText("secret word");
     form.render();
-    // 이름 stays empty; Y saves.
+    // 이름 stays empty; the last row takes the approval message, then Y saves.
+    form.action(foil::ui::Action::Down);
+    form.action(foil::ui::Action::Down);
+    form.action(foil::ui::Action::Accept);
+    request = form.takeTextRequest();
+    CHECK(request && request->initial.empty() && request->maxLength == 100);
+    form.enterText("  거실 기기\n");
     form.action(foil::ui::Action::Queue);
     CHECK(!form.serverFormOpen());
+    // Kept by address in state, cleaned as the server would, never in config.json.
+    CHECK(form.pairMessageFor("http://127.0.0.1:1") == "거실 기기");
+    CHECK(foil::readFile(configPath).find("거실") == std::string::npos);
     auto saved = foil::loadConfig(configPath);
     CHECK(!saved.error && saved.value.servers.size() == 2);
     if (saved.value.servers.size() == 2) {
