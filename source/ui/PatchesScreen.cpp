@@ -707,11 +707,10 @@ void Application::patchesScreen() {
       paint_.ring(260, y, 992, RowHeight, 18);
     paint_.rect(260, y, 992, RowHeight, Surface, 18);
     cover(game.icon, 282, y + 14, 80, false, game.game, game.app); // app icons as 홈브류 draws them
-    // The name runs up to the state label on the right (at most ~110px);
-    // the focused one runs when even that is too short, as names do elsewhere.
+    // The name runs up to the state label on the right (at most ~110px) and
+    // ends in an ellipsis past it; 상세 정보 shows it whole.
     constexpr float NameWidth = 1230 - 110 - 16 - 382;
-    if (inContent() && i == selected_ && !pickingPatch_) marquee(game.game, 382, y + 14, 22, NameWidth);
-    else paint_.fonts.text(game.game, 382, y + 14, 22, Ink, true, NameWidth);
+    paint_.fonts.text(game.game, 382, y + 14, 22, Ink, true, NameWidth);
     // A single patch is named; several are counted.
     const auto &lead = rows[game.rows.front()];
     std::string meta;
