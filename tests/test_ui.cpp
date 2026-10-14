@@ -46,8 +46,9 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(std::filesystem::exists(folder / "p3.image"));
     // 설정 shows the pictures' size (other files not counted) and empties it.
     CHECK(foil::ui::imageCacheBytes(folder.string()) == 2000);
+    CHECK(foil::ui::imageCacheTally() == 2000); // counted by the trim, no walk needed after
     foil::ui::clearImageCache(folder.string());
-    CHECK(foil::ui::imageCacheBytes(folder.string()) == 0);
+    CHECK(foil::ui::imageCacheBytes(folder.string()) == 0 && foil::ui::imageCacheTally() == 0);
     CHECK(std::filesystem::exists(folder / "note.txt"));
     // The limit: 128 MB, a tenth of a nearly full card's room, never under 64 MB.
     CHECK(foil::ui::imageCacheLimit(std::nullopt) == 128ull << 20);

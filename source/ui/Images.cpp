@@ -77,6 +77,17 @@ CacheCleanup &cacheCleanup() {
   return cleanup;
 }
 } // namespace
+namespace {
+// The pictures' size on the card, kept as they are written and removed so
+// 설정 never walks the folder (thousands of files held the card for seconds
+// each time it opened). -1 until the first walk at start has counted them.
+std::atomic<int64_t> tally{-1};
+void addToTally(int64_t bytes) {
+  for (int64_t now = tally.load(); now >= 0 && !tally.compare_exchange_weak(now, std::max<int64_t>(0, now + bytes));) {
+  }
+}
+} // namespace
+int64_t imageCacheTally() { return tally; }
 uint64_t imageCacheBytes(const std::string &folder) {
   uint64_t bytes = 0;
   std::error_code error;
@@ -90,6 +101,7 @@ void clearImageCache(const std::string &folder) {
   for (std::filesystem::directory_iterator it(folder, error), end; !error && it != end; it.increment(error))
     if (it->path().extension() == ".image")
       std::filesystem::remove(it->path(), error);
+  tally = int64_t(imageCacheBytes(folder)); // what could not go stays counted
 }
 uint64_t imageCacheLimit(std::optional<uint64_t> free) {
   return free ? std::clamp(*free / 10, MinCacheBytes, MaxCacheBytes) : MaxCacheBytes;
@@ -114,8 +126,10 @@ void trimImageCache(const std::string &folder, uint64_t limit, const std::atomic
     files.push_back({it->last_write_time(error), size, it->path()});
     bytes += size;
   }
-  if (bytes <= limit)
+  if (bytes <= limit) {
+    tally = int64_t(bytes);
     return;
+  }
   // Down to three quarters, so the next runs have room before trimming again.
   limit -= limit / 4;
   std::sort(files.begin(), files.end(), [](const File &a, const File &b) { return a.at < b.at; });
@@ -125,6 +139,7 @@ void trimImageCache(const std::string &folder, uint64_t limit, const std::atomic
     if (std::filesystem::remove(file.path, error))
       bytes -= std::min(bytes, file.size);
   }
+  if (!(stop && *stop)) tally = int64_t(bytes);
 }
 Images::Images(SDL_Renderer *renderer) : renderer_(renderer) {
   int w, h;
@@ -268,7 +283,7 @@ void Images::worker() {
       missing = result.status == 404;
       if (!bytes.empty() && !path.empty()) {
         std::string ignored;
-        atomicWrite(path, bytes, ignored);
+        if (atomicWrite(path, bytes, ignored)) addToTally(int64_t(bytes.size()));
       }
     }
     });

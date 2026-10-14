@@ -489,6 +489,12 @@ private:
   void loadRetroHome();
   void loadRetroPage(bool next);
   void openRetroList(int system);
+  // A shelf near its end takes the system's next page (best rated first),
+  // the games it already shows left out; it stops once all have come.
+  void loadShelfMore(int row);
+  std::map<std::string, int> shelfPage_;   // per system: the list pages taken so far
+  std::set<std::string> shelfDone_;        // systems whose shelf holds all it can
+  std::string shelfWant_;                  // asked while the list worker was busy
   // A retro game's page (RetroDetail.cpp), as a shop game has one.
   void openRetroDetail(const retro::Game &game);
   void retroDetail();

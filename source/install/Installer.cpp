@@ -204,23 +204,11 @@ double SpeedWindow::speed(double seconds) {
   }
   if (shown_ < 0 || seconds - shownAt_ >= Every) {
     average_ = double(lastSeconds(Slots)) / std::min(since, Window) / (1024 * 1024);
-    // A stretch of two seconds or more with nothing (between files, while
-    // the install checks or writes a part) is not download time; shorter
-    // gaps (the card's write bursts) are.
-    constexpr int IdleRun = int(2 / SlotSeconds);
+    // What came in over the last seconds, pauses included: when the card or
+    // the install holds the download back, that is the speed it really goes
+    // at (leaving the pauses out showed the network's bursts, too high).
     const int count = std::max(1, int(std::min(since, Recent) / SlotSeconds));
-    int idle = 0, run = 0;
-    for (int n = 0; n < count; ++n) {
-      if (slots_[(slot_ - n + Slots) % Slots] == 0) {
-        ++run;
-        continue;
-      }
-      if (run >= IdleRun) idle += run;
-      run = 0;
-    }
-    if (run >= IdleRun) idle += run;
-    const double busy = std::max(SlotSeconds, (count - idle) * SlotSeconds);
-    const double now = double(lastSeconds(count)) / busy / (1024 * 1024);
+    const double now = double(lastSeconds(count)) / (count * SlotSeconds) / (1024 * 1024);
     shown_ = shown_ <= 0 ? now : (shown_ + now) / 2;
     shownAt_ = seconds;
   }

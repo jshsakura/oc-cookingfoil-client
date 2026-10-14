@@ -19,6 +19,9 @@ void trimImageCache(const std::string &folder, uint64_t limit, const std::atomic
 uint64_t imageCacheLimit(std::optional<uint64_t> free);
 // The pictures in the cache folder: their size, or all of them gone (설정).
 uint64_t imageCacheBytes(const std::string &folder);
+// The same, kept as pictures are written, trimmed and cleared, without a walk
+// of the folder; -1 until the start's trim has counted them.
+int64_t imageCacheTally();
 void clearImageCache(const std::string &folder);
 class Images {
 public:

@@ -1,6 +1,6 @@
 // 설정's 이미지 캐시 row: how much of its room the pictures on the card take,
-// and a way to empty it (asked first). Measured off the drawing thread each
-// time 설정 opens, since a full folder takes a moment to walk.
+// and a way to empty it (asked first). The size is a running count (see
+// imageCacheTally); only emptying it walks the folder, off the drawing thread.
 #include "ui/Application.hpp"
 #include "ui/Images.hpp"
 #include <filesystem>
@@ -16,18 +16,24 @@ void Application::measureImageCache(bool clear) {
     cacheBytes_ = 0;
     return;
   }
+  // Counted as the pictures come and go: nothing to walk to show it.
+  if (!clear) {
+    cacheBytes_ = imageCacheTally();
+    return;
+  }
   if (cacheWorker_.joinable()) cacheWorker_.join();
   cacheBusy_ = true;
-  cacheWorker_ = std::thread([this, folder, clear] {
-    if (clear) clearImageCache(folder);
-    cacheBytes_ = int64_t(imageCacheBytes(folder));
-    cacheCleared_ = clear;
+  cacheWorker_ = std::thread([this, folder] {
+    clearImageCache(folder);
+    cacheBytes_ = imageCacheTally();
+    cacheCleared_ = true;
     cacheBusy_ = false;
   });
 }
 // The value side of the row: what the cache is for, a bar of the room it may
 // take filled as far as it is, and the size in a pill ("42 MB / 128 MB").
 void Application::imageCacheValue(float right, float mid) {
+  if (!cacheBusy_) cacheBytes_ = imageCacheTally(); // it grows as pictures come
   const int64_t bytes = cacheBytes_;
   const uint64_t room = imageCacheLimit(sdFree_);
   const std::string label = bytes < 0 ? std::string(tr("Checking|size"))

@@ -37,9 +37,8 @@ class SpeedWindow {
 public:
   // The bytes so far at `seconds`; a smaller total is the next file.
   void add(double seconds, uint64_t total);
-  // MB/s, or negative in the first second: the last five seconds, refreshed
-  // every second and eased, as other downloaders show it. Pauses of two
-  // seconds or more (between files, install steps) are left out of it.
+  // MB/s, or negative in the first second: what came in over the last five
+  // seconds, refreshed every second and eased, as other downloaders show it.
   double speed(double seconds);
   // The last thirty seconds over all of their time, pauses included: what
   // the time left goes by, so it does not jump. Set by speed().

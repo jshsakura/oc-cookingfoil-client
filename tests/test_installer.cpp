@@ -101,20 +101,21 @@ int runInstallerTests() {
     }
     CHECK(heldBetween);
     CHECK(low > 5 && high < 7);
-    // Long pauses (a part checked between files) are not download time: the
-    // speed is the rate while bytes come; the time left keeps the whole.
+    // A download held back (bursts at 10 MB/s, then waits on the card) shows
+    // what really comes in, not the bursts: 4 MB/s here.
     {
       foil::install::SpeedWindow paced;
       uint64_t got = 0;
       paced.add(0, 0);
+      double shown = 0;
       for (int step = 1; step <= 60; ++step) {
         const double now = step * 0.5;
-        if (step % 20 < 12) got += 5 * MiB; // 6 s at 10 MB/s, then 4 s with nothing
+        if (step % 10 < 4) got += 5 * MiB; // 2 s at 10 MB/s, then 3 s with nothing
         paced.add(now, got);
+        shown = paced.speed(now);
       }
-      const double shown = paced.speed(30);
-      CHECK(shown > 9 && shown < 11);
-      CHECK(paced.average() > 5.5 && paced.average() < 6.6);
+      CHECK(shown > 3 && shown < 5);
+      CHECK(paced.average() > 3.5 && paced.average() < 4.5);
     }
     // A slow start shows at once, small.
     foil::install::SpeedWindow slow;

@@ -180,6 +180,15 @@ void Application::usePatchFolder(const std::string &sd) {
   // the queue, which picks up again once the shop is reachable.
   openDownloads(sd);
   rebuildQueue();
+  // Left waiting or cut off last time: it goes on by itself once the shop is
+  // reachable, so it says what, instead of a download starting unasked.
+  if (!installQueue_.empty()) {
+    const auto &next = installQueue_.front();
+    const auto name = next.kind == "retroarch" ? std::string("RetroArch") : next.name;
+    message(installQueue_.size() == 1 ? trf("Going on with a download from last time: {0}", {name})
+                                      : trf("Going on with {0} downloads from last time, first {1}",
+                                            {std::to_string(installQueue_.size()), name}));
+  }
   // A check of the old card stops first; it holds only a copy of the ledger.
   patchCheckStop_ = true;
   if (patchCheckWorker_.joinable())

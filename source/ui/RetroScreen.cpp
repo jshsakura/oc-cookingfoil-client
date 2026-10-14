@@ -88,6 +88,13 @@ void Application::pollRetro() {
   }
   if (!retroListDone_.exchange(false)) {
     if (!retroListWorker_.joinable()) startRetroDetail(); // one wanted while a list was loading
+    if (!retroListWorker_.joinable() && !shelfWant_.empty()) {
+      const auto want = shelfWant_;
+      const auto row = std::find_if(retroShelves_.begin(), retroShelves_.end(),
+                                    [&](const retro::Shelf &s) { return s.system.id == want; });
+      if (row != retroShelves_.end()) loadShelfMore(int(row - retroShelves_.begin()));
+      else shelfWant_.clear();
+    }
     return;
   }
   retroListWorker_.join();
@@ -132,6 +139,9 @@ void Application::loadRetroHome() {
       retroRetryAt_ = reply.retryAfter && retroRetries_ <= 3 ? SDL_GetTicks() + reply.retryAfter * 1000u : 0;
       retroHomeMissing_ = noHome;
       retroShelves_ = std::move(shelves);
+      shelfPage_.clear();
+      shelfDone_.clear();
+      shelfWant_.clear();
       for (auto &[path, there] : onCard) retroOnCard_[path] = there;
       // The list keeps its system across a reload when that system is still there.
       const auto current = retroSystem_ < int(retroSystems_.size()) ? retroSystems_[retroSystem_].id : "";
@@ -161,6 +171,50 @@ void Application::openRetroList(int system) {
   selected_ = 0;
   sidebar_ = false;
   if (!retroListWorker_.joinable()) loadRetroPage(false);
+}
+void Application::loadShelfMore(int row) {
+  if (!session_ || row < 0 || row >= int(retroShelves_.size())) return;
+  const auto system = retroShelves_[size_t(row)].system.id;
+  if (system.empty() || shelfDone_.count(system)) return;
+  if (retroListWorker_.joinable()) {
+    shelfWant_ = system; // asked again once the worker is free (pollRetro)
+    return;
+  }
+  shelfWant_.clear();
+  const auto server = session_->server();
+  const auto state = state_;
+  const auto sd = sdRoot_;
+  const int page = shelfPage_[system] + 1;
+  runRetroJob("list", [this, server, state, system, page, sd]() -> std::function<void()> {
+    net::RetroReply reply;
+    auto result = net::retroGames(server, state, system, page, retro::Filter{}, reply, &stop_);
+    std::map<std::string, bool> onCard;
+    for (const auto &g : result.value.games)
+      for (const auto *path : {&g.romPath, &g.bezelPath})
+        if (!path->empty()) onCard[*path] = fileExists(sd + "/" + *path);
+    return [this, result = std::move(result.value), reply, system, page, onCard = std::move(onCard)]() mutable {
+      if (reply.error) return; // asked again when the shelf comes near its end
+      const auto shelf = std::find_if(retroShelves_.begin(), retroShelves_.end(),
+                                      [&](const retro::Shelf &s) { return s.system.id == system; });
+      if (shelf == retroShelves_.end()) return;
+      // Versions of one game take one card, as on the home: what the shelf
+      // shows already (by id or by its original title) is left out.
+      std::set<std::string> ids, originals;
+      for (const auto &g : shelf->games) {
+        ids.insert(g.id);
+        if (!g.original.empty()) originals.insert(g.original);
+      }
+      for (auto &g : result.games) {
+        if (ids.count(g.id) || (!g.original.empty() && originals.count(g.original))) continue;
+        ids.insert(g.id);
+        if (!g.original.empty()) originals.insert(g.original);
+        shelf->games.push_back(std::move(g));
+      }
+      shelfPage_[system] = page;
+      if (result.games.empty() || page * std::max(1, result.pageSize) >= result.total) shelfDone_.insert(system);
+      for (auto &[path, there] : onCard) retroOnCard_[path] = there;
+    };
+  });
 }
 void Application::loadRetroPage(bool next) {
   if (!session_ || retroSystems_.empty()) return;

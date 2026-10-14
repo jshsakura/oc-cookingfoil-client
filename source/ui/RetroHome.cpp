@@ -81,6 +81,8 @@ void Application::retroHome() {
                              focused ? float(std::max(0, retroCol_ - (Columns - 1))) : 0.f,
                              float(count + 1 - Columns), CardStep, true, true);
     const int first = int(left);
+    // Near the end, by cursor or by finger: the next of the system's games.
+    if (first + Columns + 4 >= count) loadShelfMore(n);
     clipTo(232, y + 40, 1048, ShelfHeight - 40);
     for (int col = 0; col <= Columns && first + col <= count; ++col) {
       const int i = first + col;
@@ -93,12 +95,14 @@ void Application::retroHome() {
         if (on) action(Action::Accept);
       });
       if (i == count) {
-        // The shelf's last card: the system's whole list.
+        // The shelf's last card: the system's whole list, with how many it holds.
         if (on) paint_.ring(cx, cy, Card, Card);
         paint_.rect(cx, cy, Card, Card, Surface, 14);
-        paint_.icon(9, cx + Card / 2 - 18, cy + 46, Ink, 36);
+        paint_.icon(9, cx + Card / 2 - 18, cy + 34, Ink, 36);
         const std::string all = tr("See all");
-        paint_.fonts.middle(all, cx + (Card - paint_.fonts.measure(all, 18, true)) / 2, cy + 112, 18, Ink, true);
+        paint_.fonts.middle(all, cx + (Card - paint_.fonts.measure(all, 18, true)) / 2, cy + 100, 18, Ink, true);
+        const auto many = trf("{0} games", {std::to_string(shelf.system.romCount)});
+        paint_.fonts.middle(many, cx + (Card - paint_.fonts.measure(many, 15)) / 2, cy + 126, 15, Secondary);
         continue;
       }
       const auto &game = shelf.games[i];
