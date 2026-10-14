@@ -18,6 +18,9 @@ constexpr int MaxFails = 3;          // a part failing this often ends the paral
 // long): asked again from the same byte, not counted as a failure.
 constexpr auto ResumeWindow = std::chrono::seconds(60);
 constexpr auto RetryGap = std::chrono::seconds(2);
+// After a 429 the connections come back one at a time, each after this long
+// without another: a limit that has passed does not keep the speed down.
+constexpr auto LimitCalm = std::chrono::seconds(60);
 constexpr auto ProgressEvery = std::chrono::milliseconds(250);
 constexpr auto CheckpointEvery = std::chrono::seconds(2);
 
@@ -292,6 +295,8 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
     Writer writer(write, std::max<uint64_t>(options.bufferBytes, 2 * batch));
     Session s{url, batch, options, writer, planLock, plan, written};
     int limit = std::max(1, options.connections);
+    int wanted = limit; // what the limit returns to once 429s stop
+    Clock::time_point limitedAt;
     const bool resuming = !restarted && !options.resume.empty() && options.resumeTotal > 0;
     std::vector<std::unique_ptr<Conn>> conns;
     std::vector<std::unique_ptr<BodyContext>> contexts;
@@ -504,7 +509,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         if (!s.ranged || s.total == 0) {
           plan = SegmentPlan(std::vector<Segment>{{0, s.total ? s.total : UINT64_MAX, first.pos}});
           first.stop = s.total ? s.total : UINT64_MAX;
-          limit = 1;
+          limit = wanted = 1;
         } else {
           plan = SegmentPlan(0, s.total, limit);
           plan.segments()[0].next = first.pos;
@@ -524,6 +529,11 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       if (started) {
         // Parts whose wait is over, then more parts while there is room.
         const auto now = Clock::now();
+        if (limit < wanted && now - limitedAt >= LimitCalm) {
+          ++limit;
+          limitedAt = now;
+          log("download limit eased: " + std::to_string(limit) + " connections");
+        }
         for (size_t i = 0; i < plan.segments().size() && active() < limit; ++i) {
           const auto busy = busyParts();
           if (!busy[i] && plan.segments()[i].left() > 0 && waitUntil[i] <= now)
@@ -577,6 +587,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         }
         if (code == 429) { // Cloudflare's limit (1015 included): half the connections
           limit = std::max(1, limit / 2);
+          limitedAt = Clock::now();
           log("download rate limited (429): " + std::to_string(limit) + " connections");
           long wait = 5;
           if (!c->retryAfter.empty())
