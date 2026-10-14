@@ -21,7 +21,9 @@ size_t keptSurfaces() { return roomy() ? 24 : 10; } // decoded, beyond those on 
 size_t keptTextures() { return roomy() ? 48 : 24; } // about two screens of covers
 constexpr int Workers = 4;
 constexpr size_t MaxQueuedJobs = 64;
-constexpr uint64_t MaxCacheBytes = 64ull << 20; // pictures kept on the SD card
+// Pictures kept on the SD card: every cover of a full catalog (about 15 KB
+// each) with room for banners and screenshots.
+constexpr uint64_t MaxCacheBytes = 256ull << 20;
 constexpr int MaxAttempts = 3; // then it stays blank until the list is refreshed
 constexpr uint32_t RetryAfterMs = 10000;
 // Large art is kept at screen size; a 4K banner would otherwise hold 64MB.
