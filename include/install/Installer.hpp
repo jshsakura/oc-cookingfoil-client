@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include "core/State.hpp"
 #include "core/I18n.hpp"
 #include "core/DownloadStore.hpp"
@@ -35,23 +36,27 @@ class SpeedWindow {
 public:
   // The bytes so far at `seconds`; a smaller total is the next file.
   void add(double seconds, uint64_t total);
-  // MB/s, or negative while it is still measuring.
+  // MB/s, or negative while it is still measuring: the last thirty seconds'
+  // average, refreshed every three, so the card's bursts and pauses do not
+  // move it while a real change (a better link, an outage) shows within half
+  // a minute.
   double speed(double seconds);
   void reset() { *this = SpeedWindow(); }
 
 private:
-  static constexpr int Slots = 20;
+  static constexpr int Slots = 60;
   static constexpr double SlotSeconds = 0.5;
   void advance(double seconds);
-  double average(double seconds) const;
+  uint64_t lastSeconds(int slots) const;
   uint64_t slots_[Slots] = {};
   int slot_ = 0;
   double tick_ = -1, first_ = -1, shownAt_ = -1, shown_ = -1;
   uint64_t last_ = 0, gathered_ = 0;
 };
-// The time left: what is left over that average speed, worked out once every
-// ten seconds and held in between. Fifteen seconds with nothing arriving make
-// it unknown again.
+// The time left, counting down second by second like a clock. Every ten
+// seconds it is worked out again from what is left over the speed; a result
+// close to the count keeps the count (no jump), one far off replaces it.
+// While nothing arrives it holds; fifteen seconds of that make it unknown.
 class TimeLeft {
 public:
   // Seconds, or negative while there is no speed to tell it by.
@@ -59,9 +64,10 @@ public:
   void reset() { *this = TimeLeft(); }
 
 private:
-  double left_ = -1, at_ = -1, stalled_ = -1;
+  double count(double seconds) const { return std::max(1.0, anchor_ - (seconds - at_)); }
+  double anchor_ = -1, at_ = -1, estimatedAt_ = -1, stalled_ = -1;
 };
-// "약 40초 남음" (in tens of seconds), "약 25분 남음", "약 1시간 25분 남음".
+// "약 42초 남음", "약 25분 남음", "약 1시간 25분 남음".
 std::string timeLeftText(double seconds);
 class Installer {
 public:

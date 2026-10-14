@@ -180,12 +180,14 @@ void SpeedWindow::add(double seconds, uint64_t total) {
   }
   last_ = total;
 }
-double SpeedWindow::average(double seconds) const {
-  const double span = seconds - first_;
-  return span > 0 ? double(gathered_) / span / (1024 * 1024) : 0;
+uint64_t SpeedWindow::lastSeconds(int slots) const {
+  uint64_t sum = 0;
+  for (int n = 0; n < std::min(slots, Slots); ++n)
+    sum += slots_[(slot_ - n + Slots) % Slots];
+  return sum;
 }
 double SpeedWindow::speed(double seconds) {
-  constexpr double Least = 5, Most = 15, Every = 3;
+  constexpr double Least = 5, Most = 15, Every = 3, Window = Slots * SlotSeconds;
   constexpr uint64_t Enough = 4ull << 20;
   if (tick_ < 0)
     return -1;
@@ -193,13 +195,10 @@ double SpeedWindow::speed(double seconds) {
   if (since < Least || (gathered_ < Enough && since < Most))
     return -1;
   advance(seconds);
-  uint64_t recent = 0;
-  for (const auto bytes : slots_)
-    recent += bytes;
-  if (recent == 0 && since >= Slots * SlotSeconds)
-    return 0; // nothing for ten seconds: stalled, whatever the average says
-  if (shown_ < 0 || shown_ == 0 || seconds - shownAt_ >= Every) {
-    shown_ = average(seconds);
+  if (since >= 10 && lastSeconds(int(10 / SlotSeconds)) == 0)
+    return 0; // nothing for ten seconds: stalled
+  if (shown_ <= 0 || seconds - shownAt_ >= Every) {
+    shown_ = double(lastSeconds(Slots)) / std::min(since, Window) / (1024 * 1024);
     shownAt_ = seconds;
   }
   return shown_;
@@ -207,27 +206,37 @@ double SpeedWindow::speed(double seconds) {
 double TimeLeft::update(double seconds, uint64_t left, double speed) {
   constexpr double Every = 10, Stall = 15;
   if (speed <= 0) {
-    if (stalled_ < 0)
+    if (anchor_ < 0)
+      return -1;
+    if (stalled_ < 0) {
       stalled_ = seconds;
-    if (seconds - stalled_ >= Stall)
+      anchor_ = count(seconds); // held where it stood
+    }
+    if (seconds - stalled_ >= Stall) {
       reset();
-    return left_;
+      return -1;
+    }
+    // The count goes on once bytes come again, and the first of them works
+    // it out afresh.
+    at_ = seconds;
+    estimatedAt_ = -1;
+    return anchor_;
   }
   stalled_ = -1;
-  if (at_ >= 0 && seconds - at_ < Every)
-    return left_;
-  // The speed is the whole download's average already: what is left over it,
-  // nothing blended with an earlier guess that may have been far off.
-  left_ = double(left) / (speed * 1024 * 1024);
-  at_ = seconds;
-  return left_;
+  if (estimatedAt_ < 0 || seconds - estimatedAt_ >= Every) {
+    const double estimate = double(left) / (speed * 1024 * 1024);
+    const double now = anchor_ < 0 ? estimate : count(seconds);
+    anchor_ = std::abs(estimate - now) > std::max(5.0, estimate * 0.15) ? estimate : now;
+    at_ = estimatedAt_ = seconds;
+  }
+  return count(seconds);
 }
 std::string timeLeftText(double seconds) {
   if (seconds < 0)
     return tr("Estimating time left");
   const auto s = std::max<int64_t>(1, std::llround(seconds));
   if (s < 60)
-    return trf("About {0} s left", {std::to_string(std::max<int64_t>(10, (s + 9) / 10 * 10))});
+    return trf("About {0} s left", {std::to_string(s)});
   const auto minutes = (s + 30) / 60;
   if (minutes < 60)
     return trf("About {0} min left", {std::to_string(minutes)});

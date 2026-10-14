@@ -1,8 +1,16 @@
 diff --git a/include/data/buffered_placeholder_writer.hpp b/include/data/buffered_placeholder_writer.hpp
-index beb8363..8e0a2b1 100755
+index beb8363..ebdabb7 100755
 --- a/include/data/buffered_placeholder_writer.hpp
 +++ b/include/data/buffered_placeholder_writer.hpp
-@@ -38,7 +38,7 @@ namespace tin::data
+@@ -33,12 +33,15 @@ namespace tin::data
+ {
+     static const size_t BUFFER_SEGMENT_DATA_SIZE = 0x800000; // Approximately 8MB
+     extern int NUM_BUFFER_SEGMENTS;
++    // CookingFoil: frees the ring kept between NCAs (once a file is done,
++    // so the album's small heap does not hold it while nothing installs).
++    void ReleaseSpareRing();
+ 
+     struct BufferSegment
      {
          std::atomic_bool isFinalized = false;
          u64 writeOffset = 0;
@@ -11,7 +19,7 @@ index beb8363..8e0a2b1 100755
      };
  
      // Receives data in a circular buffer split into 8MB segments
-@@ -46,8 +46,10 @@ namespace tin::data
+@@ -46,8 +49,10 @@ namespace tin::data
      {
          private:
              size_t m_totalDataSize = 0;
@@ -24,7 +32,7 @@ index beb8363..8e0a2b1 100755
  
              // The current segment to which further data will be appended
              u64 m_currentFreeSegment = 0;
-@@ -63,7 +65,9 @@ namespace tin::data
+@@ -63,7 +68,11 @@ namespace tin::data
  			NcaWriter m_writer;
  
          public:
@@ -32,6 +40,8 @@ index beb8363..8e0a2b1 100755
 +            // CookingFoil: `resume` keeps points for a solid NCZ, or goes on from one.
 +            BufferedPlaceholderWriter(std::shared_ptr<nx::ncm::ContentStorage>& contentStorage, NcmContentId ncaId, size_t totalDataSize,
 +                                      std::shared_ptr<NczResume> resume = nullptr);
++            // CookingFoil: the ring goes back to be used by the next NCA.
++            ~BufferedPlaceholderWriter();
  
              void AppendData(void* source, size_t length);
              bool CanAppendData(size_t length);
@@ -174,12 +184,26 @@ index a4c62f2..d917b1a 100755
      void ClearBasicAuth();
  
 diff --git a/source/data/buffered_placeholder_writer.cpp b/source/data/buffered_placeholder_writer.cpp
-index 9ebdd96..298aac3 100755
+index 9ebdd96..8b711ff 100755
 --- a/source/data/buffered_placeholder_writer.cpp
 +++ b/source/data/buffered_placeholder_writer.cpp
-@@ -33,11 +33,15 @@ namespace tin::data
+@@ -26,26 +26,68 @@ SOFTWARE.
+ #include <math.h>
+ #include <algorithm>
+ #include <exception>
++#include <mutex>
+ #include "util/error.hpp"
+ #include "util/debug.h"
+ 
+ namespace tin::data
  {
      int NUM_BUFFER_SEGMENTS;
++    namespace {
++    // CookingFoil: the last NCA's ring, kept for the next one.
++    std::mutex s_spareLock;
++    std::unique_ptr<BufferSegment[]> s_spare;
++    int s_spareCount = 0;
++    }
  
 -    BufferedPlaceholderWriter::BufferedPlaceholderWriter(std::shared_ptr<nx::ncm::ContentStorage>& contentStorage, NcmContentId ncaId, size_t totalDataSize) :
 -        m_totalDataSize(totalDataSize), m_contentStorage(contentStorage), m_ncaId(ncaId), m_writer(ncaId, contentStorage)
@@ -192,11 +216,50 @@ index 9ebdd96..298aac3 100755
 +        // CookingFoil: default-initialised, not zeroed (make_unique<T[]> wrote
 +        // all of the ring, hundreds of MB, for every NCA); a segment's bytes
 +        // are only read up to what was written into it.
-+        m_bufferSegments = std::unique_ptr<BufferSegment[]>(new BufferSegment[NUM_BUFFER_SEGMENTS]);
++        // CookingFoil: the ring is taken once and kept for the next NCA
++        // (tens of MB freed and taken again for every NCA would split the
++        // heap over a long queue); a ring of another size is made anew.
++        {
++            std::lock_guard<std::mutex> held(s_spareLock);
++            if (s_spare && s_spareCount == NUM_BUFFER_SEGMENTS)
++                m_bufferSegments = std::move(s_spare);
++            s_spare.reset();
++        }
++        if (!m_bufferSegments)
++            m_bufferSegments = std::unique_ptr<BufferSegment[]>(new BufferSegment[NUM_BUFFER_SEGMENTS]);
  
          if (m_bufferSegments == nullptr)
              THROW_FORMAT("Failed to allocated buffer segments!\n");
-@@ -113,8 +117,11 @@ namespace tin::data
++        for (int i = 0; i < NUM_BUFFER_SEGMENTS; i++)
++        {
++            m_bufferSegments[i].isFinalized = false;
++            m_bufferSegments[i].writeOffset = 0;
++        }
+ 
+         m_currentFreeSegmentPtr = &m_bufferSegments[m_currentFreeSegment];
+         m_currentSegmentToWritePtr = &m_bufferSegments[m_currentSegmentToWrite];
+     }
+ 
++    void ReleaseSpareRing()
++    {
++        std::lock_guard<std::mutex> held(s_spareLock);
++        s_spare.reset();
++    }
++
++    BufferedPlaceholderWriter::~BufferedPlaceholderWriter()
++    {
++        std::lock_guard<std::mutex> held(s_spareLock);
++        if (!s_spare && m_bufferSegments)
++        {
++            s_spare = std::move(m_bufferSegments);
++            s_spareCount = NUM_BUFFER_SEGMENTS;
++        }
++    }
++
+     void BufferedPlaceholderWriter::AppendData(void* source, size_t length)
+     {
+         if (m_sizeBuffered + length > m_totalDataSize)
+@@ -113,8 +155,11 @@ namespace tin::data
          size_t sizeToWriteToPlaceholder = std::min(m_totalDataSize - m_sizeWrittenToPlaceholder, BUFFER_SEGMENT_DATA_SIZE);
          m_writer.write(m_currentSegmentToWritePtr->data, sizeToWriteToPlaceholder);
  
@@ -209,7 +272,7 @@ index 9ebdd96..298aac3 100755
          m_currentSegmentToWrite = (m_currentSegmentToWrite + 1) % NUM_BUFFER_SEGMENTS;
          m_currentSegmentToWritePtr = &m_bufferSegments[m_currentSegmentToWrite];
          m_sizeWrittenToPlaceholder += sizeToWriteToPlaceholder;
-@@ -158,7 +165,7 @@ namespace tin::data
+@@ -158,7 +203,7 @@ namespace tin::data
              unsigned int segmentIndex = m_currentFreeSegment + i;
              BufferSegment* bufferSegment = &m_bufferSegments[segmentIndex % NUM_BUFFER_SEGMENTS];
  

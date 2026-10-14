@@ -71,8 +71,8 @@ int runInstallerTests() {
   }
   {
     // The speed shown waits until it has measured (five seconds and 4 MB),
-    // then is everything received over the time taken, refreshed every
-    // three seconds: bursts from the card do not make the number jump.
+    // then is the last thirty seconds' average, refreshed every three
+    // seconds: bursts from the card do not make the number jump.
     constexpr uint64_t MiB = 1 << 20;
     foil::install::SpeedWindow window;
     window.add(0, 0);
@@ -116,26 +116,47 @@ int runInstallerTests() {
     CHECK(window.speed(140) < 0);
   }
   {
-    // The time left changes once every ten seconds and holds between.
+    // The time left counts down by the second and is worked out again every
+    // ten: a close result keeps the count, a far one replaces it.
     constexpr uint64_t MiB = 1 << 20;
     foil::install::TimeLeft left;
     CHECK(left.update(0, 600 * MiB, 0) < 0); // no speed yet
     const double first = left.update(1, 600 * MiB, 10);
     CHECK(first > 59 && first < 61);
-    CHECK(left.update(8, 580 * MiB, 50) == first); // held
-    // Ten seconds on: what is left over the speed given, nothing blended in.
-    const double next = left.update(11, 550 * MiB, 5);
+    const double counted = left.update(8, 580 * MiB, 50); // not worked out again yet: counted down
+    CHECK(counted > first - 7.5 && counted < first - 6.5);
+    const double next = left.update(11, 550 * MiB, 5); // far off (110 against 50): replaced
     CHECK(next > 109 && next < 111);
-    // A short stall holds it; fifteen seconds of nothing make it unknown.
-    CHECK(left.update(13, 550 * MiB, 0) == next);
-    CHECK(left.update(28, 550 * MiB, 0) < 0);
-    CHECK(left.update(29, 550 * MiB, 10) > 0);
+    CHECK(left.update(12, 545 * MiB, 5) > next - 1.5 && left.update(12, 545 * MiB, 5) < next - 0.5);
+    const double kept = left.update(21, 515 * MiB, 5); // 103 against 100: the count stays
+    CHECK(kept > 99 && kept < 101);
+    // A stall holds it; fifteen seconds of nothing make it unknown.
+    const double held = left.update(23, 515 * MiB, 0);
+    CHECK(held > 97 && held < 99 && left.update(30, 515 * MiB, 0) == held);
+    CHECK(left.update(38, 515 * MiB, 0) < 0);
+    CHECK(left.update(40, 550 * MiB, 10) > 0);
     CHECK(foil::install::timeLeftText(-1) == "남은 시간 계산 중");
-    CHECK(foil::install::timeLeftText(42) == "약 50초 남음");
-    CHECK(foil::install::timeLeftText(3) == "약 10초 남음");
+    CHECK(foil::install::timeLeftText(42) == "약 42초 남음");
+    CHECK(foil::install::timeLeftText(3) == "약 3초 남음");
     CHECK(foil::install::timeLeftText(200) == "약 3분 남음");
     CHECK(foil::install::timeLeftText(1500) == "약 25분 남음");
     CHECK(foil::install::timeLeftText(5100) == "약 1시간 25분 남음");
+  }
+  {
+    // After a long outage the speed is the link's again within half a
+    // minute (an average since the start stayed low for long).
+    constexpr uint64_t MiB = 1 << 20;
+    foil::install::SpeedWindow window;
+    uint64_t bytes = 0;
+    window.add(0, 0);
+    for (int step = 1; step <= 40; ++step) // 2 MB/s for 20 s
+      window.add(step * 0.5, bytes += MiB);
+    for (int step = 41; step <= 160; ++step) // 60 s of nothing
+      window.add(step * 0.5, bytes);
+    for (int step = 161; step <= 240; ++step) // 4 MB/s for 40 s
+      window.add(step * 0.5, bytes += 2 * MiB);
+    const double shown = window.speed(120);
+    CHECK(shown > 3.6 && shown < 4.4);
   }
   return failures;
 }

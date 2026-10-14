@@ -141,7 +141,10 @@ void nativeInstall(const Item &item, const std::string &target,
   tin::network::ClearBasicAuth();
   tin::network::SetExtraHeaders(headers, originOf(item.url));
   struct Headers {
-    ~Headers() { tin::network::SetExtraHeaders({}, ""); }
+    ~Headers() {
+      tin::network::SetExtraHeaders({}, "");
+      tin::data::ReleaseSpareRing(); // kept between this file's NCAs only
+    }
   } clear;
   const auto storage =
       target == "nand" ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard;

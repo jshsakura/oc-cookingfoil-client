@@ -362,6 +362,9 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       if (c.headers)
         curl_slist_free_all(c.headers);
       c.headers = nullptr;
+      // Its bytes went to the writer already; the room it reserved goes too
+      // (a long file opens many parts, each kept in the list).
+      std::vector<char>().swap(c.pending);
     };
     // Parts being read, or waiting out a 503/524/429 before they are asked again.
     const auto busyParts = [&] {
