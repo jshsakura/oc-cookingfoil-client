@@ -24,8 +24,8 @@ void setHostSpace(uint64_t bytes);
 int runUiTests(SDL_Renderer *renderer) {
   int failures = 0;
   {
-    // The picture cache folder keeps the newest files under the limit and
-    // leaves other files alone.
+    // The picture cache folder keeps the newest files under three quarters
+    // of the limit once over it, and leaves other files alone.
     const auto folder = std::filesystem::temp_directory_path() / "cookingfoil-trim-test";
     std::filesystem::remove_all(folder);
     std::filesystem::create_directories(folder);
@@ -36,14 +36,19 @@ int runUiTests(SDL_Renderer *renderer) {
       std::filesystem::last_write_time(path, now - std::chrono::hours(10 - i));
     }
     std::ofstream(folder / "note.txt") << std::string(5000, 'x');
-    foil::ui::trimImageCache(folder.string(), 2500);
+    foil::ui::trimImageCache(folder.string(), 3000);
     CHECK(!std::filesystem::exists(folder / "p0.image"));
     CHECK(!std::filesystem::exists(folder / "p2.image"));
     CHECK(std::filesystem::exists(folder / "p3.image"));
     CHECK(std::filesystem::exists(folder / "p4.image"));
     CHECK(std::filesystem::exists(folder / "note.txt"));
-    foil::ui::trimImageCache(folder.string(), 1ull << 30);
+    foil::ui::trimImageCache(folder.string(), 2000); // at the limit: nothing goes
     CHECK(std::filesystem::exists(folder / "p3.image"));
+    // The limit: 256 MB, a tenth of a nearly full card's room, never under 64 MB.
+    CHECK(foil::ui::imageCacheLimit(std::nullopt) == 256ull << 20);
+    CHECK(foil::ui::imageCacheLimit(100ull << 30) == 256ull << 20);
+    CHECK(foil::ui::imageCacheLimit(1ull << 30) == (1ull << 30) / 10);
+    CHECK(foil::ui::imageCacheLimit(100ull << 20) == 64ull << 20);
     std::filesystem::remove_all(folder);
   }
   {

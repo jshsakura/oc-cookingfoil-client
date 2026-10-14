@@ -22,8 +22,10 @@ size_t keptTextures() { return roomy() ? 48 : 24; } // about two screens of cove
 constexpr int Workers = 4;
 constexpr size_t MaxQueuedJobs = 64;
 // Pictures kept on the SD card: every cover of a full catalog (about 15 KB
-// each) with room for banners and screenshots.
-constexpr uint64_t MaxCacheBytes = 256ull << 20;
+// each) with room for banners and screenshots. A card short of room keeps a
+// tenth of what is free, never under the floor: a cache too small is
+// emptied and filled again all the time, which wears the card more.
+constexpr uint64_t MaxCacheBytes = 256ull << 20, MinCacheBytes = 64ull << 20;
 constexpr int MaxAttempts = 3; // then it stays blank until the list is refreshed
 constexpr uint32_t RetryAfterMs = 10000;
 // Large art is kept at screen size; a 4K banner would otherwise hold 64MB.
@@ -65,6 +67,9 @@ CacheCleanup &cacheCleanup() {
   return cleanup;
 }
 } // namespace
+uint64_t imageCacheLimit(std::optional<uint64_t> free) {
+  return free ? std::clamp(*free / 10, MinCacheBytes, MaxCacheBytes) : MaxCacheBytes;
+}
 void trimImageCache(const std::string &folder, uint64_t limit, const std::atomic<bool> *stop) {
   struct File {
     std::filesystem::file_time_type at;
@@ -87,6 +92,8 @@ void trimImageCache(const std::string &folder, uint64_t limit, const std::atomic
   }
   if (bytes <= limit)
     return;
+  // Down to three quarters, so the next runs have room before trimming again.
+  limit -= limit / 4;
   std::sort(files.begin(), files.end(), [](const File &a, const File &b) { return a.at < b.at; });
   for (const auto &file : files) {
     if (bytes <= limit || (stop && *stop))
@@ -126,7 +133,9 @@ void Images::source(Server server, State state, std::string cache,
     // belongs to the run, not to this instance, which a server read replaces.
     auto &cleanup = cacheCleanup();
     if (!cleanup.thread.joinable())
-      cleanup.thread = std::thread([folder = cache_] { trimImageCache(folder, MaxCacheBytes, &cacheCleanup().stop); });
+      cleanup.thread = std::thread([folder = cache_] {
+        trimImageCache(folder, imageCacheLimit(platform::freeSpace("sd")), &cacheCleanup().stop);
+      });
   }
   for (int i = 0; i < Workers; ++i)
     threads_.emplace_back(&Images::worker, this);

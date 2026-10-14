@@ -1,5 +1,6 @@
 #pragma once
 #include "core/State.hpp"
+#include <optional>
 #include <SDL2/SDL.h>
 #include <atomic>
 #include <condition_variable>
@@ -12,7 +13,10 @@ namespace foil::ui {
 // Keeps a picture cache folder under `limit` bytes, oldest files first.
 // Each file is looked at once; nothing is sorted when the folder is under
 // the limit. Stops early when `stop` turns true.
+// Over `limit`, the oldest pictures go until three quarters of it are left.
 void trimImageCache(const std::string &folder, uint64_t limit, const std::atomic<bool> *stop = nullptr);
+// How much the picture cache may keep, from the card's free space (none known: the most).
+uint64_t imageCacheLimit(std::optional<uint64_t> free);
 class Images {
 public:
   explicit Images(SDL_Renderer *renderer);
