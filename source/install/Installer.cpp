@@ -13,6 +13,9 @@
 #include <limits>
 #include <stdexcept>
 namespace foil::install {
+// How long the home network's direct address may take to answer before a
+// download goes through the public one instead.
+constexpr long DirectWaitMs = 2000;
 int compareVersions(const std::string &a, const std::string &b) {
   size_t i = 0, j = 0;
   while (i < a.size() || j < b.size()) {
@@ -296,14 +299,29 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
         contents_.clear();
         target = progress_.target;
       }
+      // At home the server's direct address, when it answers at once; it
+      // carries no keys (it is signed). Should it stop working, the same
+      // file goes on from the same byte through the public address, and
+      // that switch is not counted as a failed try.
+      auto item = files[i];
+      bool direct = !item.directUrl.empty() && net::reachable(item.directUrl, DirectWaitMs);
+      if (!item.directUrl.empty()) logLine(direct ? "download: direct at home" : "download: direct not answering, public address");
       // A failed item is tried again from the start: the engine skips the
       // content files it already finished, so this picks up where it broke.
       constexpr int Attempts = 3;
       for (int attempt = 1;; ++attempt) {
+        auto use = item;
+        if (!direct) use.directUrl.clear();
         try {
-          nativeInstall(files[i], target, net::authHeaders(server, state, files[i].url));
+          nativeInstall(use, target, net::authHeaders(server, state, direct ? use.directUrl : use.url));
           break;
         } catch (const std::exception &) {
+          if (direct && !cancel_) {
+            logLine("download: direct stopped, on through the public address");
+            direct = false;
+            --attempt;
+            continue;
+          }
           if (cancel_ || attempt >= Attempts)
             throw;
           phase(trf("Retrying. Attempt {0} of {1}.", {std::to_string(attempt + 1), std::to_string(Attempts)}));

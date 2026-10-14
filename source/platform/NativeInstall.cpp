@@ -19,8 +19,10 @@ std::function<void(const Item &)> hostInstall;
 // from here, and the log keeps one line of it.
 void benchmark(const Item &item, const std::vector<std::string> &headers) {
   auto *sink = engineSink();
+  // As on the console: the direct address when the server gave one.
+  const auto &from = item.directUrl.empty() ? item.url : item.directUrl;
   net::SegmentedOptions options;
-  options.connections = net::connectionsFor(item.url, 0);
+  options.connections = net::connectionsFor(from, 0);
   options.headers = headers;
   options.paused = [sink] { return sink && sink->paused(); };
   options.cancelled = [sink] { return sink && sink->cancellationRequested(); };
@@ -34,7 +36,7 @@ void benchmark(const Item &item, const std::vector<std::string> &headers) {
   };
   options.log = [](const std::string &line) { logLine(line); };
   const auto result = net::segmentedFetch(
-      item.url, [](uint64_t) { return true; }, [](uint64_t, const char *, size_t) { return true; }, options);
+      from, [](uint64_t) { return true; }, [](uint64_t, const char *, size_t) { return true; }, options);
   if (result.cancelled)
     throw std::runtime_error(tr("Install canceled."));
   if (!result.ok)
