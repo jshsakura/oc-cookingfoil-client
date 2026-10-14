@@ -61,7 +61,8 @@ int runRetroTests() {
   if (page.games.size() == 2) {
     CHECK(page.games[0].bundleUrl == "https://shop.example/api/retro/games/g1/bundle");
     CHECK(page.games[0].iconUrl == "https://shop.example/api/retro/games/g1/icon");
-    CHECK(page.games[0].bezel && page.games[0].size == 33554432);
+    CHECK(page.games[0].bezel == Game::Bezel::Game && page.games[0].size == 33554432);
+    CHECK(page.games[1].bezel == Game::Bezel::None);
     CHECK(page.games[0].romPath == "roms/gba/Mother 3.gba");
     CHECK(page.games[0].bezelPath == "retroarch/overlays/GameBezels/GBA/Mother 3.png");
     CHECK(page.games[1].name == "Only File.gba"); // the file name when there is no name
@@ -155,13 +156,24 @@ int runRetroTests() {
   kept.romPath = "roms/nes/zelda.zip";
   kept.bezelPath = "retroarch/overlays/zelda.png";
   kept.size = 1234;
-  kept.bezel = true;
+  kept.bezel = Game::Bezel::System;
   kept.variant = "J-K v20230715 v1 font.galmuri";
   const auto back = parseGameJson(serializeGame(kept));
   CHECK(back.id == "nes-1" && back.name == "Zelda (KO)" && back.system == "nes" && back.variant == kept.variant);
   CHECK(back.bundleUrl == kept.bundleUrl && back.iconUrl == kept.iconUrl);
   CHECK(back.forwarderUrl == kept.forwarderUrl && back.forwarderTitleId == kept.forwarderTitleId && back.forwarderSize == 300);
-  CHECK(back.romPath == kept.romPath && back.bezelPath == kept.bezelPath && back.size == 1234 && back.bezel);
+  CHECK(back.romPath == kept.romPath && back.bezelPath == kept.bezelPath && back.size == 1234 &&
+        back.bezel == Game::Bezel::System);
+  // The bezel's kind: named by the server, else from its two flags.
+  const auto bezelOf = [](const std::string &bezel) {
+    return parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","bezel":)" + bezel + "}").bezel;
+  };
+  CHECK(bezelOf(R"({"kind":"game","hasBezel":true,"generic":true})") == Game::Bezel::Game);
+  CHECK(bezelOf(R"({"kind":"system","hasBezel":true})") == Game::Bezel::System);
+  CHECK(bezelOf(R"({"kind":"none","hasBezel":true})") == Game::Bezel::None);
+  CHECK(bezelOf(R"({"hasBezel":true,"generic":true})") == Game::Bezel::System);
+  CHECK(bezelOf(R"({"hasBezel":true,"generic":false})") == Game::Bezel::Game);
+  CHECK(bezelOf(R"({"hasBezel":false})") == Game::Bezel::None);
   CHECK(parseGameJson("not json").id.empty());
   return failures;
 }

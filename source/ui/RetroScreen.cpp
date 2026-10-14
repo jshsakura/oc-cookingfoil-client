@@ -51,7 +51,7 @@ bool Application::retroCoreMissing(const retro::Game &game) const {
   return !core.empty() && retroArchPresent() && !fileExists(sdRoot_ + "/" + core);
 }
 bool Application::retroBezelMissing(const retro::Game &game) const {
-  if (!game.bezel || game.bezelPath.empty() || !retroInstalled(game)) return false;
+  if (game.bezel == retro::Game::Bezel::None || game.bezelPath.empty() || !retroInstalled(game)) return false;
   const auto found = retroOnCard_.find(game.bezelPath);
   return found != retroOnCard_.end() && !found->second;
 }
@@ -584,7 +584,8 @@ std::vector<std::string> Application::retroLabels(const retro::Game &game, bool 
     std::transform(format.begin(), format.end(), format.begin(), ::toupper);
     out.push_back(format);
   }
-  if (game.bezel) out.push_back(tr("With bezel"));
+  if (game.bezel == retro::Game::Bezel::Game) out.push_back(tr("Game bezel"));
+  else if (game.bezel == retro::Game::Bezel::System) out.push_back(tr("Default bezel"));
   // What kind of release it is, in one word; the popup adds where it came
   // from and its version.
   const auto &edition = game.edition;
@@ -820,7 +821,7 @@ void Application::retroList() {
     // Under the name, labels: its format, a bezel, its score.
     float at = 360;
     for (const auto &label : retroLabels(game)) at += paint_.pill(label, at, y + 46) + 6;
-    versionsBadge(game.variants, 278 + 3, y + 10 + 64 - 22, true);
+    at += versionsBadge(game.variants, at, y + 46, false); // with the labels: the cover is too small for it
     const float right = 1230;
     const bool busy = retroBusy_ == game.id;
     const bool bezel = retroBezelMissing(game), there = retroInstalled(game) && !bezel;

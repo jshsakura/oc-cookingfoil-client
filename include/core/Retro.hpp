@@ -30,7 +30,8 @@ struct Game {
   int rating = 0;      // 0-100 community score; 0 when the server has none
   int ratingCount = 0; // how many people rated it
   int variants = 1;    // versions of it the server has (a list shows one, its pick)
-  bool bezel = false;
+  // Its bezel: one made for this game, the system's default, or none.
+  enum class Bezel { None, System, Game } bezel = Bezel::None;
 };
 // One version of a game, as its detail lists them: picking one means its id.
 struct Variant {

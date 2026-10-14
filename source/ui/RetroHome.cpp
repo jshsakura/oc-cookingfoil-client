@@ -165,13 +165,15 @@ void Application::retroHomeAction(Action a) {
     break;
   }
 }
-void Application::versionsBadge(int count, float x, float y, bool dark) {
-  if (count < 2) return;
+float Application::versionsBadge(int count, float x, float y, bool dark) {
+  if (count < 2) return 0;
   const auto label = std::to_string(count);
-  const float w = 6 + 13 + 4 + paint_.fonts.measure(label, 13, true) + 7, h = 19;
-  const SDL_Color fill = dark ? SDL_Color{22, 22, 26, 190} : Ground, ink = dark ? Surface : Ink;
-  paint_.rect(x, y, w, h, fill, 5);
-  paint_.icon(42, x + 6, y + 3, ink, 13);
-  paint_.fonts.middle(label, x + 6 + 13 + 4, y + h / 2, 13, ink, true);
+  const int text = dark ? 13 : 15, mark = dark ? 13 : 15;
+  const float pad = dark ? 6 : 9, h = dark ? 19 : 26;
+  const float w = pad + mark + 4 + paint_.fonts.measure(label, text, true) + pad;
+  paint_.rect(x, y, w, h, dark ? SDL_Color{22, 22, 26, 190} : Line, dark ? 5 : 7);
+  paint_.icon(42, x + pad, y + (h - mark) / 2, dark ? Surface : Ink, mark);
+  paint_.fonts.middle(label, x + pad + mark + 4, y + h / 2, text, dark ? Surface : Ink, true);
+  return w;
 }
 } // namespace foil::ui

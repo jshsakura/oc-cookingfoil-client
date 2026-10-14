@@ -101,8 +101,14 @@ Game parseGame(json_object *object, const std::string &base) {
     g.bezelPath = stringField(install, "bezelPng");
     if (!bundlePathAllowed(g.bezelPath)) g.bezelPath.clear();
   }
-  if (auto *bezel = field(object, "bezel"); json_object_is_type(bezel, json_type_object))
-    g.bezel = json_object_get_boolean(field(bezel, "hasBezel"));
+  if (auto *bezel = field(object, "bezel"); json_object_is_type(bezel, json_type_object)) {
+    // Its kind when the server names it; else read from the two flags.
+    const auto kind = stringField(bezel, "kind");
+    if (kind == "game") g.bezel = Game::Bezel::Game;
+    else if (kind == "system") g.bezel = Game::Bezel::System;
+    else if (kind.empty() && json_object_get_boolean(field(bezel, "hasBezel")))
+      g.bezel = json_object_get_boolean(field(bezel, "generic")) ? Game::Bezel::System : Game::Bezel::Game;
+  }
   if (g.bundleUrl.empty()) g.id.clear();
   if (g.name.empty()) g.name = g.file;
   return g;
@@ -318,7 +324,11 @@ std::string serializeGame(const Game &game) {
   json_object_object_add(install, "bezelPng", json_object_new_string(game.bezelPath.c_str()));
   json_object_object_add(root.get(), "install", install);
   auto *bezel = json_object_new_object();
-  json_object_object_add(bezel, "hasBezel", json_object_new_boolean(game.bezel));
+  json_object_object_add(bezel, "hasBezel", json_object_new_boolean(game.bezel != Game::Bezel::None));
+  json_object_object_add(bezel, "generic", json_object_new_boolean(game.bezel == Game::Bezel::System));
+  json_object_object_add(bezel, "kind", json_object_new_string(game.bezel == Game::Bezel::Game     ? "game"
+                                                              : game.bezel == Game::Bezel::System ? "system"
+                                                                                                   : "none"));
   json_object_object_add(root.get(), "bezel", bezel);
   return json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PLAIN);
 }

@@ -311,8 +311,9 @@ private:
   float retroVariantRows(float x, float y, float w);
   void serverRestartNotice();
   void askCancelPick(bool running);
-  // A retro game's other versions: a stack and how many, on its card.
-  void versionsBadge(int count, float x, float y, bool dark);
+  // A retro game's other versions: a stack and how many. Dark and small on
+  // a cover; light, as a label pill, in a list row. Returns its width.
+  float versionsBadge(int count, float x, float y, bool dark);
   void shell();
   float statusBar();
   // Before the shop approves this device only 홈 (the approval page) and
