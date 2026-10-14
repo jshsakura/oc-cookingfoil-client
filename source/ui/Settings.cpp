@@ -143,10 +143,9 @@ void Application::settings() {
   // deleted after a confirmation.
   option(3, 14, tr("Clean up leftovers"),
          !cleanupBusy_ ? tr("Finds and deletes interrupted downloads and unused install files") : cleanupRemoving_ ? tr("Deleting") : tr("Scanning"), Secondary, false);
-  // The pictures kept on the card: how full their room is; A empties it.
-  if (cacheBytes_ < 0) measureImageCache(false);
-  option(4, 41, tr("Image cache"), "", Ink, true);
-  imageCacheValue(Right, optionsTop + 8 + 4 * Row + oy + (Row - 2) / 2);
+  // The pictures kept on the card: A shows how much in a popup and empties it.
+  option(4, 41, tr("Clear the image cache"), cacheBusy_ ? tr("Deleting") : tr("Keeps covers and screenshots"), Secondary,
+         false);
   // This build against the server's newest; A checks or updates.
   option(2, 3, tr("App update"), appUpdateStatus(), appUpdate_ == AppUpdate::Available ? Ink : Secondary,
          appUpdate_ == AppUpdate::Available);

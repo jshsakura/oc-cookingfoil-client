@@ -1,6 +1,6 @@
-// 설정's 이미지 캐시 row: how much of its room the pictures on the card take,
-// and a way to empty it (asked first). The size is a running count (see
-// imageCacheTally); only emptying it walks the folder, off the drawing thread.
+// 설정's 이미지 캐시 비우기 row: A opens a popup with how much of its room the
+// pictures on the card take, and empties it. The size is a running count
+// (see imageCacheTally); only emptying it walks the folder, off the drawing thread.
 #include "ui/Application.hpp"
 #include "ui/Images.hpp"
 #include <filesystem>
@@ -30,27 +30,6 @@ void Application::measureImageCache(bool clear) {
     cacheBusy_ = false;
   });
 }
-// The value side of the row: what the cache is for, a bar of the room it may
-// take filled as far as it is, and the size in a pill ("42 MB / 128 MB").
-void Application::imageCacheValue(float right, float mid) {
-  if (!cacheBusy_) cacheBytes_ = imageCacheTally(); // it grows as pictures come
-  const int64_t bytes = cacheBytes_;
-  const uint64_t room = imageCacheLimit(sdFree_);
-  const std::string label = bytes < 0 ? std::string(tr("Checking|size"))
-                                      : formatBytes(uint64_t(bytes)) + " / " + formatBytes(room);
-  const float textW = paint_.fonts.measure(label, 17, true), pillW = textW + 24, pillX = right - pillW;
-  paint_.rect(pillX, mid - 15, pillW, 30, Ground, 15);
-  paint_.fonts.middle(label, pillX + 12, mid, 17, bytes < 0 ? Secondary : Ink, true);
-  constexpr float Bar = 150, Track = 8;
-  const float barX = pillX - 16 - Bar;
-  paint_.rect(barX, mid - Track / 2, Bar, Track, Line, Track / 2);
-  if (bytes > 0) {
-    const float used = std::min(1.f, float(bytes) / float(std::max<uint64_t>(room, 1)));
-    paint_.rect(barX, mid - Track / 2, std::max(Track, Bar * used), Track, Butter, Track / 2);
-  }
-  const auto why = tr("Keeps covers and screenshots");
-  paint_.fonts.middle(why, barX - 20 - paint_.fonts.measure(why, 17), mid, 17, Secondary);
-}
 void Application::imageCacheAction(Action a) {
   if (a == Action::Back) cacheClearAsk_ = false;
   else if (a == Action::Accept && settled()) {
@@ -62,9 +41,10 @@ void Application::imageCacheDialog() {
   const auto body = modal(700, 24 + 30 + 14 + 10 + 18 + 48 + 16, tr("Delete the image cache?"), tr("Cancel"), "",
                           tr("Delete"), 41);
   const float x = body.x + 32, y = body.y + 24, w = body.w - 64;
+  if (!cacheBusy_) cacheBytes_ = imageCacheTally(); // it grows as pictures come
   const uint64_t bytes = uint64_t(std::max<int64_t>(0, cacheBytes_)), room = imageCacheLimit(sdFree_);
-  // The size large, then the same bar as the row, then what stays.
-  const auto size = formatBytes(bytes);
+  // The size large, then a bar of the room it may take, then what stays.
+  const auto size = cacheBytes_ < 0 ? std::string(tr("Checking|size")) : formatBytes(bytes);
   paint_.fonts.middle(size, x, y + 15, 26, Ink, true);
   paint_.fonts.middle("/ " + formatBytes(room), x + paint_.fonts.measure(size, 26, true) + 10, y + 17, 18, Secondary);
   paint_.rect(x, y + 44, w, 10, Line, 5);

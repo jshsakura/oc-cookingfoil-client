@@ -388,9 +388,6 @@ void Application::screen(Screen screen) {
   // Leaving 패치 stops its check; the next visit goes on from there.
   if (screen_ == Screen::Patches && screen != Screen::Patches)
     patchCheckStop_ = true;
-  // 설정 measures the picture cache again each time it opens.
-  if (screen == Screen::Settings && screen_ != Screen::Settings)
-    measureImageCache(false);
   screen_ = screen;
   unglide();
   nav_ = menuIndex(screen);
@@ -1338,7 +1335,8 @@ void Application::action(Action a) {
       case 2: appUpdateAction(a); break;
       case 3: startCleanup(false); break;
       case 4:
-        if (cacheBusy_ || cacheBytes_ < 0) break; // still measuring
+        if (cacheBusy_) break; // emptying it now
+        measureImageCache(false); // a running count: nothing to walk
         if (cacheBytes_ == 0) message(tr("The image cache is empty."));
         else {
           cacheClearAsk_ = true;

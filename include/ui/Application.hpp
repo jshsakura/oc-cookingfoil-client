@@ -708,7 +708,6 @@ private:
   // 설정's 이미지 캐시 row (ImageCache.cpp).
   std::string imageCacheFolder() const;
   void measureImageCache(bool clear);
-  void imageCacheValue(float right, float mid);
   void imageCacheAction(Action a);
   void imageCacheDialog();
   void cleanupProgressDialog(); // while a scan or delete runs
