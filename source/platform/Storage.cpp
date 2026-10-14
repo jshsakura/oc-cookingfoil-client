@@ -2,6 +2,8 @@
 #include <atomic>
 #include <cstdio>
 #include <filesystem>
+#include <memory>
+#include <cstring>
 #include <string>
 #ifdef __SWITCH__
 #include <switch.h>
@@ -136,10 +138,31 @@ void keepAwake(bool on) {
   (void)on;
 #endif
 }
+bool wholeNro(const std::string &path) {
+  std::unique_ptr<FILE, int (*)(FILE *)> in(std::fopen(path.c_str(), "rb"), std::fclose);
+  if (!in) return false;
+  unsigned char head[0x20] = {};
+  if (std::fread(head, 1, sizeof head, in.get()) != sizeof head) return false;
+  if (std::memcmp(head + 0x10, "NRO0", 4) != 0) return false;
+  const uint64_t size = uint64_t(head[0x18]) | uint64_t(head[0x19]) << 8 | uint64_t(head[0x1A]) << 16 |
+                        uint64_t(head[0x1B]) << 24;
+  std::error_code ec;
+  const auto onCard = std::filesystem::file_size(path, ec);
+  return !ec && size >= 0x80 && onCard >= size;
+}
 bool finishUpdate(const std::string &self, std::string &note) {
   const std::string part = self + ".new", old = self + ".old";
   std::error_code ec;
   if (!std::filesystem::exists(part, ec)) return false;
+  // Only a whole, checked build takes the app's place. A ".new" with a
+  // resume note beside it is one an earlier version was still downloading
+  // when it stopped: putting it in would leave no app to start.
+  if (std::filesystem::exists(part + ".resume", ec) || !wholeNro(part)) {
+    std::filesystem::remove(part, ec);
+    std::filesystem::remove(part + ".resume", ec);
+    note = "update not swapped in: the downloaded build was not whole";
+    return false;
+  }
   std::filesystem::remove(old, ec);
   ec.clear();
   // The card does not rename over an existing file: the old one goes aside

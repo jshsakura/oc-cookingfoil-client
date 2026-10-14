@@ -32,7 +32,16 @@ bool installClient(const Server &server, const State &state, const update::Relea
                    const std::atomic<bool> *cancel) {
   // Into <target>.new, resumed when an earlier try of the same build left
   // part of it there.
-  const std::string part = target + ".new";
+  // The download goes to its own name; only once it is whole and its hash
+  // checks out does it become ".new", which the next start puts in place.
+  const std::string part = target + ".download", ready = target + ".new";
+  {
+    std::error_code ec; // a half download an earlier version left as ".new"
+    if (std::filesystem::exists(ready + ResumeFile, ec)) {
+      std::filesystem::remove(ready, ec);
+      std::filesystem::remove(ready + ResumeFile, ec);
+    }
+  }
   makeDirectories(std::filesystem::path(target).parent_path().string());
   PartInfo wanted;
   wanted.url = release.url;
@@ -57,6 +66,14 @@ bool installClient(const Server &server, const State &state, const update::Relea
   // next start, before anything opens the app's own file.
   std::error_code ec;
   std::filesystem::remove(partInfoPath(part), ec);
+  std::filesystem::remove(ready, ec);
+  ec.clear();
+  std::filesystem::rename(part, ready, ec);
+  if (ec) {
+    dropPart(part);
+    error.message = trf("Could not write the file: {0}", {"cookingfoil.nro"}) + " (" + ec.message() + ")";
+    return false;
+  }
   return true;
 }
 bool sendBugReport(const Server &server, const State &state, const std::string &log, Error &error,

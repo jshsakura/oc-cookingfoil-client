@@ -26,6 +26,8 @@ void keepAwake(bool on);
 // as `self` + ".new" takes its place. True when it did (`note` says what
 // happened either way, for the log once it is open).
 bool finishUpdate(const std::string &self, std::string &note);
+// The file starts as an NRO does and is at least as long as its header says.
+bool wholeNro(const std::string &path);
 // Starts `nro` again once this app exits (the homebrew loader's next load);
 // false where that is not possible (off the console, or no loader).
 bool relaunch(const std::string &nro);

@@ -30,16 +30,34 @@ int runClientUpdateTests() {
     if (const char *root = mkdtemp(temporary)) {
       const std::string target = std::string(root) + "/cookingfoil.nro";
       std::string ignored, reason;
-      foil::atomicWrite(target, "old build", ignored);
-      foil::atomicWrite(target + ".new", "new build", ignored);
+      // An NRO as far as its header goes: the magic at 0x10, its size at 0x18.
+      const auto nro = [](const std::string &tail) {
+        std::string file(0x80, '\0');
+        file.replace(0x10, 4, "NRO0");
+        file[0x18] = char(0x80);
+        return file + tail;
+      };
+      foil::atomicWrite(target, nro("old build"), ignored);
+      foil::atomicWrite(target + ".new", nro("new build"), ignored);
       // At the next start, before anything opens the app's file.
       CHECK(foil::platform::finishUpdate(target, reason) && reason.find("swapped") != std::string::npos);
-      CHECK(foil::readFile(target) == "new build" && !std::filesystem::exists(target + ".new") &&
+      CHECK(foil::readFile(target) == nro("new build") && !std::filesystem::exists(target + ".new") &&
             !std::filesystem::exists(target + ".old"));
       // Nothing downloaded: the app's file stays as it was, and nothing is said.
       reason.clear();
       CHECK(!foil::platform::finishUpdate(target, reason) && reason.empty());
-      CHECK(foil::readFile(target) == "new build");
+      CHECK(foil::readFile(target) == nro("new build"));
+      // A download cut off (shorter than its header says, or not an NRO at
+      // all, or an earlier version's half with its resume note) never takes
+      // the app's place; it goes, and the app stays.
+      for (const auto &half : {nro("x").substr(0, 0x40), std::string("<html>error</html>"), nro("whole")}) {
+        foil::atomicWrite(target + ".new", half, ignored);
+        if (half == nro("whole")) foil::atomicWrite(target + ".new.resume", "url=x\n", ignored);
+        reason.clear();
+        CHECK(!foil::platform::finishUpdate(target, reason) && reason.find("not whole") != std::string::npos);
+        CHECK(foil::readFile(target) == nro("new build") && !std::filesystem::exists(target + ".new") &&
+              !std::filesystem::exists(target + ".new.resume"));
+      }
       std::filesystem::remove_all(root);
     }
   }
