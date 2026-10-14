@@ -70,15 +70,16 @@ int runInstallerTests() {
     CHECK(installer.progress().phase == "다운로드하고 있습니다.");
   }
   {
-    // The speed shown waits until it has measured (five seconds and 4 MB),
-    // then is the last thirty seconds' average, refreshed every three
-    // seconds: bursts from the card do not make the number jump.
+    // As other downloaders: a number from the first second, the last five
+    // seconds eased, refreshed every second; the card's half-second bursts
+    // read as their average.
     constexpr uint64_t MiB = 1 << 20;
     foil::install::SpeedWindow window;
     window.add(0, 0);
-    CHECK(window.speed(1) < 0);
+    CHECK(window.speed(0.5) < 0);
+    window.add(1, 6 * MiB);
+    CHECK(window.speed(1) > 0);
     window.add(4, 12 * MiB);
-    CHECK(window.speed(4) < 0); // enough bytes, too soon
     uint64_t bytes = 12 * MiB;
     double low = 1e9, high = 0, previous = -1, at = -1;
     bool heldBetween = true;
@@ -88,7 +89,7 @@ int runInstallerTests() {
       window.add(now, bytes);
       const double shown = window.speed(now);
       CHECK(shown >= 0);
-      if (previous >= 0 && shown != previous && now - at < 3)
+      if (previous >= 0 && shown != previous && now - at < 1)
         heldBetween = false;
       if (shown != previous)
         at = now;
@@ -99,14 +100,27 @@ int runInstallerTests() {
       }
     }
     CHECK(heldBetween);
-    CHECK(low > 5.3 && high < 6.7);
-    // A slow start (little data) still shows after fifteen seconds.
+    CHECK(low > 5 && high < 7);
+    // Long pauses (a part checked between files) are not download time: the
+    // speed is the rate while bytes come; the time left keeps the whole.
+    {
+      foil::install::SpeedWindow paced;
+      uint64_t got = 0;
+      paced.add(0, 0);
+      for (int step = 1; step <= 60; ++step) {
+        const double now = step * 0.5;
+        if (step % 20 < 12) got += 5 * MiB; // 6 s at 10 MB/s, then 4 s with nothing
+        paced.add(now, got);
+      }
+      const double shown = paced.speed(30);
+      CHECK(shown > 9 && shown < 11);
+      CHECK(paced.average() > 5.5 && paced.average() < 6.6);
+    }
+    // A slow start shows at once, small.
     foil::install::SpeedWindow slow;
     slow.add(0, 0);
-    slow.add(10, 1 * MiB);
-    CHECK(slow.speed(10) < 0);
-    slow.add(15, 2 * MiB);
-    CHECK(slow.speed(15) >= 0);
+    slow.add(2, 1 * MiB);
+    CHECK(slow.speed(2) > 0 && slow.speed(2) < 1);
     // Nothing more arrives: after ten seconds it shows 0, then picks up again.
     CHECK(window.speed(65) > 0);
     CHECK(window.speed(71) == 0);

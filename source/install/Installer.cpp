@@ -189,18 +189,39 @@ uint64_t SpeedWindow::lastSeconds(int slots) const {
   return sum;
 }
 double SpeedWindow::speed(double seconds) {
-  constexpr double Least = 5, Most = 15, Every = 3, Window = Slots * SlotSeconds;
-  constexpr uint64_t Enough = 4ull << 20;
+  // As other downloaders show it: the last few seconds, refreshed every
+  // second and eased so it does not flicker, from the first second on.
+  constexpr double Least = 1, Every = 1, Recent = 5, Window = Slots * SlotSeconds;
   if (tick_ < 0)
     return -1;
   const double since = seconds - first_;
-  if (since < Least || (gathered_ < Enough && since < Most))
+  if (since < Least)
     return -1;
   advance(seconds);
-  if (since >= 10 && lastSeconds(int(10 / SlotSeconds)) == 0)
+  if (since >= 10 && lastSeconds(int(10 / SlotSeconds)) == 0) {
+    shown_ = 0;
     return 0; // nothing for ten seconds: stalled
-  if (shown_ <= 0 || seconds - shownAt_ >= Every) {
-    shown_ = double(lastSeconds(Slots)) / std::min(since, Window) / (1024 * 1024);
+  }
+  if (shown_ < 0 || seconds - shownAt_ >= Every) {
+    average_ = double(lastSeconds(Slots)) / std::min(since, Window) / (1024 * 1024);
+    // A stretch of two seconds or more with nothing (between files, while
+    // the install checks or writes a part) is not download time; shorter
+    // gaps (the card's write bursts) are.
+    constexpr int IdleRun = int(2 / SlotSeconds);
+    const int count = std::max(1, int(std::min(since, Recent) / SlotSeconds));
+    int idle = 0, run = 0;
+    for (int n = 0; n < count; ++n) {
+      if (slots_[(slot_ - n + Slots) % Slots] == 0) {
+        ++run;
+        continue;
+      }
+      if (run >= IdleRun) idle += run;
+      run = 0;
+    }
+    if (run >= IdleRun) idle += run;
+    const double busy = std::max(SlotSeconds, (count - idle) * SlotSeconds);
+    const double now = double(lastSeconds(count)) / busy / (1024 * 1024);
+    shown_ = shown_ <= 0 ? now : (shown_ + now) / 2;
     shownAt_ = seconds;
   }
   return shown_;

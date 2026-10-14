@@ -227,7 +227,7 @@ void Application::topCard(const TopCard &c) {
       char speed[64];
       std::snprintf(speed, sizeof(speed), " · %.1f MB/s", steady);
       status += speed;
-      status += " · " + install::timeLeftText(timeLeft_.update(now, c.left, steady));
+      status += " · " + install::timeLeftText(timeLeft_.update(now, c.left, downloadSpeed_.average()));
     }
   } else {
     downloadSpeed_.reset();

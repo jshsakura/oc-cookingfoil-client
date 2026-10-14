@@ -37,11 +37,13 @@ class SpeedWindow {
 public:
   // The bytes so far at `seconds`; a smaller total is the next file.
   void add(double seconds, uint64_t total);
-  // MB/s, or negative while it is still measuring: the last thirty seconds'
-  // average, refreshed every three, so the card's bursts and pauses do not
-  // move it while a real change (a better link, an outage) shows within half
-  // a minute.
+  // MB/s, or negative in the first second: the last five seconds, refreshed
+  // every second and eased, as other downloaders show it. Pauses of two
+  // seconds or more (between files, install steps) are left out of it.
   double speed(double seconds);
+  // The last thirty seconds over all of their time, pauses included: what
+  // the time left goes by, so it does not jump. Set by speed().
+  double average() const { return average_; }
   void reset() { *this = SpeedWindow(); }
 
 private:
@@ -51,7 +53,7 @@ private:
   uint64_t lastSeconds(int slots) const;
   uint64_t slots_[Slots] = {};
   int slot_ = 0;
-  double tick_ = -1, first_ = -1, shownAt_ = -1, shown_ = -1;
+  double tick_ = -1, first_ = -1, shownAt_ = -1, shown_ = -1, average_ = -1;
   uint64_t last_ = 0, gathered_ = 0;
 };
 // The time left, counting down second by second like a clock. Every ten
