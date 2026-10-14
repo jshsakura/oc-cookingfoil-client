@@ -1,4 +1,5 @@
 #include "platform/Storage.hpp"
+#include "core/Json.hpp"
 #include <atomic>
 #include <cstdio>
 #include <filesystem>
@@ -153,6 +154,13 @@ bool wholeNro(const std::string &path) {
 bool finishUpdate(const std::string &self, std::string &note) {
   const std::string part = self + ".new", old = self + ".old";
   std::error_code ec;
+  // The app found only as ".old" (a swap cut off half way): it comes back
+  // before anything else.
+  if (!std::filesystem::exists(self, ec) && wholeNro(old)) {
+    std::filesystem::rename(old, self, ec);
+    note = ec ? "app restore failed: " + ec.message() : "app restored from .old";
+    ec.clear();
+  }
   if (!std::filesystem::exists(part, ec)) return false;
   // Only a whole, checked build takes the app's place. A ".new" with a
   // resume note beside it is one an earlier version was still downloading
@@ -163,9 +171,6 @@ bool finishUpdate(const std::string &self, std::string &note) {
     note = "update not swapped in: the downloaded build was not whole";
     return false;
   }
-  // A ".old" is only ever the app from a swap that could not finish: put it
-  // back if the app itself is missing, never delete the last copy.
-  if (!std::filesystem::exists(self, ec) && wholeNro(old)) std::filesystem::rename(old, self, ec);
   std::filesystem::remove(old, ec);
   ec.clear();
   // The card does not rename over an existing file: the old one goes aside
@@ -187,9 +192,48 @@ bool finishUpdate(const std::string &self, std::string &note) {
     if (!ignored) std::filesystem::remove(old, ignored);
     return false;
   }
-  std::filesystem::remove(old, ec);
+  // The build it replaced stays as ".old" until the new one has run a while
+  // (confirmUpdate); one that dies before that is undone (rollBackUpdate).
+  std::string ignored;
+  atomicWrite(self + ".trial", "0", ignored);
   note = "update swapped in: " + self;
   return true;
+}
+bool rollBackUpdate(const std::string &self, std::string &note) {
+  const std::string trial = self + ".trial", old = self + ".old";
+  std::error_code ec;
+  if (!std::filesystem::exists(trial, ec)) return false;
+  // The first start of a new build marks its trial; a second start that
+  // finds it marked means the first never got as far as confirming.
+  if (readFile(trial) != "1" || !wholeNro(old)) {
+    std::string ignored;
+    if (!wholeNro(old)) std::filesystem::remove(trial, ec);
+    else atomicWrite(trial, "1", ignored);
+    return false;
+  }
+  std::filesystem::remove(self, ec);
+  ec.clear();
+  std::filesystem::rename(old, self, ec);
+  if (ec) {
+    ec.clear();
+    std::filesystem::copy_file(old, self, std::filesystem::copy_options::overwrite_existing, ec);
+  }
+  if (ec || !wholeNro(self)) {
+    note = "update roll back failed: " + ec.message();
+    return false;
+  }
+  std::filesystem::remove(old, ec);
+  std::filesystem::remove(trial, ec);
+  std::string ignored;
+  atomicWrite(self + ".rolledback", "1", ignored); // said on screen once the app is up
+  note = "update rolled back: the new build stopped before it was up";
+  return true;
+}
+void confirmUpdate(const std::string &self) {
+  std::error_code ec;
+  if (!std::filesystem::exists(self + ".trial", ec)) return;
+  std::filesystem::remove(self + ".old", ec);
+  std::filesystem::remove(self + ".trial", ec);
 }
 bool serviceApplet() {
 #ifdef __SWITCH__

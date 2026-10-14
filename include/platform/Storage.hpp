@@ -26,6 +26,11 @@ void keepAwake(bool on);
 // as `self` + ".new" takes its place. True when it did (`note` says what
 // happened either way, for the log once it is open).
 bool finishUpdate(const std::string &self, std::string &note);
+// A new build that died before it was up (no confirmUpdate) is replaced by
+// the one before it at the next start; true when it was (start that one).
+bool rollBackUpdate(const std::string &self, std::string &note);
+// The new build runs: the one before it is no longer kept.
+void confirmUpdate(const std::string &self);
 // The file starts as an NRO does and is at least as long as its header says.
 bool wholeNro(const std::string &path);
 // Starts `nro` again once this app exits (the homebrew loader's next load);

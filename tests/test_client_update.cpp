@@ -41,8 +41,9 @@ int runClientUpdateTests() {
       foil::atomicWrite(target + ".new", nro("new build"), ignored);
       // At the next start, before anything opens the app's file.
       CHECK(foil::platform::finishUpdate(target, reason) && reason.find("swapped") != std::string::npos);
-      CHECK(foil::readFile(target) == nro("new build") && !std::filesystem::exists(target + ".new") &&
-            !std::filesystem::exists(target + ".old"));
+      CHECK(foil::readFile(target) == nro("new build") && !std::filesystem::exists(target + ".new"));
+      foil::platform::confirmUpdate(target); // it came up: the old build goes
+      CHECK(!std::filesystem::exists(target + ".old") && !std::filesystem::exists(target + ".trial"));
       // Nothing downloaded: the app's file stays as it was, and nothing is said.
       reason.clear();
       CHECK(!foil::platform::finishUpdate(target, reason) && reason.empty());
@@ -53,10 +54,30 @@ int runClientUpdateTests() {
       foil::atomicWrite(target + ".new", nro("newer build"), ignored);
       reason.clear();
       CHECK(foil::platform::finishUpdate(target, reason) && foil::readFile(target) == nro("newer build"));
-      CHECK(!std::filesystem::exists(target + ".old"));
+      CHECK(foil::readFile(target + ".old") == nro("new build"));
+      foil::platform::confirmUpdate(target);
       std::filesystem::rename(target, target + ".old");
       reason.clear();
       CHECK(!foil::platform::finishUpdate(target, reason) && foil::readFile(target) == nro("newer build"));
+      CHECK(!std::filesystem::exists(target + ".old"));
+      foil::atomicWrite(target, nro("new build"), ignored);
+      // A new build that dies before it is up goes back to the one before it:
+      // the swap keeps that one as ".old"; the first start marks the trial,
+      // a second start that finds it marked undoes the swap.
+      foil::atomicWrite(target + ".new", nro("broken build"), ignored);
+      CHECK(foil::platform::finishUpdate(target, reason) && foil::readFile(target + ".old") == nro("new build"));
+      CHECK(!foil::platform::rollBackUpdate(target, reason) && foil::readFile(target) == nro("broken build"));
+      reason.clear();
+      CHECK(foil::platform::rollBackUpdate(target, reason) && reason.find("rolled back") != std::string::npos);
+      CHECK(foil::readFile(target) == nro("new build") && !std::filesystem::exists(target + ".old") &&
+            !std::filesystem::exists(target + ".trial") && std::filesystem::exists(target + ".rolledback"));
+      std::filesystem::remove(target + ".rolledback");
+      // One that comes up is kept; the one before it goes.
+      foil::atomicWrite(target + ".new", nro("good build"), ignored);
+      CHECK(foil::platform::finishUpdate(target, reason) && !foil::platform::rollBackUpdate(target, reason));
+      foil::platform::confirmUpdate(target);
+      CHECK(!foil::platform::rollBackUpdate(target, reason) && foil::readFile(target) == nro("good build"));
+      CHECK(!std::filesystem::exists(target + ".old") && !std::filesystem::exists(target + ".trial"));
       foil::atomicWrite(target, nro("new build"), ignored);
       // A download cut off (shorter than its header says, or not an NRO at
       // all, or an earlier version's half with its resume note) never takes

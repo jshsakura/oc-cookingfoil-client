@@ -1,3 +1,4 @@
+#include <filesystem>
 #include "ui/Application.hpp"
 #include <algorithm>
 #include <strings.h>
@@ -44,6 +45,14 @@ void Application::checkAppUpdate() {
     };
     updateDone_ = true;
   });
+}
+void Application::noticeRollBack() {
+  const auto marker = selfPath_ + ".rolledback";
+  std::error_code ec;
+  if (!std::filesystem::exists(marker, ec)) return;
+  std::filesystem::remove(marker, ec);
+  alertTitle_ = tr("Update undone");
+  alert_ = tr("The new version stopped before it opened, so the one before it is back. Wait for the next update.");
 }
 void Application::installAppUpdate() {
   if (updateWorker_.joinable() || appUpdate_ != AppUpdate::Available || !session_) return;

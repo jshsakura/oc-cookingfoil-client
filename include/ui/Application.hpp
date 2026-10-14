@@ -134,6 +134,7 @@ public:
   // Opened from the album without a shortcut, it offers to make one.
   void setSelfPath(std::string path) {
     selfPath_ = std::move(path);
+    noticeRollBack();
     considerSelfShortcut();
   }
   // - on any screen: the shop, the console's games and free space again.
@@ -713,6 +714,7 @@ private:
   AppUpdate appUpdate_ = AppUpdate::Unknown;
   update::Release appRelease_;
   std::string appUpdateError_, selfPath_;
+  void noticeRollBack(); // an update undone at start says so (AppUpdate.cpp)
   bool appUpdateAsk_ = false;
   std::thread updateWorker_;
   std::atomic<bool> updateDone_{false}, updateCancel_{false};

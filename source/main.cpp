@@ -58,8 +58,8 @@ int main(int argc, char **argv) {
                                ? std::string(argv[0])
                                : std::string("sdmc:/switch/cookingfoil/cookingfoil.nro");
   std::string updateNote;
-  if (foil::platform::finishUpdate(self, updateNote) && envHasNextLoad() &&
-      R_SUCCEEDED(envSetNextLoad(self.c_str(), self.c_str())))
+  if ((foil::platform::rollBackUpdate(self, updateNote) || foil::platform::finishUpdate(self, updateNote)) &&
+      envHasNextLoad() && R_SUCCEEDED(envSetNextLoad(self.c_str(), self.c_str())))
     return 0;
   SocketInitConfig sockets = *socketGetDefaultInitConfig();
   const bool application = appletGetAppletType() == AppletType_Application;
@@ -99,7 +99,15 @@ int main(int argc, char **argv) {
       auto shownScreen = ui.current();
       float touchX = 0, touchY = 0, lastX = 0, lastY = 0;
       bool dragging = false;
+      // Up and drawing for a few seconds: a build just updated to is kept.
+      constexpr uint32_t UpdateConfirmMs = 8000;
+      const uint32_t startedAt = SDL_GetTicks();
+      bool confirmed = false;
       while (appletMainLoop()) {
+        if (!confirmed && SDL_GetTicks() - startedAt >= UpdateConfirmMs) {
+          confirmed = true;
+          foil::platform::confirmUpdate(self);
+        }
         padUpdate(&pad);
         if ((padGetButtonsDown(&pad) & HidNpadButton_Plus) && ui.requestQuit())
           break;
@@ -216,6 +224,7 @@ int main(int argc, char **argv) {
         if (ui.shouldQuit())
           break;
       }
+      if (!confirmed) foil::platform::confirmUpdate(self); // closed on purpose: it ran
     }
   }
   curl_global_cleanup();
