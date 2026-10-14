@@ -41,7 +41,11 @@ Application::~Application() {
   stop_ = true;
   retroCancel_ = true;
   updateCancel_ = true;
-  installer_.cancel();
+  // Closing (HOME, power, an update): a download stops where it is and its
+  // place is written down, so the next start goes on from it.
+  installer_.stop();
+  installer_.wait();
+  keepResumeChanges();
   if (network_.joinable())
     network_.join();
   if (deviceWorker_.joinable())
@@ -73,6 +77,15 @@ Application::~Application() {
     dropboxWorker_.join();
   if (awake_)
     platform::keepAwake(false);
+}
+// Where a cut-off file stands, from the install thread to the card.
+void Application::keepResumeChanges() {
+  for (const auto &[key, point] : installer_.takeResumeChanges()) {
+    if (point)
+      store_.saveResumePoint(key, *point);
+    else
+      store_.forgetResumePoint(key);
+  }
 }
 bool Application::open() {
   // Startup runs on the main thread, so each step also lets the console
@@ -503,13 +516,7 @@ void Application::poll() {
     awake_ = downloading;
     platform::keepAwake(awake_);
   }
-  // Where a cut-off file stands, from the install thread to the card.
-  for (const auto &[key, point] : installer_.takeResumeChanges()) {
-    if (point)
-      store_.saveResumePoint(key, *point);
-    else
-      store_.forgetResumePoint(key);
-  }
+  keepResumeChanges();
   const auto installStatus = installer_.progress().status;
   if (installStatus == install::Status::Running) {
     const auto bytes = net::receivedBytes();
@@ -520,9 +527,12 @@ void Application::poll() {
   }
   if (observedInstall_ == install::Status::Running && installStatus == install::Status::Succeeded)
     refreshInstalled();
+  // Stopped as the app closes: not an end. Its row, its place in the queue
+  // and where it stands all stay, and the next start goes on from there.
+  const bool stopped = installStatus == install::Status::Stopped;
   // 다운로드 keeps how it ended.
   if (observedInstall_ == install::Status::Running && installStatus != install::Status::Running &&
-      installStatus != install::Status::Idle) {
+      installStatus != install::Status::Idle && !stopped) {
     // A finished install keeps what it took: bytes, the download (to the
     // last byte), the install after it.
     if (installStatus == install::Status::Succeeded)
@@ -546,7 +556,7 @@ void Application::poll() {
     forgetInstall();
   const bool ended = observedInstall_ == install::Status::Running && installStatus != install::Status::Running;
   observedInstall_ = installStatus;
-  if (ended) {
+  if (ended && !stopped) {
     // A base game that did not install takes the rest of its pick with it.
     if (installStatus != install::Status::Succeeded) {
       const auto before = installQueue_.size();
@@ -1011,22 +1021,28 @@ void Application::action(Action a) {
   }
   if (unqueueAsk_ >= 0) {
     // A takes it off (once the popup has settled), B keeps it.
-    if (a == Action::Accept && settled()) {
+    if (a == Action::Accept && settled() && unqueueAsk_ < int(installQueue_.size())) {
+      const int group = installQueue_[size_t(unqueueAsk_)].group;
       unqueue(size_t(unqueueAsk_));
+      if (unqueuePick_ && group > 0)
+        dropGroup(group, ""); // from 상세: the whole pick
       unqueueAsk_ = -1;
     }
     if (a == Action::Back || unqueueAsk_ >= int(installQueue_.size()))
       unqueueAsk_ = -1;
+    if (unqueueAsk_ < 0)
+      unqueuePick_ = false;
     return;
   }
   if (confirmCancel_) {
     // B keeps installing; A cancels, but not one pressed as the popup opened.
     if (a == Action::Accept && settled()) {
       if (cancelRetro_) retroCancel_ = true;
-      else {
+      else if (confirmExit_) {
+        installer_.stop(); // leaving: kept to go on next time
+        exitAfterCancel_ = true;
+      } else
         installer_.cancel();
-        exitAfterCancel_ = confirmExit_;
-      }
       confirmCancel_ = false;
     }
     if (a == Action::Back)
@@ -1643,9 +1659,13 @@ void Application::render() {
     else {
       const int items = selection_ ? int(selection_->rows()) : 0;
       const bool onButton = selection_ && part_ > items, onStorage = selection_ && part_ == items;
+      double percent = 0;
+      const bool onTheWay = onButton && pickedOnTheWay(percent);
       using Hints = std::vector<std::pair<std::string, std::string>>;
       auto hints = descriptionFocus_ ? Hints{{"A", tr("Back to items")}, {"B", tr("Back")}}
-                                       : Hints{{"A", onButton ? tr("Install") : onStorage ? tr("Choose this") : tr("Toggle")},
+                                       : Hints{{"A", onTheWay   ? tr("Cancel download")
+                                                     : onButton ? tr("Install")
+                                                     : onStorage ? tr("Choose this") : tr("Toggle")},
                                                {"B", tr("Back")}};
       if (!detail_.screenshots.empty()) hints.insert(hints.end() - 1, {"ZR", tr("Photos")});
       footer(hints);
@@ -1758,6 +1778,11 @@ void Application::render() {
 void Application::requestInstall() {
   if (!selection_ || detailGroup_ >= groups_.size())
     return;
+  // Already on its way: asked whether to cancel it, not to install it again.
+  if (double percent = 0; const int onTheWay = pickedOnTheWay(percent)) {
+    askCancelPick(onTheWay == 2);
+    return;
+  }
   if (!selection_->count()) {
     alert_ = tr("Turn on at least one item to install.");
     return;
@@ -1844,8 +1869,9 @@ int Application::pickedOnTheWay(double &percent) const {
   return running ? 2 : waiting ? 1 : 0;
 }
 void Application::installSelected() {
-  if (double percent = 0; pickedOnTheWay(percent)) {
-    message(tr("Already in the download queue."));
+  // Already on its way: A asks whether to cancel it, as 다운로드 does.
+  if (double percent = 0; const int onTheWay = pickedOnTheWay(percent)) {
+    askCancelPick(onTheWay == 2);
     return;
   }
   if (deviceBusy_) {
@@ -2060,6 +2086,24 @@ void Application::moveUp(size_t index) {
     rebuildQueue();
   } else
     std::swap(installQueue_[index - 1], installQueue_[index]); // a preview row with no history
+}
+// The running one asks as its card on 진행 중 does; a waiting one asks for
+// its first file in the queue, and takes the rest of its pick along.
+void Application::askCancelPick(bool running) {
+  dialogFocus_ = 0;
+  if (running) {
+    cancelRetro_ = false;
+    confirmCancel_ = true;
+    confirmExit_ = false;
+    return;
+  }
+  const auto files = selection_ ? selection_->files() : std::vector<Item>{};
+  for (size_t i = 0; i < installQueue_.size(); ++i)
+    if (std::any_of(files.begin(), files.end(), [&](const Item &f) { return f.url == installQueue_[i].file.url; })) {
+      unqueueAsk_ = int(i);
+      unqueuePick_ = true;
+      return;
+    }
 }
 void Application::unqueue(size_t index) {
   if (index >= installQueue_.size())

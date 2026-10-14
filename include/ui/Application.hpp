@@ -303,6 +303,8 @@ public:
   static constexpr int PatchFilters = 3;
 
 private:
+  void keepResumeChanges();
+  void askCancelPick(bool running);
   void shell();
   float statusBar();
   // Before the shop approves this device only 홈 (the approval page) and
@@ -1026,6 +1028,7 @@ private:
   // byte it reached).
   bool retroPausing_ = false, queueHeld_ = false;
   int unqueueAsk_ = -1; // the queue row whose 취소 asks first
+  bool unqueuePick_ = false; // asked from 상세: its whole pick goes
   // Lists load on a thread of their own, so switching systems never waits
   // for a download.
   std::thread retroListWorker_;

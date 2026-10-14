@@ -1,3 +1,4 @@
+#include "install/EngineHooks.hpp"
 #include "Test.hpp"
 #include "core/Config.hpp"
 #include "core/Json.hpp"
@@ -771,6 +772,47 @@ int runUiTests(SDL_Renderer *renderer) {
     giveUp = true;
     allow("D");
     CHECK(waitFor(queue, [&] { return queue.installingName().empty(); }));
+    foil::install::setHostInstall(nullptr);
+    foil::platform::setHostSpace(0);
+  }
+  {
+    // Leaving while a download runs stops it, which is not cancelling: it
+    // stays in 진행 중 (not 취소 or 실패) with what waited behind it, and
+    // the app closes once it has stopped.
+    foil::install::setHostInstall([](const foil::Item &) {
+      auto *sink = foil::install::engineSink();
+      for (int waited = 0; waited < 500 && !(sink && sink->cancellationRequested()); ++waited)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      throw std::runtime_error("cut");
+    });
+    const auto file = [](const std::string &name) {
+      foil::Item item;
+      item.name = name;
+      item.url = "https://shop.example/" + name + ".nsp";
+      item.titleId = item.baseId = "0100000000020000";
+      item.size = 1000;
+      return item;
+    };
+    foil::platform::setHostSpace(64ull << 30);
+    foil::ui::Application leaving(renderer, "", "", "host/fixtures/art");
+    CHECK(leaving.open());
+    leaving.previewQueueOpen();
+    CHECK(!leaving.previewPick({file("A")}, "A"));
+    auto second = file("B");
+    second.titleId = second.baseId = "0100000000030000";
+    CHECK(!leaving.previewPick({second}, "B"));
+    CHECK(leaving.installingName() == "A");
+    CHECK(!leaving.requestQuit()); // asks first
+    leaving.render();
+    std::this_thread::sleep_for(std::chrono::milliseconds(750));
+    leaving.action(foil::ui::Action::Accept);
+    for (int i = 0; i < 300 && !leaving.shouldQuit(); ++i) {
+      leaving.poll();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    CHECK(leaving.shouldQuit());
+    CHECK(leaving.outcomeOf("A") == foil::history::Outcome::Running);
+    CHECK((leaving.queuedNames() == std::vector<std::string>{"B"}));
     foil::install::setHostInstall(nullptr);
     foil::platform::setHostSpace(0);
   }

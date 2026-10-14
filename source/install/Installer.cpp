@@ -71,7 +71,7 @@ Error preflight(const std::vector<Item> &files,
   return error;
 }
 Installer::~Installer() {
-  cancel_ = true;
+  stop(); // closing: kept to go on next time
   if (thread_.joinable())
     thread_.join();
 }
@@ -136,6 +136,7 @@ Error Installer::start(std::vector<Item> files, std::string name,
   if (thread_.joinable())
     thread_.join();
   cancel_ = false;
+  stop_ = false;
   pause_ = false;
   skipSignature_ = state.skipSignatureCheck;
   skipFirmware_ = state.skipFirmwareCheck;
@@ -328,7 +329,7 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
     }
   } catch (const std::exception &e) {
     std::lock_guard<std::mutex> lock(mutex_);
-    progress_.status = cancel_ ? Status::Cancelled : Status::Failed;
+    progress_.status = stop_ ? Status::Stopped : cancel_ ? Status::Cancelled : Status::Failed;
     progress_.error = e.what();
     progress_.phase = cancel_ ? tr("Install canceled.") : tr("Install failed.");
   }

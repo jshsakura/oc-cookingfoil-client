@@ -10,7 +10,8 @@
 #include <optional>
 #include <thread>
 namespace foil::install {
-enum class Status { Idle, Running, Succeeded, Failed, Cancelled };
+// Stopped: cut short to go on later (the app closing), kept as it was.
+enum class Status { Idle, Running, Succeeded, Failed, Cancelled, Stopped };
 struct Progress {
   Status status = Status::Idle;
   std::string name, icon, target = "sd", phase = tr("Preparing."), error,
@@ -75,6 +76,17 @@ public:
   Error start(std::vector<Item> files, std::string name, std::string icon,
               std::string target, Server server, State state);
   void cancel() { cancel_ = true; }
+  // Ends the download now but keeps where it stands, for the next start.
+  void stop() {
+    stop_ = true;
+    cancel_ = true;
+  }
+  bool stopping() const { return stop_; }
+  // Until the install thread has ended (after stop or cancel).
+  void wait() {
+    if (thread_.joinable())
+      thread_.join();
+  }
   // Pause at any moment: the download stops and resumes at the same byte.
   // What is already downloaded keeps being written meanwhile.
   void setPaused(bool paused);
@@ -110,7 +122,7 @@ private:
   void run(std::vector<Item> files, Server server, State state);
   mutable std::mutex mutex_;
   std::thread thread_;
-  std::atomic<bool> cancel_{false}, pause_{false}, skipSignature_{false}, skipFirmware_{false};
+  std::atomic<bool> cancel_{false}, stop_{false}, pause_{false}, skipSignature_{false}, skipFirmware_{false};
   Progress progress_;
   uint64_t completed_ = 0;
   std::map<std::string, uint64_t> contents_;

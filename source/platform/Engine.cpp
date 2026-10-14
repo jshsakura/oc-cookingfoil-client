@@ -351,8 +351,10 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
       [&](uint64_t offset, const char *data, size_t length) { return offset >= from && write(offset - from, data, length); },
       options);
   if (result.cancelled) {
-    if (sink)
+    if (sink && !sink->stopping())
       sink->forgetResumePoint(key);
+    else if (sink && unsaved)
+      save(); // stopped: goes on from here next time
     return Placed::Cancelled;
   }
   if (!result.ok) {

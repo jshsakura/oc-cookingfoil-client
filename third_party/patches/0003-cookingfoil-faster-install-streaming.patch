@@ -282,7 +282,7 @@ index 9ebdd96..8b711ff 100755
  
              if (i != 0 && bufferSegment->writeOffset != 0)
 diff --git a/source/install/http_nsp.cpp b/source/install/http_nsp.cpp
-index 50d2f4a..892f701 100755
+index 50d2f4a..d394db4 100755
 --- a/source/install/http_nsp.cpp
 +++ b/source/install/http_nsp.cpp
 @@ -22,6 +22,7 @@ SOFTWARE.
@@ -540,7 +540,7 @@ index 50d2f4a..892f701 100755
              if (inst::ui::instPage::isInstallCancelRequested()) {
                  args.retryConfirm.approved.store(false);
                  args.retryConfirm.pending.store(false);
-@@ -280,10 +413,28 @@ namespace tin::install::nsp
+@@ -280,10 +413,30 @@ namespace tin::install::nsp
  
          thrd_join(curlThread, NULL);
          thrd_join(writeThread, NULL);
@@ -548,8 +548,10 @@ index 50d2f4a..892f701 100755
 +        joiner.curl = joiner.write = nullptr;
          if (inst::ui::instPage::isInstallCancelRequested())
 +        {
-+            // Cancelled on purpose: nothing of it stays to go on from.
-+            foil::install::forgetResume(displayFileName);
++            // Cancelled on purpose: nothing of it stays to go on from. Stopped
++            // (the app closing): its last point stays for the next start.
++            if (inst::ui::instPage::isInstallDiscardRequested())
++                foil::install::forgetResume(displayFileName);
 +            try { bufferedPlaceholderWriter.close(); } catch (...) {}
              THROW_FORMAT("Installation canceled.");
 -        if (stopThreadsHttpNsp) THROW_FORMAT(("inst.net.transfer_interput"_lang).c_str());
@@ -762,7 +764,7 @@ index 325c6b9..70a8738 100755
  
          writer.close();
 diff --git a/source/install/install.cpp b/source/install/install.cpp
-index 422208b..fef9555 100755
+index 422208b..2fee50b 100755
 --- a/source/install/install.cpp
 +++ b/source/install/install.cpp
 @@ -28,6 +28,8 @@ SOFTWARE.
@@ -784,8 +786,35 @@ index 422208b..fef9555 100755
              try {
                  contentStorage.DeletePlaceholder(*(const NcmPlaceHolderId*)&ncaId);
              } catch (...) {}
+@@ -164,7 +169,7 @@ namespace tin::install
+             }
+         }
+         catch (...) {
+-            CleanupSessionInstalledNcas(!inst::ui::instPage::isInstallCancelRequested());
++            CleanupSessionInstalledNcas(!inst::ui::instPage::isInstallDiscardRequested());
+             throw;
+         }
+     }
+@@ -180,7 +185,7 @@ namespace tin::install
+         }
+         catch (std::runtime_error& e)
+         {
+-            CleanupSessionInstalledNcas(!inst::ui::instPage::isInstallCancelRequested());
++            CleanupSessionInstalledNcas(!inst::ui::instPage::isInstallDiscardRequested());
+             throw;
+         }
+ 
+@@ -220,7 +225,7 @@ namespace tin::install
+             // Committed metadata may reference new content. Keep it on a
+             // publication failure rather than leave a broken database record.
+             if (!publishingMetadata)
+-                CleanupSessionInstalledNcas(!inst::ui::instPage::isInstallCancelRequested());
++                CleanupSessionInstalledNcas(!inst::ui::instPage::isInstallDiscardRequested());
+             throw;
+         }
+     }
 diff --git a/source/install/install_nsp.cpp b/source/install/install_nsp.cpp
-index 3be09b7..64b8226 100755
+index 3be09b7..1bcf539 100755
 --- a/source/install/install_nsp.cpp
 +++ b/source/install/install_nsp.cpp
 @@ -38,6 +38,8 @@ SOFTWARE.
@@ -829,7 +858,7 @@ index 3be09b7..64b8226 100755
          {
 -            try { contentStorage->DeletePlaceholder(*(NcmPlaceHolderId*)&ncaId); } catch (...) {}
 +            // CookingFoil: kept for the next try when it can go on from where it stopped.
-+            const bool keep = !inst::ui::instPage::isInstallCancelRequested() && foil::install::resumable(ncaIdText);
++            const bool keep = !inst::ui::instPage::isInstallDiscardRequested() && foil::install::resumable(ncaIdText);
 +            if (!keep)
 +                try { contentStorage->DeletePlaceholder(*(NcmPlaceHolderId*)&ncaId); } catch (...) {}
              try {

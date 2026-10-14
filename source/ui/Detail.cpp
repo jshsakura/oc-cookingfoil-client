@@ -355,8 +355,8 @@ void Application::detail() {
   if (part_ == rows + 1 && panelFocus)
     paint_.ring(840, 568, 386, 60, 14);
   // Already on its way: dark while it downloads, its progress filling a
-  // butter bar along the bottom; quiet gray while it waits its turn. A only
-  // says so (the page stays for picking more).
+  // butter bar along the bottom; quiet gray while it waits its turn. A asks
+  // whether to cancel it.
   double percent = 0;
   if (const int onTheWay = pickedOnTheWay(percent)) {
     const bool downloading = onTheWay == 2;

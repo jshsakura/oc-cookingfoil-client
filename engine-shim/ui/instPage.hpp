@@ -6,6 +6,12 @@ struct instPage {
     auto *sink = foil::install::engineSink();
     return sink && sink->cancellationRequested();
   }
+  // Cancelled to be dropped, not stopped to go on later (the app closing):
+  // only then does what came down go.
+  static bool isInstallDiscardRequested() {
+    auto *sink = foil::install::engineSink();
+    return sink && sink->cancellationRequested() && !sink->stopping();
+  }
   // Paused from 다운로드: the engine drops its connections and waits.
   static bool isInstallPaused() {
     auto *sink = foil::install::engineSink();

@@ -293,8 +293,10 @@ void Application::dialogs() {
                                            "", tr("Stop and exit"), 25)
                                    : modal(700, 24 + 30 + 16, tr("Cancel the install?"), tr("Keep installing"), "",
                                            tr("Cancel install"), 25);
-    paint_.fonts.text(tr("What came down so far can be picked up next time."), body.x + 32, body.y + 24, 19, Secondary, false,
-                      body.w - 64);
+    // Stopped to leave, it goes on next time; cancelled, what came down goes.
+    paint_.fonts.text(confirmExit_ ? tr("What came down so far can be picked up next time.")
+                                   : tr("The partly downloaded game file is removed."),
+                      body.x + 32, body.y + 24, 19, Secondary, false, body.w - 64);
   } else if (screen_ == Screen::Saves && dropboxModal()) {
     dropboxDialog(); // under an alert it raised, so the alert reads first
   }
