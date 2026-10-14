@@ -8,6 +8,7 @@
 #include "core/Homebrew.hpp"
 #include "core/Sha256.hpp"
 #include "platform/Storage.hpp"
+#include "install/Installer.hpp"
 #include <arpa/inet.h>
 #include <cstring>
 #include <filesystem>
@@ -494,5 +495,38 @@ int runResumeTests() {
     fs::remove_all(sd);
   }
   fs::remove_all(root);
+  {
+    // The preview downloads a game for real on the console's engine and
+    // throws the bytes away; a server that refuses it fails the install.
+    Mock server;
+    server.body = std::string(3u << 20, 'g');
+    server.start(1);
+    foil::Item item;
+    item.url = server.url + "/game.nsp";
+    item.name = "Game";
+    bool threw = false;
+    try {
+      foil::install::nativeInstall(item, "sd", {});
+    } catch (...) {
+      threw = true;
+    }
+    CHECK(!threw);
+    CHECK(server.requests.size() == 1);
+  }
+  {
+    Mock server;
+    server.body = "x";
+    server.paths["/other"] = "x";
+    server.start(1);
+    foil::Item item;
+    item.url = server.url + "/game.nsp";
+    bool threw = false;
+    try {
+      foil::install::nativeInstall(item, "sd", {});
+    } catch (...) {
+      threw = true;
+    }
+    CHECK(threw);
+  }
   return failures;
 }

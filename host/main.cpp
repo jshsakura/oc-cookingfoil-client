@@ -36,6 +36,9 @@ std::pair<foil::InstalledLibrary, foil::SaveEntry> fixtureInstalled(const std::s
   return {std::move(library), save};
 }
 } // namespace
+namespace foil::platform {
+void setHostSpace(uint64_t bytes);
+}
 int main(int argc, char **argv) {
   std::string shot, fixture, url, configPath, statePath = "out/state.json", language, self;
   int servePort = 0;
@@ -136,6 +139,14 @@ int main(int argc, char **argv) {
     return 1;
   }
   ui.usePatchFolder(std::filesystem::path(statePath).parent_path().string() + "/sd");
+  // A preview download writes nothing (it measures the speed), so the card
+  // it installs to is this computer's free space where its SD folder lives.
+  if (servePort) {
+    std::error_code spaceError;
+    const auto room = std::filesystem::space(std::filesystem::path(statePath).parent_path(), spaceError);
+    if (!spaceError)
+      foil::platform::setHostSpace(room.available);
+  }
   const bool pending = liveSession && liveSession->pairingPending();
   if (liveSession)
     ui.setSession(std::move(liveSession));
