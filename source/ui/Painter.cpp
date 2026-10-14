@@ -348,6 +348,7 @@ static const char *IconPaths[] = {
     R"(<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>)",                                   // 38 power
     R"(<path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.86a10 10 0 0 1 14 0"/><path d="M8.5 16.43a5 5 0 0 1 7 0"/>)", // 39 wifi
     R"(<path d="M12 21V9M7 14l5-5 5 5M4 4h16"/>)", // 40 upload
+    R"(<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/>)", // 41 picture
 };
 // Glyph-like marks read better a touch heavier than the menu icons.
 // Marks read a touch heavier than outline icons.

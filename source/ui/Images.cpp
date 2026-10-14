@@ -25,7 +25,7 @@ constexpr size_t MaxQueuedJobs = 64;
 // each) with room for banners and screenshots. A card short of room keeps a
 // tenth of what is free, never under the floor: a cache too small is
 // emptied and filled again all the time, which wears the card more.
-constexpr uint64_t MaxCacheBytes = 256ull << 20, MinCacheBytes = 64ull << 20;
+constexpr uint64_t MaxCacheBytes = 128ull << 20, MinCacheBytes = 64ull << 20;
 constexpr int MaxAttempts = 3; // then it stays blank until the list is refreshed
 constexpr uint32_t RetryAfterMs = 10000;
 // Large art is kept at screen size; a 4K banner would otherwise hold 64MB.
@@ -67,6 +67,20 @@ CacheCleanup &cacheCleanup() {
   return cleanup;
 }
 } // namespace
+uint64_t imageCacheBytes(const std::string &folder) {
+  uint64_t bytes = 0;
+  std::error_code error;
+  for (std::filesystem::directory_iterator it(folder, error), end; !error && it != end; it.increment(error))
+    if (it->path().extension() == ".image")
+      bytes += it->file_size(error);
+  return bytes;
+}
+void clearImageCache(const std::string &folder) {
+  std::error_code error;
+  for (std::filesystem::directory_iterator it(folder, error), end; !error && it != end; it.increment(error))
+    if (it->path().extension() == ".image")
+      std::filesystem::remove(it->path(), error);
+}
 uint64_t imageCacheLimit(std::optional<uint64_t> free) {
   return free ? std::clamp(*free / 10, MinCacheBytes, MaxCacheBytes) : MaxCacheBytes;
 }

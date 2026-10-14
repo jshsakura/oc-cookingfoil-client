@@ -44,10 +44,15 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(std::filesystem::exists(folder / "note.txt"));
     foil::ui::trimImageCache(folder.string(), 2000); // at the limit: nothing goes
     CHECK(std::filesystem::exists(folder / "p3.image"));
-    // The limit: 256 MB, a tenth of a nearly full card's room, never under 64 MB.
-    CHECK(foil::ui::imageCacheLimit(std::nullopt) == 256ull << 20);
-    CHECK(foil::ui::imageCacheLimit(100ull << 30) == 256ull << 20);
-    CHECK(foil::ui::imageCacheLimit(1ull << 30) == (1ull << 30) / 10);
+    // 설정 shows the pictures' size (other files not counted) and empties it.
+    CHECK(foil::ui::imageCacheBytes(folder.string()) == 2000);
+    foil::ui::clearImageCache(folder.string());
+    CHECK(foil::ui::imageCacheBytes(folder.string()) == 0);
+    CHECK(std::filesystem::exists(folder / "note.txt"));
+    // The limit: 128 MB, a tenth of a nearly full card's room, never under 64 MB.
+    CHECK(foil::ui::imageCacheLimit(std::nullopt) == 128ull << 20);
+    CHECK(foil::ui::imageCacheLimit(100ull << 30) == 128ull << 20);
+    CHECK(foil::ui::imageCacheLimit(1000ull << 20) == 100ull << 20);
     CHECK(foil::ui::imageCacheLimit(100ull << 20) == 64ull << 20);
     std::filesystem::remove_all(folder);
   }

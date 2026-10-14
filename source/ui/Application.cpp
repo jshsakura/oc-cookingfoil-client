@@ -57,6 +57,8 @@ Application::~Application() {
     patchWorker_.join();
   if (cleanupWorker_.joinable())
     cleanupWorker_.join();
+  if (cacheWorker_.joinable())
+    cacheWorker_.join();
   if (saveWorker_.joinable())
     saveWorker_.join();
   if (retroWorker_.joinable())
@@ -114,9 +116,7 @@ bool Application::open() {
   images_ = std::make_unique<Images>(paint_.renderer);
   images_->source(
       {}, {},
-      statePath_.empty()
-          ? ""
-          : std::filesystem::path(statePath_).parent_path().string() + "/cache",
+      imageCacheFolder(),
       fixture_);
   step(tr("Reading patches and download history on the SD card"), 0.4f, "sd");
 #ifdef __SWITCH__
@@ -234,9 +234,7 @@ void Application::setSession(std::unique_ptr<net::Session> session) {
   images_ = std::make_unique<Images>(paint_.renderer);
   images_->source(
       session_->server(), state_,
-      statePath_.empty()
-          ? ""
-          : std::filesystem::path(statePath_).parent_path().string() + "/cache",
+      imageCacheFolder(),
       fixture_);
 }
 void Application::localizeNames() {
@@ -353,6 +351,9 @@ void Application::screen(Screen screen) {
   // Leaving 패치 stops its check; the next visit goes on from there.
   if (screen_ == Screen::Patches && screen != Screen::Patches)
     patchCheckStop_ = true;
+  // 설정 measures the picture cache again each time it opens.
+  if (screen == Screen::Settings && screen_ != Screen::Settings)
+    measureImageCache(false);
   screen_ = screen;
   unglide();
   nav_ = menuIndex(screen);
@@ -474,10 +475,7 @@ void Application::connect(size_t index) {
                                             statePath_, &stop_);
   connected_ = false;
   images_ = std::make_unique<Images>(paint_.renderer);
-  images_->source(config_.servers[index], state_,
-                  std::filesystem::path(statePath_).parent_path().string() +
-                      "/cache",
-                  fixture_);
+  images_->source(config_.servers[index], state_, imageCacheFolder(), fixture_);
   refresh();
 }
 void Application::refresh() {
@@ -517,6 +515,8 @@ void Application::poll() {
     platform::keepAwake(awake_);
   }
   keepResumeChanges();
+  if (cacheCleared_.exchange(false))
+    message(tr("Deleted the image cache."));
   const auto installStatus = installer_.progress().status;
   if (installStatus == install::Status::Running) {
     const auto bytes = net::receivedBytes();
@@ -990,6 +990,10 @@ void Application::action(Action a) {
     }
     return;
   }
+  if (cacheClearAsk_) {
+    imageCacheAction(a);
+    return;
+  }
   if (homebrewRemoveAsk_ || homebrewAsk_ || shortcutRemoveAsk_ ||
       (screen_ == Screen::Homebrew && (a == Action::Previous || a == Action::Next || a == Action::Search ||
                                        (!sidebar_ && a != Action::Back)))) {
@@ -1276,11 +1280,19 @@ void Application::action(Action a) {
         break;
       case 2: appUpdateAction(a); break;
       case 3: startCleanup(false); break;
+      case 4:
+        if (cacheBusy_ || cacheBytes_ < 0) break; // still measuring
+        if (cacheBytes_ == 0) message(tr("The image cache is empty."));
+        else {
+          cacheClearAsk_ = true;
+          dialogFocus_ = 0;
+        }
+        break;
       // The switches, together.
-      case 4: toggleInstallCheck(state_.skipSignatureCheck); break;
-      case 5: toggleInstallCheck(state_.skipFirmwareCheck); break;
-      case 6: toggleInstallCheck(state_.makeShortcuts); break;
-      case 7:
+      case 5: toggleInstallCheck(state_.skipSignatureCheck); break;
+      case 6: toggleInstallCheck(state_.skipFirmwareCheck); break;
+      case 7: toggleInstallCheck(state_.makeShortcuts); break;
+      case 8:
         bugAsk_ = true;
         bugMessage_.clear();
         dialogFocus_ = 0;

@@ -17,6 +17,9 @@ namespace foil::ui {
 void trimImageCache(const std::string &folder, uint64_t limit, const std::atomic<bool> *stop = nullptr);
 // How much the picture cache may keep, from the card's free space (none known: the most).
 uint64_t imageCacheLimit(std::optional<uint64_t> free);
+// The pictures in the cache folder: their size, or all of them gone (설정).
+uint64_t imageCacheBytes(const std::string &folder);
+void clearImageCache(const std::string &folder);
 class Images {
 public:
   explicit Images(SDL_Renderer *renderer);

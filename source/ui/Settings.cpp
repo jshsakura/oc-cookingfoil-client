@@ -120,29 +120,33 @@ void Application::settings() {
   option(1, 26, tr("Default location"), installTarget() == "nand" ? tr("Console") : tr("SD card"), Ink, true);
   // Ignoring signatures (the default) installs content that only runs with
   // sigpatches, which is what most homebrew installers expect.
-  option(4, 34, tr("Ignore signature check"), "", Ink, true, state_.skipSignatureCheck ? 1 : 0);
-  note(4, tr("Installs unsigned files too. Needs sigpatches"));
+  option(5, 34, tr("Ignore signature check"), "", Ink, true, state_.skipSignatureCheck ? 1 : 0);
+  note(5, tr("Installs unsigned files too. Needs sigpatches"));
   // Ignoring firmware (the default) clears the version a game asks for, so
   // it installs and launches on older firmware when it can run there.
-  option(5, 27, tr("Ignore firmware check"), "", Ink, true, state_.skipFirmwareCheck ? 1 : 0);
-  note(5, tr("Installs even when the firmware is older than required"));
+  option(6, 27, tr("Ignore firmware check"), "", Ink, true, state_.skipFirmwareCheck ? 1 : 0);
+  note(6, tr("Installs even when the firmware is older than required"));
   // A HOME Menu shortcut with each retro game and homebrew app (and this
   // app's own), when the server builds one.
-  option(6, 0, tr("Make HOME Menu shortcuts"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
+  option(7, 0, tr("Make HOME Menu shortcuts"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
   // Said as it is: made here, or only from the server's shortcuts when this
   // console cannot make them.
-  note(6, !state_.makeShortcuts            ? tr("Not made")
+  note(7, !state_.makeShortcuts            ? tr("Not made")
           : platform::canMakeShortcuts() ? tr("Creates a shortcut when a retro game or homebrew app downloads")
                                          : tr("Only for items the server has a shortcut for"));
   // The log's tail to the server, only when pressed: what went wrong reaches
   // whoever runs it.
-  option(7, 33, tr("Send a bug report"),
+  option(8, 33, tr("Send a bug report"),
          bugWorker_.joinable() ? std::string(tr("Sending")) : std::string(tr("Sends the end of the app's log to your server")),
          Secondary, false);
   // Leftover cleanup: content no installed game uses, found first and only
   // deleted after a confirmation.
   option(3, 14, tr("Clean up leftovers"),
          !cleanupBusy_ ? tr("Finds and deletes interrupted downloads and unused install files") : cleanupRemoving_ ? tr("Deleting") : tr("Scanning"), Secondary, false);
+  // The pictures kept on the card: how full their room is; A empties it.
+  if (cacheBytes_ < 0) measureImageCache(false);
+  option(4, 41, tr("Image cache"), "", Ink, true);
+  imageCacheValue(Right, optionsTop + 8 + 4 * Row + oy + (Row - 2) / 2);
   // This build against the server's newest; A checks or updates.
   option(2, 3, tr("App update"), appUpdateStatus(), appUpdate_ == AppUpdate::Available ? Ink : Secondary,
          appUpdate_ == AppUpdate::Available);

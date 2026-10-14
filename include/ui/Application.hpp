@@ -265,7 +265,7 @@ public:
   void saveOwnState();
   // 설정's options card: 언어, 기본 저장 위치, 앱 업데이트, 남은 파일 정리,
   // then the switches: 서명 검사, 펌웨어 검사, 홈 메뉴 바로가기, 오류 로그 전송.
-  static constexpr int SettingsOptions = 8;
+  static constexpr int SettingsOptions = 9;
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).
@@ -673,6 +673,12 @@ private:
   void startCleanup(bool remove);
   void pollCleanup();
   void cleanupDialog();
+  // 설정's 이미지 캐시 row (ImageCache.cpp).
+  std::string imageCacheFolder() const;
+  void measureImageCache(bool clear);
+  void imageCacheValue(float right, float mid);
+  void imageCacheAction(Action a);
+  void imageCacheDialog();
   void cleanupProgressDialog(); // while a scan or delete runs
   CleanupProgress cleanupProgress_;
   float cleanupShown_ = 0; // the bar's drawn fill, eased toward the real one
@@ -941,6 +947,10 @@ private:
   uint32_t patchRetryAt_ = 0; // ticks when a 503 list asks again
   bool managingPatch_ = false; // the patch management popup is open
   std::thread cleanupWorker_;
+  std::thread cacheWorker_;
+  std::atomic<int64_t> cacheBytes_{-1}; // the picture cache's size; -1 until measured
+  std::atomic<bool> cacheBusy_{false}, cacheCleared_{false};
+  bool cacheClearAsk_ = false;
   std::atomic<bool> cleanupDone_{false};
   bool cleanupBusy_ = false, cleanupRemoving_ = false, confirmCleanup_ = false;
   Parsed<CleanupReport> cleanupResult_;

@@ -184,7 +184,7 @@ void Application::dialogs() {
       !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !confirmCleanup_ &&
       !languagePopup_ && !cleanupBusy_ && !retroAsking_ && !retroArchAsking_ && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
-      !homebrewRemoveAsk_ && !homebrewAsk_ && !shortcutRemoveAsk_ && !selfShortcutAsk_ && unqueueAsk_ < 0 && !bugAsk_)
+      !homebrewRemoveAsk_ && !homebrewAsk_ && !shortcutRemoveAsk_ && !selfShortcutAsk_ && unqueueAsk_ < 0 && !bugAsk_ && !cacheClearAsk_)
     return;
   SDL_RenderSetClipRect(paint_.renderer, nullptr);
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 150});
@@ -194,7 +194,7 @@ void Application::dialogs() {
                     dropboxUnlinkAsk_ * 32 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + homebrewAsk_ * 256 +
                     (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + shopAppSaveAsk_ * 2048 +
                     (serverForm_ && serverForm_->confirmDelete) * 4096 + shortcutRemoveAsk_ * 8192 +
-                    selfShortcutAsk_ * 16384 + (unqueueAsk_ >= 0) * 32768 + bugAsk_ * 65536;
+                    selfShortcutAsk_ * 16384 + (unqueueAsk_ >= 0) * 32768 + bugAsk_ * 65536 + cacheClearAsk_ * 131072;
   if (which != popupKind_) {
     popupKind_ = which;
     popupAt_ = SDL_GetTicks();
@@ -222,6 +222,8 @@ void Application::dialogs() {
     cleanupProgressDialog();
   } else if (confirmCleanup_) {
     cleanupDialog();
+  } else if (cacheClearAsk_ && alert_.empty()) {
+    imageCacheDialog();
   } else if (confirmPatchRemove_ || managingPatch_ || pickingPatch_) {
     patchDialog();
   } else if (shortcutRemoveAsk_ && alert_.empty()) {
