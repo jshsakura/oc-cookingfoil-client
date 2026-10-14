@@ -18,7 +18,9 @@
 #include "core/ClientUpdate.hpp"
 #include "core/Patches.hpp"
 #include "core/I18n.hpp"
+#include <condition_variable>
 #include <deque>
+#include <future>
 #include <functional>
 #include <memory>
 #include <set>
@@ -504,6 +506,7 @@ private:
   int retroArchQueuedAt() const;
   int retroArchPart_ = 1;      // 0 the 전체 다시 받기 row, 1 the button
   size_t retroArchFiles_ = 0;  // files the base pack record lists
+  std::future<size_t> retroArchCount_; // that count, read off the main thread
   void retroDetail();
   void retroDetailPanel();
   void retroDetailAction(Action action);
@@ -513,6 +516,9 @@ private:
   std::string retroGetLabel() const;
   void getRetroPick(); // the button: get it, or ask to cancel it on its way
   int retroOnTheWay(const retro::Game &game, double &percent) const;
+  // The page's button: 2 while this game or a checked version downloads, 1
+  // while one waits (`queueAt` its place in the queue), else 0.
+  int retroPageOnTheWay(double &percent, int &queueAt) const;
   // A page the menu gives way to: a game's, shop or retro.
   bool fullPage() const {
     return screen_ == Screen::Detail || screen_ == Screen::RetroDetail || screen_ == Screen::RetroArch ||
@@ -981,6 +987,26 @@ private:
   std::optional<uint64_t> sdFree_, nandFree_, sdTotal_, nandTotal_;
   bool storageChecked_ = false;
   uint32_t storageAt_ = 0, noticeAt_ = 0;
+  // Free space and the card files the screens ask about (RetroArch, cores),
+  // read on a worker: while a download writes, the card answers slowly, and
+  // a frame that waits for it stops the screen.
+  struct StorageFound {
+    std::optional<uint64_t> sdFree, nandFree, sdTotal, nandTotal;
+    std::map<std::string, bool> files;
+    uint64_t generation = 0;
+  };
+  std::thread storageWorker_;
+  std::atomic<bool> storageDone_{false};
+  StorageFound storageFound_;
+  void pollStorage();
+  // Whether a file (relative to the card's root) is there, as last read; a
+  // path never asked about is read once on the spot.
+  bool cardHas(const std::string &path) const;
+  mutable std::map<std::string, bool> cardSeen_;
+  uint64_t cardGeneration_ = 0;
+  // Something was written to or removed from the card: what was read goes,
+  // and free space is asked again.
+  void cardChanged();
   bool exitAfterDevice_ = false; // + pressed while the console was being read
   bool cancelRetro_ = false; // the cancel popup is about the retro download
   bool confirmCancel_ = false, confirmExit_ = false, exitAfterCancel_ = false,
@@ -1202,9 +1228,23 @@ private:
   void runningList(float y);
   uint64_t queuedBytes() const;
   std::vector<history::Entry> history_;
+  // Hands the list to the history writer and returns at once: a write on the
+  // SD card (a lock file, a transaction) takes long enough to stall a frame,
+  // and a button press can save two or three times. The writer keeps only
+  // the newest list, so a burst of saves is one write.
   void saveHistory();
+  // Writes what is still waiting and stops the writer (closing).
+  void flushHistory();
   void openDownloads(const std::string &sd);
   DownloadStore store_;
+  std::thread historyWriter_;
+  std::mutex historyMutex_;
+  std::condition_variable historyWake_;
+  std::optional<std::vector<history::Entry>> historyPending_;
+  // Resume points from the install thread, newest per file, for the writer.
+  std::map<std::string, std::optional<install::Installer::ResumePoint>> resumePending_;
+  bool historyClosing_ = false;
+  void wakeHistoryWriter();
   // 다운로드's tabs: 0 진행 중, 1 완료, 2 실패 (and cancelled).
   int downloadsTab_ = 0, downloadsRow_ = 0;
   std::vector<int> downloadsList() const; // history_ indices in the tab

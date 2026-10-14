@@ -51,7 +51,7 @@ uint64_t fileSize(const std::string &path) {
   return stat(path.c_str(), &st) == 0 ? uint64_t(st.st_size) : 0;
 }
 } // namespace
-bool Application::retroArchPresent() const { return fileExists(sdRoot_ + "/" + retro::RetroArchApp); }
+bool Application::retroArchPresent() const { return cardHas(retro::RetroArchApp); }
 bool Application::retroInstalled(const retro::Game &game) const {
   if (game.romPath.empty()) return false;
   const auto found = retroOnCard_.find(game.romPath);
@@ -60,12 +60,12 @@ bool Application::retroInstalled(const retro::Game &game) const {
 // The game's core is not on the card while RetroArch is.
 bool Application::retroCoreMissing(const retro::Game &game) const {
   const auto core = retro::corePath(game.core);
-  return !core.empty() && retroArchPresent() && !fileExists(sdRoot_ + "/" + core);
+  return !core.empty() && retroArchPresent() && !cardHas(core);
 }
 // RetroArch and the game's core both on the card: it can start.
 bool Application::retroReady(const retro::Game &game) const {
   const auto core = retro::corePath(game.core);
-  return retroArchPresent() && (core.empty() || fileExists(sdRoot_ + "/" + core));
+  return retroArchPresent() && (core.empty() || cardHas(core));
 }
 bool Application::retroArchPending() const {
   return std::any_of(history_.begin(), history_.end(), [](const history::Entry &e) {
@@ -424,7 +424,7 @@ bool Application::runRetroGame(const retro::Game &game) {
         return [this, ok, error, game, there, bezel, cancelled, received] {
           if (!game.romPath.empty()) retroOnCard_[game.romPath] = there;
           if (!game.bezelPath.empty()) retroOnCard_[game.bezelPath] = bezel;
-          storageAt_ = 0;
+          cardChanged();
           if (finishRetroEntry("retro", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
                            ok || cancelled ? "" : error.message, ok ? game.size : received))
             return;
@@ -609,7 +609,7 @@ bool Application::runRetroArch(bool full) {
         const bool cancelled = retroCancel_;
         const uint64_t received = retroReceived_;
         return [this, error, done, total, cancelled, received] {
-          storageAt_ = 0;
+          cardChanged();
           if (finishRetroEntry("retroarch",
                                cancelled ? history::Outcome::Cancelled : error ? history::Outcome::Failed : history::Outcome::Done,
                                cancelled ? "" : error.message, received))

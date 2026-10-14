@@ -74,8 +74,11 @@ std::string timeLeftText(double seconds);
 class Installer {
 public:
   ~Installer();
+  // `free` is the target's free space when the caller already knows it
+  // (asking the card while it writes can take seconds); else it is asked.
   Error start(std::vector<Item> files, std::string name, std::string icon,
-              std::string target, Server server, State state);
+              std::string target, Server server, State state,
+              std::optional<uint64_t> free = std::nullopt);
   void cancel() { cancel_ = true; }
   // Ends the download now but keeps where it stands, for the next start.
   void stop() {

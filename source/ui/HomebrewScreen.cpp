@@ -216,7 +216,7 @@ bool Application::runHomebrew(const homebrew::App &app) {
         const bool cancelled = retroCancel_;
         const uint64_t received = retroReceived_;
         return [this, ok, error, app, cancelled, received] {
-          storageAt_ = 0;
+          cardChanged();
           if (finishRetroEntry("homebrew", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
                            ok || cancelled ? "" : error.message, received))
             return;

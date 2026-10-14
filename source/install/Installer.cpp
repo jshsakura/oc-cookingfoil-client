@@ -116,13 +116,13 @@ Progress Installer::progress() const {
 }
 Error Installer::start(std::vector<Item> files, std::string name,
                        std::string icon, std::string target, Server server,
-                       State state) {
+                       State state, std::optional<uint64_t> free) {
   Error error;
   if (running()) {
     error.message = tr("Select again after the current install finishes.");
     return error;
   }
-  error = preflight(files, platform::freeSpace(target));
+  error = preflight(files, free ? free : platform::freeSpace(target));
   if (error)
     return error;
   if (!state.skipFirmwareCheck) {

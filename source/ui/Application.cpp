@@ -77,6 +77,9 @@ Application::~Application() {
     shopSavesWorker_.join();
   if (dropboxWorker_.joinable())
     dropboxWorker_.join();
+  flushHistory();
+  if (storageWorker_.joinable())
+    storageWorker_.join();
   if (awake_)
     platform::keepAwake(false);
 }
@@ -109,12 +112,21 @@ void Application::serverRestartNotice() {
 }
 // Where a cut-off file stands, from the install thread to the card.
 void Application::keepResumeChanges() {
-  for (const auto &[key, point] : installer_.takeResumeChanges()) {
-    if (point)
-      store_.saveResumePoint(key, *point);
-    else
-      store_.forgetResumePoint(key);
+  auto changes = installer_.takeResumeChanges();
+  if (changes.empty() || !store_.isOpen())
+    return;
+  {
+    std::lock_guard<std::mutex> held(historyMutex_);
+    if (historyClosing_) {
+      // Closing: the writer is gone, so straight to the card.
+      for (const auto &[key, point] : changes)
+        point ? store_.saveResumePoint(key, *point) : store_.forgetResumePoint(key);
+      return;
+    }
+    for (auto &[key, point] : changes)
+      resumePending_[key] = std::move(point);
   }
+  wakeHistoryWriter();
 }
 bool Application::open() {
   // Startup runs on the main thread, so each step also lets the console
@@ -1674,20 +1686,7 @@ void Application::render() {
   else if (sidebar_ && autoSidebar_ && !fullPage() && hasFocusable()) {
     sidebar_ = autoSidebar_ = false;
   }
-#ifdef __SWITCH__
-  if (SDL_GetTicks() - storageAt_ > 5000 || !storageAt_) {
-    sdFree_ = platform::freeSpace("sd");
-    nandFree_ = platform::freeSpace("nand");
-    if (!sdTotal_)
-      sdTotal_ = platform::totalSpace("sd");
-    if (!nandTotal_)
-      nandTotal_ = platform::totalSpace("nand");
-    storageAt_ = SDL_GetTicks();
-  }
-#endif
-  // After the first query (or on a PC, where there is nothing to ask) a
-  // missing number means unknown, not "still loading".
-  storageChecked_ = true;
+  pollStorage();
   images_->decode();
   paint_.rect(0, 0, 1280, 720, Ground);
   if (!fullPage())
@@ -1751,10 +1750,11 @@ void Application::render() {
     else {
       using Hints = std::vector<std::pair<std::string, std::string>>;
       double percent = 0;
+      int queueAt = -1;
       const bool onButton = retroPart_ >= int(retroVersionList().size());
       auto hints = descriptionFocus_ ? Hints{{"A", tr("Back to items")}, {"B", tr("Back")}}
                    : Hints{{"A", !onButton ? std::string(tr("Toggle"))
-                                 : retroOnTheWay(retroPick_, percent) ? std::string(tr("Cancel download"))
+                                 : retroPageOnTheWay(percent, queueAt) ? std::string(tr("Cancel download"))
                                                                       : retroGetLabel()},
                            {"B", tr("Back")}};
       if (!detail_.screenshots.empty()) hints.insert(hints.end() - 1, {"ZR", tr("Photos")});
@@ -1902,7 +1902,7 @@ namespace foil::ui {
 void Application::refreshAll() {
   // Reconnects the shop (and rereads config.json), then the console's
   // games and free space; a screen with its own list reloads with it.
-  storageAt_ = 0;
+  cardChanged();
   images_->forgetFailures();
 #ifdef __SWITCH__
   if (!deviceBusy_ && !managedGame_) refreshInstalled();
@@ -2233,7 +2233,8 @@ Error Application::launchQueued() {
   const auto row = std::find_if(history_.begin(), history_.end(),
                                [&](const history::Entry &e) { return e.id == next.entry; });
   if (auto error = installer_.start(files, next.name, next.icon, next.target,
-                                    session_ ? session_->server() : Server{}, state_)) {
+                                    session_ ? session_->server() : Server{}, state_,
+                                    next.target == "nand" ? nandFree_ : sdFree_)) {
     // It cannot start (no room, firmware): the rest of its pick goes too.
     history::end(history_, next.entry, history::Outcome::Failed, error.message, int64_t(std::time(nullptr)));
     dropGroup(next.group, error.message);
@@ -2363,10 +2364,105 @@ void Application::openDownloads(const std::string &sd) {
   history::settle(history_);
   saveHistory();
 }
+// Every five seconds (or right away once something changed what is on the
+// card), on a worker; the frame only picks up what it found.
+void Application::pollStorage() {
+  if (storageDone_.exchange(false)) {
+    storageWorker_.join();
+    auto found = std::exchange(storageFound_, {});
+#ifdef __SWITCH__
+    sdFree_ = found.sdFree;
+    nandFree_ = found.nandFree;
+    if (found.sdTotal) sdTotal_ = found.sdTotal;
+    if (found.nandTotal) nandTotal_ = found.nandTotal;
+#endif
+    // Read before the card last changed: stale.
+    if (found.generation == cardGeneration_)
+      for (const auto &[path, there] : found.files) cardSeen_[path] = there;
+    // After the first query (or on a PC, where there is nothing to ask) a
+    // missing number means unknown, not "still loading".
+    storageChecked_ = true;
+  }
+  if (storageWorker_.joinable() || (storageAt_ && SDL_GetTicks() - storageAt_ <= 5000)) return;
+  storageAt_ = std::max<uint32_t>(1, SDL_GetTicks());
+  std::vector<std::string> paths;
+  for (const auto &[path, there] : cardSeen_) paths.push_back(path);
+  const bool totals = !sdTotal_ || !nandTotal_;
+  storageWorker_ = std::thread([this, paths = std::move(paths), totals, sd = sdRoot_, generation = cardGeneration_] {
+    StorageFound found;
+    found.generation = generation;
+#ifdef __SWITCH__
+    found.sdFree = platform::freeSpace("sd");
+    found.nandFree = platform::freeSpace("nand");
+    if (totals) {
+      found.sdTotal = platform::totalSpace("sd");
+      found.nandTotal = platform::totalSpace("nand");
+    }
+#else
+    (void)totals;
+#endif
+    for (const auto &path : paths) {
+      std::error_code ec;
+      found.files[path] = std::filesystem::exists(sd + "/" + path, ec);
+    }
+    storageFound_ = std::move(found);
+    storageDone_ = true;
+  });
+}
+void Application::cardChanged() {
+  cardSeen_.clear();
+  ++cardGeneration_;
+  storageAt_ = 0;
+}
+bool Application::cardHas(const std::string &path) const {
+  const auto seen = cardSeen_.find(path);
+  if (seen != cardSeen_.end()) return seen->second;
+  std::error_code ec;
+  return cardSeen_[path] = std::filesystem::exists(sdRoot_ + "/" + path, ec);
+}
 void Application::saveHistory() {
-  std::string error;
-  if (store_.isOpen() && !store_.save(history_, error))
-    logLine("downloads: " + error);
+  if (!store_.isOpen())
+    return;
+  {
+    std::lock_guard<std::mutex> held(historyMutex_);
+    if (historyClosing_)
+      return;
+    historyPending_ = history_;
+  }
+  wakeHistoryWriter();
+}
+void Application::wakeHistoryWriter() {
+  historyWake_.notify_one();
+  if (historyWriter_.joinable())
+    return;
+  historyWriter_ = std::thread([this] {
+    for (;;) {
+      std::optional<std::vector<history::Entry>> list;
+      std::map<std::string, std::optional<install::Installer::ResumePoint>> points;
+      {
+        std::unique_lock<std::mutex> held(historyMutex_);
+        historyWake_.wait(held, [this] { return historyPending_ || !resumePending_.empty() || historyClosing_; });
+        if (!historyPending_ && resumePending_.empty())
+          return; // closing, nothing left
+        list = std::exchange(historyPending_, std::nullopt);
+        points = std::exchange(resumePending_, {});
+      }
+      std::string error;
+      if (list && !store_.save(*list, error))
+        logLine("downloads: " + error);
+      for (const auto &[key, point] : points)
+        point ? store_.saveResumePoint(key, *point) : store_.forgetResumePoint(key);
+    }
+  });
+}
+void Application::flushHistory() {
+  {
+    std::lock_guard<std::mutex> held(historyMutex_);
+    historyClosing_ = true;
+  }
+  historyWake_.notify_one();
+  if (historyWriter_.joinable())
+    historyWriter_.join();
 }
 void Application::forgetInstall() {
   if (state_.queueJson == "[]")
@@ -2430,7 +2526,7 @@ void Application::pollCleanup() {
     alert_ = cleanupResult_.error.message;
   } else if (cleanupRemoving_) {
     message(trf("Deleted {0} leftover files · {1}.", {count, formatBytes(report.bytes)}));
-    storageAt_ = 0; // free space changed
+    cardChanged(); // free space changed
     refreshInstalled();
   } else if (report.files + report.placeholders == 0) {
     message(tr("No leftover files to clean up."));

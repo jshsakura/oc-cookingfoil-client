@@ -72,22 +72,38 @@ std::vector<retro::Variant> Application::retroVersionList() const {
   only.size = retroPick_.size;
   return {only};
 }
+int Application::retroPageOnTheWay(double &percent, int &queueAt) const {
+  percent = 0;
+  queueAt = -1;
+  const auto mine = [&](const std::string &id) { return !id.empty() && (id == retroPick_.id || retroChecked_.count(id)); };
+  if (mine(retroBusy_)) {
+    if (retroBytes_) percent = std::min(100.0, 100.0 * double(retroReceived_.load()) / double(retroBytes_));
+    return 2;
+  }
+  for (size_t i = 0; i < installQueue_.size(); ++i) {
+    const auto &q = installQueue_[i];
+    if (q.kind != "retro") continue;
+    if ((!retroPick_.bundleUrl.empty() && q.file.url == retroPick_.bundleUrl) || mine(retro::parseGameJson(q.payload).id)) {
+      queueAt = int(i);
+      return 1;
+    }
+  }
+  return 0;
+}
 void Application::getRetroPick() {
-  if (double percent = 0; const int onTheWay = retroOnTheWay(retroPick_, percent)) {
+  double percent = 0;
+  int queueAt = -1;
+  if (const int onTheWay = retroPageOnTheWay(percent, queueAt)) {
     // Already on its way: whether to cancel it, as 다운로드 asks.
     dialogFocus_ = 0;
     if (onTheWay == 2) {
       cancelRetro_ = true;
       confirmCancel_ = true;
       confirmExit_ = false;
-      return;
+    } else {
+      unqueueAsk_ = queueAt;
+      unqueuePick_ = false;
     }
-    for (size_t i = 0; i < installQueue_.size(); ++i)
-      if (installQueue_[i].kind == "retro" && installQueue_[i].file.url == retroPick_.bundleUrl) {
-        unqueueAsk_ = int(i);
-        unqueuePick_ = false;
-        return;
-      }
     return;
   }
   getRetroChecked();
@@ -360,7 +376,6 @@ void Application::retroDetail() {
 // The right panel, where a shop game lists what to install: the versions,
 // the card it goes to and the button.
 void Application::retroDetailPanel() {
-  const auto &game = retroPick_;
   const auto versions = retroVersionList();
   const int rows = int(versions.size());
   const bool panelFocus = !descriptionFocus_;
@@ -439,7 +454,8 @@ void Application::retroDetailPanel() {
   });
   if (retroPart_ >= rows && panelFocus) paint_.ring(840, 568, W, 60, 14);
   double percent = 0;
-  if (const int onTheWay = retroOnTheWay(game, percent)) {
+  int queueAt = -1;
+  if (const int onTheWay = retroPageOnTheWay(percent, queueAt)) {
     const bool downloading = onTheWay == 2;
     paint_.rect(840, 568, W, 60, downloading ? Ink : SDL_Color{228, 225, 218, 255}, 14);
     if (downloading) {

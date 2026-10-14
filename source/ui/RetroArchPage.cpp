@@ -7,6 +7,7 @@
 #include "core/Retro.hpp"
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <ctime>
 namespace foil::ui {
 namespace {
@@ -22,8 +23,11 @@ void Application::openRetroArchPage() {
   retroArchPart_ = Button;
   descriptionScroll_ = 0;
   descriptionFocus_ = false;
-  // Read once on the way in, not on every frame.
-  retroArchFiles_ = retro::parsePackRecord(readFile(sdRoot_ + PackRecordPath)).files.size();
+  // Read once on the way in, off the main thread: the record is large.
+  if (!retroArchCount_.valid())
+    retroArchCount_ = std::async(std::launch::async, [path = sdRoot_ + PackRecordPath] {
+      return retro::parsePackRecord(readFile(path)).files.size();
+    });
 }
 int Application::retroArchQueuedAt() const {
   for (size_t i = 0; i < installQueue_.size(); ++i)
@@ -60,6 +64,8 @@ void Application::retroArchPageAction(Action a) {
                                       : tr("Checking RetroArch for new files."));
 }
 void Application::retroArchPage() {
+  if (retroArchCount_.valid() && retroArchCount_.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+    retroArchFiles_ = retroArchCount_.get();
   const bool present = retroArchPresent();
   // The last time it came down, for its date and size.
   const history::Entry *last = nullptr;
