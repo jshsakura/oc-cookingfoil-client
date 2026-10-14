@@ -184,14 +184,14 @@ void Application::dialogs() {
       !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !confirmCleanup_ &&
       !languagePopup_ && !cleanupBusy_ && !retroArchAsking_ && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
-      !homebrewRemoveAsk_ && !homebrewAsk_ && !shortcutRemoveAsk_ && !selfShortcutAsk_ && unqueueAsk_ < 0 && !bugAsk_ && !cacheClearAsk_)
+      !homebrewRemoveAsk_ && !(homebrewAsk_ && homebrewExtras_) && !shortcutRemoveAsk_ && !selfShortcutAsk_ && unqueueAsk_ < 0 && !bugAsk_ && !cacheClearAsk_)
     return;
   SDL_RenderSetClipRect(paint_.renderer, nullptr);
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 150});
   blockTouch();
   // When the popup on top changed, for the double-press guard (settled()).
   const int which = confirmCancel_ * 1 + confirmCleanup_ * 2 + confirmPatchRemove_ * 4 + confirmInstall_ * 8 +
-                    dropboxUnlinkAsk_ * 32 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + homebrewAsk_ * 256 +
+                    dropboxUnlinkAsk_ * 32 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + (homebrewAsk_ && homebrewExtras_) * 256 +
                     (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + shopAppSaveAsk_ * 2048 +
                     (serverForm_ && serverForm_->confirmDelete) * 4096 + shortcutRemoveAsk_ * 8192 +
                     selfShortcutAsk_ * 16384 + (unqueueAsk_ >= 0) * 32768 + bugAsk_ * 65536 + cacheClearAsk_ * 131072;
@@ -228,14 +228,9 @@ void Application::dialogs() {
     shortcutRemoveDialog();
   } else if (homebrewRemoveAsk_ && alert_.empty()) {
     homebrewRemoveDialog();
-  } else if (homebrewAsk_ && alert_.empty()) {
+  } else if (homebrewAsk_ && homebrewExtras_ && alert_.empty()) {
     // An alert from an app's patch or save job shows over these instead.
-    homebrewAskDialog();
-    if (homebrewAsk_ && homebrewExtras_) {
-      paint_.rect(0, 0, 1280, 720, {0, 0, 0, 120});
-      blockTouch();
-      homebrewExtrasDialog();
-    }
+    homebrewExtrasDialog();
     if (homebrewAsk_ && homebrewExtras_ && homebrewSaveAsk_) {
       paint_.rect(0, 0, 1280, 720, {0, 0, 0, 120});
       blockTouch();

@@ -386,7 +386,6 @@ private:
   void homebrewScreen();
   void homebrewAction(Action a);
   void homebrewRemoveDialog();
-  void homebrewAskDialog(); // what the app is, before it comes down
   // HOME Menu shortcuts (platform/Shortcut): the ids the console has, as the
   // last card scan found them and as made or removed since.
   std::set<uint64_t> shortcuts_;
@@ -507,7 +506,20 @@ private:
   void getRetroPick(); // the button: get it, or ask to cancel it on its way
   int retroOnTheWay(const retro::Game &game, double &percent) const;
   // A page the menu gives way to: a game's, shop or retro.
-  bool fullPage() const { return screen_ == Screen::Detail || screen_ == Screen::RetroDetail; }
+  bool fullPage() const {
+    return screen_ == Screen::Detail || screen_ == Screen::RetroDetail || (screen_ == Screen::Homebrew && homebrewPageOpen());
+  }
+  // An app's page in 홈브류 (HomebrewDetail.cpp): open while its card is, and
+  // behind the questions it asks (delete it, delete its shortcut).
+  bool homebrewPageOpen() const { return homebrewAsk_ || homebrewRemoveAsk_ || shortcutRemoveAsk_; }
+  void homebrewDetail();
+  void homebrewDetailPanel(const homebrew::App &app);
+  std::string homebrewCardVersion(const homebrew::App &app) const;
+  int homebrewOnTheWay(const homebrew::App &app, double &percent) const;
+  int homebrewQueuedAt(const homebrew::App &app) const;
+  void homebrewButton(const homebrew::App &app);
+  std::string homebrewButtonLabel(const homebrew::App &app) const;
+  Screen homebrewReturn_ = Screen::Homebrew; // where B on the page goes
   std::string failureText(const std::string &error);
   // false when it did not start (another retro job runs, no room, already there).
   bool getRetroGame(const retro::Game &game, bool again = false);

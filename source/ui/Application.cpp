@@ -1788,9 +1788,18 @@ void Application::render() {
     footer(patchRows().empty() || sidebar_
                ? std::vector<std::pair<std::string, std::string>>{{"B", tr("Back")}}
                : std::vector<std::pair<std::string, std::string>>{{"A", tr("Manage patch")}, {"B", tr("Back")}});
+  else if (screen_ == Screen::Homebrew && homebrewAsk_ && !homebrewExtras_) {
+    const auto *app = homebrewPicked();
+    double percent = 0;
+    const auto button = !app ? std::string() : app->cardOnly ? std::string()
+                        : homebrewOnTheWay(*app, percent) ? std::string(tr("Cancel download")) : homebrewButtonLabel(*app);
+    using Hints = std::vector<std::pair<std::string, std::string>>;
+    if (homebrewAskRow_ >= 0) footer({{"A", tr("Select")}, {"B", tr("Back")}});
+    else footer(button.empty() ? Hints{{"B", tr("Back")}} : Hints{{"A", button}, {"B", tr("Back")}});
+  }
   else if (screen_ == Screen::Homebrew) {
-    // A opens the app's popup: what it gets or updates, or for an installed
-    // app its facts, patches and saves with 지우기.
+    // A opens the app's page: what it gets or updates, its facts, patches
+    // and saves with 삭제.
     const auto rows = homebrewRows();
     if (rows.empty() || sidebar_)
       footer({{"B", tr("Back")}});

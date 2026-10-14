@@ -122,7 +122,7 @@ bool Application::contentAtTop() const {
 }
 bool Application::popupOpen() const {
   return !alert_.empty() || unqueueAsk_ >= 0 || bugAsk_ || cacheClearAsk_ || appUpdateAsk_ || appUpdate_ == AppUpdate::Downloading || viewPopup_ || confirmInstall_ || confirmCancel_ || languagePopup_ ||
-         confirmCleanup_ || cleanupBusy_ || confirmPatchRemove_ || managingPatch_ || pickingPatch_ || serverForm_ || homebrewRemoveAsk_ || homebrewAsk_ || shortcutRemoveAsk_ || selfShortcutAsk_ ||
+         confirmCleanup_ || cleanupBusy_ || confirmPatchRemove_ || managingPatch_ || pickingPatch_ || serverForm_ || homebrewRemoveAsk_ || (homebrewAsk_ && homebrewExtras_) || shortcutRemoveAsk_ || selfShortcutAsk_ ||
          retroArchAsking_ || saveNeedsGame_ || savePicking_ || shopAppSaveAsk_ || applyAsking_ || managedGame_ ||
          removal_ || galleryOpen_ || (screen_ == Screen::Saves && (dropboxModal() || dropboxSession_));
 }

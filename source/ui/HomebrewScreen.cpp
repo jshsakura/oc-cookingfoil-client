@@ -338,15 +338,16 @@ void Application::homebrewAction(Action a) {
     return;
   }
   if (homebrewAsk_) {
-    // Up and down move between the app and its rows: 패치, 세이브, the
-    // HOME Menu shortcut and 지우기.
+    // The page's panel: its rows (패치, 세이브, the HOME Menu shortcut,
+    // 삭제), then the button below them (-1).
     const int extras = picked ? int(homebrewExtraKinds(*picked).size()) : 0;
     homebrewAskRow_ = std::clamp(homebrewAskRow_, -1, extras - 1);
-    // An installed app has nothing to get: its rows start at the first one.
-    const int first = picked && homebrewStatus(*picked) == homebrew::Status::Installed && extras ? 0 : -1;
-    if (a == Action::Back) homebrewAsk_ = false;
-    else if (a == Action::Up) homebrewAskRow_ = std::max(first, homebrewAskRow_ - 1);
-    else if (a == Action::Down) homebrewAskRow_ = std::min(extras - 1, homebrewAskRow_ + 1);
+    if (a == Action::Back) {
+      homebrewAsk_ = false;
+      if (homebrewReturn_ != Screen::Homebrew) screen(std::exchange(homebrewReturn_, Screen::Homebrew));
+    } else if (a == Action::Up) homebrewAskRow_ = homebrewAskRow_ < 0 ? extras - 1 : std::max(0, homebrewAskRow_ - 1);
+    else if (a == Action::Down) homebrewAskRow_ = homebrewAskRow_ < 0 || homebrewAskRow_ >= extras - 1 ? -1 : homebrewAskRow_ + 1;
+    else if (a == Action::Accept && settled() && picked && homebrewAskRow_ < 0) homebrewButton(*picked);
     else if (a == Action::Accept && settled() && picked) {
       const auto kinds = homebrewExtraKinds(*picked);
       if (homebrewAskRow_ >= 0 && kinds[homebrewAskRow_] == 3) { // 지우기 asks first
@@ -388,8 +389,12 @@ void Application::homebrewAction(Action a) {
   }
   if (a == Action::Right) selected_ = std::min(count - 1, selected_ + 1);
   selected_ = std::max(0, selected_);
-  // The app's popup first, whatever its state: its patches and saves are there.
+  // The app's page, whatever its state: its patches and saves are there.
   if (a == Action::Accept && picked) {
+    homebrewReturn_ = Screen::Homebrew;
+    descriptionScroll_ = 0;
+    descriptionFocus_ = false;
+    unglide();
     homebrewAsk_ = true;
     homebrewAskRow_ = homebrewStatus(*picked) == homebrew::Status::Installed ? 0 : -1;
     homebrewExtras_ = 0;
@@ -398,6 +403,10 @@ void Application::homebrewAction(Action a) {
 }
 void Application::homebrewScreen() {
   if (!homebrewLoaded_ && !homebrewWorker_.joinable() && connected_) loadHomebrew();
+  if (homebrewPageOpen()) {
+    homebrewDetail();
+    return;
+  }
   // An app's patches and saves come from 유저 패치's and 세이브's lists.
   if (homebrewLoaded_ && connected_) {
     if (!patchesLoaded_ && !patchFetching_ && !patchError_) fetchPatches();
@@ -476,97 +485,6 @@ void Application::homebrewScreen() {
       paint_.pill(version, px, y + 194);
   }
   unclip();
-}
-// Before it comes down: the app's icon, name and facts, and its description
-// when the server has one (without, the card stays short).
-void Application::homebrewAskDialog() {
-  const auto *picked = homebrewPicked();
-  if (!picked) {
-    homebrewAsk_ = false;
-    homebrewExtras_ = 0;
-    homebrewSaveAsk_ = false;
-    return;
-  }
-  const auto &app = *picked;
-  const auto status = homebrewStatus(app);
-  const bool update = status == homebrew::Status::Update, installed = status == homebrew::Status::Installed;
-  const auto extras = homebrewExtraKinds(app);
-  const bool hasShortcut = homebrewHasShortcut(app);
-  constexpr float Icon = 160, Width = 820, Row = 56, Gap = 10;
-  const float textW = Width - 64 - Icon - 28;
-  // Measured off screen first, so the card hugs the description.
-  constexpr int Lines = 6;
-  // A card file no listed app owns says so where a description would be.
-  const std::string description = app.cardOnly ? tr("This app isn't on the server's list, so it can't be downloaded or updated here.") : app.description;
-  const float described = description.empty() ? 0
-                        : paint_.fonts.wrapped(description, -9999, -9999, 18, Ink, textW, Lines);
-  const float top = 24 + std::max(Icon, 106 + described);
-  const float bodyH = top + (extras.empty() ? 0 : 16 + extras.size() * (Row + Gap) - Gap) + 24;
-  // A focused 패치 or 세이브 row opens its list; otherwise A acts on the app.
-  const auto accept = homebrewAskRow_ >= 0 ? tr("Select") : update ? tr("Update|action") : tr("Get");
-  const auto body = modal(Width, bodyH, installed ? tr("Installed app") : update ? tr("Update it?") : tr("Get this app?"),
-                          installed ? tr("Close") : tr("Cancel"), "", accept, 22);
-  const float x = body.x + 32, y = body.y + 24, textX = x + Icon + 28;
-  cover(homebrewIcon(app), x, y, int(Icon), false, app.name, true);
-  marquee(app.name, textX, y, 24, textW);
-  std::string facts = app.version.empty() ? "" : "v" + app.version;
-  if (!app.author.empty()) facts += (facts.empty() ? "" : " · ") + app.author;
-  if (app.size) facts += (facts.empty() ? "" : " · ") + formatBytes(app.size);
-  paint_.fonts.text(facts, textX, y + 38, 18, Ink, true, textW);
-  std::string where = homebrewFile(app);
-  if (app.releasedAt.size() >= 10) where = app.releasedAt.substr(0, 10) + " · " + where;
-  paint_.fonts.text(where, textX, y + 68, 16, Secondary, false, textW);
-  if (described) paint_.fonts.wrapped(description, textX, y + 106, 18, app.cardOnly ? Secondary : Ink, textW, Lines);
-  // One row each for the app's patches and saves, with how many there are.
-  float rowY = body.y + top + 16;
-  const float rowW = body.w - 64;
-  for (int i = 0; i < int(extras.size()); ++i, rowY += Row + Gap) {
-    hit(x, rowY, rowW, Row, [this, i] {
-      homebrewAskRow_ = i;
-      action(Action::Accept);
-    });
-    if (i == homebrewAskRow_ && !homebrewExtras_) paint_.focusRow(x, rowY, rowW, Row, Ground, 12);
-    else paint_.rect(x, rowY, rowW, Row, Ground, 12);
-    if (extras[i] == 4) { // the HOME Menu shortcut, and whether there is one
-      // Dimmed when A cannot do anything with it.
-      const auto ink = !hasShortcut && !homebrewShortcutPossible(app) ? Secondary : Ink;
-      paint_.icon(0, x + 20, rowY + 15, ink, 26);
-      paint_.fonts.middle(tr("HOME Menu shortcut"), x + 62, rowY + Row / 2, 20, ink, true);
-      // Judged ahead: whether one can be made here, and whether it would open.
-      // Unavailable only when neither this console nor the server can make
-      // one; one waiting in 다운로드 says so.
-      const bool blocked = !hasShortcut && !homebrewShortcutPossible(app);
-      const bool local = platform::canMakeShortcuts() && homebrew::cardNroPath(homebrewFile(app));
-      const bool unsigned_ = !hasShortcut && !blocked && local && !signaturePatches_;
-      const bool queued = std::any_of(installQueue_.begin(), installQueue_.end(), [&](const QueuedInstall &q) {
-        return (q.kind == "shortcut" && q.name == trf("{0} shortcut", {app.name})) ||
-               (!app.forwarderUrl.empty() && q.file.url == app.forwarderUrl);
-      });
-      const std::string state = hasShortcut ? tr("Made") : queued ? tr("Queued") : blocked ? tr("Unavailable")
-                                : unsigned_ ? tr("Needs sig patches") : tr("None");
-      paint_.fonts.middle(state, x + rowW - 20 - paint_.fonts.measure(state, 17, true), rowY + Row / 2, 17,
-                          hasShortcut ? Good : unsigned_ ? Pending : Secondary, true);
-      continue;
-    }
-    if (extras[i] == 3) { // 지우기, in the colour removal uses everywhere
-      paint_.icon(37, x + 20, rowY + 15, Bad, 26);
-      paint_.fonts.middle(tr("Delete"), x + 62, rowY + Row / 2, 20, Bad, true);
-      continue;
-    }
-    const bool patches = extras[i] == 1;
-    paint_.icon(patches ? 32 : 36, x + 20, rowY + 15, Ink, 26);
-    const float labelEnd = paint_.fonts.middle(patches ? tr("Patches") : tr("Saves"), x + 62, rowY + Row / 2, 20, Ink, true);
-    int count = 0, on = 0;
-    if (patches)
-      for (const auto &row : homebrewPatchRows(app)) ++count, on += row.record && row.record->on;
-    else
-      count = int(homebrewSaveRows(app).size());
-    paint_.pill(std::to_string(count), labelEnd + 10, rowY + Row / 2 - 13);
-    if (on) {
-      const auto state = trf("{0} on", {std::to_string(on)});
-      paint_.fonts.middle(state, x + rowW - 20 - paint_.fonts.measure(state, 17, true), rowY + Row / 2, 17, Good, true);
-    }
-  }
 }
 void Application::homebrewRemoveDialog() {
   const auto rows = homebrewRows();

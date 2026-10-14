@@ -543,6 +543,9 @@ void Application::openHistoryRow(const history::Entry &entry) {
       if (at == rows.end())
         continue;
       selected_ = int(at - rows.begin());
+      homebrewReturn_ = Screen::Downloads; // B goes back there
+      descriptionScroll_ = 0;
+      descriptionFocus_ = false;
       homebrewAsk_ = true;
       homebrewAskRow_ = homebrewStatus(*found) == homebrew::Status::Installed ? 0 : -1;
       homebrewExtras_ = 0;
