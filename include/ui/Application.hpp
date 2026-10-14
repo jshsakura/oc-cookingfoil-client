@@ -80,6 +80,8 @@ public:
   void setItems(std::vector<Item> items);
   void setSession(std::unique_ptr<net::Session> session);
   void refresh();
+  // Downloads that find their token run out get a fresh one from this server.
+  void renewTokensWith(const Server &server);
   bool pairingPending() const { return pairingPending_; }
   const net::PairingInfo &pairingInfo() const { return pairingInfo_; }
   bool loading() const { return detailLoading_; }

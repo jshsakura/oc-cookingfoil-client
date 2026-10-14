@@ -12,6 +12,7 @@
 namespace foil::net {
 namespace {
 using Clock = std::chrono::steady_clock;
+constexpr int TokenRetries = 32; // parts refused for a stale download token, all told
 constexpr int MaxFails = 3;          // a part failing this often ends the parallel phase
 // While bytes arrived this recently, a dropped connection or a server error
 // is the network coming back (a console rejoining Wi-Fi takes about this
@@ -290,6 +291,9 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
   SegmentPlan plan(std::vector<Segment>{});
   std::vector<uint64_t> written;
   bool restarted = false;
+  // The headers sent; the download token in them is swapped when it ran out.
+  std::vector<std::string> sendHeaders = options.headers;
+  int renewals = 0; // every part refused may come back a few times
 
   for (;;) { // a second round only when the server's file changed
     const size_t batch = std::max<size_t>(options.batchBytes, 256u << 10);
@@ -319,7 +323,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       c->openEnded = openEnded;
       c->pending.reserve(s.batch);
       c->range = rangeOf(from, end, openEnded);
-      for (const auto &h : options.headers)
+      for (const auto &h : sendHeaders)
         if (h.find_first_of("\r\n") == std::string::npos)
           c->headers = curl_slist_append(c->headers, h.c_str());
       if (!openEnded && !s.etag.empty())
@@ -594,6 +598,14 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
           if (!c->retryAfter.empty())
             wait = std::clamp(std::atol(c->retryAfter.c_str()), 1L, 60L);
           waitUntil[size_t(seg)] = Clock::now() + std::chrono::seconds(wait);
+          continue;
+        }
+        // The download token ran out: a fresh one, and the part asks again at
+        // once from the byte it stood at, not as a failure.
+        if (code == 401 && renewals < TokenRetries && renewDownloadToken()) {
+          ++renewals;
+          freshenBearer(sendHeaders);
+          waitUntil[size_t(seg)] = Clock::time_point();
           continue;
         }
         const bool fatal = code == 401 || code == 403 || code == 404 || code == 416;

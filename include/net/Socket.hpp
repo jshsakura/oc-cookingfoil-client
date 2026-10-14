@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
+#include <functional>
 namespace foil::net {
 void setReceiveWindow(int bytes);
 int receiveWindow();
@@ -35,6 +37,14 @@ bool serverRestarting();
 // came; a new one clears it.
 std::string downloadToken();
 bool downloadTokenRejected();
+// How a fresh token is asked for (the app sets it with its server), and
+// asking after a 401: the server is asked only while the token stands
+// refused, so parts refused together ask once. True when a token the server
+// has not refused is held afterwards; the request goes again with it.
+void setTokenRenewer(std::function<void()> renew);
+bool renewDownloadToken();
+// A request's headers with the bearer token swapped for the current one.
+void freshenBearer(std::vector<std::string> &headers);
 uint64_t restartSerial();
 // For a curl handle with no header callback of its own (the engine's).
 void watchRestart(void *curl);

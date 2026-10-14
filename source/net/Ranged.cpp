@@ -48,13 +48,15 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
                       const RangedSink &sink, const std::atomic<bool> *cancel) {
   Response last;
   bool fromZero = false;
+  auto sendHeaders = headers; // the download token in them is swapped when it ran out
+  int renewals = 0;
   for (int tries = 0; tries < RangedTries; ++tries) {
     for (int waited = 0; tries && waited < RetryWaitMs * tries && !cancelled(cancel); waited += WaitStepMs)
       std::this_thread::sleep_for(std::chrono::milliseconds(WaitStepMs));
     if (tries && cancelled(cancel))
       return last;
     const uint64_t from = fromZero ? 0 : sink.kept();
-    auto ask = headers;
+    auto ask = sendHeaders;
     for (auto &header : rangeHeaders(from, validator))
       ask.push_back(std::move(header));
     auto verdict = RangeReply::Fail;
@@ -79,6 +81,13 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
       take(last); // a reply without a body
     if (refused)
       return last;
+    // The download token ran out: a fresh one, and on from the same place.
+    if (last.status == 401 && renewals < 3 && !cancelled(cancel) && renewDownloadToken()) {
+      ++renewals;
+      freshenBearer(sendHeaders);
+      --tries;
+      continue;
+    }
     // The server restarting (or no internet): not a try. Wait as long as it
     // asks and go on from the same place.
     if (linkDown() && !cancelled(cancel)) {

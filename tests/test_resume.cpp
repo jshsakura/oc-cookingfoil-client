@@ -4,6 +4,7 @@
 #include "core/Resume.hpp"
 #include "net/Api.hpp"
 #include "net/Ranged.hpp"
+#include "net/Socket.hpp"
 #include "net/HomebrewApi.hpp"
 #include "core/Homebrew.hpp"
 #include "core/Sha256.hpp"
@@ -88,6 +89,8 @@ struct Mock {
   std::vector<std::string> requests;
   // When set, a body for each path (by the request line); any other path is 404.
   std::map<std::string, std::string> paths;
+  // When set and not empty for a connection, the whole reply sent instead.
+  std::function<std::string(int index)> answer;
   int listener = -1;
   std::string url;
   std::thread thread;
@@ -118,6 +121,11 @@ struct Mock {
           request.append(buffer, size);
         }
         requests.push_back(request);
+        if (const auto said = answer ? answer(i) : std::string(); !said.empty()) {
+          send(client, said.data(), said.size(), MSG_NOSIGNAL);
+          close(client);
+          continue;
+        }
         std::string served = body;
         if (!paths.empty()) {
           const auto start = request.find(' ') + 1;
@@ -344,6 +352,44 @@ int runResumeTests() {
     CHECK(feedAll(second, data, size_t(record.offset), data.size()) && second.finish());
     for (const auto &f : files)
       CHECK(foil::readFile(cut + "/" + f.path) == foil::readFile(whole + "/" + f.path));
+  }
+  {
+    // The download token runs out mid-file: a fresh one is asked for once and
+    // the file goes on from the byte it stood at, carrying the new token.
+    Mock server;
+    server.body = body(300000, 't');
+    server.drop = [](int index) { return index == 0 ? size_t(100000) : std::string::npos; };
+    server.answer = [](int index) -> std::string {
+      if (index == 1)
+        return "HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nX-CookingFoil-Token: expired\r\n"
+               "Content-Length: 0\r\n\r\n";
+      if (index == 2)
+        return "HTTP/1.1 200 OK\r\nConnection: close\r\nX-CookingFoil-Download-Token: fresh\r\n"
+               "Content-Length: 2\r\n\r\n{}";
+      return "";
+    };
+    server.start(4);
+    int asked = 0;
+    foil::net::setTokenRenewer([&] {
+      ++asked;
+      foil::net::get(server.url + "/api/shop/info");
+    });
+    const auto part = (root / "token.part").string();
+    std::atomic<uint64_t> received{0};
+    foil::PartInfo wanted{server.url + "/f", "", "", server.body.size(), 0};
+    const auto got = foil::net::fetchPart(server.url + "/f", {"Authorization: Bearer stale"}, part, wanted, true,
+                                          received, nullptr);
+    server.thread.join();
+    foil::net::setTokenRenewer({});
+    CHECK(foil::net::rangedOk(got.response) && foil::readFile(part) == server.body);
+    CHECK(asked == 1 && foil::net::downloadToken() == "fresh" && !foil::net::downloadTokenRejected());
+    CHECK(server.requests.size() == 4 && rangeOf(server.requests[3]) == "100000-");
+    CHECK(server.requests.size() == 4 && server.requests[3].find("Authorization: Bearer fresh") != std::string::npos);
+    foil::net::dropPart(part);
+    // A bearer line takes the token held now; other lines stay as they are.
+    std::vector<std::string> headers{"Authorization: Bearer old", "Accept: */*"};
+    foil::net::freshenBearer(headers);
+    CHECK(headers[0] == "Authorization: Bearer fresh" && headers[1] == "Accept: */*");
   }
   {
     // End to end: a file cut off mid-transfer continues with a Range ask.

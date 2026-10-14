@@ -25,6 +25,8 @@ std::atomic<uint64_t> restarts{0};
 std::mutex tokenLock;
 std::string token;
 std::atomic<bool> tokenRejected{false};
+std::mutex renewLock; // one ask at a time; the others wait for its token
+std::function<void()> renewer;
 // A reply's header block, in the thread curl reads it on: whether it is a
 // success so far and has no restart header.
 thread_local bool replyOk = false;
@@ -105,6 +107,26 @@ std::string downloadToken() {
   return token;
 }
 bool downloadTokenRejected() { return tokenRejected; }
+void setTokenRenewer(std::function<void()> renew) {
+  std::lock_guard<std::mutex> held(renewLock);
+  renewer = std::move(renew);
+}
+bool renewDownloadToken() {
+  {
+    std::lock_guard<std::mutex> held(renewLock);
+    if (tokenRejected && renewer) {
+      logLine("download token renewed");
+      renewer();
+    }
+  }
+  return !tokenRejected && !downloadToken().empty();
+}
+void freshenBearer(std::vector<std::string> &headers) {
+  static const std::string Lead = "Authorization: Bearer ";
+  const auto now = downloadToken();
+  for (auto &h : headers)
+    if (h.rfind(Lead, 0) == 0 && !now.empty()) h = Lead + now;
+}
 void watchRestart(void *curl) {
   curl_easy_setopt(static_cast<CURL *>(curl), CURLOPT_HEADERFUNCTION, onRestartHeader);
 }

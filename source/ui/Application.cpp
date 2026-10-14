@@ -263,6 +263,7 @@ void Application::setSession(std::unique_ptr<net::Session> session) {
       session_->server(), state_,
       imageCacheFolder(),
       fixture_);
+  renewTokensWith(session_->server());
 }
 void Application::localizeNames() {
   const auto slot = size_t(language());
@@ -503,7 +504,11 @@ void Application::connect(size_t index) {
   connected_ = false;
   images_ = std::make_unique<Images>(paint_.renderer);
   images_->source(config_.servers[index], state_, imageCacheFolder(), fixture_);
+  renewTokensWith(config_.servers[index]);
   refresh();
+}
+void Application::renewTokensWith(const Server &server) {
+  net::setTokenRenewer([server, state = state_] { net::renewDownloadToken(server, state); });
 }
 void Application::refresh() {
   if (!session_ || network_.joinable())
