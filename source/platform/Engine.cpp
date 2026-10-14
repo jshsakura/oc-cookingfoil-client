@@ -159,12 +159,15 @@ void nativeInstall(const Item &item, const std::string &target,
     int connections;
     bool compressed;
     uint64_t bytes = foil::net::receivedBytes(), tick = svcGetSystemTick();
+    double held = foil::net::cardHeldSeconds();
     ~Summary() {
       const double seconds = double(svcGetSystemTick() - tick) / 19200000.0;
       const double mb = double(foil::net::receivedBytes() - bytes) / (1024 * 1024);
-      char line[160];
-      std::snprintf(line, sizeof(line), "download %.0f MB in %.0f s = %.1f MB/s, %d connections, %s: ", mb, seconds,
-                    seconds > 0 ? mb / seconds : 0, connections, compressed ? "compressed" : "plain");
+      // How long of it the network waited on the card and the install.
+      const double waited = foil::net::cardHeldSeconds() - held;
+      char line[200];
+      std::snprintf(line, sizeof(line), "download %.0f MB in %.0f s = %.1f MB/s, %d connections, %s, waited on the card %.0f s: ",
+                    mb, seconds, seconds > 0 ? mb / seconds : 0, connections, compressed ? "compressed" : "plain", waited);
       logLine(line + name);
     }
   } summary{item.name, current.connections,

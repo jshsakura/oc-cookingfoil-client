@@ -3,6 +3,7 @@
 #include "core/Json.hpp"
 #include "net/Api.hpp"
 #include "net/Ranged.hpp"
+#include "platform/Storage.hpp"
 #include <set>
 #include <algorithm>
 #include "core/Log.hpp"
@@ -72,6 +73,10 @@ bool fetchFile(const Server &server, const State &state, const std::string &url,
     return fail(trf("Could not get the file. HTTP {0}", {std::to_string(got.response.status)}));
   if (sha256.empty()) sha256 = homebrew::etagSha256(got.response.etag); // without one the file is kept unchecked
   if ((size && got.size != size) || (!sha256.empty() && got.sha256 != sha256))
+    return fail(tr("The downloaded file does not match the server's. Try again."));
+  // An app with no hash to check it by: at least whole as an NRO (its icon
+  // and name are at the end, which a broken write would lose).
+  if (sha256.empty() && path.size() > 4 && path.compare(path.size() - 4, 4, ".nro") == 0 && !platform::wholeNro(part))
     return fail(tr("The downloaded file does not match the server's. Try again."));
   std::filesystem::remove(target, ec);
   ec.clear();

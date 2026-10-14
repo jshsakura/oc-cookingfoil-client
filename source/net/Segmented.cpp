@@ -2,6 +2,7 @@
 #include "net/Socket.hpp"
 #include <curl/curl.h>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
@@ -25,6 +26,10 @@ constexpr auto LimitCalm = std::chrono::seconds(60);
 constexpr auto ProgressEvery = std::chrono::milliseconds(250);
 constexpr auto CheckpointEvery = std::chrono::seconds(2);
 
+// How long the download stood still because the card (or the install
+// behind it) had not taken what came: the log tells a slow card from a slow
+// line with it.
+std::atomic<uint64_t> heldMicros{0};
 // The writer thread: bytes in place, in the order they were handed over,
 // at most `limit` bytes held. A failed write stops everything.
 class Writer {
@@ -35,7 +40,12 @@ public:
   // False once a write failed.
   bool put(uint64_t offset, std::vector<char> &&data, std::function<void()> done) {
     std::unique_lock<std::mutex> held(lock_);
-    changed_.wait(held, [&] { return held_ + data.size() <= limit_ || queue_.empty() || failed_; });
+    const auto room = [&] { return held_ + data.size() <= limit_ || queue_.empty() || failed_; };
+    if (!room()) {
+      const auto from = std::chrono::steady_clock::now();
+      changed_.wait(held, room);
+      heldMicros += uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - from).count());
+    }
     if (failed_)
       return false;
     held_ += data.size();
@@ -278,6 +288,7 @@ std::string rangeOf(uint64_t from, uint64_t end, bool openEnded) {
 }
 } // namespace
 
+double cardHeldSeconds() { return double(heldMicros.load()) / 1e6; }
 SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(uint64_t total)> &prepare,
                                const std::function<bool(uint64_t offset, const char *data, size_t size)> &write,
                                const SegmentedOptions &options) {

@@ -47,6 +47,8 @@ struct SegmentedResult {
 // again with 0 written when the server's file changed and it starts over);
 // `write(offset, data, size)` puts bytes in place, from a writer thread, in
 // any order. Either returning false stops the download.
+// Seconds, all told, that downloads waited on the card to take their bytes.
+double cardHeldSeconds();
 SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(uint64_t total)> &prepare,
                                const std::function<bool(uint64_t offset, const char *data, size_t size)> &write,
                                const SegmentedOptions &options);

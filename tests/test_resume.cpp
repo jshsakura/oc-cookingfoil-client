@@ -772,7 +772,9 @@ int runResumeTests() {
       const auto sd = fs::temp_directory_path() / ("cf-zip-bad-" + std::to_string(getpid()));
       fs::remove_all(sd);
       fs::create_directories(sd);
-      const auto nro = varied(3000, 3);
+      auto nro = varied(3000, 3);
+      nro.replace(0x10, 4, "NRO0"); // an NRO as far as its header goes: magic, then its size
+      nro[0x18] = char(0x80), nro[0x19] = nro[0x1A] = nro[0x1B] = 0;
       std::vector<ZipFile> one(1);
       one[0] = {"zipapp/zipapp.nro", nro, true, false};
       auto zip = zipOf(one);

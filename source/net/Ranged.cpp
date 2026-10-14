@@ -131,6 +131,14 @@ bool fetchParallel(const std::string &url, const std::vector<std::string> &heade
   std::unique_ptr<FILE, int (*)(FILE *)> out(std::fopen(part.c_str(), "wb"), std::fclose);
   if (!out)
     return false;
+  // The whole size up front: the parts land out of order, and a write past
+  // the end must not depend on how the card's file system fills the gap.
+  if (wanted.size && (std::fseek(out.get(), long(wanted.size - 1), SEEK_SET) != 0 || std::fputc(0, out.get()) == EOF ||
+                      std::fflush(out.get()) != 0)) {
+    out.reset();
+    dropPart(part);
+    return false;
+  }
   uint64_t counted = 0;
   bool tooLong = false, writeFailed = false;
   SegmentedOptions options;
