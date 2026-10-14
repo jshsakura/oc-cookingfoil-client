@@ -272,6 +272,8 @@ public:
   void setGenreTable(net::NameTable table) { genreTable_ = std::move(table); genreNames_ = net::namesIn(genreTable_, languageCode()); }
   // Where the PC preview keeps its fake SD card for user patches.
   void usePatchFolder(const std::string &sd);
+  // The preview's picture cache, where the console keeps it beside its state.
+  void useCacheFolder(std::string folder) { cacheFolder_ = std::move(folder); }
   // Touch: a tap runs the topmost area drawn last frame; a drag scrolls.
   void touch(float x, float y);
   void drag(float dx, float dy);
@@ -960,6 +962,7 @@ private:
   std::atomic<int64_t> cacheBytes_{-1}; // the picture cache's size; -1 until measured
   std::atomic<bool> cacheBusy_{false}, cacheCleared_{false};
   bool cacheClearAsk_ = false;
+  std::string cacheFolder_; // set by the preview; else beside the state file
   uint64_t restartSeen_ = 0; // the server restarts already said
   bool restartShowing_ = false, refreshAfterRestart_ = false;
   uint32_t restartProbeAt_ = 0; // when the list was last asked during a restart

@@ -139,6 +139,8 @@ int main(int argc, char **argv) {
     return 1;
   }
   ui.usePatchFolder(std::filesystem::path(statePath).parent_path().string() + "/sd");
+  // Pictures kept as on the console, so 설정's image cache shows what it holds.
+  if (servePort) ui.useCacheFolder(std::filesystem::path(statePath).parent_path().string() + "/cache");
   // A preview download writes nothing (it measures the speed), so the card
   // it installs to is this computer's free space where its SD folder lives.
   if (servePort) {
