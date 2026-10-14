@@ -833,12 +833,13 @@ std::string cleanPairMessage(const std::string& text) {
     line.resize(end);
     return line.substr(0, line.find_last_not_of(' ') + 1);
 }
-std::string pairRequestBody(const std::string& deviceKey, const std::string& message) {
+std::string pairRequestBody(const std::string& deviceKey, const std::string& message, const std::string& secret) {
     const auto note = cleanPairMessage(message);
-    if (note.empty()) return "";
+    if (note.empty() && secret.empty()) return "";
     Json body(json_object_new_object());
     json_object_object_add(body.get(), "deviceKey", json_object_new_string(deviceKey.c_str()));
-    json_object_object_add(body.get(), "message", json_object_new_string(note.c_str()));
+    if (!note.empty()) json_object_object_add(body.get(), "message", json_object_new_string(note.c_str()));
+    if (!secret.empty()) json_object_object_add(body.get(), "pairSecret", json_object_new_string(secret.c_str()));
     return json_object_to_json_string_ext(body.get(), JSON_C_TO_STRING_PLAIN | JSON_C_TO_STRING_NOSLASHESCAPE);
 }
 void Session::setPairMessage(const std::string& message) {
@@ -846,16 +847,39 @@ void Session::setPairMessage(const std::string& message) {
     if (note.empty()) state_.pairMessages.erase(server_.url);
     else state_.pairMessages[server_.url] = note;
 }
+std::string Session::pairSecret() {
+    const auto key = state_.accessKeys.find(server_.url);
+    if (key != state_.accessKeys.end() && !key->second.empty()) return "";
+    if (const auto kept = state_.pairSecrets.find(server_.url); kept != state_.pairSecrets.end()) return kept->second;
+    // Saved before it is ever sent: a new one after a restart would not match
+    // the one the server holds.
+    const auto secret = randomKey();
+    if (secret.empty()) return "";
+    auto saved = loadState(path_);
+    auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
+    updated.pairSecrets[server_.url] = secret;
+    Error error;
+    if (!saveState(path_, updated, error)) { logLine("pair secret not saved: " + error.message); return ""; }
+    state_ = std::move(updated);
+    return secret;
+}
 bool Session::pair(Error& error) {
     const auto url = server_.url + "/api/pair/status";
-    const auto response = get(url, authHeaders(server_, state_, url), "", cancel_);
+    auto headers = authHeaders(server_, state_, url);
+    if (const auto secret = pairSecret(); !secret.empty()) headers.push_back("X-Pair-Secret: " + secret);
+    const auto response = get(url, headers, "", cancel_);
     if (response.status == 404) { pairingPending_ = false; pairingInfo_ = {}; return true; }
     if (!response.error.empty() || response.status != 200) { error.message = response.error.empty() ? tr("Could not check the device approval status.") : response.error; return false; }
     auto root = parseJson(response.body, error); if (error) return false;
     const auto status = stringField(root.get(), "status");
     if (status == "pending") {
-        pairingPending_ = true; pairingInfo_ = parsePairingInfo(response.body, server_).value;
         sendPairMessage();
+        if (pairMismatch_) {
+            pairingPending_ = false; pairingInfo_ = {};
+            error.message = tr("The server holds another approval request for this device. Ask the server admin to clear it.");
+            return false;
+        }
+        pairingPending_ = true; pairingInfo_ = parsePairingInfo(response.body, server_).value;
         error.message = tr("Connects once you approve this device on the server website."); return false;
     }
     if (status != "approved") { error.message = tr("Check the device approval response."); return false; }
@@ -865,17 +889,20 @@ bool Session::pair(Error& error) {
         // (language, install checks) must survive the key being added.
         auto saved = loadState(path_);
         auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value; updated.accessKeys[server_.url] = key;
+        updated.pairSecrets.erase(server_.url); // done with: the key came
         if (!saveState(path_, updated, error)) { error.message = tr("Could not save the issued key. Check where the state file is stored."); return false; }
         state_ = std::move(updated);
     }
     pairingPending_ = false; pairingInfo_ = {}; return true;
 }
 void Session::sendPairMessage() {
-    // The status poll already knocks; the request goes out only to carry a
-    // note the player typed, once, and again when it changes.
+    // The status poll already knocks; the request goes out to carry the pair
+    // secret and a note the player typed, once, and again when either changes.
     const auto note = state_.pairMessages.find(server_.url);
-    const auto body = pairRequestBody(state_.deviceKey, note == state_.pairMessages.end() ? "" : note->second);
-    if (body.empty()) { pairMessageSent_.clear(); return; }
+    const auto secret = state_.pairSecrets.find(server_.url);
+    const auto body = pairRequestBody(state_.deviceKey, note == state_.pairMessages.end() ? "" : note->second,
+                                      secret == state_.pairSecrets.end() ? "" : secret->second);
+    if (body.empty()) { pairMessageSent_.clear(); pairMismatch_ = false; return; }
     if (body == pairMessageSent_) return;
     const auto url = server_.url + "/api/pair/request";
     auto headers = authHeaders(server_, state_, url);
@@ -885,6 +912,9 @@ void Session::sendPairMessage() {
     options.timeout = 15;
     const auto sent = post(url, headers, options, cancel_);
     // A failure is tried again on the next poll; approval works without it.
+    // 409: another secret for this device; asked again on each poll, so the
+    // QR code comes back once an admin cleared that request.
+    pairMismatch_ = sent.error.empty() && sent.status == 409;
     if (sent.error.empty() && sent.status >= 200 && sent.status < 300) pairMessageSent_ = body;
     else logLine("pair message not sent: " + (sent.error.empty() ? "HTTP " + std::to_string(sent.status) : sent.error));
 }

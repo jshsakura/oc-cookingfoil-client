@@ -34,6 +34,11 @@ int runPairingTests() {
   CHECK(foil::net::pairRequestBody(key, " \n\t \r\n").empty());
   CHECK(foil::net::pairRequestBody(key, "철수 거실 기기") ==
         "{\"deviceKey\":\"" + key + "\",\"message\":\"철수 거실 기기\"}");
+  // The pair secret goes in the body too, with or without a note.
+  const std::string secret(64, 'c');
+  CHECK(foil::net::pairRequestBody(key, "", secret) == "{\"deviceKey\":\"" + key + "\",\"pairSecret\":\"" + secret + "\"}");
+  CHECK(foil::net::pairRequestBody(key, "거실", secret) ==
+        "{\"deviceKey\":\"" + key + "\",\"message\":\"거실\",\"pairSecret\":\"" + secret + "\"}");
   // Trimmed, line breaks and tabs read as spaces, a run of spaces as one.
   CHECK(foil::net::cleanPairMessage("  철수\n거실 기기\r\n ") == "철수 거실 기기");
   CHECK(foil::net::cleanPairMessage("철수\t\t거실   기기") == "철수 거실 기기");

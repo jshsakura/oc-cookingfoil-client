@@ -2,6 +2,7 @@
 #include "core/Config.hpp"
 #include "core/Json.hpp"
 #include "core/I18n.hpp"
+#include "core/Log.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -29,19 +30,67 @@ bool saveState(const std::string& path, const State& state, Error& error) {
     for (const auto& [url, note] : state.pairMessages)
         if (!note.empty()) json_object_object_add(notes, url.c_str(), json_object_new_string(note.c_str()));
     json_object_object_add(object.get(), "pairMessages", notes);
+    auto* secrets = json_object_new_object();
+    for (const auto& [url, secret] : state.pairSecrets)
+        if (validDeviceKey(secret)) json_object_object_add(secrets, url.c_str(), json_object_new_string(secret.c_str()));
+    json_object_object_add(object.get(), "pairSecrets", secrets);
     Error ignored;
     auto queue = parseJson(state.queueJson, ignored);
     json_object_object_add(object.get(), "queue", queue && json_object_is_type(queue.get(), json_type_array) ? queue.release() : json_object_new_array());
     return atomicWrite(path, json_object_to_json_string_ext(object.get(), JSON_C_TO_STRING_PRETTY), error.message);
 }
+std::string randomKey() {
+    unsigned char entropy[32]{};
+#ifdef __SWITCH__
+    randomGet(entropy, sizeof(entropy));
+#else
+    std::ifstream random("/dev/urandom", std::ios::binary);
+    if (!random.read(reinterpret_cast<char*>(entropy), sizeof(entropy))) return "";
+#endif
+    const char* hex = "0123456789abcdef";
+    std::string key;
+    for (auto byte : entropy) { key += hex[byte >> 4]; key += hex[byte & 15]; }
+    return key;
+}
+namespace {
+// A new state with a new device key, saved at `path`.
+Parsed<State> freshState(const std::string& path) {
+    Parsed<State> result;
+    result.value.deviceKey = randomKey();
+    if (result.value.deviceKey.empty()) { result.error.message = tr("Could not create the device key."); return result; }
+    result.created = saveState(path, result.value, result.error);
+    return result;
+}
+}
 Parsed<State> loadState(const std::string& path) {
     Parsed<State> result;
     std::error_code ec;
     if (std::filesystem::exists(path, ec) || std::filesystem::exists(path + ".old", ec)) {
-        auto root = parseJson(readFile(path), result.error);
-        if (result.error) return result;
+        // The app writes this file; one that cannot be read (cut off, or
+        // another file put in its place) is started over, not shown as an
+        // error the player cannot fix: the copy left by an interrupted save
+        // first, then a new one.
+        Error unread;
+        auto root = parseJson(readFile(path), unread);
+        if ((unread || !json_object_is_type(root.get(), json_type_object)) && std::filesystem::exists(path + ".old", ec)) {
+            unread = {};
+            std::ifstream old(path + ".old", std::ios::binary);
+            root = parseJson(std::string(std::istreambuf_iterator<char>(old), {}), unread);
+        }
+        if (unread || !json_object_is_type(root.get(), json_type_object)) {
+            logLine("state.json unreadable, starting over");
+            return freshState(path);
+        }
         result.value.deviceKey = stringField(root.get(), "deviceKey");
-        if (!validDeviceKey(result.value.deviceKey)) { result.error.message = tr("The device key is invalid. Check the state file."); return result; }
+        // A key that is not one: a new one, and the keys and secrets the
+        // servers gave the old one go with it (they no longer match).
+        bool rekeyed = false;
+        if (!validDeviceKey(result.value.deviceKey)) {
+            logLine("state.json device key invalid, making a new one");
+            result.value.deviceKey = randomKey();
+            if (result.value.deviceKey.empty()) { result.error.message = tr("Could not create the device key."); return result; }
+            rekeyed = true;
+        }
         result.value.lastServer = stringField(root.get(), "lastServer");
         result.value.lastScreen = stringField(root.get(), "lastScreen", "home");
         result.value.language = stringField(root.get(), "language");
@@ -69,22 +118,25 @@ Parsed<State> loadState(const std::string& path) {
                     result.value.pairMessages[url] = json_object_get_string(value);
             }
         }
+        auto* secrets = field(root.get(), "pairSecrets");
+        if (json_object_is_type(secrets, json_type_object)) {
+            json_object_object_foreach(secrets, url, value) {
+                if (json_object_is_type(value, json_type_string) && validDeviceKey(json_object_get_string(value)) && !normalizeUrl(url).empty())
+                    result.value.pairSecrets[url] = json_object_get_string(value);
+            }
+        }
         auto* queue = field(root.get(), "queue");
         if (json_object_is_type(queue, json_type_array)) result.value.queueJson = json_object_to_json_string_ext(queue, JSON_C_TO_STRING_PLAIN);
+        if (rekeyed) {
+            result.value.accessKeys.clear();
+            result.value.pairSecrets.clear();
+            Error ignored; // the next save writes it again
+            saveState(path, result.value, ignored);
+        }
         return result;
     }
     if (ec) { result.error.message = ec.message(); return result; }
-    unsigned char entropy[32]{};
-#ifdef __SWITCH__
-    randomGet(entropy, sizeof(entropy));
-#else
-    std::ifstream random("/dev/urandom", std::ios::binary);
-    if (!random.read(reinterpret_cast<char*>(entropy), sizeof(entropy))) { result.error.message = tr("Could not create the device key."); return result; }
-#endif
-    const char* hex = "0123456789abcdef";
-    for (auto byte : entropy) { result.value.deviceKey += hex[byte >> 4]; result.value.deviceKey += hex[byte & 15]; }
-    result.created = saveState(path, result.value, result.error);
-    return result;
+    return freshState(path);
 }
 std::string serializePending(const PendingInstall& pending) {
     if (pending.files.empty()) return "[]";

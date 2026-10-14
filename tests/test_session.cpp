@@ -19,7 +19,7 @@ int runSessionTests() {
     CHECK(bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
     CHECK(listen(listener, 5) == 0);
     socklen_t length = sizeof(address); getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length);
-    std::vector<std::string> requests;
+    std::vector<std::string> requests, posts;
     std::thread mock([&] {
         // /api/shop/info comes before each catalog request; it is answered
         // on the side and not counted in the sequence below.
@@ -29,6 +29,18 @@ int runSessionTests() {
             char buffer[4096]; std::string request;
             while (request.find("\r\n\r\n") == std::string::npos) {
                 const auto size = recv(client, buffer, sizeof(buffer), 0); if (size <= 0) break; request.append(buffer, size);
+            }
+            if (request.rfind("POST /api/pair/request ", 0) == 0) { // carries the pair secret, on the side
+                const auto headerEnd = request.find("\r\n\r\n");
+                const auto field = request.find("Content-Length: ");
+                const size_t want = field != std::string::npos && field < headerEnd ? std::stoul(request.substr(field + 16)) : 0;
+                while (request.size() < headerEnd + 4 + want) {
+                    const auto size = recv(client, buffer, sizeof(buffer), 0); if (size <= 0) break; request.append(buffer, size);
+                }
+                posts.push_back(request);
+                const std::string ok = "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 2\r\n\r\n{}";
+                send(client, ok.data(), ok.size(), MSG_NOSIGNAL); close(client);
+                continue;
             }
             if (request.rfind("GET /api/shop/info ", 0) == 0) {
                 const std::string info = R"({"features":["retro"]})";
@@ -51,10 +63,25 @@ int runSessionTests() {
         const auto initial = foil::loadState(path);
         foil::net::Session session(server, initial.value, path); foil::Error error;
         CHECK(!session.refresh(error)); CHECK(session.pairingPending()); CHECK(session.items().empty());
+        // The pair secret is saved before it is ever sent.
+        const auto secrets = foil::loadState(path).value.pairSecrets;
+        CHECK(secrets.count(server.url) && secrets.at(server.url).size() == 64);
+        const auto secret = secrets.count(server.url) ? secrets.at(server.url) : std::string();
         CHECK(session.refresh(error)); CHECK(!session.pairingPending()); CHECK(!error);
         CHECK(session.items().size() == 1); CHECK(session.items().front().name == "한글");
         CHECK(session.features().count("retro"));
         CHECK(foil::loadState(path).value.accessKeys.at(server.url) == "issued-once");
+        // Done with once the key came.
+        CHECK(foil::loadState(path).value.pairSecrets.empty());
+        // Sent with the request (no note typed) and with every status check
+        // until the key came, never after.
+        CHECK(posts.size() == 1);
+        if (!posts.empty()) CHECK(posts[0].find("\"pairSecret\":\"" + secret + "\"") != std::string::npos);
+        CHECK(requests.size() >= 2);
+        if (requests.size() >= 2) {
+            CHECK(requests[0].find("X-Pair-Secret: " + secret) != std::string::npos);
+            CHECK(requests[1].find("X-Pair-Secret: " + secret) != std::string::npos);
+        }
         CHECK(session.refresh(error)); CHECK(session.items().size() == 1);
         CHECK(!session.refresh(error)); CHECK(error); CHECK(session.items().size() == 1);
         std::filesystem::remove_all(root);
@@ -63,6 +90,7 @@ int runSessionTests() {
     CHECK(requests.size() == 7);
     if (requests.size() == 7) {
         CHECK(requests[2].find("X-Access-Key: issued-once") != std::string::npos);
+        CHECK(requests[3].find("X-Pair-Secret:") == std::string::npos); // not after the key came
         CHECK(requests[4].find("If-None-Match: \"catalog-v1\"") != std::string::npos);
     }
     // A patch list still being scanned: what is there so far, when to ask

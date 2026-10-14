@@ -19,9 +19,17 @@ struct State {
     // Per server: the note sent with the approval request so the admin knows
     // which device asks. Absent until the player types one.
     std::map<std::string, std::string> pairMessages;
+    // Per server: the secret sent with the approval request and every status
+    // check, so only this console can take the key it is approved for (64
+    // hex characters). Made before the first request, dropped once the key
+    // came.
+    std::map<std::string, std::string> pairSecrets;
     std::string queueJson = "[]";
 };
 Parsed<State> loadState(const std::string& path);
+// 32 random bytes as 64 lowercase hex characters; empty when the console
+// gave none.
+std::string randomKey();
 // An install that has not finished, kept in state.json's queue so it can be
 // picked up again after the app closed or the install failed.
 struct PendingInstall {

@@ -1,5 +1,6 @@
 #include "Test.hpp"
 #include "core/State.hpp"
+#include "core/I18n.hpp"
 #include "ui/Application.hpp"
 #include <arpa/inet.h>
 #include <filesystem>
@@ -11,6 +12,7 @@
 #include <thread>
 // A note typed on the approval screen is kept per server in state.json and
 // goes out with a new approval request; with none, nothing is posted.
+int runPairMismatchTests();
 int runPairMessageUiTests(SDL_Renderer *renderer) {
   int failures = 0;
   const int listener = socket(AF_INET, SOCK_STREAM, 0);
@@ -97,7 +99,16 @@ int runPairMessageUiTests(SDL_Renderer *renderer) {
       }
       CHECK(app.pairingPending());
       app.render();
-      CHECK(postCount() == 0); // no note, no request of its own
+      // No note: the request still goes once, to hand over the pair secret.
+      CHECK(postCount() == 1);
+      const auto secret = foil::loadState(statePath).value.pairSecrets[server.url];
+      CHECK(secret.size() == 64);
+      {
+        std::lock_guard<std::mutex> guard(lock);
+        if (!posts.empty())
+          CHECK(posts[0].find("\r\n\r\n{\"deviceKey\":\"" + state.deviceKey + "\",\"pairSecret\":\"" + secret + "\"}") !=
+                std::string::npos);
+      }
       // Y opens the keyboard for the note, empty the first time.
       app.action(foil::ui::Action::Queue);
       auto request = app.takeTextRequest();
@@ -111,17 +122,17 @@ int runPairMessageUiTests(SDL_Renderer *renderer) {
       const auto saved = foil::loadState(statePath).value.pairMessages;
       CHECK(saved.count(server.url) && saved.at(server.url) == "철수 거실 기기");
       deadline = SDL_GetTicks() + 5000;
-      while (postCount() == 0 && SDL_GetTicks() < deadline) {
+      while (postCount() == 1 && SDL_GetTicks() < deadline) {
         app.poll();
         SDL_Delay(10);
       }
-      CHECK(postCount() == 1);
+      CHECK(postCount() == 2);
       {
         std::lock_guard<std::mutex> guard(lock);
-        if (!posts.empty()) {
-          CHECK(posts[0].find("X-Device-Key: " + state.deviceKey) != std::string::npos);
-          CHECK(posts[0].find("Content-Type: application/json") != std::string::npos);
-          CHECK(posts[0].find("\r\n\r\n{\"deviceKey\":\"" + state.deviceKey + "\",\"message\":\"철수 거실 기기\"}") !=
+        if (posts.size() == 2) {
+          CHECK(posts[1].find("X-Device-Key: " + state.deviceKey) != std::string::npos);
+          CHECK(posts[1].find("Content-Type: application/json") != std::string::npos);
+          CHECK(posts[1].find("\r\n\r\n{\"deviceKey\":\"" + state.deviceKey + "\",\"message\":\"철수 거실 기기\",\"pairSecret\":\"" + secret + "\"}") !=
                 std::string::npos);
         }
       }
@@ -135,7 +146,7 @@ int runPairMessageUiTests(SDL_Renderer *renderer) {
       // The same text again changes nothing and sends nothing.
       app.enterText("철수 거실 기기");
       pollFor(app, 300);
-      CHECK(postCount() == 1);
+      CHECK(postCount() == 2);
       // Text no longer goes to the note once it was handed over.
       app.enterText("다른 기기");
       CHECK(foil::loadState(statePath).value.pairMessages.at(server.url) == "철수 거실 기기");
@@ -166,7 +177,8 @@ int runPairingUiTests(SDL_Renderer *renderer) {
   const std::string pairUrl = server.url + "/admin/pair/" + std::string(32, 'a');
   std::vector<std::string> requests;
   std::thread mock([&] {
-    // /api/shop/info is answered on the side, outside the sequence.
+    // /api/shop/info and the pair request are answered on the side, outside
+    // the sequence.
     for (int i = 0, accepted = 0; i < 3 && accepted < 10; ++accepted) {
       pollfd ready{listener, POLLIN, 0};
       if (::poll(&ready, 1, 10000) <= 0)
@@ -182,7 +194,7 @@ int runPairingUiTests(SDL_Renderer *renderer) {
           break;
         request.append(buffer, size);
       }
-      if (request.rfind("GET /api/shop/info ", 0) == 0) {
+      if (request.rfind("GET /api/shop/info ", 0) == 0 || request.rfind("POST /api/pair/request ", 0) == 0) {
         const std::string info = R"({"features":[]})";
         const std::string reply = "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(info.size()) + "\r\n\r\n" + info;
         send(client, reply.data(), reply.size(), MSG_NOSIGNAL);
@@ -241,5 +253,82 @@ int runPairingUiTests(SDL_Renderer *renderer) {
     CHECK(requests[2].find("X-Access-Key: issued-once") != std::string::npos);
   }
   failures += runPairMessageUiTests(renderer);
+  failures += runPairMismatchTests();
+  return failures;
+}
+
+// The server holds another pair secret for this console (409): no QR code,
+// a request to the admin instead; once the admin cleared it, the next poll
+// shows the QR code again without anything from the player.
+int runPairMismatchTests() {
+  int failures = 0;
+  const int listener = socket(AF_INET, SOCK_STREAM, 0);
+  CHECK(listener >= 0);
+  if (listener < 0)
+    return failures;
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  CHECK(bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == 0);
+  CHECK(listen(listener, 5) == 0);
+  socklen_t length = sizeof(address);
+  getsockname(listener, reinterpret_cast<sockaddr *>(&address), &length);
+  foil::Server server;
+  server.url = "http://127.0.0.1:" + std::to_string(ntohs(address.sin_port));
+  const std::string pending = "{\"status\":\"pending\",\"pairUrl\":\"" + server.url + "/pair/" + std::string(32, 'a') +
+                              "\",\"pairCode\":\"1234ABCD\",\"expiresAt\":2000000000000}";
+  std::atomic<bool> stop{false}, cleared{false};
+  std::thread mock([&] {
+    while (!stop) {
+      pollfd ready{listener, POLLIN, 0};
+      if (::poll(&ready, 1, 50) <= 0)
+        continue;
+      const int client = accept(listener, nullptr, nullptr);
+      if (client < 0)
+        break;
+      char buffer[4096];
+      std::string request;
+      while (request.find("\r\n\r\n") == std::string::npos) {
+        const auto size = recv(client, buffer, sizeof(buffer), 0);
+        if (size <= 0)
+          break;
+        request.append(buffer, size);
+      }
+      std::string status = "200 OK", body = R"({"features":[]})";
+      if (request.rfind("POST /api/pair/request ", 0) == 0) {
+        if (!cleared) {
+          status = "409 Conflict";
+          body = R"({"error":"pairSecret mismatch"})";
+        }
+      } else if (request.rfind("GET /api/pair/status ", 0) == 0) {
+        body = pending;
+      }
+      const std::string reply = "HTTP/1.1 " + status + "\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: " +
+                                std::to_string(body.size()) + "\r\n\r\n" + body;
+      send(client, reply.data(), reply.size(), MSG_NOSIGNAL);
+      close(client);
+    }
+  });
+  char temporary[] = "/tmp/cookingfoil-pair-mismatch-XXXXXX";
+  const char *root = mkdtemp(temporary);
+  CHECK(root);
+  if (root) {
+    const std::string statePath = std::string(root) + "/state.json";
+    foil::net::Session session(server, foil::loadState(statePath).value, statePath);
+    foil::Error error;
+    CHECK(!session.refresh(error));
+    CHECK(!session.pairingPending());
+    CHECK(session.pairingInfo().url.empty());
+    CHECK(error.message == foil::tr("The server holds another approval request for this device. Ask the server admin to clear it."));
+    cleared = true;
+    error = {};
+    CHECK(!session.refresh(error));
+    CHECK(session.pairingPending());
+    CHECK(!session.pairingInfo().url.empty());
+    std::filesystem::remove_all(root);
+  }
+  stop = true;
+  mock.join();
+  close(listener);
   return failures;
 }

@@ -110,9 +110,10 @@ Parsed<PairingInfo> parsePairingInfo(const std::string& json, const Server& serv
 // at most PairMessageLimit characters (code points). Empty for none.
 constexpr size_t PairMessageLimit = 100;
 std::string cleanPairMessage(const std::string& text);
-// POST /api/pair/request's JSON body, {"deviceKey": ..., "message": ...};
-// empty when there is no message, and then nothing is sent.
-std::string pairRequestBody(const std::string& deviceKey, const std::string& message);
+// POST /api/pair/request's JSON body, {"deviceKey": ..., "message": ...,
+// "pairSecret": ...}, each of the last two only when there is one; empty
+// when there is neither, and then nothing is sent.
+std::string pairRequestBody(const std::string& deviceKey, const std::string& message, const std::string& secret = "");
 // /api/shop/info's "features": what this server offers beyond the catalog
 // (retro, homebrew, ...). Empty for a reply without them.
 std::set<std::string> parseFeatures(const std::string& json);
@@ -151,6 +152,9 @@ public:
 private:
     bool pair(Error& error);
     void sendPairMessage();
+    // This server's pair secret, made and saved first when the console has no
+    // key from it yet; empty when it has one or the secret could not be saved.
+    std::string pairSecret();
     Server server_;
     State state_;
     std::string path_, etag_, patchesEtag_;
@@ -164,6 +168,9 @@ private:
     bool pairingPending_ = false;
     PairingInfo pairingInfo_;
     std::string pairMessageSent_; // the body the server last took
+    // The server holds another secret for this console's request (409): an
+    // admin must clear that request before a QR code means anything.
+    bool pairMismatch_ = false;
     const std::atomic<bool>* cancel_ = nullptr;
 };
 }

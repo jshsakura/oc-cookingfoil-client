@@ -1,5 +1,6 @@
 #include "net/Segments.hpp"
 #include "Test.hpp"
+#include <fstream>
 #include "core/State.hpp"
 #include "core/Config.hpp"
 #include "core/Json.hpp"
@@ -140,6 +141,40 @@ int runNetworkTests() {
         auto changed = fresh.value; changed.accessKeys[s.url] = "issued-key";
         foil::Error error; CHECK(foil::saveState(path, changed, error));
         CHECK(foil::loadState(path).value.accessKeys.at(s.url) == "issued-key");
+        // Pair secrets per server: kept when 64 hex characters, dropped otherwise.
+        changed.pairSecrets[s.url] = std::string(64, 'b');
+        changed.pairSecrets["https://other.example.com"] = "short";
+        CHECK(foil::saveState(path, changed, error));
+        {
+            const auto secrets = foil::loadState(path).value.pairSecrets;
+            CHECK(secrets.size() == 1 && secrets.count(s.url) && secrets.at(s.url) == std::string(64, 'b'));
+        }
+        changed.pairSecrets.clear();
+        // A key that is not one: a new key, the old one's server keys gone,
+        // the player's settings kept; no error.
+        {
+            auto broken = changed; broken.deviceKey = "not-a-key"; broken.language = "ja";
+            CHECK(foil::saveState(path, broken, error));
+            const auto rekeyed = foil::loadState(path);
+            CHECK(!rekeyed.error && rekeyed.value.deviceKey.size() == 64);
+            CHECK(rekeyed.value.accessKeys.empty() && rekeyed.value.language == "ja");
+            CHECK(foil::loadState(path).value.deviceKey == rekeyed.value.deviceKey); // saved
+        }
+        // Another file in its place (not JSON, or not an object): started
+        // over with a new key, no error, and readable next time.
+        for (const std::string& other : {std::string("\x89PNG garbage"), std::string("[1,2,3]"), std::string()}) {
+            std::ofstream(path, std::ios::binary | std::ios::trunc) << other;
+            const auto over = foil::loadState(path);
+            CHECK(!over.error && over.created && over.value.deviceKey.size() == 64);
+            CHECK(foil::loadState(path).value.deviceKey == over.value.deviceKey);
+        }
+        // A cut-off save: the copy it left beside is read instead.
+        CHECK(foil::saveState(path, changed, error));
+        std::filesystem::copy_file(path, path + ".old", std::filesystem::copy_options::overwrite_existing);
+        std::ofstream(path, std::ios::binary | std::ios::trunc) << "{\"deviceKey\":";
+        CHECK(foil::loadState(path).value.deviceKey == changed.deviceKey);
+        std::filesystem::remove(path + ".old");
+        CHECK(foil::saveState(path, changed, error));
         // HOME Menu shortcuts for retro games and homebrew: on unless turned off.
         CHECK(fresh.value.makeShortcuts);
         changed.makeShortcuts = false;
