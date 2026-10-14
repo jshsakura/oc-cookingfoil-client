@@ -45,7 +45,36 @@ void openLog(const std::string &path) {
   makeDirectories(std::filesystem::path(std::filesystem::path(path).parent_path()).string());
   logPath = path;
 }
-void logLine(const std::string &line) {
+std::string withoutAddresses(const std::string &line) {
+  std::string out;
+  out.reserve(line.size());
+  size_t at = 0;
+  while (at < line.size()) {
+    const auto http = line.find("http", at);
+    if (http == std::string::npos) break;
+    const auto scheme = line.compare(http, 8, "https://") == 0 ? 8 : line.compare(http, 7, "http://") == 0 ? 7 : 0;
+    if (!scheme) {
+      out.append(line, at, http + 4 - at);
+      at = http + 4;
+      continue;
+    }
+    out.append(line, at, http - at);
+    // The address runs to the next space or quote (file names hold brackets).
+    const auto end = std::min(line.size(), line.find_first_of(" \t\"'<>", http));
+    const auto slash = line.find('/', http + scheme);
+    std::string path = slash != std::string::npos && slash < end ? line.substr(slash, end - slash) : "/";
+    path = path.substr(0, path.find_first_of("?#"));
+    out += path;
+    at = end;
+  }
+  out.append(line, std::min(at, line.size()), std::string::npos);
+  // curl names the host it could not reach.
+  if (const auto host = out.find("resolve host: "); host != std::string::npos)
+    out = out.substr(0, host + 14) + "(server)";
+  return out;
+}
+void logLine(const std::string &raw) {
+  const auto line = withoutAddresses(raw);
   std::lock_guard<std::mutex> lock(mutex);
   if (logPath.empty())
     return;
@@ -66,6 +95,16 @@ std::string logTail(size_t maxBytes) {
     const auto line = text.find('\n');
     if (line != std::string::npos) text.erase(0, line + 1);
   }
-  return text;
+  // Lines written before addresses were left out lose theirs here.
+  std::string clean;
+  size_t start = 0;
+  while (start < text.size()) {
+    const auto end = text.find('\n', start);
+    const auto stop = end == std::string::npos ? text.size() : end;
+    clean += withoutAddresses(text.substr(start, stop - start));
+    if (end != std::string::npos) clean += '\n';
+    start = stop + 1;
+  }
+  return clean;
 }
 } // namespace foil

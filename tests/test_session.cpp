@@ -1,6 +1,7 @@
 #include "Test.hpp"
 #include "core/State.hpp"
 #include "net/Api.hpp"
+#include "core/Log.hpp"
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <poll.h>
@@ -93,6 +94,18 @@ int runSessionTests() {
         CHECK(!patches.patches().error); CHECK(patches.patchesRetryAfter() == 0);
         server.join(); close(scan);
         CHECK(asked.size() == 2 && asked[1].find("If-None-Match") == std::string::npos);
+    }
+    {
+        // The log (and the bug report made from it) keeps no server address:
+        // host and query go, the path tells what it was.
+        using foil::withoutAddresses;
+        CHECK(withoutAddresses("STREAM https://dl.example.kr:38443/Game%20[0100].nsz?exp=1&sig=abc status=206 curl=0") ==
+              "STREAM /Game%20[0100].nsz status=206 curl=0");
+        CHECK(withoutAddresses("GET http://127.0.0.1:38000/api/retro/games/x/icon status=404") ==
+              "GET /api/retro/games/x/icon status=404");
+        CHECK(withoutAddresses("connect to https://shop.example.com failed") == "connect to / failed");
+        CHECK(withoutAddresses("Could not resolve host: dl.example.kr") == "Could not resolve host: (server)");
+        CHECK(withoutAddresses("httpd ok, nothing to hide") == "httpd ok, nothing to hide");
     }
     return failures;
 }
