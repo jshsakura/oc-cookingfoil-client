@@ -354,9 +354,30 @@ void Application::detail() {
   });
   if (part_ == rows + 1 && panelFocus)
     paint_.ring(840, 568, 386, 60, 14);
-  paint_.rect(840, 568, 386, 60, Butter, 14);
-  const auto install = tr("Install|action");
-  paint_.keyLabel("A", install, 840 + (386 - paint_.keyLabelWidth("A", install, 22, true)) / 2, 598, 22, Ink, true);
+  // Already on its way: dark while it downloads, its progress filling a
+  // butter bar along the bottom; quiet gray while it waits its turn. A only
+  // says so (the page stays for picking more).
+  double percent = 0;
+  if (const int onTheWay = pickedOnTheWay(percent)) {
+    const bool downloading = onTheWay == 2;
+    paint_.rect(840, 568, 386, 60, downloading ? Ink : SDL_Color{228, 225, 218, 255}, 14);
+    if (downloading) {
+      constexpr float Inset = 18, Track = 5;
+      const float width = 386 - 2 * Inset;
+      paint_.rect(840 + Inset, 568 + 60 - 11, width, Track, {70, 70, 76, 255}, Track / 2);
+      paint_.rect(840 + Inset, 568 + 60 - 11, std::max(Track, width * float(std::min(percent, 100.)) / 100), Track,
+                  Butter, Track / 2);
+    }
+    const auto label = downloading ? trf("Downloading {0}", {std::to_string(int(percent)) + "%"})
+                                   : std::string(tr("Waiting to download"));
+    const float labelWidth = paint_.fonts.measure(label, 21, true);
+    paint_.fonts.middle(label, 840 + (386 - labelWidth) / 2, downloading ? 594 : 598, 21,
+                        downloading ? Surface : Secondary, true);
+  } else {
+    paint_.rect(840, 568, 386, 60, Butter, 14);
+    const auto install = tr("Install|action");
+    paint_.keyLabel("A", install, 840 + (386 - paint_.keyLabelWidth("A", install, 22, true)) / 2, 598, 22, Ink, true);
+  }
   if (galleryOpen_) gallery();
 }
 // Facts as a labeled grid, then languages, genres and contents as chips.

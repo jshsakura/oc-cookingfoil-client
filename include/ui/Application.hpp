@@ -709,6 +709,9 @@ private:
   void patchMenu(const PatchRow &row);
   void runPatchOp(int op);
   void installSelected();
+  // The picked files already on their way: 0 not all of them, 1 every one
+  // queued, 2 one of them downloading now (`percent` its progress).
+  int pickedOnTheWay(double &percent) const;
   void requestInstall();
   void dialogs();
   float infoCard(const Group &g, const std::string &publisher, float y);

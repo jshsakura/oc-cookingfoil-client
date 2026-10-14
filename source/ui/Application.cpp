@@ -1815,7 +1815,39 @@ bool Application::requestQuit() {
   dialogFocus_ = 0;
   return false;
 }
+int Application::pickedOnTheWay(double &percent) const {
+  percent = 0;
+  if (!selection_)
+    return 0;
+  const auto files = selection_->files();
+  if (files.empty())
+    return 0;
+  const auto row = [&](const Item &f, history::Outcome outcome) {
+    return std::any_of(history_.begin(), history_.end(), [&](const history::Entry &e) {
+      return e.outcome == outcome && e.kind.empty() && e.install.files.size() == 1 && e.install.files[0].url == f.url;
+    });
+  };
+  // Every picked file waits, runs or came in already (the base before its
+  // update), and at least one has yet to finish.
+  bool running = false, waiting = false;
+  for (const auto &f : files) {
+    const bool queued = std::any_of(installQueue_.begin(), installQueue_.end(),
+                                    [&](const QueuedInstall &q) { return q.file.url == f.url; });
+    const bool now = installer_.running() && row(f, history::Outcome::Running);
+    if (!queued && !now && !row(f, history::Outcome::Done))
+      return 0;
+    running = running || now;
+    waiting = waiting || queued;
+  }
+  if (running)
+    percent = installer_.progress().percent;
+  return running ? 2 : waiting ? 1 : 0;
+}
 void Application::installSelected() {
+  if (double percent = 0; pickedOnTheWay(percent)) {
+    message(tr("Already in the download queue."));
+    return;
+  }
   if (deviceBusy_) {
     alert_ = tr("Install after the console scan finishes.");
     return;

@@ -575,7 +575,10 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         if (code == 429) { // Cloudflare's limit (1015 included): half the connections
           limit = std::max(1, limit / 2);
           log("download rate limited (429): " + std::to_string(limit) + " connections");
-          waitUntil[size_t(seg)] = Clock::now() + std::chrono::seconds(5);
+          long wait = 5;
+          if (!c->retryAfter.empty())
+            wait = std::clamp(std::atol(c->retryAfter.c_str()), 1L, 60L);
+          waitUntil[size_t(seg)] = Clock::now() + std::chrono::seconds(wait);
           continue;
         }
         const bool fatal = code == 401 || code == 403 || code == 404 || code == 416;
@@ -584,7 +587,10 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         if (linkDown())
           s.lastData = Clock::now();
         if (!fatal && !c->changed && (code >= 500 || !c->bad) && Clock::now() - s.lastData < ResumeWindow) {
-          waitUntil[size_t(seg)] = Clock::now() + RetryGap;
+          // The longer nothing has come, the longer between asks: 2 s at
+          // first, up to 15 s, so a server that is down is not hammered.
+          const auto quiet = std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - s.lastData);
+          waitUntil[size_t(seg)] = Clock::now() + std::clamp(quiet / 4, std::chrono::seconds(RetryGap), std::chrono::seconds(15));
           continue;
         }
         if (fatal || c->bad || ++fails[size_t(seg)] >= MaxFails || !s.known) {
