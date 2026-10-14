@@ -293,6 +293,7 @@ public:
     std::optional<PatchRecord> record;
     bool onServer = false;
     std::string game, icon, installedVersion;
+    int64_t installedNumber = -1; // the installed update's version number
     bool installed = false;
     int shopGroup = -1; // the game in the shop's catalog, if it is there
   };

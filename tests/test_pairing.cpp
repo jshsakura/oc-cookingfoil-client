@@ -1,5 +1,6 @@
 #include "Test.hpp"
 #include "net/Api.hpp"
+#include "net/Segments.hpp"
 int runPairingTests() {
   int failures = 0;
   foil::Server server;
@@ -54,5 +55,14 @@ int runPairingTests() {
   CHECK(features.count("retro") && features.count("homebrew") && features.size() == 2);
   CHECK(foil::net::parseFeatures("{\"features\":\"retro\"}").empty());
   CHECK(foil::net::parseFeatures("bad-json").empty());
+  // The server's recommended connections bound what a download opens.
+  CHECK(foil::net::parseMaxConnections("{\"download\":{\"maxConnections\":3}}") == 3);
+  CHECK(foil::net::parseMaxConnections("{\"features\":[]}") == 0);
+  CHECK(foil::net::parseMaxConnections("{\"download\":{\"maxConnections\":0}}") == 0);
+  foil::net::recommendConnections(3);
+  CHECK(foil::net::connectionsFor("https://shop.example", 0) == 3);
+  CHECK(foil::net::connectionsFor("http://192.168.0.2", 0) == 2);
+  foil::net::recommendConnections(0);
+  CHECK(foil::net::connectionsFor("https://shop.example", 0) == 4);
   return failures;
 }

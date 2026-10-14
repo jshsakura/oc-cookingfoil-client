@@ -1,3 +1,4 @@
+#include <atomic>
 #include "net/Segments.hpp"
 #include <algorithm>
 #include <cstdio>
@@ -77,9 +78,15 @@ bool privateHost(const std::string &url) {
   return a == 10 || a == 127 || (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168) ||
          (a == 100 && b >= 64 && b <= 127);
 }
+namespace {
+std::atomic<int> recommended{0};
+}
+void recommendConnections(int most) { recommended = most > 0 ? std::min(most, 8) : 0; }
 int connectionsFor(const std::string &serverUrl, int setting) {
-  if (setting == 1 || setting == 2 || setting == 4 || setting == 8)
-    return setting;
-  return privateHost(serverUrl) ? 2 : 4;
+  const int chosen = setting == 1 || setting == 2 || setting == 4 || setting == 8 ? setting
+                     : privateHost(serverUrl)                                     ? 2
+                                                                                  : 4;
+  const int most = recommended;
+  return most > 0 ? std::min(chosen, most) : chosen;
 }
 } // namespace foil::net

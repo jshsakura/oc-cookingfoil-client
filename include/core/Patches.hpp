@@ -19,6 +19,9 @@ struct UserPatch {
   uint64_t size = 0;
   int files = 0;
   int64_t updatedAt = 0;
+  // The game's version number the patch was made for (an installed update's
+  // number, 2097152 for v2); -1 when the server does not say.
+  int64_t updateVersion = -1;
   bool required = false; // the game does not run without it
   // The game the patch is for, from the server's titledb, for games the
   // shop itself does not list. Names are ko, en, ja, zh; any may be empty.

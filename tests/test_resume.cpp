@@ -526,6 +526,56 @@ int runResumeTests() {
     fs::remove_all(sd);
   }
   {
+    // Downloaded again after the list changed (a file dropped, others kept):
+    // what the card already has as listed is not fetched again. With most
+    // of it there, only the missing file comes, on its own; with most of it
+    // missing, the bundle comes and the files already there are not rewritten.
+    const auto hash = [](const std::string &bytes) {
+      foil::Sha256 h;
+      h.update(bytes.data(), bytes.size());
+      return h.hex();
+    };
+    const auto sd = fs::temp_directory_path() / ("cf-bundle-kept-" + std::to_string(getpid()));
+    fs::remove_all(sd);
+    const std::string big = body(90000, 'k'), small = body(700, 'n');
+    std::string ignored;
+    fs::create_directories(sd / "switch/kept");
+    foil::atomicWrite((sd / "switch/kept/kept.nro").string(), big, ignored);
+    Mock mock;
+    mock.paths = {{"/f/small", small}};
+    mock.start(1);
+    foil::homebrew::App app;
+    app.id = "kept";
+    app.bundleUrl = mock.url + "/bundle";
+    app.files.push_back({"switch/kept/kept.nro", hash(big), mock.url + "/f/big", big.size()});
+    app.files.push_back({"switch/kept/new.dat", hash(small), mock.url + "/f/small", small.size()});
+    foil::Server server;
+    server.url = mock.url;
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(foil::net::homebrewDownload(server, foil::State{}, app, sd.string(), received, error, nullptr));
+    mock.thread.join();
+    CHECK(mock.requests.size() == 1 && mock.requests[0].find("/f/small") != std::string::npos);
+    CHECK(foil::readFile((sd / "switch/kept/new.dat").string()) == small);
+    CHECK(received == big.size() + small.size());
+    // Most of it missing: the bundle, with the file already there left as it is.
+    const auto before = fs::last_write_time(sd / "switch/kept/kept.nro");
+    const std::vector<File> files{{"switch/kept/kept.nro", big}, {"switch/kept/more.dat", body(400000, 'm')}};
+    Mock tar;
+    tar.body = archive(files);
+    tar.start(1);
+    app.bundleUrl = tar.url + "/bundle";
+    app.files = {{"switch/kept/kept.nro", hash(big), tar.url + "/f/big", big.size()},
+                 {"switch/kept/more.dat", hash(files[1].body), tar.url + "/f/more", files[1].body.size()}};
+    server.url = tar.url;
+    CHECK(foil::net::homebrewDownload(server, foil::State{}, app, sd.string(), received, error, nullptr));
+    tar.thread.join();
+    CHECK(tar.requests.size() == 1 && tar.requests[0].find("/bundle") != std::string::npos);
+    CHECK(foil::readFile((sd / "switch/kept/more.dat").string()) == files[1].body);
+    CHECK(fs::last_write_time(sd / "switch/kept/kept.nro") == before);
+    fs::remove_all(sd);
+  }
+  {
     // A bundle holding a path the list does not name is refused, unwritten.
     const auto sd = fs::temp_directory_path() / ("cf-bundle-bad-" + std::to_string(getpid()));
     fs::remove_all(sd);

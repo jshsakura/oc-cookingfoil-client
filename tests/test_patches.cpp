@@ -588,7 +588,7 @@ int runPatchTests() {
       {"id":"hb-2","title_id":null,"homebrew":"../atmosphere","kinds":["homebrew"]},
       {"id":"hb-3","title_id":null,"homebrew":"a/b"},
       {"id":"hb-4","title_id":null},
-      {"id":"g-1","title_id":"01001730144DA000","homebrew":"sm64","name":"게임 패치","required":true}]})"));
+      {"id":"g-1","title_id":"01001730144DA000","homebrew":"sm64","name":"게임 패치","required":true,"update_version":2097152}]})"));
     CHECK(list.size() == 2);
     if (list.size() == 2) {
       CHECK(list[0].id == "hb-1" && list[0].titleId.empty() && list[0].homebrewApp == "sm64");
@@ -596,6 +596,8 @@ int runPatchTests() {
       // A game patch stays a game patch.
       CHECK(list[1].titleId == "01001730144DA000" && list[1].homebrewApp.empty());
       CHECK(list[1].required && !list[0].required);
+      // The version number it was made for, when the server says (else -1).
+      CHECK(list[1].updateVersion == 2097152 && list[0].updateVersion == -1);
     }
   }
   // A patch waiting in 다운로드's queue is kept as text and read back whole,
@@ -612,6 +614,7 @@ int runPatchTests() {
     game.files = 3;
     game.updatedAt = 1700000000;
     game.required = true;
+    game.updateVersion = 65536;
     game.kinds = {"romfs", "cheats"};
     game.gameName = "Base";
     game.gameNames = {"한국어", "", "日本語", ""};
@@ -622,6 +625,7 @@ int runPatchTests() {
       CHECK(back[0].id == game.id && back[0].titleId == game.titleId && back[0].name == game.name);
       CHECK(back[0].version == "1.2" && back[0].gameVersion == "1.0.3" && back[0].hash == "abc");
       CHECK(back[0].size == 12345 && back[0].files == 3 && back[0].updatedAt == 1700000000 && back[0].required);
+      CHECK(back[0].updateVersion == 65536);
       CHECK(back[0].kinds == game.kinds && back[0].gameName == "Base" && back[0].gameIcon == game.gameIcon);
       CHECK(back[0].gameNames.size() == 4 && back[0].gameNames[0] == "한국어" && back[0].gameNames[2] == "日本語");
     }
@@ -631,6 +635,7 @@ int runPatchTests() {
     app.kinds = {"homebrew"};
     const auto appBack = foil::net::parsePatches(foil::net::serializePatch(app));
     CHECK(appBack.size() == 1 && appBack[0].titleId.empty() && appBack[0].homebrewApp == "sm64");
+    CHECK(appBack.size() == 1 && appBack[0].updateVersion == -1); // null stays unknown
   }
   {
     foil::UserPatch app;

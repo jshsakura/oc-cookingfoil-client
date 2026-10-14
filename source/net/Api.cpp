@@ -1,5 +1,6 @@
 #include "net/Socket.hpp"
 #include "net/Api.hpp"
+#include "net/Segments.hpp"
 #include <mutex>
 #include "core/Version.hpp"
 #include "core/Json.hpp"
@@ -383,6 +384,8 @@ std::vector<UserPatch> parsePatches(json_object* array) {
         p.size = positive(object, "size");
         p.files = int(std::min<uint64_t>(positive(object, "files"), INT32_MAX));
         p.updatedAt = integerField(object, "updated_at");
+        if (auto* number = field(object, "update_version"); json_object_is_type(number, json_type_int))
+            p.updateVersion = std::max<int64_t>(-1, json_object_get_int64(number));
         if (auto* game = field(object, "game"); json_object_is_type(game, json_type_object)) {
             p.gameName = stringField(game, "name");
             if (auto* names = field(game, "names"); json_object_is_type(names, json_type_object)) {
@@ -435,6 +438,7 @@ std::string serializePatch(const UserPatch& p) {
     json_object_object_add(object, "size", json_object_new_int64(int64_t(p.size)));
     json_object_object_add(object, "files", json_object_new_int64(p.files));
     json_object_object_add(object, "updated_at", json_object_new_int64(p.updatedAt));
+    json_object_object_add(object, "update_version", p.updateVersion >= 0 ? json_object_new_int64(p.updateVersion) : nullptr);
     auto* game = json_object_new_object();
     text(game, "name", p.gameName);
     text(game, "icon", p.gameIcon);
@@ -880,6 +884,14 @@ std::set<std::string> parseFeatures(const std::string& json) {
     }
     return out;
 }
+int parseMaxConnections(const std::string& json) {
+    Error ignored;
+    auto root = parseJson(json, ignored);
+    auto* download = root ? field(root.get(), "download") : nullptr;
+    if (!json_object_is_type(download, json_type_object)) return 0;
+    const auto most = integerField(download, "maxConnections", 0);
+    return most > 0 && most <= 64 ? int(most) : 0;
+}
 bool Session::refresh(Error& error) {
     error = {};
     if (!pair(error)) return false;
@@ -888,8 +900,10 @@ bool Session::refresh(Error& error) {
         // so content added on the server shows without a restart.
         const auto info = server_.url + "/api/shop/info";
         const auto response = get(info, authHeaders(server_, state_, info), "", cancel_);
-        if (response.status == 200) features_ = parseFeatures(response.body);
-        else if (response.status == 404) features_.clear();
+        if (response.status == 200) {
+            features_ = parseFeatures(response.body);
+            recommendConnections(parseMaxConnections(response.body));
+        } else if (response.status == 404) features_.clear();
     }
     const auto url = server_.url + "/api/shop/sections";
     // How long the first screen waits, in the log: the list's download,

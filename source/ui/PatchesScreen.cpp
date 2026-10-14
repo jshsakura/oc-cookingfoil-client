@@ -8,7 +8,11 @@ namespace {
 constexpr int VisibleRows = 4;
 constexpr float RowTop = 90, RowHeight = 108, RowStep = 124;
 // "any" or nothing means the patch does not care which version is installed.
-bool versionMismatch(const std::string &wanted, const std::string &installed) {
+// Told by the version number when the server gives one (exact), else by the
+// version text. Only shown, never hidden or blocked.
+bool versionMismatch(const UserPatch &patch, const Application::PatchRow &row) {
+  if (patch.updateVersion >= 0 && row.installedNumber >= 0) return patch.updateVersion != row.installedNumber;
+  const auto &wanted = patch.gameVersion, &installed = row.installedVersion;
   return !wanted.empty() && wanted != "any" && !installed.empty() && wanted != installed;
 }
 bool missingFiles(const std::map<std::string, PatchHealth> &health, const std::string &id) {
@@ -90,6 +94,7 @@ std::vector<Application::PatchRow> Application::allPatchRows() const {
     if (local != installed_.games.end()) {
       row.installed = true;
       row.installedVersion = local->displayVersion;
+      row.installedNumber = local->version;
     }
     patchGame(row.patch, row.game, row.icon);
   };
@@ -699,7 +704,7 @@ void Application::patchesScreen() {
       const auto &row = rows[r];
       for (const auto &kind : row.patch.kinds)
         if (std::find(kinds.begin(), kinds.end(), kind) == kinds.end()) kinds.push_back(kind);
-      mismatch |= versionMismatch(row.patch.gameVersion, row.installedVersion);
+      mismatch |= versionMismatch(row.patch, row);
       gone &= !row.onServer;
       bytes += row.record ? row.record->bytes : row.patch.size;
     }
@@ -718,7 +723,8 @@ void Application::patchesScreen() {
     else if (!game.installed)
       warning = lead.shopGroup >= 0 ? tr("Not installed · on the server") : tr("Game not installed");
     else if (mismatch && game.rows.size() == 1 && !game.app)
-      warning = trf("Game {0} only", {lead.patch.gameVersion});
+      warning = trf("Game {0} only", {!lead.patch.gameVersion.empty() ? lead.patch.gameVersion
+                                                                        : "v" + std::to_string(lead.patch.updateVersion)});
     if (gone)
       warning = tr("Gone from server");
     if (!warning.empty()) {

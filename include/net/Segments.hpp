@@ -40,7 +40,11 @@ private:
   std::vector<Segment> segments_;
 };
 // How many connections a download from `serverUrl` gets: `setting` 1/2/4/8,
-// or 0 for automatic (2 for a private address, 4 otherwise).
+// or 0 for automatic (2 for a private address, 4 otherwise), never more than
+// the server recommends.
 int connectionsFor(const std::string &serverUrl, int setting);
+// The server's recommendation (/api/shop/info download.maxConnections); 0
+// when it gives none.
+void recommendConnections(int most);
 bool privateHost(const std::string &url);
 } // namespace foil::net

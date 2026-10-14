@@ -96,7 +96,8 @@ bool alreadyThere(const std::string &target, uint64_t size, const std::string &s
 // goes on from the last whole file (kept in switch/cookingfoil/resume). Only
 // the files the list names are written.
 bool fetchBundle(const Server &server, const State &state, const homebrew::App &app, const std::string &sd,
-                 std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel, bool &unusable) {
+                 const std::set<std::string> &onCard, std::atomic<uint64_t> &received, Error &error,
+                 const std::atomic<bool> *cancel, bool &unusable) {
   unusable = false;
   std::set<std::string> listed;
   PartInfo wanted;
@@ -115,7 +116,10 @@ bool fetchBundle(const Server &server, const State &state, const homebrew::App &
   if (from) logLine("homebrew " + app.id + " resumes at " + std::to_string(from >> 20) + " MB");
   const auto fetch = rangedTar(app.bundleUrl, authHeaders(server, state, app.bundleUrl), from, from ? kept.etag : "",
       [&](uint64_t) {
-        return std::make_unique<TarWriter>(sd, [&listed](const std::string &path) { return listed.count(path) > 0; });
+        auto writer = std::make_unique<TarWriter>(sd, [&listed](const std::string &path) { return listed.count(path) > 0; });
+        // Files already on the card as listed are read past, not written again.
+        writer->skip([&onCard](const std::string &path) { return onCard.count(path) > 0; });
+        return writer;
       },
       [&](uint64_t boundary, const std::string &etag) {
         auto info = wanted;
@@ -292,10 +296,33 @@ bool homebrewDownload(const Server &server, const State &state, const homebrew::
   if (app.archive.usable()) return homebrewArchive(server, state, app, sd, received, error, cancel);
   if (app.files.empty())
     return fetchFile(server, state, app.downloadUrl, sd, app.installPath, "", 0, received, error, cancel);
-  if (!app.bundleUrl.empty()) {
+  // What the card already has as listed (a cut install, or a new build that
+  // kept most files): checked once, by size and then hash. A fresh install
+  // has none of them and passes at once.
+  std::vector<bool> have(app.files.size());
+  std::set<std::string> kept;
+  uint64_t total = 0, missing = 0;
+  size_t missingFiles = 0;
+  for (size_t i = 0; i < app.files.size(); ++i) {
+    if (cancel && *cancel) return false;
+    const auto &file = app.files[i];
+    total += file.size;
+    have[i] = alreadyThere(sd + "/" + file.path, file.size, file.sha256);
+    if (have[i]) kept.insert(file.path);
+    else missing += file.size, ++missingFiles;
+  }
+  if (!missingFiles) {
+    received += total;
+    return true;
+  }
+  // Most of it there: only what is missing, a file at a time. Otherwise the
+  // whole bundle in one stream, the files already there read past.
+  constexpr uint64_t FewFiles = 200;
+  const bool fewMissing = missing * 4 <= total && missingFiles <= FewFiles;
+  if (!app.bundleUrl.empty() && !fewMissing) {
     bool unusable = false;
     const uint64_t before = received;
-    if (fetchBundle(server, state, app, sd, received, error, cancel, unusable)) return true;
+    if (fetchBundle(server, state, app, sd, kept, received, error, cancel, unusable)) return true;
     if (!unusable || (cancel && *cancel)) return false;
     // Falls back to one request a file; what the bundle already wrote is
     // checked by its hash and kept.
@@ -305,7 +332,8 @@ bool homebrewDownload(const Server &server, const State &state, const homebrew::
   }
   // A folder install: thousands of small files, each its own request, so
   // most of the time is the round trip; eight at a time, each checked. One
-  // already on the card as the server lists it (size and hash) is kept.
+  // already on the card as the server lists it (found above, or written by
+  // the bundle before it gave out) is kept.
   // One failing stops the rest (those in flight finish their file).
   constexpr size_t Workers = 8;
   std::atomic<size_t> next{0};
@@ -317,7 +345,7 @@ bool homebrewDownload(const Server &server, const State &state, const homebrew::
       const size_t i = next++;
       if (i >= app.files.size()) return;
       const auto &file = app.files[i];
-      if (alreadyThere(sd + "/" + file.path, file.size, file.sha256)) {
+      if (have[i] || alreadyThere(sd + "/" + file.path, file.size, file.sha256)) {
         received += file.size;
         continue;
       }
