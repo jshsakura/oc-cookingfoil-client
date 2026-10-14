@@ -111,6 +111,8 @@ void Application::retroHome() {
         paint_.fonts.middle(label, cx + 11, cy + 6 + h / 2, 13, Surface, true);
       }
       scoreBadge(game.rating, cx + Card - 6, cy + 6);
+      // Bottom left: how many versions it has, when more than one.
+      versionsBadge(game.variants, cx + 6, cy + Card - 25, true);
       // Bottom right: its region's flag, left of the check once it is on the card.
       const bool installed = retroInstalled(game) && !retroBezelMissing(game);
       paint_.region(game.region, cx + Card - (installed ? 64 : 34), cy + Card - 26, 27, 18);
@@ -162,5 +164,14 @@ void Application::retroHomeAction(Action a) {
   default:
     break;
   }
+}
+void Application::versionsBadge(int count, float x, float y, bool dark) {
+  if (count < 2) return;
+  const auto label = std::to_string(count);
+  const float w = 6 + 13 + 4 + paint_.fonts.measure(label, 13, true) + 7, h = 19;
+  const SDL_Color fill = dark ? SDL_Color{22, 22, 26, 190} : Ground, ink = dark ? Surface : Ink;
+  paint_.rect(x, y, w, h, fill, 5);
+  paint_.icon(42, x + 6, y + 3, ink, 13);
+  paint_.fonts.middle(label, x + 6 + 13 + 4, y + h / 2, 13, ink, true);
 }
 } // namespace foil::ui

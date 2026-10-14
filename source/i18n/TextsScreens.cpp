@@ -156,7 +156,7 @@ const Translation rows[] = {
     {"It is already on the SD card. Only changed files and missing cores come down again. Get all again fetches every file anew; either way your settings stay.", "이미 SD 카드에 있습니다. 바뀐 파일과 빠진 코어만 다시 받습니다. 전체 다시 받기는 모든 파일을 새로 받으며, 두 경우 모두 설정은 그대로 둡니다.", "すでにSDカードにあります。変わったファイルと足りないコアだけを入手し直します。すべて入手し直すと全ファイルを新しく入手し、どちらの場合も設定はそのまま残します。", "SD 卡上已有。只重新获取有变化的文件和缺少的核心。全部重新获取会重新下载所有文件，两种方式都会保留设置。"},
     {"Official", "정발", "正式版", "正式版"},
     {"Korean|script", "한글", "韓国語", "韩文"},
-    {"{0} versions", "판 {0}개", "バージョン {0}種類", "共 {0} 个版本"},
+    {"Versions", "버전", "バージョン", "版本"},
     {"Recommended", "추천", "おすすめ", "推荐"},
     {"Will not run", "실행 불가", "起動できません", "无法运行"},
     {"This version cannot run: a file it needs is not on the server.", "이 판은 실행에 필요한 파일이 서버에 없어 받을 수 없습니다.", "この版は起動に必要なファイルがサーバーにないため、入手できません。", "此版本运行所需的文件不在服务器上，无法下载。"},

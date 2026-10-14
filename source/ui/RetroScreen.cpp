@@ -652,7 +652,10 @@ float Application::retroVariantRows(float x, float y, float w) {
   constexpr float Row = 52, Head = 44;
   const int count = int(retroVariants_.size()), shown = std::min(4, count);
   paint_.rect(x - 32, y, w + 64, 1, Line);
-  paint_.fonts.middle(trf("{0} versions", {std::to_string(count)}), x, y + Head / 2 + 2, 18, Ink, true);
+  // "버전" and how many, as a page title shows its count.
+  const std::string head = tr("Versions");
+  paint_.fonts.middle(head, x, y + Head / 2 + 2, 18, Ink, true);
+  paint_.pill(std::to_string(count), x + paint_.fonts.measure(head, 18, true) + 10, y + Head / 2 + 2 - 13);
   if (count > shown)
     paint_.fonts.middle(std::to_string(retroVariant_ + 1) + " / " + std::to_string(count),
                         x + w - paint_.fonts.measure(std::to_string(retroVariant_ + 1) + " / " + std::to_string(count), 16),
@@ -817,6 +820,7 @@ void Application::retroList() {
     // Under the name, labels: its format, a bezel, its score.
     float at = 360;
     for (const auto &label : retroLabels(game)) at += paint_.pill(label, at, y + 46) + 6;
+    versionsBadge(game.variants, 278 + 3, y + 10 + 64 - 22, true);
     const float right = 1230;
     const bool busy = retroBusy_ == game.id;
     const bool bezel = retroBezelMissing(game), there = retroInstalled(game) && !bezel;
