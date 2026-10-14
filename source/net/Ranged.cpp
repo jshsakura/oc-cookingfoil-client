@@ -4,6 +4,8 @@
 #include "core/Log.hpp"
 #include "core/Patches.hpp"
 #include "core/Sha256.hpp"
+#include "net/Segmented.hpp"
+#include "net/Segments.hpp"
 #include "net/Socket.hpp"
 #include "platform/Storage.hpp"
 #include <cerrno>
@@ -114,6 +116,71 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
   return last;
 }
 
+// A file this big or more, fetched from its start, comes over several
+// connections at once as a game does: one connection is slow on a link with a
+// long round trip (a phone's hotspot). Its parts land out of order, so a
+// download that stops is not resumed from the card; it starts over.
+constexpr uint64_t ParallelFrom = 4ull << 20;
+namespace {
+// The whole file over several connections into `part`. False when it did
+// not finish; the part is gone then, and the bytes it counted given back.
+bool fetchParallel(const std::string &url, const std::vector<std::string> &headers, const std::string &part,
+                   const PartInfo &wanted, std::atomic<uint64_t> &received, const std::atomic<bool> *cancel,
+                   PartFetch &result, std::string &etag) {
+  const auto name = fs::path(part).filename().string();
+  std::unique_ptr<FILE, int (*)(FILE *)> out(std::fopen(part.c_str(), "wb"), std::fclose);
+  if (!out)
+    return false;
+  uint64_t counted = 0;
+  bool tooLong = false, writeFailed = false;
+  SegmentedOptions options;
+  options.connections = connectionsFor(url, 0);
+  options.headers = headers;
+  options.batchBytes = 1u << 20;
+  options.bufferBytes = 16ull << 20;
+  options.cancelled = [cancel] { return cancel && cancel->load(); };
+  options.log = [](const std::string &line) { logLine(line); };
+  const auto got = segmentedFetch(
+      url,
+      [&](uint64_t total) {
+        if (total != wanted.size) {
+          tooLong = total > wanted.size;
+          return false; // not the file asked for; the one-connection path says why
+        }
+        return true;
+      },
+      [&](uint64_t offset, const char *data, size_t size) {
+        if (offset + size > wanted.size) {
+          tooLong = true;
+          return false;
+        }
+        if (std::fseek(out.get(), long(offset), SEEK_SET) != 0 || std::fwrite(data, 1, size, out.get()) != size) {
+          writeFailed = true;
+          return false;
+        }
+        counted += size;
+        received += size;
+        return true;
+      },
+      options);
+  const bool closed = std::fclose(out.release()) == 0;
+  if (got.ok && closed && !tooLong && !writeFailed) {
+    etag = got.etag;
+    result.response.status = 200;
+    result.response.etag = got.etag;
+    return true;
+  }
+  received -= std::min<uint64_t>(counted, received.load());
+  dropPart(part);
+  if (writeFailed || !closed)
+    result.failure = trf("Could not write the file: {0}", {name}) + " (" + std::strerror(errno) + ")";
+  result.tooLong = tooLong;
+  if (got.cancelled)
+    result.response.error = tr("Cancelled");
+  logLine("parallel " + name + " did not finish: " + (got.cancelled ? std::string("cancelled") : got.error));
+  return false;
+}
+} // namespace
 void dropPart(const std::string &part) {
   std::error_code ec;
   fs::remove(part, ec);
@@ -152,6 +219,23 @@ PartFetch fetchPart(const std::string &url, const std::vector<std::string> &head
   if (wanted.size && written == wanted.size) {
     result.response.status = 206; // all of it was kept: nothing left to ask
     return finish();
+  }
+  if (!written && wanted.size >= ParallelFrom && !platform::needsBigFile(wanted.size) &&
+      connectionsFor(url, 0) > 1) {
+    std::string etag;
+    if (fetchParallel(url, headers, part, wanted, received, cancel, result, etag)) {
+      written = wanted.size;
+      if (hash && !hashFile(part, written, sha))
+        result.failure = trf("Could not write the file: {0}", {name});
+      info.etag = etag;
+      std::string ignored;
+      atomicWrite(infoPath, serializePartInfo(info), ignored);
+      return finish();
+    }
+    // Stopped on purpose, or the card refused it: nothing more to try.
+    if (!result.response.error.empty() || !result.failure.empty() || result.tooLong)
+      return finish();
+    result = PartFetch{}; // anything else: once more on one connection, as before
   }
   std::unique_ptr<FILE, int (*)(FILE *)> out(nullptr, std::fclose);
   const auto open = [&](uint64_t at, uint64_t whole) {

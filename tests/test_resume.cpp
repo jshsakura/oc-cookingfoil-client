@@ -91,6 +91,7 @@ struct Mock {
   std::map<std::string, std::string> paths;
   // When set and not empty for a connection, the whole reply sent instead.
   std::function<std::string(int index)> answer;
+  int idleMs = 10000; // how long it waits for the next connection before it stops
   int listener = -1;
   std::string url;
   std::thread thread;
@@ -107,7 +108,7 @@ struct Mock {
     thread = std::thread([this, connections] {
       for (int i = 0; i < connections; ++i) {
         pollfd ready{listener, POLLIN, 0};
-        if (::poll(&ready, 1, 10000) <= 0)
+        if (::poll(&ready, 1, idleMs) <= 0)
           return;
         const int client = accept(listener, nullptr, nullptr);
         if (client < 0)
@@ -406,6 +407,27 @@ int runResumeTests() {
     std::vector<std::string> headers{"Authorization: Bearer old", "Accept: */*"};
     foil::net::freshenBearer(headers);
     CHECK(headers[0] == "Authorization: Bearer fresh" && headers[1] == "Accept: */*");
+  }
+  {
+    // A big file from its start comes over several connections, each asking
+    // its own range, and lands whole with its hash.
+    Mock server;
+    server.body = body(6u << 20, 'p');
+    server.idleMs = 1500;
+    server.start(64);
+    const auto part = (root / "parallel.part").string();
+    std::atomic<uint64_t> received{0};
+    foil::PartInfo wanted{server.url + "/f", "", "", server.body.size(), 0};
+    const auto got = foil::net::fetchPart(server.url + "/f", {}, part, wanted, true, received, nullptr);
+    server.thread.join();
+    CHECK(foil::net::rangedOk(got.response) && got.size == server.body.size());
+    CHECK(foil::readFile(part) == server.body && received == server.body.size());
+    foil::Sha256 sha;
+    sha.update(server.body.data(), server.body.size());
+    CHECK(got.sha256 == sha.hex());
+    // The one-connection path asks from 0 with no Range; this one names its range.
+    CHECK(!server.requests.empty() && server.requests[0].find("Range: bytes=0-") != std::string::npos);
+    foil::net::dropPart(part);
   }
   {
     // End to end: a file cut off mid-transfer continues with a Range ask.
