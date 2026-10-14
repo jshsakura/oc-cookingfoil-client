@@ -192,5 +192,26 @@ int runHomebrewTests() {
     CHECK(ownerKey("", "ytb") != ownerKey("ytb", ""));
     CHECK(ownerKey("0100ABCDEF012000", "ytb") == "0100ABCDEF012000");
   }
+  {
+    // A zip the server keeps (archive): read, kept through serialize, and
+    // left out (the app stays) when an entry's path could leave switch/.
+    const std::string zip =
+        R"(,"archive":{"format":"zip","url":"/api/homebrew/gh-9c9ef5794087/archive","size":4096,"sha256":"ab",)"
+        R"("entries":[{"entry":"ytb/ytb-player.nro","path":"switch/ytb-player/ytb-player.nro","size":100}]}})";
+    auto e = entry;
+    e.replace(e.size() - 1, 1, zip);
+    const auto withZip = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
+    CHECK(withZip.size() == 1 && withZip[0].archive.usable() && withZip[0].archive.size == 4096 &&
+          withZip[0].archive.url == "https://shop.example/api/homebrew/gh-9c9ef5794087/archive" &&
+          withZip[0].archive.entries.size() == 1 && withZip[0].archive.entries[0].size == 100);
+    if (!withZip.empty()) {
+      const auto again = parse(R"({"homebrew":[)" + serialize(withZip[0]) + "]}", "https://shop.example");
+      CHECK(again.size() == 1 && again[0].archive.usable() && again[0].archive.entries[0].path == "switch/ytb-player/ytb-player.nro");
+    }
+    auto outside = e;
+    outside.replace(outside.find("switch/ytb-player/ytb"), 21, "atmosphere/../../ytb");
+    const auto noZip = parse(R"({"homebrew":[)" + outside + "]}", "https://shop.example");
+    CHECK(noZip.size() == 1 && !noZip[0].archive.usable());
+  }
   return failures;
 }

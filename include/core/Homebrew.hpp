@@ -12,6 +12,18 @@ struct File {
   std::string path, sha256, url; // sha256: 64 lowercase hex digits
   uint64_t size = 0;
 };
+// An app the server keeps as a zip, taken whole: each listed entry (its name
+// in the zip) goes to its SD path; anything else in the zip stays out.
+struct ArchiveEntry {
+  std::string entry, path;
+  uint64_t size = 0;
+};
+struct Archive {
+  std::string format, url, sha256;
+  uint64_t size = 0; // the zip's own size
+  std::vector<ArchiveEntry> entries;
+  bool usable() const { return format == "zip" && !url.empty() && size > 0 && !entries.empty(); }
+};
 // 도구 or 포트, the 홈브류 tab an app shows under.
 enum class Kind { Tool, Port };
 struct App {
@@ -32,6 +44,8 @@ struct App {
   // A folder install's files as one tar stream (one request, resumable);
   // empty when the server has none, and the files come one by one.
   std::string bundleUrl;
+  // The app as the server's zip (archive); format empty when there is none.
+  Archive archive;
   // A file found on the SD card that no listed app owns: shown under 설치됨
   // with what the file says, never downloaded or updated, only removed.
   bool cardOnly = false;

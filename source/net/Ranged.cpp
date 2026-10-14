@@ -192,11 +192,11 @@ PartFetch fetchPart(const std::string &url, const std::vector<std::string> &head
 }
 
 TarFetch rangedTar(const std::string &url, const std::vector<std::string> &headers, uint64_t from,
-                   const std::string &validator, const std::function<std::unique_ptr<TarWriter>(uint64_t)> &open,
+                   const std::string &validator, const std::function<std::unique_ptr<ArchiveWriter>(uint64_t)> &open,
                    const std::function<void(uint64_t, const std::string &)> &checkpoint,
                    std::atomic<uint64_t> &received, const std::atomic<bool> *cancel) {
   TarFetch result;
-  std::unique_ptr<TarWriter> writer;
+  std::unique_ptr<ArchiveWriter> writer;
   uint64_t shown = from, saved = from;
   std::string etag = validator;
   received += from;

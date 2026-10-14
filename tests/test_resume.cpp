@@ -9,6 +9,8 @@
 #include "core/Sha256.hpp"
 #include "platform/Storage.hpp"
 #include "install/Installer.hpp"
+#include "core/ZipStream.hpp"
+#include <zlib.h>
 #include <arpa/inet.h>
 #include <cstring>
 #include <filesystem>
@@ -163,6 +165,59 @@ struct Mock {
       close(listener);
   }
 };
+// A zip as tools write it: each entry stored or deflated, some with a data
+// descriptor after their bytes, then the central directory and end record.
+struct ZipFile {
+  std::string name, data;
+  bool deflate = false, descriptor = false;
+};
+std::string le(uint64_t value, int bytes) {
+  std::string out;
+  for (int i = 0; i < bytes; ++i)
+    out += char((value >> (8 * i)) & 0xFF);
+  return out;
+}
+std::string deflated(const std::string &data) {
+  z_stream z{};
+  deflateInit2(&z, 6, Z_DEFLATED, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY);
+  std::string out(compressBound(uLong(data.size())) + 64, '\0');
+  z.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(data.data()));
+  z.avail_in = uInt(data.size());
+  z.next_out = reinterpret_cast<Bytef *>(&out[0]);
+  z.avail_out = uInt(out.size());
+  deflate(&z, Z_FINISH);
+  out.resize(z.total_out);
+  deflateEnd(&z);
+  return out;
+}
+std::string zipOf(const std::vector<ZipFile> &files, std::vector<uint64_t> *dataEnds = nullptr) {
+  std::string zip, directory;
+  for (const auto &f : files) {
+    const auto packed = f.deflate ? deflated(f.data) : f.data;
+    const uint32_t crc = uint32_t(crc32(0, reinterpret_cast<const Bytef *>(f.data.data()), uInt(f.data.size())));
+    const int flags = f.descriptor ? 8 : 0, method = f.deflate ? 8 : 0;
+    const uint64_t offset = zip.size();
+    zip += le(0x04034b50, 4) + le(20, 2) + le(flags, 2) + le(method, 2) + le(0, 4) +
+           le(f.descriptor ? 0 : crc, 4) + le(f.descriptor ? 0 : packed.size(), 4) +
+           le(f.descriptor ? 0 : f.data.size(), 4) + le(f.name.size(), 2) + le(0, 2) + f.name + packed;
+    if (dataEnds)
+      dataEnds->push_back(zip.size());
+    if (f.descriptor)
+      zip += le(0x08074b50, 4) + le(crc, 4) + le(packed.size(), 4) + le(f.data.size(), 4);
+    directory += le(0x02014b50, 4) + le(20, 2) + le(20, 2) + le(flags, 2) + le(method, 2) + le(0, 4) + le(crc, 4) +
+                 le(packed.size(), 4) + le(f.data.size(), 4) + le(f.name.size(), 2) + le(0, 2) + le(0, 2) +
+                 le(0, 2) + le(0, 2) + le(0, 4) + le(offset, 4) + f.name;
+  }
+  const uint64_t at = zip.size();
+  return zip + directory + le(0x06054b50, 4) + le(0, 4) + le(files.size(), 2) + le(files.size(), 2) +
+         le(directory.size(), 4) + le(at, 4) + le(0, 2);
+}
+std::string varied(size_t size, int seed) {
+  std::string out(size, ' ');
+  for (size_t i = 0; i < size; ++i)
+    out[i] = char('a' + (i * 7 + i / 13 + size_t(seed)) % 26);
+  return out;
+}
 std::string rangeOf(const std::string &request) {
   const auto at = request.find("Range: bytes=");
   return at == std::string::npos ? "" : request.substr(at + 13, request.find("\r\n", at) - at - 13);
@@ -527,6 +582,98 @@ int runResumeTests() {
       threw = true;
     }
     CHECK(threw);
+  }
+  {
+    // An app the server keeps as a zip: its directory from the last bytes,
+    // then the zip in one stream; cut inside the second file, it goes on
+    // from the first file's end. Only the listed entries land (the manual
+    // stays out), deflated and stored, with or without a data descriptor.
+    const auto sd = fs::temp_directory_path() / ("cf-zip-" + std::to_string(getpid()));
+    fs::remove_all(sd);
+    fs::create_directories(sd);
+    const auto nro = varied(70000, 1), note = varied(5000, 2);
+    std::vector<uint64_t> ends;
+    Mock mock;
+    std::vector<ZipFile> parts(3);
+    parts[0] = {"zipapp/zipapp.nro", nro, true, true};
+    parts[1] = {"zipapp/data/설치.md", note, false, true};
+    parts[2] = {"README.txt", "manual", true, false};
+    mock.body = zipOf(parts, &ends);
+    mock.drop = [&](int i) { return i == 1 ? size_t(ends[0] + 100) : std::string::npos; };
+    mock.start(3);
+    foil::homebrew::App app;
+    app.id = "zipapp";
+    app.installPath = "switch/zipapp/zipapp.nro";
+    app.downloadUrl = mock.url + "/api/homebrew/zipapp/download";
+    app.archive.format = "zip";
+    app.archive.url = mock.url + "/api/homebrew/zipapp/archive";
+    app.archive.size = mock.body.size();
+    app.archive.sha256 = std::string(64, 'b');
+    app.archive.entries = {{"zipapp/zipapp.nro", "switch/zipapp/zipapp.nro", nro.size()},
+                           {"zipapp/data/설치.md", "switch/zipapp/data/설치.md", note.size()}};
+    foil::Server server;
+    server.url = mock.url;
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(foil::net::homebrewDownload(server, foil::State{}, app, sd.string(), received, error, nullptr));
+    mock.thread.join();
+    CHECK(foil::readFile((sd / "switch/zipapp/zipapp.nro").string()) == nro);
+    CHECK(foil::readFile((sd / "switch/zipapp/data/설치.md").string()) == note);
+    CHECK(!fs::exists(sd / "README.txt") && !fs::exists(sd / "switch/README.txt"));
+    CHECK(mock.requests.size() == 3 && rangeOf(mock.requests[2]) == std::to_string(ends[0]) + "-");
+    CHECK(!fs::exists(sd / "switch/cookingfoil/resume/homebrew-zipapp.json"));
+    fs::remove_all(sd);
+  }
+  {
+    // A zip that is not what its directory says (a bad CRC), or not there at
+    // all: the .nro alone comes from download_url.
+    for (const bool missing : {false, true}) {
+      const auto sd = fs::temp_directory_path() / ("cf-zip-bad-" + std::to_string(getpid()));
+      fs::remove_all(sd);
+      fs::create_directories(sd);
+      const auto nro = varied(3000, 3);
+      std::vector<ZipFile> one(1);
+      one[0] = {"zipapp/zipapp.nro", nro, true, false};
+      auto zip = zipOf(one);
+      zip[zip.size() - 22 - (46 + 17) + 16] ^= 1; // the CRC in its directory record
+      Mock mock;
+      if (!missing)
+        mock.paths["/api/homebrew/zipapp/archive"] = zip;
+      mock.paths["/api/homebrew/zipapp/download"] = nro;
+      mock.start(missing ? 2 : 3);
+      foil::homebrew::App app;
+      app.id = "zipapp";
+      app.installPath = "switch/zipapp/zipapp.nro";
+      app.downloadUrl = mock.url + "/api/homebrew/zipapp/download";
+      app.archive.format = "zip";
+      app.archive.url = mock.url + "/api/homebrew/zipapp/archive";
+      app.archive.size = zip.size();
+      app.archive.sha256 = std::string(64, 'c');
+      app.archive.entries = {{"zipapp/zipapp.nro", "switch/zipapp/zipapp.nro", nro.size()}};
+      foil::Server server;
+      server.url = mock.url;
+      std::atomic<uint64_t> received{0};
+      foil::Error error;
+      CHECK(foil::net::homebrewDownload(server, foil::State{}, app, sd.string(), received, error, nullptr));
+      mock.thread.join();
+      CHECK(foil::readFile((sd / "switch/zipapp/zipapp.nro").string()) == nro);
+      CHECK(mock.requests.size() == (missing ? 2u : 3u));
+      fs::remove_all(sd);
+    }
+  }
+  {
+    // The directory read straight: names, sizes, methods and offsets.
+    std::vector<ZipFile> two(2);
+    two[0] = {"a.nro", varied(1000, 4), true, false};
+    two[1] = {"b/c.txt", "hello", false, true};
+    const auto zip = zipOf(two);
+    uint64_t at = 0, length = 0;
+    std::vector<foil::ZipEntry> entries;
+    CHECK(foil::zipDirectory(zip, 0, zip.size(), at, length));
+    CHECK(foil::zipEntries(zip.substr(size_t(at), size_t(length)), entries));
+    CHECK(entries.size() == 2 && entries[0].name == "a.nro" && entries[0].method == 8 && entries[0].size == 1000 &&
+          entries[1].name == "b/c.txt" && entries[1].method == 0 && entries[1].size == 5 && entries[1].offset > 0);
+    CHECK(!foil::zipDirectory("not a zip at all, just words", 0, 28, at, length));
   }
   return failures;
 }

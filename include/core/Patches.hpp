@@ -1,4 +1,5 @@
 #pragma once
+#include "core/ArchiveWriter.hpp"
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -53,29 +54,29 @@ bool patchFitsVersion(const UserPatch &patch, const std::string &version);
 
 // Unpacks a ustar stream under root as it arrives. Paths outside
 // patchPathAllowed, links and special files abort the whole archive.
-class TarWriter {
+class TarWriter : public ArchiveWriter {
 public:
   TarWriter(std::string root, std::string titleId);
   // Any archive whose every path `allow` accepts (retro game bundles).
   TarWriter(std::string root, std::function<bool(const std::string &)> allow);
-  ~TarWriter();
+  ~TarWriter() override;
   // Entries `skip` names are read past without being written (files that
   // must stay as they are on the card).
   void skip(std::function<bool(const std::string &)> skip) { skip_ = std::move(skip); }
-  bool feed(const char *data, size_t size);
+  bool feed(const char *data, size_t size) override;
   // True when the archive ended with its two empty blocks.
-  bool finish();
-  const std::string &error() const { return error_; }
+  bool finish() override;
+  const std::string &error() const override { return error_; }
   // Resuming: a fresh writer told where in the stream its first byte sits,
   // which must be a boundary an earlier writer reported.
-  void startAt(uint64_t offset) { fed_ = boundary_ = offset; }
+  void startAt(uint64_t offset) override { fed_ = boundary_ = offset; }
   // Stream offset after the last whole entry (its padding included): every
   // file before it is complete on the card, so a download can continue here.
-  uint64_t boundary() const { return boundary_; }
+  uint64_t boundary() const override { return boundary_; }
   // Bytes the entry being read still expects.
   uint64_t entryLeft() const { return remaining_; }
   // Closes and removes the file an unfinished entry was writing.
-  void abandon();
+  void abandon() override;
 
 private:
   bool header();

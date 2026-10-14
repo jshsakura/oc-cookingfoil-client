@@ -4,7 +4,7 @@ JOBS := $(shell nproc 2>/dev/null || echo 4)
 MAKEFLAGS += -j$(JOBS)
 HOST_CXX ?= g++
 HOST_CC ?= gcc
-HOST_PACKAGES := sdl2 SDL2_ttf SDL2_image json-c libcurl
+HOST_PACKAGES := sdl2 SDL2_ttf SDL2_image json-c libcurl zlib
 HOST_FLAGS := -std=c++17 -O2 -g -Wall -Wextra -Wpedantic -Iinclude $(shell pkg-config --cflags $(HOST_PACKAGES))
 HOST_LIBS := $(shell pkg-config --libs $(HOST_PACKAGES)) -pthread
 QR_ROOT := third_party/QR-Code-generator/cpp

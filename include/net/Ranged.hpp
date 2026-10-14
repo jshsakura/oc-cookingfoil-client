@@ -6,7 +6,7 @@
 #include "net/Api.hpp"
 #include <memory>
 namespace foil {
-class TarWriter;
+class ArchiveWriter;
 }
 namespace foil::net {
 // Asks in all for one download, the first included; never more.
@@ -49,7 +49,8 @@ inline bool keepPart(const PartFetch &fetch) {
 // Removes a part and its sidecar.
 void dropPart(const std::string &part);
 
-// A tar unpacked as it arrives, resumed at whole-entry boundaries.
+// An archive (a tar or a zip) unpacked as it arrives, resumed at
+// whole-entry boundaries.
 struct TarFetch {
   Response response;
   std::string tarError; // the archive's own failure (a bad entry, a full card)
@@ -59,7 +60,7 @@ struct TarFetch {
 // what earlier tries wrote). `checkpoint(boundary, etag)`, when given, hears
 // boundaries worth saving. Starts at `from`, a boundary saved earlier.
 TarFetch rangedTar(const std::string &url, const std::vector<std::string> &headers, uint64_t from,
-                   const std::string &validator, const std::function<std::unique_ptr<TarWriter>(uint64_t)> &open,
+                   const std::string &validator, const std::function<std::unique_ptr<ArchiveWriter>(uint64_t)> &open,
                    const std::function<void(uint64_t, const std::string &)> &checkpoint,
                    std::atomic<uint64_t> &received, const std::atomic<bool> *cancel);
 } // namespace foil::net

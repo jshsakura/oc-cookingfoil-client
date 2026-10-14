@@ -100,6 +100,27 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
       }
     }
     if (!filesOk) continue;
+    // A zip taken whole: every entry goes somewhere under switch/ by a path
+    // that cannot leave it; one that does not leaves the zip out (the .nro
+    // alone still comes from download_url).
+    if (auto *archive = field(o, "archive"); json_object_is_type(archive, json_type_object)) {
+      Archive zip;
+      zip.format = stringField(archive, "format");
+      zip.url = urlField(archive, "url", base);
+      zip.sha256 = stringField(archive, "sha256");
+      zip.size = uint64_t(std::max<int64_t>(0, integerField(archive, "size")));
+      bool entriesOk = true;
+      auto *entries = field(archive, "entries");
+      if (json_object_is_type(entries, json_type_array))
+        for (size_t e = 0; e < json_object_array_length(entries) && entriesOk; ++e) {
+          auto *item = json_object_array_get_idx(entries, e);
+          ArchiveEntry entry{stringField(item, "entry"), stringField(item, "path"),
+                             uint64_t(std::max<int64_t>(0, integerField(item, "size")))};
+          entriesOk = !entry.entry.empty() && pathAllowed(entry.path) && entry.path.rfind("switch/", 0) == 0;
+          zip.entries.push_back(std::move(entry));
+        }
+      if (entriesOk && zip.usable()) a.archive = std::move(zip);
+    }
     a.kind = stringField(o, "kind") == "port" ? Kind::Port : Kind::Tool;
     a.app = stringField(o, "app");
     if (!appFolderAllowed(a.app)) a.app = appFolder(a.installPath).substr(7);
@@ -134,6 +155,23 @@ std::string serialize(const App &a) {
       json_object_array_add(files, item);
     }
     json_object_object_add(o.get(), "files", files);
+  }
+  if (a.archive.usable()) {
+    auto *archive = json_object_new_object();
+    json_object_object_add(archive, "format", json_object_new_string(a.archive.format.c_str()));
+    json_object_object_add(archive, "url", json_object_new_string(a.archive.url.c_str()));
+    json_object_object_add(archive, "sha256", json_object_new_string(a.archive.sha256.c_str()));
+    json_object_object_add(archive, "size", json_object_new_int64(int64_t(a.archive.size)));
+    auto *entries = json_object_new_array();
+    for (const auto &e : a.archive.entries) {
+      auto *item = json_object_new_object();
+      json_object_object_add(item, "entry", json_object_new_string(e.entry.c_str()));
+      json_object_object_add(item, "path", json_object_new_string(e.path.c_str()));
+      json_object_object_add(item, "size", json_object_new_int64(int64_t(e.size)));
+      json_object_array_add(entries, item);
+    }
+    json_object_object_add(archive, "entries", entries);
+    json_object_object_add(o.get(), "archive", archive);
   }
   return json_object_to_json_string_ext(o.get(), JSON_C_TO_STRING_PLAIN | JSON_C_TO_STRING_NOSLASHESCAPE);
 }

@@ -182,8 +182,9 @@ bool Application::getHomebrew(const homebrew::App &app) {
   if (app.cardOnly) return false; // nothing on the server to get
   uint64_t bytes = app.files.empty() ? app.size : 0;
   for (const auto &file : app.files) bytes += file.size;
-  // A bundle's bytes are the tar's (headers and padding too).
+  // A bundle's bytes are the tar's (headers and padding too), a zip's its own.
   if (!app.bundleUrl.empty()) bytes = homebrew::bundleSize(app);
+  if (app.archive.usable()) bytes = app.archive.size;
   if (bytes && sdFree_ && *sdFree_ < bytes + (8u << 20)) {
     alertTitle_ = tr("Cannot download this app");
     alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(bytes)});
@@ -195,6 +196,8 @@ bool Application::runHomebrew(const homebrew::App &app) {
   if (app.cardOnly) return false;
   uint64_t bytes = app.files.empty() ? app.size : 0;
   for (const auto &file : app.files) bytes += file.size;
+  if (!app.bundleUrl.empty()) bytes = homebrew::bundleSize(app);
+  if (app.archive.usable()) bytes = app.archive.size;
   const auto server = session_ ? session_->server() : Server{};
   const auto state = state_;
   const auto sd = sdRoot_;
@@ -253,6 +256,8 @@ void Application::settleHomebrew(const homebrew::App &app) {
   homebrew::Record record{app.hash, app.version, app.installPath, {}};
   for (const auto &file : app.files)
     if (file.path != app.installPath) record.files.push_back(file.path);
+  for (const auto &entry : app.archive.entries)
+    if (entry.path != app.installPath) record.files.push_back(entry.path);
   homebrewLedger_[app.id] = record;
   homebrewOnCard_[app.installPath] = true;
   saveHomebrewLedger();
