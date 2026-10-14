@@ -954,7 +954,8 @@ private:
   std::atomic<bool> cacheBusy_{false}, cacheCleared_{false};
   bool cacheClearAsk_ = false;
   uint64_t restartSeen_ = 0; // the server restarts already said
-  bool restartShowing_ = false;
+  bool restartShowing_ = false, refreshAfterRestart_ = false;
+  uint32_t restartProbeAt_ = 0; // when the list was last asked during a restart
   std::atomic<bool> cleanupDone_{false};
   bool cleanupBusy_ = false, cleanupRemoving_ = false, confirmCleanup_ = false;
   Parsed<CleanupReport> cleanupResult_;

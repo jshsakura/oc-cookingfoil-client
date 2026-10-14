@@ -89,6 +89,16 @@ void Application::serverRestartNotice() {
     restartShowing_ = true;
     message(tr("The server is restarting. Downloads go on shortly."));
   }
+  // While it restarts the list is asked every few seconds (a 304 when
+  // nothing changed): its first plain answer is what says the server is back.
+  constexpr uint32_t ProbeMs = 5000;
+  const bool restarting = net::serverRestarting();
+  if ((refreshAfterRestart_ || (restartShowing_ && restarting)) && session_ && !network_.joinable() &&
+      (!restarting || SDL_GetTicks() - restartProbeAt_ >= ProbeMs)) {
+    restartProbeAt_ = SDL_GetTicks();
+    refreshAfterRestart_ = false;
+    refresh();
+  }
   if (!restartShowing_) return;
   if (net::serverRestarting()) {
     noticeAt_ = SDL_GetTicks();
@@ -633,7 +643,7 @@ void Application::poll() {
         detail_ = std::move(incomingDetail_);
         syncDetailPatches();
       }
-    } else
+    } else if (!net::serverRestarting()) // a restart says so in its own notice
       message(incomingError_.message);
     detailRequest_ = false;
     if (screen_ == Screen::Detail && detailGroup_ < groups_.size() &&
@@ -648,6 +658,14 @@ void Application::poll() {
   pairPollAt_ = pairingPending_ ? SDL_GetTicks() : 0;
   if (!pairingPending_) pairSince_ = 0;
   else if (!pairSince_) pairSince_ = SDL_GetTicks();
+  // Asked while the server restarts (- pressed, or a timed check): not a
+  // failure. What is on screen stays, the notice already says why, and the
+  // list is asked again once the server is back.
+  if (incomingError_ && net::serverRestarting()) {
+    refreshing_ = false;
+    refreshAfterRestart_ = true;
+    return;
+  }
   if (incomingError_) {
     error_ = incomingError_;
     refreshing_ = false;
