@@ -4,14 +4,6 @@
 #include <cmath>
 namespace foil::ui {
 namespace {
-// 19900227 -> "1990.02.27"; a month or day the server does not know is left off.
-std::string releaseLabel(int date) {
-  const auto text = std::to_string(date);
-  if (text.size() != 8) return text;
-  if (text.compare(4, 2, "00") == 0) return text.substr(0, 4);
-  if (text.compare(6, 2, "00") == 0) return text.substr(0, 4) + "." + text.substr(4, 2);
-  return text.substr(0, 4) + "." + text.substr(4, 2) + "." + text.substr(6, 2);
-}
 std::string regionName(const std::string &code) {
   if (code == "kr") return tr("Korea|region");
   if (code == "jp") return tr("Japan|region");
@@ -166,7 +158,7 @@ float Application::retroInfoCard(float y) {
   if (game.rating > 0)
     facts.push_back({31, game.ratingCount ? trf("Score · {0} votes", {countText(game.ratingCount)}) : std::string(tr("Score")),
                      std::to_string(game.rating)});
-  if (meta.releaseDate) facts.push_back({11, tr("Released"), releaseLabel(meta.releaseDate)});
+  if (meta.releaseDate) facts.push_back({11, tr("Released"), retro::releaseLabel(meta.releaseDate)});
   if (!meta.publisher.empty()) facts.push_back({12, tr("Publisher"), meta.publisher});
   if (!meta.developer.empty() && meta.developer != meta.publisher) facts.push_back({12, tr("Developer"), meta.developer});
   if (meta.players)

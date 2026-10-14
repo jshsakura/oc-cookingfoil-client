@@ -113,6 +113,7 @@ struct Conn {
   bool changed = false;       // 200 to an If-Range request: the server's file changed
   long status = 0;
   std::string contentRange, etag, retryAfter, range;
+  std::string token; // the download token it was sent with
   std::vector<char> pending;
 };
 struct Session;
@@ -323,6 +324,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       c->openEnded = openEnded;
       c->pending.reserve(s.batch);
       c->range = rangeOf(from, end, openEnded);
+      c->token = bearerOf(sendHeaders);
       for (const auto &h : sendHeaders)
         if (h.find_first_of("\r\n") == std::string::npos)
           c->headers = curl_slist_append(c->headers, h.c_str());
@@ -602,7 +604,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         }
         // The download token ran out: a fresh one, and the part asks again at
         // once from the byte it stood at, not as a failure.
-        if (code == 401 && renewals < TokenRetries && renewDownloadToken()) {
+        if (code == 401 && renewals < TokenRetries && renewDownloadToken(c->token)) {
           ++renewals;
           freshenBearer(sendHeaders);
           waitUntil[size_t(seg)] = Clock::time_point();

@@ -82,7 +82,7 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
     if (refused)
       return last;
     // The download token ran out: a fresh one, and on from the same place.
-    if (last.status == 401 && renewals < 3 && !cancelled(cancel) && renewDownloadToken()) {
+    if (last.status == 401 && renewals < 3 && !cancelled(cancel) && renewDownloadToken(bearerOf(sendHeaders))) {
       ++renewals;
       freshenBearer(sendHeaders);
       --tries;

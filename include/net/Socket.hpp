@@ -37,12 +37,20 @@ bool serverRestarting();
 // came; a new one clears it.
 std::string downloadToken();
 bool downloadTokenRejected();
-// How a fresh token is asked for (the app sets it with its server), and
-// asking after a 401: the server is asked only while the token stands
-// refused, so parts refused together ask once. True when a token the server
-// has not refused is held afterwards; the request goes again with it.
-void setTokenRenewer(std::function<void()> renew);
-bool renewDownloadToken();
+// How a fresh token is asked for (the app sets it with its server; it
+// returns the reply's status), and asking after a 401 for a request sent
+// with `sent`: true when a newer token is held, and the request goes again
+// with it. Parts refused together find the one the first of them got; the
+// server is asked at most once in RenewGapSeconds, so a refusal is never
+// hammered (a server login asked again and again locks the account).
+constexpr int RenewGapSeconds = 30;
+void setTokenRenewer(std::function<long()> renew);
+bool renewDownloadToken(const std::string &sent);
+// The server refused the login itself when asked for a token: the console
+// needs its account checked, not another try. Cleared by the next token.
+bool downloadSignInRefused();
+// The bearer token in a request's headers, or empty.
+std::string bearerOf(const std::vector<std::string> &headers);
 // A request's headers with the bearer token swapped for the current one.
 void freshenBearer(std::vector<std::string> &headers);
 uint64_t restartSerial();

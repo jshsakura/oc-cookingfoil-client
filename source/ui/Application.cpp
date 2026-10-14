@@ -509,7 +509,7 @@ void Application::connect(size_t index) {
   refresh();
 }
 void Application::renewTokensWith(const Server &server) {
-  net::setTokenRenewer([server, state = state_] { net::renewDownloadToken(server, state); });
+  net::setTokenRenewer([server, state = state_] { return net::renewDownloadToken(server, state); });
 }
 void Application::refresh() {
   if (!session_ || network_.joinable())
@@ -581,7 +581,8 @@ void Application::poll() {
     const auto outcome = installStatus == install::Status::Succeeded ? history::Outcome::Done
                          : installStatus == install::Status::Cancelled ? history::Outcome::Cancelled
                                                                        : history::Outcome::Failed;
-    if (history::finish(history_, outcome, installer_.progress().error, int64_t(std::time(nullptr)))) saveHistory();
+    const auto error = outcome == history::Outcome::Failed ? failureText(installer_.progress().error) : installer_.progress().error;
+    if (history::finish(history_, outcome, error, int64_t(std::time(nullptr)))) saveHistory();
   }
   pumpPatchQueue();
   // Done or cancelled on purpose: nothing left to resume. A failure keeps it.
@@ -2296,9 +2297,18 @@ void Application::settlePatchJob(bool failed, const std::string &error) {
     running->startedAt = jobStartedAt_;
     running->downloadSeconds = (SDL_GetTicks() - jobStartMs_) / 1000.0;
   }
-  history::end(history_, running->id, failed ? history::Outcome::Failed : history::Outcome::Done, error,
-               int64_t(std::time(nullptr)));
+  history::end(history_, running->id, failed ? history::Outcome::Failed : history::Outcome::Done,
+               failed ? failureText(error) : error, int64_t(std::time(nullptr)));
   saveHistory();
+}
+// Why a download failed, for its row: a login the server refused when a
+// fresh download token was asked for says so (and once on screen), since
+// trying again would not help.
+std::string Application::failureText(const std::string &error) {
+  if (!net::downloadSignInRefused()) return error;
+  const std::string text = tr("The server refused the login. Check the server's username and password in Settings.");
+  message(text);
+  return text;
 }
 // 다운로드's records live in cookingfoil.db; the downloads.json of earlier
 // versions moves in once and goes.

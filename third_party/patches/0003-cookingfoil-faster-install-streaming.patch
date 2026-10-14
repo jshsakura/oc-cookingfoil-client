@@ -1407,7 +1407,7 @@ index 643c236..cc42774 100755
      {
          ASSERT_OK(ncmContentStorageRegister(&m_contentStorage, &registeredId, &placeholderId), "Failed to register placeholder NCA");
 diff --git a/source/util/network_util.cpp b/source/util/network_util.cpp
-index ea0dad8..3fd7b4d 100755
+index ea0dad8..8b3066a 100755
 --- a/source/util/network_util.cpp
 +++ b/source/util/network_util.cpp
 @@ -20,6 +20,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
@@ -1460,7 +1460,7 @@ index ea0dad8..3fd7b4d 100755
          const size_t numBytes = size * numItems;
          try {
              if (*ctx->streamFunc != nullptr)
-@@ -207,6 +227,241 @@ namespace tin::network
+@@ -207,6 +227,243 @@ namespace tin::network
          }
      }
  
@@ -1539,6 +1539,7 @@ index ea0dad8..3fd7b4d 100755
 +            std::vector<u8> data;
 +            int attempts = 0;
 +            int renewals = 0; // CookingFoil: asked again with a fresh download token
++            std::string token; // CookingFoil: the download token it was sent with
 +            bool done = false;
 +            bool checked = false; // the reply's status was looked at
 +            u64* lastData = nullptr; // when any piece last received bytes
@@ -1579,6 +1580,7 @@ index ea0dad8..3fd7b4d 100755
 +            part.checked = false;
 +            const size_t from = part.start + part.data.size();
 +            part.range = std::to_string(from) + "-" + std::to_string(part.start + part.length - 1);
++            part.token = foil::net::downloadToken(); // CookingFoil: what RequestHeaders puts in
 +            part.headers = SetupRangeHandle(part.curl, requestUrl, part.range, part.authValue);
 +            curl_easy_setopt(part.curl, CURLOPT_WRITEDATA, &part);
 +            curl_easy_setopt(part.curl, CURLOPT_WRITEFUNCTION, collect);
@@ -1655,7 +1657,7 @@ index ea0dad8..3fd7b4d 100755
 +                    drop(*part);
 +                } else if (Paused() && !Stopping()) {
 +                    drop(*part); // asked again after the pause
-+                } else if (code == 401 && !Stopping() && part->renewals < 3 && foil::net::renewDownloadToken()) {
++                } else if (code == 401 && !Stopping() && part->renewals < 3 && foil::net::renewDownloadToken(part->token)) {
 +                    // CookingFoil: the download token ran out: at once with a
 +                    // fresh one, from the same byte, not as a failure.
 +                    ++part->renewals;
@@ -1702,7 +1704,7 @@ index ea0dad8..3fd7b4d 100755
      static int StreamHttpRangeForUrl(const std::string& url, size_t offset, size_t size,
          const std::function<size_t (u8* bytes, size_t size)>& streamFunc)
      {
-@@ -233,13 +488,24 @@ namespace tin::network
+@@ -233,13 +490,24 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -1728,7 +1730,7 @@ index ea0dad8..3fd7b4d 100755
          curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callbackCtx);
          curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &ParseHTMLDataCallback);
          std::string authValue;
-@@ -325,7 +591,7 @@ namespace tin::network
+@@ -325,7 +593,7 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -1737,7 +1739,7 @@ index ea0dad8..3fd7b4d 100755
          const std::string& userAgent = inst::curl::getUserAgent();
          curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.c_str());
          curl_easy_setopt(curl, CURLOPT_HEADERDATA, this);
-@@ -437,6 +703,7 @@ namespace tin::network
+@@ -437,6 +705,7 @@ namespace tin::network
      {
          auto streamFunc = *reinterpret_cast<std::function<size_t (u8* bytes, size_t size)>*>(userData);
          const size_t numBytes = size * numItems;
@@ -1745,12 +1747,13 @@ index ea0dad8..3fd7b4d 100755
          try {
              if (streamFunc != nullptr)
                  return streamFunc((u8*)bytes, numBytes);
-@@ -496,14 +763,19 @@ namespace tin::network
+@@ -496,16 +765,23 @@ namespace tin::network
  
              while (true)
              {
 +                long waitNs = 0;
 +                int renewals = 0;
++                std::string sentToken;
                  for (int attempt = 0; attempt <= kMaxRetries; attempt++)
                  {
                      if (attempt > 0)
@@ -1765,8 +1768,11 @@ index ea0dad8..3fd7b4d 100755
 +                        return 1;
  
                      const size_t currentOffset = requestOffset + bytesReceived;
++                    sentToken = foil::net::downloadToken(); // CookingFoil: what this ask carries
                      const size_t remaining = requestSize - bytesReceived;
-@@ -514,6 +786,34 @@ namespace tin::network
+ 
+                     if (remaining == 0)
+@@ -514,6 +790,34 @@ namespace tin::network
                      const int rc = StreamHttpRangeForUrl(url, currentOffset, remaining, trackingFunc);
                      if (rc == 0)
                          return 0;
@@ -1788,7 +1794,7 @@ index ea0dad8..3fd7b4d 100755
 +                    }
 +                    // CookingFoil: the download token ran out: a fresh one,
 +                    // and on from the same byte without spending a retry.
-+                    if (rc == 401 && !Stopping() && renewals < 3 && foil::net::renewDownloadToken())
++                    if (rc == 401 && !Stopping() && renewals < 3 && foil::net::renewDownloadToken(sentToken))
 +                    {
 +                        ++renewals;
 +                        attempt--;
@@ -1801,7 +1807,7 @@ index ea0dad8..3fd7b4d 100755
  
                      const bool fatal =
                          rc == 1999 ||
-@@ -547,7 +847,21 @@ namespace tin::network
+@@ -547,7 +851,21 @@ namespace tin::network
          };
  
          if (!m_isJbod)
@@ -1823,7 +1829,7 @@ index ea0dad8..3fd7b4d 100755
  
          size_t globalOffset = offset;
          size_t remaining = size;
-@@ -679,7 +993,7 @@ namespace tin::network
+@@ -679,7 +997,7 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);

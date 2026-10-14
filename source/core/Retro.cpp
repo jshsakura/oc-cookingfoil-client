@@ -212,6 +212,13 @@ Detail parseDetail(const std::string &json, const std::string &base) {
   }
   return d;
 }
+std::string releaseLabel(int date) {
+  const auto text = std::to_string(date);
+  if (text.size() != 8) return text;
+  if (text.compare(4, 2, "00") == 0) return text.substr(0, 4);
+  if (text.compare(6, 2, "00") == 0) return text.substr(0, 4) + "." + text.substr(4, 2);
+  return text.substr(0, 4) + "." + text.substr(4, 2) + "." + text.substr(6, 2);
+}
 std::vector<Shelf> parseHome(const std::string &json, const std::string &base) {
   std::vector<Shelf> out;
   Error error;

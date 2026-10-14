@@ -372,7 +372,7 @@ int runResumeTests() {
     int asked = 0;
     foil::net::setTokenRenewer([&] {
       ++asked;
-      foil::net::get(server.url + "/api/shop/info");
+      return foil::net::get(server.url + "/api/shop/info").status;
     });
     const auto part = (root / "token.part").string();
     std::atomic<uint64_t> received{0};
@@ -383,9 +383,25 @@ int runResumeTests() {
     foil::net::setTokenRenewer({});
     CHECK(foil::net::rangedOk(got.response) && foil::readFile(part) == server.body);
     CHECK(asked == 1 && foil::net::downloadToken() == "fresh" && !foil::net::downloadTokenRejected());
+    // A part refused with the old token after that finds the new one without
+    // asking; refused with the new one, the server is not asked again so soon.
+    CHECK(foil::net::renewDownloadToken("stale") && asked == 1);
+    CHECK(!foil::net::renewDownloadToken("fresh") && asked == 1);
+    CHECK(!foil::net::downloadSignInRefused());
     CHECK(server.requests.size() == 4 && rangeOf(server.requests[3]) == "100000-");
     CHECK(server.requests.size() == 4 && server.requests[3].find("Authorization: Bearer fresh") != std::string::npos);
     foil::net::dropPart(part);
+    // The renewal itself refused (the login no longer works): said once, not
+    // asked again and again.
+    int refusals = 0;
+    foil::net::setTokenRenewer([&] {
+      ++refusals;
+      return 401L;
+    });
+    CHECK(!foil::net::renewDownloadToken("fresh") && refusals == 1 && foil::net::downloadSignInRefused());
+    CHECK(!foil::net::renewDownloadToken("fresh") && refusals == 1);
+    foil::net::setTokenRenewer({});
+    CHECK(foil::net::bearerOf({"Accept: */*", "Authorization: Bearer abc"}) == "abc");
     // A bearer line takes the token held now; other lines stay as they are.
     std::vector<std::string> headers{"Authorization: Bearer old", "Accept: */*"};
     foil::net::freshenBearer(headers);

@@ -365,7 +365,8 @@ bool Application::finishRetroEntry(const std::string &kind, history::Outcome out
       running->startedAt = jobStartedAt_;
       running->downloadSeconds = (SDL_GetTicks() - jobStartMs_) / 1000.0;
     }
-    history::finish(history_, outcome, error, int64_t(std::time(nullptr)), kind);
+    history::finish(history_, outcome, outcome == history::Outcome::Failed ? failureText(error) : error,
+                    int64_t(std::time(nullptr)), kind);
   }
   saveHistory();
   return false;

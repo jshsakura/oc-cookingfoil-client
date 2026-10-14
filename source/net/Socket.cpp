@@ -26,7 +26,10 @@ std::mutex tokenLock;
 std::string token;
 std::atomic<bool> tokenRejected{false};
 std::mutex renewLock; // one ask at a time; the others wait for its token
-std::function<void()> renewer;
+std::function<long()> renewer;
+std::chrono::steady_clock::time_point lastAsk;
+bool askedOnce = false;
+std::atomic<bool> signInRefused{false};
 // A reply's header block, in the thread curl reads it on: whether it is a
 // success so far and has no restart header.
 thread_local bool replyOk = false;
@@ -68,6 +71,7 @@ void heardHeader(const char *data, size_t bytes) {
       std::lock_guard<std::mutex> held(tokenLock);
       token = value;
       tokenRejected = false;
+      signInRefused = false;
     }
     return;
   }
@@ -107,22 +111,35 @@ std::string downloadToken() {
   return token;
 }
 bool downloadTokenRejected() { return tokenRejected; }
-void setTokenRenewer(std::function<void()> renew) {
+void setTokenRenewer(std::function<long()> renew) {
   std::lock_guard<std::mutex> held(renewLock);
   renewer = std::move(renew);
+  askedOnce = false;
 }
-bool renewDownloadToken() {
-  {
-    std::lock_guard<std::mutex> held(renewLock);
-    if (tokenRejected && renewer) {
-      logLine("download token renewed");
-      renewer();
-    }
-  }
-  return !tokenRejected && !downloadToken().empty();
+bool renewDownloadToken(const std::string &sent) {
+  std::lock_guard<std::mutex> held(renewLock);
+  // Another part already got a newer one.
+  if (const auto now = downloadToken(); !now.empty() && now != sent && !tokenRejected) return true;
+  const auto at = std::chrono::steady_clock::now();
+  if (!renewer || (askedOnce && at - lastAsk < std::chrono::seconds(RenewGapSeconds))) return false;
+  askedOnce = true;
+  lastAsk = at;
+  const long status = renewer();
+  const auto now = downloadToken();
+  const bool fresh = !now.empty() && now != sent && !tokenRejected;
+  if (!fresh && (status == 401 || status == 403)) signInRefused = true;
+  logLine(fresh ? "download token renewed" : "download token not renewed: status " + std::to_string(status));
+  return fresh;
+}
+bool downloadSignInRefused() { return signInRefused; }
+static const std::string BearerLead = "Authorization: Bearer ";
+std::string bearerOf(const std::vector<std::string> &headers) {
+  for (const auto &h : headers)
+    if (h.rfind(BearerLead, 0) == 0) return h.substr(BearerLead.size());
+  return {};
 }
 void freshenBearer(std::vector<std::string> &headers) {
-  static const std::string Lead = "Authorization: Bearer ";
+  const std::string &Lead = BearerLead;
   const auto now = downloadToken();
   for (auto &h : headers)
     if (h.rfind(Lead, 0) == 0 && !now.empty()) h = Lead + now;

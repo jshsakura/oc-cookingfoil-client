@@ -50,6 +50,9 @@ int runRetroTests() {
       CHECK(m.genres.size() == 1 && m.genres[0] == "슈팅");
       CHECK(m.screenshots.size() == 2 && m.screenshots[0] == "https://h/s1.png" && m.screenshots[1] == "https://cdn/s2.png");
       CHECK(!parseDetail(R"({"id":"a","bundleUrl":"/b","releaseDate":1990})", "https://h").meta.releaseDate);
+      // Only the year, or the year and month: the unknown part is left off.
+      CHECK(parseDetail(R"({"id":"a","bundleUrl":"/b","releaseDate":19900000})", "https://h").meta.releaseDate == 19900000);
+      CHECK(releaseLabel(19900227) == "1990.02.27" && releaseLabel(19900000) == "1990" && releaseLabel(19900200) == "1990.02");
     }
     // The edition's tags, each checked; unknown ones are dropped.
     {

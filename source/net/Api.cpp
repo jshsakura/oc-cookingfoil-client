@@ -204,9 +204,9 @@ Response get(const std::string& url, const std::vector<std::string>& headers, co
     curl_slist_free_all(list); curl_easy_cleanup(curl);
     return result;
 }
-void renewDownloadToken(const Server& server, const State& state) {
+long renewDownloadToken(const Server& server, const State& state) {
     const auto url = server.url + "/api/shop/info";
-    get(url, authHeaders(server, state, url));
+    return get(url, authHeaders(server, state, url)).status;
 }
 namespace {
 struct Stream {

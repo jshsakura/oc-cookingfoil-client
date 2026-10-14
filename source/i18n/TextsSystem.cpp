@@ -22,6 +22,7 @@ const Translation rows[] = {
     {"Connects once you approve this device on the server website.", "서버 웹페이지에서 이 기기를 승인하면 연결합니다.", "サーバーのウェブページでこの端末を承認すると接続します。", "在服务器网页中批准此设备后即可连接。"},
     {"Check the device approval response.", "기기 승인 응답을 확인해 주세요.", "デバイス承認の応答を確認してください。", "请检查设备授权响应。"},
     {"Could not save the issued key. Check where the state file is stored.", "발급받은 키를 저장하지 못했습니다. 상태 파일의 저장 위치를 확인해 주세요.", "発行されたキーを保存できませんでした。状態ファイルの保存先を確認してください。", "无法保存获取的密钥。请检查状态文件的保存位置。"},
+    {"The server refused the login. Check the server's username and password in Settings.", "서버가 로그인을 거부했습니다. 설정에서 서버의 아이디와 비밀번호를 확인해 주세요.", "サーバーがログインを拒否しました。設定でサーバーのIDとパスワードを確認してください。", "服务器拒绝了登录。请在设置中检查服务器的用户名和密码。"},
     {"Check the server connection. HTTP {0}", "서버 연결을 확인해 주세요. HTTP {0}", "サーバー接続を確認してください。HTTP {0}", "请检查服务器连接。HTTP {0}"},
     {"Could not load the details.", "상세 정보를 불러오지 못했습니다.", "詳細情報を読み込めませんでした。", "无法加载详细信息。"},
     {"Could not download the patch. HTTP {0}", "패치를 받지 못했습니다. HTTP {0}", "パッチをダウンロードできませんでした。HTTP {0}", "无法下载补丁。HTTP {0}"},

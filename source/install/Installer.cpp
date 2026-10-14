@@ -302,15 +302,14 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
       constexpr int Attempts = 3;
       int renewed = 0;
       for (int attempt = 1;; ++attempt) {
+        const auto sent = net::downloadToken();
         try {
           nativeInstall(files[i], target, net::authHeaders(server, state, files[i].url));
           break;
         } catch (const std::exception &) {
           // The download token ran out: a fresh one, and the same file goes
           // on from the same byte, not counted as a failed try.
-          if (net::downloadTokenRejected() && !cancel_ && renewed++ < 2) {
-            logLine("download: token renewed");
-            net::renewDownloadToken(server, state);
+          if (net::downloadTokenRejected() && !cancel_ && renewed++ < 2 && net::renewDownloadToken(sent)) {
             --attempt;
             continue;
           }

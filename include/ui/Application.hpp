@@ -501,6 +501,7 @@ private:
   int retroOnTheWay(const retro::Game &game, double &percent) const;
   // A page the menu gives way to: a game's, shop or retro.
   bool fullPage() const { return screen_ == Screen::Detail || screen_ == Screen::RetroDetail; }
+  std::string failureText(const std::string &error);
   // false when it did not start (another retro job runs, no room, already there).
   bool getRetroGame(const retro::Game &game, bool again = false);
   // Its turn in the queue came: the download itself, on the retro worker.
