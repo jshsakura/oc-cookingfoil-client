@@ -539,6 +539,8 @@ private:
   bool syncRetroArch(bool full = false, bool first = false); // full: every file again, settings kept
   bool runRetroArch(bool full);
   bool retroCoreMissing(const retro::Game &game) const;
+  bool retroReady(const retro::Game &game) const; // RetroArch and its core on the card
+  bool retroArchPending() const;                   // a RetroArch job waits or runs
   void pollRetro();
   // Runs `job` on the retro worker; what it returns runs on the UI thread.
   bool runRetroJob(const std::string &busy, std::function<std::function<void()>()> job);
@@ -1072,6 +1074,13 @@ private:
   std::vector<retro::Variant> retroVariants_; // its versions, when it has more than one
   int retroVariant_ = 0;            // the one the cursor is on
   std::string retroDetailWant_;     // the version to load in full next
+  // The versions picked to get (by id), and the full games loaded so far:
+  // several versions sit side by side on the card under their own names.
+  std::set<std::string> retroChecked_;
+  std::map<std::string, retro::Game> retroLoaded_games_;
+  void toggleRetroVersion(int row);
+  void getRetroChecked();
+  uint64_t retroCheckedBytes() const;
   retro::Meta retroMeta_;           // what the server knows of the game on its page
   int retroPart_ = 0;               // its page's cursor: a version row, or the button past them
   bool retroDetailLoading_ = false;

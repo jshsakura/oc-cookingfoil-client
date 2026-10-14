@@ -2,9 +2,12 @@
 #include "core/Log.hpp"
 #include "net/RetroApi.hpp"
 #include "core/Json.hpp"
+#include "core/Sha256.hpp"
 #include <algorithm>
+#include <chrono>
 #include <ctime>
 #include <filesystem>
+#include <memory>
 #include <set>
 #include <sys/stat.h>
 namespace foil::ui {
@@ -34,6 +37,15 @@ bool fileExists(const std::string &path) {
   struct stat st {};
   return stat(path.c_str(), &st) == 0;
 }
+// A file's SHA-256 as 64 lowercase hex digits; "" when it cannot be read.
+std::string sha256File(const std::string &path) {
+  std::unique_ptr<FILE, int (*)(FILE *)> in(std::fopen(path.c_str(), "rb"), std::fclose);
+  if (!in) return "";
+  Sha256 sha;
+  std::vector<char> buffer(1 << 20);
+  for (size_t n; (n = std::fread(buffer.data(), 1, buffer.size(), in.get())) > 0;) sha.update(buffer.data(), n);
+  return std::ferror(in.get()) ? "" : sha.hex();
+}
 uint64_t fileSize(const std::string &path) {
   struct stat st {};
   return stat(path.c_str(), &st) == 0 ? uint64_t(st.st_size) : 0;
@@ -49,6 +61,16 @@ bool Application::retroInstalled(const retro::Game &game) const {
 bool Application::retroCoreMissing(const retro::Game &game) const {
   const auto core = retro::corePath(game.core);
   return !core.empty() && retroArchPresent() && !fileExists(sdRoot_ + "/" + core);
+}
+// RetroArch and the game's core both on the card: it can start.
+bool Application::retroReady(const retro::Game &game) const {
+  const auto core = retro::corePath(game.core);
+  return retroArchPresent() && (core.empty() || fileExists(sdRoot_ + "/" + core));
+}
+bool Application::retroArchPending() const {
+  return std::any_of(history_.begin(), history_.end(), [](const history::Entry &e) {
+    return e.kind == "retroarch" && (e.outcome == history::Outcome::Queued || e.outcome == history::Outcome::Running);
+  });
 }
 bool Application::retroBezelMissing(const retro::Game &game) const {
   if (game.bezel == retro::Game::Bezel::None || game.bezelPath.empty() || !retroInstalled(game)) return false;
@@ -316,6 +338,13 @@ void Application::startRetroDetail() {
       detail_.screenshots = retroMeta_.screenshots;
       for (auto &[path, there] : onCard) retroOnCard_[path] = there;
       retroPick_ = std::move(detail.game);
+      retroLoaded_games_[retroPick_.id] = retroPick_;
+      if (detail.variants.size() >= 2 && retroVariants_.empty()) {
+        // First look at its versions: the server's pick starts checked.
+        const auto best = std::find_if(detail.variants.begin(), detail.variants.end(),
+                                       [](const retro::Variant &v) { return v.representative && !v.missing; });
+        if (best != detail.variants.end()) retroChecked_ = {best->id};
+      }
       if (detail.variants.size() >= 2) retroVariants_ = std::move(detail.variants);
       const auto at = std::find_if(retroVariants_.begin(), retroVariants_.end(),
                                    [&](const retro::Variant &v) { return v.id == retroPick_.id; });
@@ -342,6 +371,10 @@ bool Application::getRetroGame(const retro::Game &game, bool again) {
     alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(game.size)});
     return false;
   }
+  // RetroArch or the game's core missing: the base pack goes in the queue
+  // first, so the game (and its shortcut) only come once it can start.
+  if (!retroReady(game) && !retroArchPending() && syncRetroArch(false))
+    message(tr("RetroArch comes first, then the game: it needs RetroArch's files to start."));
   // Its turn comes in 다운로드's queue, behind whatever downloads now.
   return queueJob("retro", game.name, game.iconUrl, game.bundleUrl, game.size, retro::serializeGame(game));
 }
@@ -352,9 +385,31 @@ bool Application::runRetroGame(const retro::Game &game) {
   const auto sd = sdRoot_;
   retroBytes_ = game.size;
   if (!retroWorker_.joinable()) retroCancel_ = false;
+  // Its turn came but RetroArch's base files did not (the server busy, a
+  // failure): the game is not fetched, since neither it nor its shortcut
+  // could start; it says so and why.
+  if (!retroReady(game) && !retroArchPending()) {
+    finishRetroEntry("retro", history::Outcome::Failed,
+                     tr("RetroArch's base files are not on the card, so the game was not downloaded. Get RetroArch (Y on the retro screen), then try again."),
+                     0);
+    alertTitle_ = tr("Could not get the game");
+    alert_ = tr("RetroArch's base files are not on the card, so the game was not downloaded. Get RetroArch (Y on the retro screen), then try again.");
+    return true;
+  }
   if (!runRetroJob(game.id, [this, server, state, sd, game]() -> std::function<void()> {
         Error error;
+        const auto started = std::chrono::steady_clock::now();
+        const uint64_t before = retroReceived_;
         const bool ok = net::retroBundle(server, state, game, sd, retroReceived_, error, &retroCancel_);
+        {
+          // What the bundle took, as a game's download line says it.
+          const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+          const double mb = double(retroReceived_ - std::min<uint64_t>(before, retroReceived_)) / (1024 * 1024);
+          char line[160];
+          std::snprintf(line, sizeof line, "retro bundle %.1f MB in %.0f s = %.1f MB/s%s: ", mb, seconds,
+                        seconds > 0 ? mb / seconds : 0, ok ? "" : " (stopped)");
+          logLine(line + game.name);
+        }
         // A ROM cut off part way would read as there; it goes, and so does
         // its bezel, so the card never lists half a game.
         if (!ok) {
@@ -382,10 +437,8 @@ bool Application::runRetroGame(const retro::Game &game) {
             alert_ = error.message;
             return;
           }
-          // Its core missing: the RetroArch files come next, ahead of what
-          // waits, only what is missing or changed.
-          if (retroCoreMissing(game)) syncRetroArch(false, true);
-          if (installRetroShortcut(game)) return; // 다운로드 shows the shortcut going in
+          // A shortcut only once it can start (RetroArch and its core there).
+          if (retroReady(game) && installRetroShortcut(game)) return; // 다운로드 shows the shortcut going in
           message(retroArchPresent() ? trf("Got {0}. Start it from RetroArch.", {game.name})
                                      : trf("Got {0}. Press Y to get RetroArch too.", {game.name}));
         };
@@ -474,8 +527,44 @@ bool Application::runRetroArch(bool full) {
   if (!runRetroJob("pack", [this, server, state, sd, full]() -> std::function<void()> {
         net::RetroReply reply;
         auto pack = net::retroPack(server, state, reply, &stop_);
-        if (reply.error) return [this, reply] { message(reply.error.message); };
+        // The server still making its lists (503 with Retry-After): wait as
+        // long as it says, a few times, before giving up.
+        for (int tries = 0; reply.error && reply.retryAfter > 0 && tries < 4 && !retroCancel_ && !stop_; ++tries) {
+          logLine("retroarch manifest busy, again in " + std::to_string(reply.retryAfter) + " s");
+          for (int waited = 0; waited < reply.retryAfter * 10 && !retroCancel_ && !stop_; ++waited) SDL_Delay(100);
+          reply = {};
+          pack = net::retroPack(server, state, reply, &stop_);
+        }
+        if (reply.error) {
+          const auto why = reply.error.message;
+          return [this, why] {
+            finishRetroEntry("retroarch", history::Outcome::Failed, why, 0);
+            alertTitle_ = tr("Could not get RetroArch");
+            alert_ = why;
+          };
+        }
         auto record = full ? retro::PackRecord{} : retro::parsePackRecord(readFile(sd + PackRecordPath));
+        // Files on the card with no record of them (the record lost, or put
+        // there by hand) but the right size: their hash says whether they
+        // are the server's, which spares fetching the whole pack again.
+        if (!full) {
+          int adopted = 0;
+          for (const auto &file : pack.value.files) {
+            if (retroCancel_ || stop_) break;
+            if (record.files.count(file.path) || file.sha256.empty()) continue;
+            const auto local = sd + "/" + file.path;
+            if (!fileExists(local) || fileSize(local) != file.size) continue;
+            if (sha256File(local) == file.sha256) {
+              record.files[file.path] = file.sha256;
+              ++adopted;
+            }
+          }
+          if (adopted) {
+            logLine("retroarch: " + std::to_string(adopted) + " files already on the card kept");
+            std::string kept;
+            atomicWrite(sd + PackRecordPath, retro::serializePackRecord(record), kept);
+          }
+        }
         const auto plan = retro::planPack(pack.value, record, fileExists, fileSize, sd);
         retroBytes_ = plan.bytes;
         Error error;

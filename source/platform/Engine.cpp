@@ -166,7 +166,7 @@ void nativeInstall(const Item &item, const std::string &target,
       // How long of it the network waited on the card and the install.
       const double waited = foil::net::cardHeldSeconds() - held;
       char line[200];
-      std::snprintf(line, sizeof(line), "download %.0f MB in %.0f s = %.1f MB/s, %d connections, %s, waited on the card %.0f s: ",
+      std::snprintf(line, sizeof(line), "download %.1f MB in %.0f s = %.1f MB/s, %d connections, %s, waited on the card %.0f s: ",
                     mb, seconds, seconds > 0 ? mb / seconds : 0, connections, compressed ? "compressed" : "plain", waited);
       logLine(line + name);
     }

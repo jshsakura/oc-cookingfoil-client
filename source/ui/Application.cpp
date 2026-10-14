@@ -1746,7 +1746,7 @@ void Application::render() {
       double percent = 0;
       const bool onButton = retroPart_ >= int(retroVersionList().size());
       auto hints = descriptionFocus_ ? Hints{{"A", tr("Back to items")}, {"B", tr("Back")}}
-                   : Hints{{"A", !onButton ? std::string(tr("Pick this version"))
+                   : Hints{{"A", !onButton ? std::string(tr("Toggle"))
                                  : retroOnTheWay(retroPick_, percent) ? std::string(tr("Cancel download"))
                                                                       : retroGetLabel()},
                            {"B", tr("Back")}};

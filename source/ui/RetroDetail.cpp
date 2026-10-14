@@ -1,5 +1,6 @@
 #include "ui/Application.hpp"
 #include "core/I18n.hpp"
+#include "net/RetroApi.hpp"
 #include <algorithm>
 #include <cmath>
 namespace foil::ui {
@@ -34,6 +35,9 @@ void Application::openRetroDetail(const retro::Game &game) {
   retroVariants_.clear();
   retroVariant_ = 0;
   retroMeta_ = {};
+  retroChecked_ = {game.id}; // the one opened, until its versions say which is recommended
+  retroLoaded_games_.clear();
+  retroLoaded_games_[game.id] = game;
   detail_ = {};
   descriptionScroll_ = 0;
   descriptionFocus_ = false;
@@ -86,16 +90,62 @@ void Application::getRetroPick() {
       }
     return;
   }
-  // The version picked: once it is here in full, and only one that runs.
-  if (!retroVariants_.empty()) {
-    const auto &chosen = retroVariants_[size_t(retroVariant_)];
-    if (chosen.missing) {
-      message(tr("This version cannot run: a file it needs is not on the server."));
-      return;
-    }
-    if (chosen.id != retroPick_.id) return;
+  getRetroChecked();
+}
+// A on a version row: in or out of what the button gets; one that would
+// not run never goes in.
+void Application::toggleRetroVersion(int row) {
+  const auto versions = retroVersionList();
+  if (row < 0 || row >= int(versions.size())) return;
+  const auto &v = versions[size_t(row)];
+  if (v.missing) {
+    message(tr("This version cannot run: a file it needs is not on the server."));
+    return;
   }
-  getRetroGame(retroPick_, true);
+  if (!retroChecked_.erase(v.id)) retroChecked_.insert(v.id);
+}
+uint64_t Application::retroCheckedBytes() const {
+  uint64_t bytes = 0;
+  for (const auto &v : retroVersionList())
+    if (retroChecked_.count(v.id)) bytes += v.size;
+  return bytes;
+}
+// Every checked version into the queue; those not loaded in full yet are
+// fetched first, off the drawing thread.
+void Application::getRetroChecked() {
+  if (retroChecked_.empty()) {
+    message(tr("Pick at least one version."));
+    return;
+  }
+  std::vector<std::string> missing;
+  for (const auto &id : retroChecked_)
+    if (!retroLoaded_games_.count(id)) missing.push_back(id);
+  const auto queueAll = [this] {
+    int queued = 0;
+    for (const auto &id : retroChecked_)
+      if (const auto found = retroLoaded_games_.find(id); found != retroLoaded_games_.end())
+        queued += getRetroGame(found->second, true);
+    if (queued > 1) message(trf("Added {0} versions to the download queue.", {std::to_string(queued)}));
+  };
+  if (missing.empty() || !session_) {
+    queueAll();
+    return;
+  }
+  const auto server = session_->server();
+  const auto state = state_;
+  if (!runRetroJob("list", [this, server, state, missing, queueAll]() -> std::function<void()> {
+        std::vector<retro::Game> games;
+        for (const auto &id : missing) {
+          net::RetroReply reply;
+          auto detail = net::retroDetail(server, state, id, reply, &stop_).value;
+          if (!reply.error && !detail.game.id.empty()) games.push_back(std::move(detail.game));
+        }
+        return [this, games = std::move(games), queueAll]() mutable {
+          for (auto &g : games) retroLoaded_games_[g.id] = std::move(g);
+          queueAll();
+        };
+      }))
+    message(tr("Try again in a moment."));
 }
 void Application::retroDetailAction(Action a) {
   const int rows = int(retroVersionList().size());
@@ -131,7 +181,7 @@ void Application::retroDetailAction(Action a) {
     return;
   }
   if (a == Action::Accept) {
-    if (retroPart_ < rows) retroPart_ = rows; // a version picked: on to the button
+    if (retroPart_ < rows) toggleRetroVersion(retroPart_);
     else getRetroPick();
   }
 }
@@ -328,16 +378,19 @@ void Application::retroDetailPanel() {
     const int n = first + i;
     const auto &v = versions[size_t(n)];
     const float ry = RowTop + (n - top) * RowPitch, mid = ry + RowHeight / 2;
-    const bool picked = rows == 1 || n == retroVariant_;
+    const bool checked = retroChecked_.count(v.id) > 0;
     hit(840, ry, W, RowHeight, [this, n] {
       descriptionFocus_ = false;
+      if (retroPart_ == n) toggleRetroVersion(n);
       retroPart_ = n;
       if (!retroVariants_.empty()) moveRetroVariant(n - retroVariant_);
     });
     if (retroPart_ == n && panelFocus) paint_.focusRow(840, ry, W, RowHeight, Ground, 12);
-    // A round mark for the version picked, as the install list's boxes.
-    paint_.rect(852, mid - 12, 24, 24, picked ? Ink : SDL_Color{138, 138, 147, 255}, 12);
-    paint_.rect(855, mid - 9, 18, 18, picked ? Butter : Surface, 9);
+    // A box for each version, as a game's install list: checked ones come down.
+    const SDL_Color edge = checked ? Ink : SDL_Color{138, 138, 147, 255};
+    paint_.rect(852, mid - 14, 28, 28, v.missing ? Line : edge, 8);
+    paint_.rect(854, mid - 12, 24, 24, checked ? Butter : Surface, 6);
+    if (checked) paint_.icon(8, 856, mid - 10, Ink, 20);
     float tx = 888;
     if (!v.region.empty()) {
       paint_.region(v.region, tx, mid - 10, 30, 20);
@@ -368,7 +421,7 @@ void Application::retroDetailPanel() {
   }
   paint_.rect(840, 454, W, 1, Line);
   paint_.fonts.middle(tr("Total"), 852, 476, 18, Secondary);
-  const auto total = formatBytes(game.size);
+  const auto total = formatBytes(retroCheckedBytes());
   paint_.fonts.middle(total, 1214 - paint_.fonts.measure(total, 24, true), 476, 24, Ink, true);
   // Retro games always go to the SD card: one card, already chosen.
   constexpr float CardTop = 494, CardHeight = 60, TextLeft = 52;
@@ -407,6 +460,7 @@ void Application::retroDetailPanel() {
 }
 // What the button does: get it, get it again, or add the bezel it lacks.
 std::string Application::retroGetLabel() const {
+  if (retroChecked_.size() > 1) return trf("Download {0} versions", {std::to_string(retroChecked_.size())});
   const bool bezel = retroBezelMissing(retroPick_), there = retroInstalled(retroPick_) && !bezel;
   return there ? tr("Get again") : bezel ? tr("Get bezel") : tr("Download");
 }

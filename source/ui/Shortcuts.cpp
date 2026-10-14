@@ -107,6 +107,7 @@ bool Application::autoHomebrewShortcut(const homebrew::App &app) {
 // a shortcut made here starts the game's core with the ROM, under RetroArch's
 // icon and the game's name.
 bool Application::installRetroShortcut(const retro::Game &game) {
+  if (!retroReady(game)) return false; // it would open to an error
   if (!game.forwarderUrl.empty())
     return installShortcut(game.name, game.iconUrl, game.forwarderUrl, game.forwarderTitleId, game.forwarderSize);
   const auto core = retro::corePath(game.core);
