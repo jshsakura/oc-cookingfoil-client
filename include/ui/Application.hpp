@@ -34,7 +34,7 @@ constexpr int PopupFilterColumns = 2; // filter grid width in the view popup
 constexpr SortMode SortOrders[] = {SortMode::Recent,  SortMode::Popular, SortMode::Score,
                                    SortMode::Release, SortMode::Updated, SortMode::Name,
                                    SortMode::Largest, SortMode::Default};
-enum class Screen { Home, Library, Detail, Downloads, Updates, Settings, Installed, Patches, Retro, Saves, Homebrew };
+enum class Screen { Home, Library, Detail, Downloads, Updates, Settings, Installed, Patches, Retro, Saves, Homebrew, RetroDetail };
 // The menu, top to bottom; 설정 stays last (menuOpen() relies on it).
 // Browsing first (the shop, retro games), then this console's own (내 게임
 // with its updates and DLC as tabs, saves, patches), then downloads and
@@ -312,7 +312,6 @@ private:
   void requestRetroDetail(const std::string &id);
   void startRetroDetail();
   void moveRetroVariant(int step);
-  float retroVariantRows(float x, float y, float w);
   void serverRestartNotice();
   void askCancelPick(bool running);
   // A retro game's other versions: a stack and how many. Dark and small on
@@ -489,7 +488,19 @@ private:
   void loadRetroHome();
   void loadRetroPage(bool next);
   void openRetroList(int system);
-  void askRetroGame(const retro::Game &game);
+  // A retro game's page (RetroDetail.cpp), as a shop game has one.
+  void openRetroDetail(const retro::Game &game);
+  void retroDetail();
+  void retroDetailPanel();
+  void retroDetailAction(Action action);
+  int retroCoreCard(int y);
+  float retroInfoCard(float y);
+  std::vector<retro::Variant> retroVersionList() const;
+  std::string retroGetLabel() const;
+  void getRetroPick(); // the button: get it, or ask to cancel it on its way
+  int retroOnTheWay(const retro::Game &game, double &percent) const;
+  // A page the menu gives way to: a game's, shop or retro.
+  bool fullPage() const { return screen_ == Screen::Detail || screen_ == Screen::RetroDetail; }
   // false when it did not start (another retro job runs, no room, already there).
   bool getRetroGame(const retro::Game &game, bool again = false);
   // Its turn in the queue came: the download itself, on the retro worker.
@@ -512,10 +523,9 @@ private:
   // Runs `job` on the retro worker; what it returns runs on the UI thread.
   bool runRetroJob(const std::string &busy, std::function<std::function<void()>()> job);
   bool retroInstalled(const retro::Game &game) const;
-  void retroConfirm(); // the game's info, with one button to get it
   // detail: the get popup, which also names the version a flag stands for.
   std::vector<std::string> retroLabels(const retro::Game &game, bool detail = false) const;
-  bool retroAsking_ = false, retroArchAsking_ = false;
+  bool retroArchAsking_ = false;
   void retroArchConfirm(); // Y with RetroArch already there
   // On the card from before the shop had its bezel: getting it again adds it.
   bool retroBezelMissing(const retro::Game &game) const;
@@ -1042,6 +1052,9 @@ private:
   std::vector<retro::Variant> retroVariants_; // its versions, when it has more than one
   int retroVariant_ = 0;            // the one the cursor is on
   std::string retroDetailWant_;     // the version to load in full next
+  retro::Meta retroMeta_;           // what the server knows of the game on its page
+  int retroPart_ = 0;               // its page's cursor: a version row, or the button past them
+  bool retroDetailLoading_ = false;
   std::vector<retro::System> retroSystems_;
   std::vector<retro::Game> retroGames_;
   int retroSystem_ = 0, retroTotal_ = 0, retroPage_ = 0;

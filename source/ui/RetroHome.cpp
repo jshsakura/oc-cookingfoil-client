@@ -159,7 +159,7 @@ void Application::retroHomeAction(Action a) {
     break;
   case Action::Accept:
     if (retroCol_ >= games()) openRetroList(retroRow_);
-    else if (const auto *game = retroFocused()) askRetroGame(*game);
+    else if (const auto *game = retroFocused()) openRetroDetail(*game);
     break;
   default:
     break;

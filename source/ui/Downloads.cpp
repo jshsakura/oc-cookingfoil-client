@@ -565,9 +565,8 @@ void Application::openHistoryRow(const history::Entry &entry) {
       gone();
       return;
     }
-    screen(Screen::Retro);
     sidebar_ = false;
-    askRetroGame(game);
+    openRetroDetail(game);
     return;
   }
   if (entry.kind == "patch" || entry.kind == "reapply") {

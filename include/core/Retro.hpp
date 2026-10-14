@@ -41,10 +41,18 @@ struct Variant {
   bool representative = false; // the server's pick for the list
   bool missing = false;        // a file it needs (a parent zip, a BIOS) is not there: it would not run
 };
+// What the server knows about a game beyond its files; any of it may be missing.
+struct Meta {
+  std::string description, publisher, developer, boxartUrl;
+  int releaseDate = 0; // YYYYMMDD, or YYYY0000 when only the year is known
+  int players = 0;
+  std::vector<std::string> genres, screenshots;
+};
 // /api/retro/games/:id: the game in full, with its versions (when it has more than one).
 struct Detail {
   Game game;
   std::vector<Variant> variants;
+  Meta meta;
 };
 // What the system list asks the server for: search words, order, and the
 // filter popup's conditions (0 / false: not set).

@@ -30,7 +30,17 @@ constexpr int MaxAttempts = 3; // then it stays blank until the list is refreshe
 constexpr uint32_t RetryAfterMs = 10000;
 // Large art is kept at screen size; a 4K banner would otherwise hold 64MB.
 SDL_Surface *shrink(SDL_Surface *surface) {
-  if (!surface || std::max(surface->w, surface->h) <= maxImageSide())
+  if (!surface)
+    return surface;
+  // A paletted picture (a PNG of few colours, as box art often is) cannot
+  // be scaled into the drawing format: it is made plain RGBA first.
+  if (surface->format->format != SDL_PIXELFORMAT_RGBA32 && SDL_ISPIXELFORMAT_INDEXED(surface->format->format)) {
+    if (auto *plain = SDL_ConvertSurfaceFormat(surface, SDL_PIXELFORMAT_RGBA32, 0)) {
+      SDL_FreeSurface(surface);
+      surface = plain;
+    }
+  }
+  if (std::max(surface->w, surface->h) <= maxImageSide())
     return surface;
   const float scale = float(maxImageSide()) / std::max(surface->w, surface->h);
   auto *small = SDL_CreateRGBSurfaceWithFormat(

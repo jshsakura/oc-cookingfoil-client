@@ -182,7 +182,7 @@ void Application::viewPopup() {
 void Application::dialogs() {
   if (!confirmInstall_ && alert_.empty() && !serverForm_ && !confirmCancel_ && !viewPopup_ &&
       !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !confirmCleanup_ &&
-      !languagePopup_ && !cleanupBusy_ && !retroAsking_ && !retroArchAsking_ && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
+      !languagePopup_ && !cleanupBusy_ && !retroArchAsking_ && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
       !homebrewRemoveAsk_ && !homebrewAsk_ && !shortcutRemoveAsk_ && !selfShortcutAsk_ && unqueueAsk_ < 0 && !bugAsk_ && !cacheClearAsk_)
     return;
@@ -209,8 +209,6 @@ void Application::dialogs() {
     languageDialog();
   } else if (retroArchAsking_) {
     retroArchConfirm();
-  } else if (retroAsking_) {
-    retroConfirm();
   } else if (saveNeedsGame_) {
     saveNeedsGameDialog();
   } else if (savePicking_) {

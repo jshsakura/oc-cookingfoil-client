@@ -234,16 +234,6 @@ const retro::Game *Application::retroFocused() const {
   }
   return retroGames_.empty() ? nullptr : &retroGames_[std::clamp(selected_, 0, int(retroGames_.size()) - 1)];
 }
-// A on a game: says so when it is already there, otherwise asks first.
-void Application::askRetroGame(const retro::Game &game) {
-  retroPick_ = game;
-  retroAsking_ = true;
-  retroVariants_.clear();
-  retroVariant_ = 0;
-  retroDetailWant_.clear();
-  // Other versions: their list comes with the game's detail.
-  if (game.variants >= 2) requestRetroDetail(game.id);
-}
 // The version under the cursor, in full (its cover, size, where it goes),
 // fetched off the drawing thread; the popup shows it once it is here.
 void Application::requestRetroDetail(const std::string &id) {
@@ -251,7 +241,7 @@ void Application::requestRetroDetail(const std::string &id) {
   startRetroDetail();
 }
 void Application::startRetroDetail() {
-  if (retroDetailWant_.empty() || !retroAsking_ || !session_) return;
+  if (retroDetailWant_.empty() || screen_ != Screen::RetroDetail || !session_) return;
   const auto server = session_->server();
   const auto state = state_;
   const auto sd = sdRoot_;
@@ -263,9 +253,13 @@ void Application::startRetroDetail() {
     for (const auto *path : {&detail.game.romPath, &detail.game.bezelPath})
       if (!path->empty()) onCard[*path] = fileExists(sd + "/" + *path);
     return [this, detail = std::move(detail), reply, id, onCard = std::move(onCard)]() mutable {
-      if (!retroAsking_ || retroDetailWant_ != id) return; // closed, or another one wanted now
+      if (screen_ != Screen::RetroDetail || retroDetailWant_ != id) return; // closed, or another one wanted now
       retroDetailWant_.clear();
+      retroDetailLoading_ = false;
       if (reply.error || detail.game.id.empty()) return;
+      // What is known of the game; one version may know more than another.
+      retroMeta_ = std::move(detail.meta);
+      detail_.screenshots = retroMeta_.screenshots;
       for (auto &[path, there] : onCard) retroOnCard_[path] = there;
       retroPick_ = std::move(detail.game);
       if (detail.variants.size() >= 2) retroVariants_ = std::move(detail.variants);
@@ -500,25 +494,6 @@ void Application::retroAction(Action a) {
     }
     return;
   }
-  if (retroAsking_) {
-    if (a == Action::Up) moveRetroVariant(-1);
-    if (a == Action::Down) moveRetroVariant(1);
-    if (a == Action::Back) retroAsking_ = false;
-    if (a == Action::Accept) {
-      // The version picked: once it is here in full, and only one that runs.
-      if (!retroVariants_.empty()) {
-        const auto &chosen = retroVariants_[size_t(retroVariant_)];
-        if (chosen.missing) {
-          message(tr("This version cannot run: a file it needs is not on the server."));
-          return;
-        }
-        if (chosen.id != retroPick_.id) return;
-      }
-      retroAsking_ = false;
-      getRetroGame(retroPick_, true);
-    }
-    return;
-  }
   if (a == Action::Queue && retroView_ == RetroView::List) {
     openViewPopup(); // Y in a system's list: filters and order, as in 모든 게임
     return;
@@ -573,7 +548,7 @@ void Application::retroAction(Action a) {
   // The next page arrives before the cursor reaches the end.
   if (selected_ >= int(retroGames_.size()) - 8 && !retroListWorker_.joinable()) loadRetroPage(true);
   if (a == Action::Accept)
-    if (const auto *game = retroFocused()) askRetroGame(*game);
+    if (const auto *game = retroFocused()) openRetroDetail(*game);
 }
 // What a game is: its file format, a bezel, its score; for the list's
 // labels and the info popup.
@@ -610,96 +585,6 @@ std::vector<std::string> Application::retroLabels(const retro::Game &game, bool 
   }
   if (game.rating > 0) out.push_back(trf("Score {0}", {std::to_string(game.rating)}));
   return out;
-}
-// A on a game: what it is, and one button that does what it needs (get
-// it, add its bezel), or says it is already there. B closes.
-void Application::retroConfirm() {
-  if (!retroAsking_) return;
-  const auto &game = retroPick_;
-  const bool bezel = retroBezelMissing(game), there = retroInstalled(game) && !bezel;
-  const auto system = std::find_if(retroSystems_.begin(), retroSystems_.end(),
-                                   [&](const auto &s) { return s.id == game.system; });
-  const auto title = system != retroSystems_.end() ? retro::systemName(*system, languageCode()) : std::string(tr("Retro games"));
-  // One decision, so the footer says it: A gets it, B backs out.
-  const auto get = there ? tr("Get again") : bezel ? tr("Get bezel") : tr("Download");
-  constexpr float Cover = 200;
-  // Other versions under it, a few rows at a time around the cursor.
-  constexpr float VariantRow = 52, VariantHead = 44;
-  const int shown = std::min<int>(4, int(retroVariants_.size()));
-  const float variantsH = retroVariants_.size() >= 2 ? VariantHead + shown * VariantRow + 8 : 0;
-  const auto body = modal(780, 24 + Cover + 24 + variantsH, title, tr("Cancel"), "", get, 35);
-  const float x = body.x + 32, y = body.y + 24, textX = x + Cover + 28, textW = body.w - 64 - Cover - 28;
-  cover(game.iconUrl, x, y, int(Cover), false, game.name, true);
-  paint_.region(game.region, x + Cover - 44, y + Cover - 32, 36, 24);
-  float at = y + paint_.fonts.wrapped(game.name, textX, y, 22, Ink, textW, 3, true) + 6;
-  if (!game.original.empty() && game.original != game.name)
-    at += paint_.fonts.wrapped(game.original, textX, at, 17, Secondary, textW, 2) + 4;
-  float px = textX;
-  for (const auto &label : retroLabels(game, true)) px += paint_.pill(label, px, at + 6) + 6;
-  at += 44;
-  std::string facts = formatBytes(game.size);
-  if (game.ratingCount > 0) facts += " · " + trf("{0} ratings", {std::to_string(game.ratingCount)});
-  paint_.fonts.text(facts, textX, at, 18, Ink, true, textW);
-  if (!game.romPath.empty())
-    paint_.fonts.text(game.romPath, textX, at + 30, 16, Secondary, false, textW);
-  if (retroCoreMissing(game))
-    paint_.fonts.wrapped(trf("The {0} core is missing, so it comes down right after the game.", {game.core}), textX, at + 58, 16, Secondary, textW, 2);
-  if (variantsH > 0) retroVariantRows(x, y + Cover + 24, body.w - 64);
-}
-// The versions, one row each: its flag, what it is (Korean, the server's
-// pick, or that it would not run) and its size. Up and down pick one; the
-// popup above then shows it.
-float Application::retroVariantRows(float x, float y, float w) {
-  constexpr float Row = 52, Head = 44;
-  const int count = int(retroVariants_.size()), shown = std::min(4, count);
-  paint_.rect(x - 32, y, w + 64, 1, Line);
-  // "버전" and how many, as a page title shows its count.
-  const std::string head = tr("Versions");
-  paint_.fonts.middle(head, x, y + Head / 2 + 2, 18, Ink, true);
-  paint_.pill(std::to_string(count), x + paint_.fonts.measure(head, 18, true) + 10, y + Head / 2 + 2 - 13);
-  if (count > shown)
-    paint_.fonts.middle(std::to_string(retroVariant_ + 1) + " / " + std::to_string(count),
-                        x + w - paint_.fonts.measure(std::to_string(retroVariant_ + 1) + " / " + std::to_string(count), 16),
-                        y + Head / 2 + 2, 16, Secondary);
-  const int first = std::clamp(retroVariant_ - 1, 0, std::max(0, count - shown));
-  float ry = y + Head;
-  for (int i = first; i < first + shown; ++i) {
-    const auto &v = retroVariants_[size_t(i)];
-    const bool on = i == retroVariant_;
-    if (on) paint_.focusRow(x - 12, ry + 2, w + 24, Row - 4, Ground, 12);
-    hit(x - 12, ry + 2, w + 24, Row - 4, [this, i] { moveRetroVariant(i - retroVariant_); });
-    const float mid = ry + Row / 2;
-    float tx = x;
-    if (!v.region.empty()) {
-      paint_.region(v.region, tx, mid - 11, 33, 22);
-      tx += 33 + 12;
-    }
-    // What tells it apart: its tag, else its own name.
-    const auto label = !v.variant.empty() ? v.variant : v.name;
-    const auto size = formatBytes(v.size);
-    const float sizeW = paint_.fonts.measure(size, 17);
-    float right = x + w - sizeW;
-    paint_.fonts.middle(size, right, mid, 17, Secondary);
-    right -= 12;
-    // Badges from the right: would not run, the server's pick, Korean.
-    std::vector<std::string> badges;
-    if (v.edition.korean) badges.push_back(tr("Korean|script"));
-    if (v.representative) badges.push_back(tr("Recommended"));
-    float badgesW = 0;
-    for (const auto &b : badges) badgesW += paint_.fonts.measure(b, 15, true) + 20 + 6;
-    const auto broken = std::string(tr("Will not run"));
-    const float brokenW = v.missing ? paint_.fonts.measure(broken, 15, true) + 30 : 0;
-    const float textMax = right - badgesW - brokenW - tx - 12;
-    paint_.fonts.middle(label, tx, mid, 18, v.missing ? Secondary : Ink, on, textMax);
-    float bx = tx + std::min(textMax, paint_.fonts.measure(label, 18, on)) + 12;
-    for (const auto &b : badges) bx += paint_.pill(b, bx, mid - 13) + 6;
-    if (v.missing) {
-      paint_.icon(25, bx, mid - 9, Pending, 18);
-      paint_.fonts.middle(broken, bx + 22, mid, 15, Pending, true);
-    }
-    ry += Row;
-  }
-  return ry - y;
 }
 void Application::retroArchConfirm() {
   const auto body = modal(700, 24 + 84 + 24, tr("Get RetroArch again?"), tr("Cancel"), tr("Get all again"), tr("Get again"), 3);

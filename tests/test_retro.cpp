@@ -35,8 +35,21 @@ int runRetroTests() {
         CHECK(d.variants[1].id == "arcade-2" && d.variants[1].missing && d.variants[1].edition.korean);
         CHECK(d.variants[1].size == 2561379 && d.variants[1].variant == "Japan");
       }
+      CHECK(d.meta.description.empty() && d.meta.screenshots.empty() && !d.meta.releaseDate);
       CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","variants":3})").variants == 3);
       CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b"})").variants == 1);
+    }
+    // What the server knows of a game besides its files: pictures resolved
+    // against the shop, a date only when it is one, odd entries dropped.
+    {
+      const auto m = parseDetail(R"({"id":"a","bundleUrl":"/b","description":"Shoot.","publisher":"Capcom",
+        "developer":"Capcom","releaseDate":19900227,"numberOfPlayers":2,"genres":["슈팅",3,""],
+        "boxartUrl":"/api/retro/games/a/boxart?v=1","screenshots":["/s1.png","https://cdn/s2.png","ftp://x",7]})", "https://h").meta;
+      CHECK(m.description == "Shoot." && m.publisher == "Capcom" && m.developer == "Capcom" && m.players == 2);
+      CHECK(m.releaseDate == 19900227 && m.boxartUrl == "https://h/api/retro/games/a/boxart?v=1");
+      CHECK(m.genres.size() == 1 && m.genres[0] == "슈팅");
+      CHECK(m.screenshots.size() == 2 && m.screenshots[0] == "https://h/s1.png" && m.screenshots[1] == "https://cdn/s2.png");
+      CHECK(!parseDetail(R"({"id":"a","bundleUrl":"/b","releaseDate":1990})", "https://h").meta.releaseDate);
     }
     // The edition's tags, each checked; unknown ones are dropped.
     {

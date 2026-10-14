@@ -442,6 +442,7 @@ bool Application::hasFocusable() const {
     return savesTab_ == 2 ? dropboxFocusable() : savesTab_ == 1 ? !shopSaveGroups().empty() : !deviceBusy_ && !saveGameRows().empty();
   case Screen::Settings:
   case Screen::Detail:
+  case Screen::RetroDetail:
     return true;
   }
   return true;
@@ -886,7 +887,7 @@ void Application::action(Action a) {
   unglide();
   if (cleanupBusy_) // the progress modal is up until it finishes
     return;
-  if (galleryOpen_ && screen_ == Screen::Detail) {
+  if (galleryOpen_ && fullPage()) {
     if (a == Action::Back) galleryOpen_ = false;
     else if (!detail_.screenshots.empty()) {
       const auto count = detail_.screenshots.size();
@@ -986,7 +987,7 @@ void Application::action(Action a) {
   }
   // The header's buttons: the d-pad moves along them, A presses one.
   if (!headerFocus_.empty() && !popupOpen() && headerAction(a)) return;
-  if (a == Action::Up && headerFocus_.empty() && !sidebar_ && !popupOpen() && screen_ != Screen::Detail &&
+  if (a == Action::Up && headerFocus_.empty() && !sidebar_ && !popupOpen() && !fullPage() &&
       contentAtTop() && enterHeader())
     return;
   // 내 게임's tabs take L R wherever the cursor is, the menu included.
@@ -1006,7 +1007,7 @@ void Application::action(Action a) {
     savesAction(a);
     return;
   }
-  if (screen_ == Screen::Retro && (retroAsking_ || retroArchAsking_ || (!sidebar_ && (a != Action::Back || retroView_ == RetroView::List)) || a == Action::Queue ||
+  if (screen_ == Screen::Retro && (retroArchAsking_ || (!sidebar_ && (a != Action::Back || retroView_ == RetroView::List)) || a == Action::Queue ||
                                    a == Action::Previous || a == Action::Next)) {
     retroAction(a);
     return;
@@ -1092,6 +1093,11 @@ void Application::action(Action a) {
     }
     if (a == Action::Back)
       confirmCancel_ = false;
+    return;
+  }
+  // A retro game's page, under its cancel questions.
+  if (screen_ == Screen::RetroDetail && a != Action::Reload) {
+    retroDetailAction(a);
     return;
   }
   // 진행 중: the card, then the queue, picked with up and down.
@@ -1345,7 +1351,7 @@ void Application::action(Action a) {
     }
     if (a == Action::Left)
       sidebar_ = true;
-  } else if (screen_ != Screen::Detail && a == Action::Left)
+  } else if (!fullPage() && a == Action::Left)
     sidebar_ = true;
 }
 void Application::cover(const std::string &url, float x, float y, int size,
@@ -1652,7 +1658,7 @@ void Application::render() {
     if (const auto *own = listQuery(); own && !own->empty()) headerFocus_ = "search";
     else sidebar_ = autoSidebar_ = true;
   }
-  else if (sidebar_ && autoSidebar_ && screen_ != Screen::Detail && hasFocusable()) {
+  else if (sidebar_ && autoSidebar_ && !fullPage() && hasFocusable()) {
     sidebar_ = autoSidebar_ = false;
   }
 #ifdef __SWITCH__
@@ -1671,10 +1677,9 @@ void Application::render() {
   storageChecked_ = true;
   images_->decode();
   paint_.rect(0, 0, 1280, 720, Ground);
-  if (screen_ != Screen::Detail)
+  if (!fullPage())
     shell();
-  SDL_Rect clip{screen_ == Screen::Detail ? 0 : 232, 0,
-                screen_ == Screen::Detail ? 1280 : 1048, 660};
+  SDL_Rect clip{fullPage() ? 0 : 232, 0, fullPage() ? 1280 : 1048, 660};
   SDL_RenderSetClipRect(paint_.renderer, &clip);
   if (pairingPending_ && screen_ != Screen::Settings)
     pairing();
@@ -1684,6 +1689,8 @@ void Application::render() {
     library();
   else if (screen_ == Screen::Detail)
     detail();
+  else if (screen_ == Screen::RetroDetail)
+    retroDetail();
   else if (screen_ == Screen::Downloads)
     downloads();
   else if (screen_ == Screen::Settings)
@@ -1720,6 +1727,21 @@ void Application::render() {
                                                      : onButton ? tr("Install")
                                                      : onStorage ? tr("Choose this") : tr("Toggle")},
                                                {"B", tr("Back")}};
+      if (!detail_.screenshots.empty()) hints.insert(hints.end() - 1, {"ZR", tr("Photos")});
+      footer(hints);
+    }
+  }
+  else if (screen_ == Screen::RetroDetail) {
+    if (galleryOpen_) footer({{"L R", tr("Prev / next photo")}, {"B", tr("Close")}});
+    else {
+      using Hints = std::vector<std::pair<std::string, std::string>>;
+      double percent = 0;
+      const bool onButton = retroPart_ >= int(retroVersionList().size());
+      auto hints = descriptionFocus_ ? Hints{{"A", tr("Back to items")}, {"B", tr("Back")}}
+                   : Hints{{"A", !onButton ? std::string(tr("Pick this version"))
+                                 : retroOnTheWay(retroPick_, percent) ? std::string(tr("Cancel download"))
+                                                                      : retroGetLabel()},
+                           {"B", tr("Back")}};
       if (!detail_.screenshots.empty()) hints.insert(hints.end() - 1, {"ZR", tr("Photos")});
       footer(hints);
     }
@@ -1816,7 +1838,7 @@ void Application::render() {
     const bool twoLines = paint_.fonts.measure(notice_, 18) > MaxText;
     const float w = 22 + Icon + 12 + text + 26, h = twoLines ? 72 : 50;
     // Centered on the page: the whole width when the menu is hidden.
-    const float x = (screen_ == Screen::Detail ? 640 : 756) - w / 2, y = 646 - h;
+    const float x = (fullPage() ? 640 : 756) - w / 2, y = 646 - h;
     paint_.rect(x, y, w, h, {22, 22, 26, 235}, int(h / 2 < 25 ? h / 2 : 25));
     paint_.icon(33, x + 22, y + (h - Icon) / 2, Butter, int(Icon));
     if (twoLines)
