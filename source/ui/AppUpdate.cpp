@@ -47,8 +47,8 @@ void Application::checkAppUpdate() {
     updateDone_ = true;
   });
 }
-// What the last update came to, said once at start: undone, not put in,
-// or done (from which version; a first start under trial says so too).
+// What the last update came to, said once at start when it went wrong:
+// undone or not put in.
 void Application::noticeRollBack() {
   if (selfPath_.empty()) return;
   std::error_code ec;
@@ -73,15 +73,9 @@ void Application::noticeRollBack() {
                  : trf("The app's file could not be replaced, so v{0} stays. Try the update again.", {COOKINGFOIL_VERSION});
     return;
   }
+  // A finished update says nothing: the marker only goes.
   std::string from;
-  const bool named = take(".updated", from);
-  // The first start of a new build: its trial is marked (rollBackUpdate).
-  const bool trial = readFile(selfPath_ + ".trial") == "1";
-  if (!named && !trial) return;
-  alertTitle_ = tr("Updated");
-  alert_ = !from.empty() && from != COOKINGFOIL_VERSION
-               ? trf("Updated from v{0} to v{1}.", {from, COOKINGFOIL_VERSION})
-               : trf("Now on v{0}.", {COOKINGFOIL_VERSION});
+  take(".updated", from);
 }
 void Application::installAppUpdate() {
   if (updateWorker_.joinable() || appUpdate_ != AppUpdate::Available || !session_) return;

@@ -27,8 +27,6 @@ const Translation rows[] = {
     {"The new version stopped before it opened, so v{0} is back. Wait for the next update.", "새 버전이 열리기 전에 멈춰서 이전 버전(v{0})으로 되돌렸습니다. 다음 업데이트를 기다려 주세요.", "新しいバージョンが開く前に止まったため、v{0} に戻しました。次のアップデートをお待ちください。", "新版本在打开前停止运行，已恢复为 v{0}。请等待下一次更新。"},
     {"The downloaded update was not complete, so v{0} stays. Get it again in Settings.", "받은 업데이트 파일이 온전하지 않아 지금 버전(v{0})을 그대로 둡니다. 설정에서 다시 받아 주세요.", "入手したアップデートが不完全だったため、v{0} のままにしました。設定からもう一度入手してください。", "下载的更新不完整，保留 v{0}。请在设置中重新获取。"},
     {"The app's file could not be replaced, so v{0} stays. Try the update again.", "앱 파일을 바꾸지 못해 지금 버전(v{0})을 그대로 둡니다. 업데이트를 다시 시도해 주세요.", "アプリのファイルを置き換えられなかったため、v{0} のままにしました。もう一度アップデートしてください。", "无法替换应用文件，保留 v{0}。请重新尝试更新。"},
-    {"Updated from v{0} to v{1}.", "v{0}에서 v{1} 버전으로 업데이트했습니다.", "v{0} から v{1} にアップデートしました。", "已从 v{0} 更新到 v{1}。"},
-    {"Now on v{0}.", "v{0} 버전으로 업데이트했습니다.", "v{0} にアップデートしました。", "已更新到 v{0}。"},
     {"The update download stopped. Check the connection and try again.", "업데이트를 받다가 연결이 끊겼습니다. 연결을 확인하고 다시 시도해 주세요.", "アップデートの入手中に接続が切れました。接続を確認して、もう一度お試しください。", "下载更新时连接中断。请检查网络后重试。"},
     {"Check the server connection. HTTP {0}", "서버 연결을 확인해 주세요. HTTP {0}", "サーバー接続を確認してください。HTTP {0}", "请检查服务器连接。HTTP {0}"},
     {"Could not load the details.", "상세 정보를 불러오지 못했습니다.", "詳細情報を読み込めませんでした。", "无法加载详细信息。"},
