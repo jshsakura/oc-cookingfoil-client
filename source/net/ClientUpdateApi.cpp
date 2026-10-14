@@ -1,6 +1,7 @@
 #include "net/ClientUpdateApi.hpp"
 #include "core/I18n.hpp"
 #include "core/Json.hpp"
+#include "core/Log.hpp"
 #include "core/Version.hpp"
 #include "net/Api.hpp"
 #include "net/DropboxUtil.hpp"
@@ -57,7 +58,12 @@ bool installClient(const Server &server, const State &state, const update::Relea
   // asked about.
   if (got.tooLong) return fail(tr("The update on the server changed. Checking again."));
   if (!got.failure.empty()) return fail(got.failure);
-  if (!got.response.error.empty()) return fail(got.response.error);
+  if (!got.response.error.empty()) {
+    // The connection's own words go to the log; the player reads what to do.
+    logLine("update download stopped: " + got.response.error);
+    return fail(cancel && cancel->load() ? tr("Cancelled the update.")
+                                         : tr("The update download stopped. Check the connection and try again."));
+  }
   if (!rangedOk(got.response))
     return fail(trf("Could not download the update. HTTP {0}", {std::to_string(got.response.status)}));
   if (got.size != release.size || got.sha256 != release.sha256)

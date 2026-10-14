@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <strings.h>
 #include "core/Log.hpp"
+#include "core/Json.hpp"
 #include "core/Version.hpp"
 #include "net/ClientUpdateApi.hpp"
 #include "platform/Storage.hpp"
@@ -46,13 +47,41 @@ void Application::checkAppUpdate() {
     updateDone_ = true;
   });
 }
+// What the last update came to, said once at start: undone, not put in,
+// or done (from which version; a first start under trial says so too).
 void Application::noticeRollBack() {
-  const auto marker = selfPath_ + ".rolledback";
+  if (selfPath_.empty()) return;
   std::error_code ec;
-  if (!std::filesystem::exists(marker, ec)) return;
-  std::filesystem::remove(marker, ec);
-  alertTitle_ = tr("Update undone");
-  alert_ = tr("The new version stopped before it opened, so the one before it is back. Wait for the next update.");
+  const auto take = [&](const std::string &suffix, std::string &text) {
+    const auto marker = selfPath_ + suffix;
+    if (!std::filesystem::exists(marker, ec)) return false;
+    text = readFile(marker);
+    std::filesystem::remove(marker, ec);
+    return true;
+  };
+  std::string text;
+  if (take(".rolledback", text)) {
+    alertTitle_ = tr("Update undone");
+    alert_ = trf("The new version stopped before it opened, so v{0} is back. Wait for the next update.",
+                 {COOKINGFOIL_VERSION});
+    return;
+  }
+  if (take(".updatefailed", text)) {
+    alertTitle_ = tr("Update failed");
+    alert_ = text == "partial"
+                 ? trf("The downloaded update was not complete, so v{0} stays. Get it again in Settings.", {COOKINGFOIL_VERSION})
+                 : trf("The app's file could not be replaced, so v{0} stays. Try the update again.", {COOKINGFOIL_VERSION});
+    return;
+  }
+  std::string from;
+  const bool named = take(".updated", from);
+  // The first start of a new build: its trial is marked (rollBackUpdate).
+  const bool trial = readFile(selfPath_ + ".trial") == "1";
+  if (!named && !trial) return;
+  alertTitle_ = tr("Updated");
+  alert_ = !from.empty() && from != COOKINGFOIL_VERSION
+               ? trf("Updated from v{0} to v{1}.", {from, COOKINGFOIL_VERSION})
+               : trf("Now on v{0}.", {COOKINGFOIL_VERSION});
 }
 void Application::installAppUpdate() {
   if (updateWorker_.joinable() || appUpdate_ != AppUpdate::Available || !session_) return;

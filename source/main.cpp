@@ -1,6 +1,7 @@
 #include "platform/Storage.hpp"
 #include "net/Socket.hpp"
 #include "ui/Application.hpp"
+#include "core/Json.hpp"
 #include "ui/Runtime.hpp"
 #include "core/Log.hpp"
 #include "core/I18n.hpp"
@@ -58,8 +59,13 @@ int main(int argc, char **argv) {
                                ? std::string(argv[0])
                                : std::string("sdmc:/switch/cookingfoil/cookingfoil.nro");
   std::string updateNote;
-  if ((foil::platform::rollBackUpdate(self, updateNote) || foil::platform::finishUpdate(self, updateNote)) &&
-      envHasNextLoad() && R_SUCCEEDED(envSetNextLoad(self.c_str(), self.c_str())))
+  const bool rolledBack = foil::platform::rollBackUpdate(self, updateNote);
+  const bool swapped = !rolledBack && foil::platform::finishUpdate(self, updateNote);
+  if (swapped) { // the new build says it came, and from which one
+    std::string ignored;
+    foil::atomicWrite(self + ".updated", COOKINGFOIL_VERSION, ignored);
+  }
+  if ((rolledBack || swapped) && envHasNextLoad() && R_SUCCEEDED(envSetNextLoad(self.c_str(), self.c_str())))
     return 0;
   SocketInitConfig sockets = *socketGetDefaultInitConfig();
   const bool application = appletGetAppletType() == AppletType_Application;

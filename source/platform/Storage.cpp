@@ -169,6 +169,8 @@ bool finishUpdate(const std::string &self, std::string &note) {
     std::filesystem::remove(part, ec);
     std::filesystem::remove(part + ".resume", ec);
     note = "update not swapped in: the downloaded build was not whole";
+    std::string ignored;
+    atomicWrite(self + ".updatefailed", "partial", ignored);
     return false;
   }
   std::filesystem::remove(old, ec);
@@ -178,6 +180,8 @@ bool finishUpdate(const std::string &self, std::string &note) {
   std::filesystem::rename(self, old, ec);
   if (ec) {
     note = "update swap failed: the app's file could not be set aside: " + ec.message();
+    std::string ignored;
+    atomicWrite(self + ".updatefailed", "swap", ignored);
     return false;
   }
   std::filesystem::rename(part, self, ec);
@@ -190,6 +194,8 @@ bool finishUpdate(const std::string &self, std::string &note) {
     // The rename back refused too: a copy, so an app is there to start.
     if (ignored) std::filesystem::copy_file(old, self, std::filesystem::copy_options::overwrite_existing, ignored);
     if (!ignored) std::filesystem::remove(old, ignored);
+    std::string unused;
+    atomicWrite(self + ".updatefailed", "swap", unused);
     return false;
   }
   // The build it replaced stays as ".old" until the new one has run a while
