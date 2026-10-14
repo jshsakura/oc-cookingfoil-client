@@ -172,6 +172,15 @@ void Images::request(const std::string &url) {
   }
   wake_.notify_one();
 }
+void Images::waitOutLimit() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  while (!stop_) {
+    const uint32_t now = SDL_GetTicks();
+    if (now >= heldUntil_)
+      return;
+    wake_.wait_for(lock, std::chrono::milliseconds(heldUntil_ - now));
+  }
+}
 void Images::provide(const std::string &key, const std::string &bytes) {
   if (key.empty() || bytes.empty()) return;
   std::lock_guard<std::mutex> lock(mutex_);
@@ -210,7 +219,15 @@ void Images::worker() {
       // WebP when the server has it (a third smaller), JPEG otherwise.
       auto headers = net::authHeaders(server_, state, url);
       headers.push_back("Accept: image/webp,image/*;q=0.8");
+      waitOutLimit();
       const auto result = net::get(url, headers, "", &stop_);
+      if (result.status == 429) {
+        // Too many asks: every worker holds off as long as the server says
+        // (5 s when it does not), not just this picture.
+        std::lock_guard<std::mutex> lock(mutex_);
+        const uint32_t wait = uint32_t(std::clamp(result.retryAfter ? result.retryAfter : 5, 1, 60)) * 1000;
+        heldUntil_ = std::max(heldUntil_, SDL_GetTicks() + wait);
+      }
       if (result.status == 200 && result.error.empty())
         bytes = result.body;
       missing = result.status == 404;

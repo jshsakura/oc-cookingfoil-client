@@ -53,6 +53,8 @@ private:
   std::vector<std::thread> threads_;
   mutable std::mutex mutex_;
   std::condition_variable wake_;
+  uint32_t heldUntil_ = 0; // after a 429, no picture is asked for until then (SDL ticks)
+  void waitOutLimit();
   std::deque<std::string> jobs_;
   std::map<std::string, Entry> entries_;
   struct Texture {
