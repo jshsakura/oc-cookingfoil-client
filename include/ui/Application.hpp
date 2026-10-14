@@ -305,6 +305,7 @@ public:
 
 private:
   void keepResumeChanges();
+  void serverRestartNotice();
   void askCancelPick(bool running);
   void shell();
   float statusBar();
@@ -952,6 +953,8 @@ private:
   std::atomic<int64_t> cacheBytes_{-1}; // the picture cache's size; -1 until measured
   std::atomic<bool> cacheBusy_{false}, cacheCleared_{false};
   bool cacheClearAsk_ = false;
+  uint64_t restartSeen_ = 0; // the server restarts already said
+  bool restartShowing_ = false;
   std::atomic<bool> cleanupDone_{false};
   bool cleanupBusy_ = false, cleanupRemoving_ = false, confirmCleanup_ = false;
   Parsed<CleanupReport> cleanupResult_;

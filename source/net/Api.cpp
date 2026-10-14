@@ -42,6 +42,7 @@ size_t writeBody(char* data, size_t size, size_t count, void* context) {
 }
 size_t writeHeader(char* data, size_t size, size_t count, void* context) {
     const auto bytes = size * count;
+    heardHeader(data, bytes);
     std::string line(data, bytes);
     auto colon = line.find(':');
     if (colon != std::string::npos) {

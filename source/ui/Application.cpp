@@ -80,6 +80,23 @@ Application::~Application() {
   if (awake_)
     platform::keepAwake(false);
 }
+// The server restarting: said once per restart, small, and kept up while it
+// lasts; taken down as soon as the server answers again.
+void Application::serverRestartNotice() {
+  const auto heard = net::restartSerial();
+  if (heard != restartSeen_) {
+    restartSeen_ = heard;
+    restartShowing_ = true;
+    message(tr("The server is restarting. Downloads go on shortly."));
+  }
+  if (!restartShowing_) return;
+  if (net::serverRestarting()) {
+    noticeAt_ = SDL_GetTicks();
+    return;
+  }
+  restartShowing_ = false;
+  if (notice_ == tr("The server is restarting. Downloads go on shortly.")) notice_.clear();
+}
 // Where a cut-off file stands, from the install thread to the card.
 void Application::keepResumeChanges() {
   for (const auto &[key, point] : installer_.takeResumeChanges()) {
@@ -515,6 +532,7 @@ void Application::poll() {
     platform::keepAwake(awake_);
   }
   keepResumeChanges();
+  serverRestartNotice();
   if (cacheCleared_.exchange(false))
     message(tr("Deleted the image cache."));
   const auto installStatus = installer_.progress().status;

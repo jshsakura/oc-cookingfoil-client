@@ -201,7 +201,12 @@ void Application::topCard(const TopCard &c) {
   // come is said calmly, without counting seconds; before any bytes it is
   // still getting ready (checking the install, putting a resume together).
   const bool linkDown = signal_ < 0 && !c.paused;
-  if (linkDown) {
+  // The server restarting: a pause, not a failure, and it goes on by itself.
+  const bool restarting = !linkDown && !c.paused && net::serverRestarting();
+  if (restarting) {
+    status = std::string(tr("Paused.")) + " · " + tr("The server is restarting. It goes on by itself.");
+    downloadSpeed_.add(now, c.bytes);
+  } else if (linkDown) {
     status = c.phase + " · " + tr("The internet connection dropped. It goes on once it is back.");
     downloadSpeed_.add(now, c.bytes);
   } else if (!c.paused && c.measure && c.bytes > topCardStartBytes_ && still >= 20) {
@@ -222,7 +227,7 @@ void Application::topCard(const TopCard &c) {
     downloadSpeed_.reset();
     timeLeft_.reset();
   }
-  paint_.fonts.text(status, 418, 181, 18, linkDown ? Bad : Secondary, false, 810);
+  paint_.fonts.text(status, 418, 181, 18, linkDown ? Bad : restarting ? Pending : Secondary, false, 810);
   float x = 418;
   for (const auto &[label, state] : c.chips) {
     // A finished part leads with the check mark icon (the font has no ✓).

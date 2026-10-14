@@ -175,6 +175,7 @@ size_t onHeader(char *data, size_t size, size_t count, void *user) {
   }
 }
 size_t onHeaderUnsafe(char *data, size_t size, size_t count, void *user) {
+  heardHeader(data, size * count);
   auto &c = *static_cast<Conn *>(user);
   std::string line(data, size * count);
   while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))

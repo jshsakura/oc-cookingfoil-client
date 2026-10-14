@@ -1407,7 +1407,7 @@ index 643c236..cc42774 100755
      {
          ASSERT_OK(ncmContentStorageRegister(&m_contentStorage, &registeredId, &placeholderId), "Failed to register placeholder NCA");
 diff --git a/source/util/network_util.cpp b/source/util/network_util.cpp
-index ea0dad8..f69d548 100755
+index ea0dad8..cc4a616 100755
 --- a/source/util/network_util.cpp
 +++ b/source/util/network_util.cpp
 @@ -20,6 +20,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
@@ -1448,7 +1448,7 @@ index ea0dad8..f69d548 100755
          const size_t numBytes = size * numItems;
          try {
              if (*ctx->streamFunc != nullptr)
-@@ -207,6 +224,233 @@ namespace tin::network
+@@ -207,6 +224,234 @@ namespace tin::network
          }
      }
  
@@ -1499,6 +1499,7 @@ index ea0dad8..f69d548 100755
 +        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 +        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
 +        foil::net::shareConnections(curl); // CookingFoil: the last piece's connections, still warm
++        foil::net::watchRestart(curl);     // CookingFoil: hears the server say it is restarting
 +        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
 +        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
 +        curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 8L);
@@ -1682,7 +1683,7 @@ index ea0dad8..f69d548 100755
      static int StreamHttpRangeForUrl(const std::string& url, size_t offset, size_t size,
          const std::function<size_t (u8* bytes, size_t size)>& streamFunc)
      {
-@@ -233,13 +477,23 @@ namespace tin::network
+@@ -233,13 +478,24 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -1700,6 +1701,7 @@ index ea0dad8..f69d548 100755
 +        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 +        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
 +        foil::net::shareConnections(curl); // CookingFoil: the last download's connections, still warm
++        foil::net::watchRestart(curl);     // CookingFoil: hears the server say it is restarting
 +        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
          curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
          curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 8L);
@@ -1707,7 +1709,7 @@ index ea0dad8..f69d548 100755
          curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callbackCtx);
          curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &ParseHTMLDataCallback);
          std::string authValue;
-@@ -325,7 +579,7 @@ namespace tin::network
+@@ -325,7 +581,7 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -1716,7 +1718,7 @@ index ea0dad8..f69d548 100755
          const std::string& userAgent = inst::curl::getUserAgent();
          curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent.c_str());
          curl_easy_setopt(curl, CURLOPT_HEADERDATA, this);
-@@ -437,6 +691,7 @@ namespace tin::network
+@@ -437,6 +693,7 @@ namespace tin::network
      {
          auto streamFunc = *reinterpret_cast<std::function<size_t (u8* bytes, size_t size)>*>(userData);
          const size_t numBytes = size * numItems;
@@ -1724,7 +1726,7 @@ index ea0dad8..f69d548 100755
          try {
              if (streamFunc != nullptr)
                  return streamFunc((u8*)bytes, numBytes);
-@@ -496,14 +751,18 @@ namespace tin::network
+@@ -496,14 +753,18 @@ namespace tin::network
  
              while (true)
              {
@@ -1744,7 +1746,7 @@ index ea0dad8..f69d548 100755
  
                      const size_t currentOffset = requestOffset + bytesReceived;
                      const size_t remaining = requestSize - bytesReceived;
-@@ -514,6 +773,17 @@ namespace tin::network
+@@ -514,6 +775,25 @@ namespace tin::network
                      const int rc = StreamHttpRangeForUrl(url, currentOffset, remaining, trackingFunc);
                      if (rc == 0)
                          return 0;
@@ -1756,13 +1758,21 @@ index ea0dad8..f69d548 100755
 +                        waitNs = 1;
 +                        continue;
 +                    }
++                    // CookingFoil: the server restarting (or no internet) is
++                    // not a try: wait it out and go on from the same byte.
++                    if (foil::net::linkDown() && !Stopping())
++                    {
++                        attempt--;
++                        waitNs = 2000000000L;
++                        continue;
++                    }
 +                    // Busy (503), rate limited (429, Cloudflare's 1015) or a
 +                    // slow first byte through the tunnel (524): wait longer.
 +                    waitNs = rc == 503 || rc == 429 || rc == 1015 || rc == 524 ? 5000000000L : 0;
  
                      const bool fatal =
                          rc == 1999 ||
-@@ -547,7 +817,21 @@ namespace tin::network
+@@ -547,7 +827,21 @@ namespace tin::network
          };
  
          if (!m_isJbod)
@@ -1784,7 +1794,7 @@ index ea0dad8..f69d548 100755
  
          size_t globalOffset = offset;
          size_t remaining = size;
-@@ -679,7 +963,7 @@ namespace tin::network
+@@ -679,7 +973,7 @@ namespace tin::network
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
          curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
          curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);

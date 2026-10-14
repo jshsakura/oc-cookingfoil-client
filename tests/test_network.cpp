@@ -4,6 +4,7 @@
 #include "core/Config.hpp"
 #include "core/Json.hpp"
 #include "net/Api.hpp"
+#include "net/Socket.hpp"
 #include <filesystem>
 #include <algorithm>
 #include <unistd.h>
@@ -213,6 +214,37 @@ int runNetworkTests() {
         CHECK(foil::net::connectionsFor("https://tinfoil.example.com", 0) == 4);
         CHECK(foil::net::connectionsFor("https://tinfoil.example.com", 4) == 4);
         CHECK(foil::net::connectionsFor("http://10.0.0.2", 3) == 2); // not a choice: automatic
+    }
+    {
+        // A server restart, heard from any reply's header: downloads treat it
+        // as the way being down (they wait), it counts once per id, and a
+        // success without the header ends it.
+        const auto hear = [](const std::string &line) { foil::net::heardHeader(line.data(), line.size()); };
+        const auto before = foil::net::restartSerial();
+        CHECK(!foil::net::serverRestarting());
+        hear("HTTP/1.1 503 Service Unavailable\r\n");
+        hear("X-CookingFoil-Restarting: 20; id=r1\r\n");
+        hear("\r\n");
+        CHECK(foil::net::serverRestarting() && foil::net::linkDown());
+        CHECK(foil::net::restartSerial() == before + 1);
+        // The same restart on a piece still coming (206 with the header): still on, not counted again.
+        hear("HTTP/1.1 206 Partial Content\r\n");
+        hear("x-cookingfoil-restarting: 12; id=r1\r\n");
+        hear("\r\n");
+        CHECK(foil::net::serverRestarting() && foil::net::restartSerial() == before + 1);
+        // Back: a success with no header.
+        hear("HTTP/1.1 200 OK\r\n");
+        hear("Content-Length: 2\r\n");
+        hear("\r\n");
+        CHECK(!foil::net::serverRestarting() && !foil::net::linkDown());
+        // A later restart is a new one.
+        hear("HTTP/1.1 503 Service Unavailable\r\n");
+        hear("X-CookingFoil-Restarting: 20; id=r2\r\n");
+        hear("\r\n");
+        CHECK(foil::net::restartSerial() == before + 2);
+        hear("HTTP/1.1 204 No Content\r\n");
+        hear("\r\n");
+        CHECK(!foil::net::serverRestarting());
     }
     return failures;
 }

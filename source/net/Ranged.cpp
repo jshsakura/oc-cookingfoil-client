@@ -4,6 +4,7 @@
 #include "core/Log.hpp"
 #include "core/Patches.hpp"
 #include "core/Sha256.hpp"
+#include "net/Socket.hpp"
 #include "platform/Storage.hpp"
 #include <cerrno>
 #include <chrono>
@@ -78,6 +79,15 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
       take(last); // a reply without a body
     if (refused)
       return last;
+    // The server restarting (or no internet): not a try. Wait as long as it
+    // asks and go on from the same place.
+    if (linkDown() && !cancelled(cancel)) {
+      const int waitMs = std::max(2, last.retryAfter) * 1000;
+      for (int waited = 0; waited < waitMs && !cancelled(cancel); waited += WaitStepMs)
+        std::this_thread::sleep_for(std::chrono::milliseconds(WaitStepMs));
+      --tries;
+      continue;
+    }
     if (verdict == RangeReply::Reject) {
       // The server cannot continue there: once more from the start.
       logLine("ranged: " + std::to_string(last.status) + " at " + std::to_string(from) + ", starting over");

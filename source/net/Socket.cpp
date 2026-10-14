@@ -1,6 +1,9 @@
 #include "net/Socket.hpp"
 #include "core/Log.hpp"
 #include <atomic>
+#include <cstdlib>
+#include <chrono>
+#include <algorithm>
 #include <curl/curl.h>
 #include <mutex>
 #include <string>
@@ -13,11 +16,78 @@ namespace {
 std::atomic<int> window{0};
 std::atomic<bool> logged{false};
 std::atomic<uint64_t> received{0};
+// The restart heard last: its id, until when it may last, whether it is on.
+std::mutex restartLock;
+std::string restartId;
+std::chrono::steady_clock::time_point restartUntil;
+bool restarting = false;
+std::atomic<uint64_t> restarts{0};
+// A reply's header block, in the thread curl reads it on: whether it is a
+// success so far and has no restart header.
+thread_local bool replyOk = false;
+size_t onRestartHeader(char *data, size_t size, size_t count, void *) {
+  heardHeader(data, size * count);
+  return size * count;
+}
 } // namespace
+void heardHeader(const char *data, size_t bytes) {
+  std::string line(data, bytes);
+  while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
+    line.pop_back();
+  if (line.rfind("HTTP/", 0) == 0) {
+    const auto space = line.find(' ');
+    const long status = space == std::string::npos ? 0 : std::strtol(line.c_str() + space + 1, nullptr, 10);
+    replyOk = status >= 200 && status < 300;
+    return;
+  }
+  if (line.empty()) { // the block ended: a success with no restart header means it is back
+    if (replyOk) {
+      std::lock_guard<std::mutex> held(restartLock);
+      restarting = false;
+    }
+    replyOk = false;
+    return;
+  }
+  const auto colon = line.find(':');
+  if (colon == std::string::npos) return;
+  std::string key = line.substr(0, colon);
+  for (auto &c : key) c = char(std::tolower(static_cast<unsigned char>(c)));
+  if (key != "x-cookingfoil-restarting") return;
+  replyOk = false;
+  const auto value = line.substr(colon + 1);
+  const long seconds = std::clamp<long>(std::strtol(value.c_str(), nullptr, 10), 1, 120);
+  std::string id;
+  if (const auto at = value.find("id="); at != std::string::npos) {
+    id = value.substr(at + 3);
+    id = id.substr(0, id.find_first_of(" ;,\t"));
+  }
+  std::lock_guard<std::mutex> held(restartLock);
+  // Down for at most the server's estimate and a minute more: a restart
+  // that never ends does not keep a download waiting for good.
+  restartUntil = std::chrono::steady_clock::now() + std::chrono::seconds(seconds + 60);
+  if (!restarting || id != restartId) {
+    if (id != restartId) {
+      ++restarts;
+      logLine("server restarting (" + std::to_string(seconds) + " s, " + id + ")");
+    }
+    restartId = id;
+  }
+  restarting = true;
+}
+bool serverRestarting() {
+  std::lock_guard<std::mutex> held(restartLock);
+  return restarting && std::chrono::steady_clock::now() < restartUntil;
+}
+uint64_t restartSerial() { return restarts; }
+void watchRestart(void *curl) {
+  curl_easy_setopt(static_cast<CURL *>(curl), CURLOPT_HEADERFUNCTION, onRestartHeader);
+}
 void setReceiveWindow(int bytes) { window = bytes; }
 void countReceived(size_t bytes) { received.fetch_add(bytes, std::memory_order_relaxed); }
 uint64_t receivedBytes() { return received.load(std::memory_order_relaxed); }
 bool linkDown() {
+  if (serverRestarting())
+    return true;
 #ifdef __SWITCH__
   NifmInternetConnectionType type{};
   NifmInternetConnectionStatus status{};
