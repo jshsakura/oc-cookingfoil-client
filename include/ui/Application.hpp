@@ -305,6 +305,10 @@ public:
 
 private:
   void keepResumeChanges();
+  void requestRetroDetail(const std::string &id);
+  void startRetroDetail();
+  void moveRetroVariant(int step);
+  float retroVariantRows(float x, float y, float w);
   void serverRestartNotice();
   void askCancelPick(bool running);
   void shell();
@@ -1026,6 +1030,9 @@ private:
   std::vector<SortMode> popupSorts() const;
   void openViewPopup();
   retro::Game retroPick_;           // the game the confirm popup is about
+  std::vector<retro::Variant> retroVariants_; // its versions, when it has more than one
+  int retroVariant_ = 0;            // the one the cursor is on
+  std::string retroDetailWant_;     // the version to load in full next
   std::vector<retro::System> retroSystems_;
   std::vector<retro::Game> retroGames_;
   int retroSystem_ = 0, retroTotal_ = 0, retroPage_ = 0;

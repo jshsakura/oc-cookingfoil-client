@@ -54,6 +54,23 @@ System parseSystem(json_object *object, const std::string &base) {
   return s;
 }
 // Empty id or bundle URL means the entry is skipped.
+std::string region(json_object *object, const char *key) {
+  static const std::set<std::string> Regions{"kr", "jp", "us", "eu", "asia", "br", "world"};
+  const auto code = stringField(object, key);
+  return Regions.count(code) ? code : "";
+}
+Game::Edition edition(json_object *object) {
+  Game::Edition e;
+  auto *tags = field(object, "edition");
+  if (!json_object_is_type(tags, json_type_object)) return e;
+  e.korean = json_object_get_boolean(field(tags, "korean"));
+  e.source = stringField(tags, "source");
+  if (e.source != "official" && e.source != "patch") e.source.clear();
+  e.from = region(tags, "from");
+  e.version = stringField(tags, "version");
+  if (e.version.size() > 24) e.version.clear();
+  return e;
+}
 Game parseGame(json_object *object, const std::string &base) {
   Game g;
   g.id = stringField(object, "id");
@@ -63,23 +80,13 @@ Game parseGame(json_object *object, const std::string &base) {
   g.core = stringField(object, "core");
   g.original = stringField(object, "original");
   g.variant = stringField(object, "variant");
-  g.region = stringField(object, "region");
-  static const std::set<std::string> Regions{"kr", "jp", "us", "eu", "asia", "br", "world"};
-  if (!Regions.count(g.region)) g.region.clear();
-  if (auto *edition = field(object, "edition"); json_object_is_type(edition, json_type_object)) {
-    g.edition.korean = json_object_get_boolean(field(edition, "korean"));
-    g.edition.source = stringField(edition, "source");
-    if (g.edition.source != "official" && g.edition.source != "patch")
-      g.edition.source.clear();
-    g.edition.from = stringField(edition, "from");
-    if (!Regions.count(g.edition.from)) g.edition.from.clear();
-    g.edition.version = stringField(edition, "version");
-    if (g.edition.version.size() > 24) g.edition.version.clear();
-  }
+  g.region = region(object, "region");
+  g.edition = edition(object);
   g.size = positive(object, "size");
   g.addedAt = integerField(object, "addedAt");
   g.rating = int(std::clamp<int64_t>(integerField(object, "rating"), 0, 100));
   g.ratingCount = int(std::clamp<int64_t>(integerField(object, "ratingCount"), 0, 1 << 30));
+  g.variants = int(std::clamp<int64_t>(integerField(object, "variants", 1), 1, 999));
   g.iconUrl = url(object, "iconUrl", base);
   g.bundleUrl = url(object, "bundleUrl", base);
   g.forwarderUrl = url(object, "forwarderUrl", base);
@@ -148,6 +155,31 @@ Page parseGames(const std::string &json, const std::string &base) {
   page.pageSize = int(std::clamp<int64_t>(integerField(root.get(), "pageSize", 50), 1, 200));
   page.games = parseGameList(field(root.get(), "games"), base);
   return page;
+}
+Detail parseDetail(const std::string &json, const std::string &base) {
+  Detail d;
+  Error ignored;
+  auto root = parseJson(json, ignored);
+  if (!root) return d;
+  d.game = parseGame(root.get(), base);
+  auto *list = field(root.get(), "variants");
+  if (!json_object_is_type(list, json_type_array)) return d;
+  for (size_t i = 0; i < json_object_array_length(list) && d.variants.size() < 100; ++i) {
+    auto *object = json_object_array_get_idx(list, i);
+    Variant v;
+    v.id = stringField(object, "id");
+    if (v.id.empty() || v.id.size() > 64 || v.id.find_first_of("/?#&% ") != std::string::npos) continue;
+    v.name = stringField(object, "name");
+    v.variant = stringField(object, "variant");
+    v.region = region(object, "region");
+    v.edition = edition(object);
+    v.size = positive(object, "size");
+    v.representative = json_object_get_boolean(field(object, "representative"));
+    v.missing = json_object_get_boolean(field(object, "missing"));
+    if (v.name.empty()) v.name = stringField(object, "file");
+    d.variants.push_back(std::move(v));
+  }
+  return d;
 }
 std::vector<Shelf> parseHome(const std::string &json, const std::string &base) {
   std::vector<Shelf> out;

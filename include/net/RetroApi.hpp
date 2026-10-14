@@ -15,6 +15,9 @@ Parsed<std::vector<retro::System>> retroSystems(const Server &server, const Stat
 // One page of a system's games, searched, filtered and ordered by `filter`.
 Parsed<retro::Page> retroGames(const Server &server, const State &state, const std::string &system, int page,
                                const retro::Filter &filter, RetroReply &reply, const std::atomic<bool> *cancel);
+// One game in full with its other versions (/api/retro/games/:id).
+Parsed<retro::Detail> retroDetail(const Server &server, const State &state, const std::string &id, RetroReply &reply,
+                                  const std::atomic<bool> *cancel);
 // Every system with its best rated games, for the shelves.
 Parsed<std::vector<retro::Shelf>> retroHome(const Server &server, const State &state, RetroReply &reply,
                                              const std::atomic<bool> *cancel);

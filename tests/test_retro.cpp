@@ -21,6 +21,23 @@ int runRetroTests() {
     CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"kr"})").region == "kr");
     CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"mars"})").region.empty());
     CHECK(parseGameJson(serializeGame(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"eu"})"))).region == "eu");
+    // A game's detail: the game in full, then its versions; an id that is not
+    // a plain name is dropped, and missing says it would not run.
+    {
+      const auto d = parseDetail(R"({"id":"arcade-1","name":"U.N. Squadron","variants":2,"bundleUrl":"/b1",
+        "variants":[{"id":"arcade-1","name":"U.N. Squadron","variant":"USA","region":"us","size":1274531,"representative":true},
+                    {"id":"arcade-2","name":"Area 88","variant":"Japan","region":"jp","size":2561379,"edition":{"korean":true},"missing":true},
+                    {"id":"../x","name":"bad"}]})", "https://h");
+      CHECK(d.game.id == "arcade-1" && d.game.bundleUrl == "https://h/b1");
+      CHECK(d.variants.size() == 2);
+      if (d.variants.size() == 2) {
+        CHECK(d.variants[0].representative && !d.variants[0].missing && d.variants[0].region == "us");
+        CHECK(d.variants[1].id == "arcade-2" && d.variants[1].missing && d.variants[1].edition.korean);
+        CHECK(d.variants[1].size == 2561379 && d.variants[1].variant == "Japan");
+      }
+      CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","variants":3})").variants == 3);
+      CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b"})").variants == 1);
+    }
     // The edition's tags, each checked; unknown ones are dropped.
     {
       const auto g = parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","edition":{"korean":true,"source":"patch","from":"jp","version":"v1.1"}})");

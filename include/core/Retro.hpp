@@ -29,7 +29,21 @@ struct Game {
   int64_t addedAt = 0;
   int rating = 0;      // 0-100 community score; 0 when the server has none
   int ratingCount = 0; // how many people rated it
+  int variants = 1;    // versions of it the server has (a list shows one, its pick)
   bool bezel = false;
+};
+// One version of a game, as its detail lists them: picking one means its id.
+struct Variant {
+  std::string id, name, variant, region;
+  Game::Edition edition;
+  uint64_t size = 0;
+  bool representative = false; // the server's pick for the list
+  bool missing = false;        // a file it needs (a parent zip, a BIOS) is not there: it would not run
+};
+// /api/retro/games/:id: the game in full, with its versions (when it has more than one).
+struct Detail {
+  Game game;
+  std::vector<Variant> variants;
 };
 // What the system list asks the server for: search words, order, and the
 // filter popup's conditions (0 / false: not set).
@@ -76,6 +90,7 @@ std::vector<Shelf> parseHome(const std::string &json, const std::string &base = 
 // One game in the server's own shape, for 다운로드's history (다시 시도).
 std::string serializeGame(const Game &game);
 Game parseGameJson(const std::string &json);
+Detail parseDetail(const std::string &json, const std::string &base);
 // Files outside the allowed places are left out (see packPathAllowed).
 Pack parsePack(const std::string &json, const std::string &base);
 // The base pack may write retroarch/... and the RetroArch app itself.
