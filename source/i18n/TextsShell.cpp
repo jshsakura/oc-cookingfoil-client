@@ -18,7 +18,7 @@ const Translation rows[] = {
     {"Image cache", "이미지 캐시", "画像キャッシュ", "图片缓存"},
     {"The server is restarting. Downloads go on shortly.", "서버를 다시 시작하고 있습니다. 잠시 뒤 이어서 받습니다.", "サーバーを再起動しています。まもなくダウンロードを再開します。", "服务器正在重启，稍后将继续下载。"},
     {"The server is restarting. It goes on by itself.", "서버를 다시 시작하는 중입니다. 곧 이어서 받습니다.", "サーバーの再起動中です。まもなく自動で再開します。", "服务器正在重启，稍后会自动继续。"},
-    {"Saves covers and screenshots for next time", "표지와 스크린샷을 저장해 다시 받지 않습니다", "カバーとスクリーンショットを保存して再取得を省きます", "保存封面和截图，无需重复下载"},
+    {"Keeps covers and screenshots", "표지와 스크린샷을 저장해 둡니다", "カバーとスクリーンショットを保存します", "保存封面和截图"},
     {"Checking|size", "확인 중", "確認中", "正在检查"},
     {"Delete the image cache?", "이미지 캐시를 삭제하시겠습니까?", "画像キャッシュを削除しますか?", "要删除图片缓存吗?"},
     {"Games and download records stay. Pictures on screen are fetched again.", "게임과 다운로드 기록은 그대로 둡니다. 화면의 이미지는 다시 받습니다.", "ゲームとダウンロード履歴はそのまま残ります。画面の画像はもう一度取得します。", "游戏和下载记录会保留。屏幕上的图片会重新获取。"},

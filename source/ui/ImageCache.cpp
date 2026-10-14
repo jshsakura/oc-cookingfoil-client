@@ -41,7 +41,7 @@ void Application::imageCacheValue(float right, float mid) {
     const float used = std::min(1.f, float(bytes) / float(std::max<uint64_t>(room, 1)));
     paint_.rect(barX, mid - Track / 2, std::max(Track, Bar * used), Track, Butter, Track / 2);
   }
-  const auto why = tr("Saves covers and screenshots for next time");
+  const auto why = tr("Keeps covers and screenshots");
   paint_.fonts.middle(why, barX - 20 - paint_.fonts.measure(why, 17), mid, 17, Secondary);
 }
 void Application::imageCacheAction(Action a) {
