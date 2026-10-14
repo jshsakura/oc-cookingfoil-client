@@ -7,6 +7,7 @@
 #include "core/I18n.hpp"
 #include "net/Api.hpp"
 #include "net/Socket.hpp"
+#include "platform/Cores.hpp"
 #include "platform/Storage.hpp"
 #include <algorithm>
 #include <cmath>
@@ -289,6 +290,7 @@ void Installer::bytes(const std::string &content, uint64_t received,
           : 0;
 }
 void Installer::run(std::vector<Item> files, Server server, State state) {
+  const platform::OnCore off(platform::WriterCore); // the drawing core keeps the screen
   engineSink(this);
   struct Sink {
     ~Sink() { engineSink(nullptr); }

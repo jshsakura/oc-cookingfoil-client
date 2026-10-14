@@ -1,6 +1,7 @@
 #include "net/Socket.hpp"
 #include "net/Api.hpp"
 #include "net/Segments.hpp"
+#include "platform/Cores.hpp"
 #include <mutex>
 #include "core/Version.hpp"
 #include "core/Json.hpp"
@@ -237,6 +238,7 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
 Response stream(const std::string& url, const std::vector<std::string>& headers,
                 const std::function<Start(const Response&)>& start,
                 const std::function<bool(const char*, size_t)>& onData, const std::atomic<bool>* cancel) {
+    const platform::OnCore off(platform::NetworkCore); // off the drawing core
     Response result;
     if (!isHttp(url)) { result.error = tr("Check the HTTP/HTTPS address."); return result; }
     auto* curl = curl_easy_init();
