@@ -163,18 +163,28 @@ bool finishUpdate(const std::string &self, std::string &note) {
     note = "update not swapped in: the downloaded build was not whole";
     return false;
   }
+  // A ".old" is only ever the app from a swap that could not finish: put it
+  // back if the app itself is missing, never delete the last copy.
+  if (!std::filesystem::exists(self, ec) && wholeNro(old)) std::filesystem::rename(old, self, ec);
   std::filesystem::remove(old, ec);
   ec.clear();
   // The card does not rename over an existing file: the old one goes aside
   // first, and comes back if the new one cannot take its place.
   std::filesystem::rename(self, old, ec);
-  const bool hadOld = !ec;
-  ec.clear();
-  std::filesystem::rename(part, self, ec);
   if (ec) {
-    note = "update swap failed: " + ec.message();
+    note = "update swap failed: the app's file could not be set aside: " + ec.message();
+    return false;
+  }
+  std::filesystem::rename(part, self, ec);
+  if (ec || !wholeNro(self)) {
+    note = "update swap failed: " + (ec ? ec.message() : std::string("the new build did not land whole"));
     std::error_code ignored;
-    if (hadOld) std::filesystem::rename(old, self, ignored);
+    std::filesystem::remove(self, ignored);
+    ignored.clear();
+    std::filesystem::rename(old, self, ignored);
+    // The rename back refused too: a copy, so an app is there to start.
+    if (ignored) std::filesystem::copy_file(old, self, std::filesystem::copy_options::overwrite_existing, ignored);
+    if (!ignored) std::filesystem::remove(old, ignored);
     return false;
   }
   std::filesystem::remove(old, ec);

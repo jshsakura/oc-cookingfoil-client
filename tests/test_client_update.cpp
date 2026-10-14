@@ -47,6 +47,17 @@ int runClientUpdateTests() {
       reason.clear();
       CHECK(!foil::platform::finishUpdate(target, reason) && reason.empty());
       CHECK(foil::readFile(target) == nro("new build"));
+      // A swap that stopped half way left the app only as ".old": it comes
+      // back before anything else, and the build waiting goes in after it.
+      std::filesystem::rename(target, target + ".old");
+      foil::atomicWrite(target + ".new", nro("newer build"), ignored);
+      reason.clear();
+      CHECK(foil::platform::finishUpdate(target, reason) && foil::readFile(target) == nro("newer build"));
+      CHECK(!std::filesystem::exists(target + ".old"));
+      std::filesystem::rename(target, target + ".old");
+      reason.clear();
+      CHECK(!foil::platform::finishUpdate(target, reason) && foil::readFile(target) == nro("newer build"));
+      foil::atomicWrite(target, nro("new build"), ignored);
       // A download cut off (shorter than its header says, or not an NRO at
       // all, or an earlier version's half with its resume note) never takes
       // the app's place; it goes, and the app stays.
