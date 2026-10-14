@@ -67,7 +67,7 @@ private:
   double count(double seconds) const { return std::max(1.0, anchor_ - (seconds - at_)); }
   double anchor_ = -1, at_ = -1, estimatedAt_ = -1, stalled_ = -1;
 };
-// "약 42초 남음", "약 25분 남음", "약 1시간 25분 남음".
+// "1분 미만 남음", "약 25분 남음", "약 1시간 25분 남음" (minutes rounded up).
 std::string timeLeftText(double seconds);
 class Installer {
 public:

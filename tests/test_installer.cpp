@@ -122,24 +122,25 @@ int runInstallerTests() {
     foil::install::TimeLeft left;
     CHECK(left.update(0, 600 * MiB, 0) < 0); // no speed yet
     const double first = left.update(1, 600 * MiB, 10);
-    CHECK(first > 59 && first < 61);
+    CHECK(first > 66 && first < 67.5); // 600 MB at 10 MB/s, a tenth slower
     const double counted = left.update(8, 580 * MiB, 50); // not worked out again yet: counted down
     CHECK(counted > first - 7.5 && counted < first - 6.5);
-    const double next = left.update(11, 550 * MiB, 5); // far off (110 against 50): replaced
-    CHECK(next > 109 && next < 111);
+    const double next = left.update(11, 550 * MiB, 5); // far off (122 against 57): replaced
+    CHECK(next > 121 && next < 123);
     CHECK(left.update(12, 545 * MiB, 5) > next - 1.5 && left.update(12, 545 * MiB, 5) < next - 0.5);
-    const double kept = left.update(21, 515 * MiB, 5); // 103 against 100: the count stays
-    CHECK(kept > 99 && kept < 101);
+    const double kept = left.update(21, 515 * MiB, 5); // 114 against 112: the count stays
+    CHECK(kept > next - 10.5 && kept < next - 9.5);
     // A stall holds it; fifteen seconds of nothing make it unknown.
     const double held = left.update(23, 515 * MiB, 0);
-    CHECK(held > 97 && held < 99 && left.update(30, 515 * MiB, 0) == held);
+    CHECK(held > kept - 2.5 && held < kept - 1.5 && left.update(30, 515 * MiB, 0) == held);
     CHECK(left.update(38, 515 * MiB, 0) < 0);
     CHECK(left.update(40, 550 * MiB, 10) > 0);
     CHECK(foil::install::timeLeftText(-1) == "남은 시간 계산 중");
-    CHECK(foil::install::timeLeftText(42) == "약 42초 남음");
-    CHECK(foil::install::timeLeftText(3) == "약 3초 남음");
-    CHECK(foil::install::timeLeftText(200) == "약 3분 남음");
+    CHECK(foil::install::timeLeftText(42) == "1분 미만 남음");
+    CHECK(foil::install::timeLeftText(3) == "1분 미만 남음");
+    CHECK(foil::install::timeLeftText(200) == "약 4분 남음");
     CHECK(foil::install::timeLeftText(1500) == "약 25분 남음");
+    CHECK(foil::install::timeLeftText(1501) == "약 26분 남음");
     CHECK(foil::install::timeLeftText(5100) == "약 1시간 25분 남음");
   }
   {

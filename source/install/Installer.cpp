@@ -224,7 +224,8 @@ double TimeLeft::update(double seconds, uint64_t left, double speed) {
   }
   stalled_ = -1;
   if (estimatedAt_ < 0 || seconds - estimatedAt_ >= Every) {
-    const double estimate = double(left) / (speed * 1024 * 1024);
+    // On the safe side: a tenth slower than measured, so it rather ends early.
+    const double estimate = double(left) / (speed * 0.9 * 1024 * 1024);
     const double now = anchor_ < 0 ? estimate : count(seconds);
     anchor_ = std::abs(estimate - now) > std::max(5.0, estimate * 0.15) ? estimate : now;
     at_ = estimatedAt_ = seconds;
@@ -235,9 +236,10 @@ std::string timeLeftText(double seconds) {
   if (seconds < 0)
     return tr("Estimating time left");
   const auto s = std::max<int64_t>(1, std::llround(seconds));
+  // Minutes rounded up, never seconds: a calm number that rather ends early.
   if (s < 60)
-    return trf("About {0} s left", {std::to_string(s)});
-  const auto minutes = (s + 30) / 60;
+    return tr("Less than a minute left");
+  const auto minutes = (s + 59) / 60;
   if (minutes < 60)
     return trf("About {0} min left", {std::to_string(minutes)});
   return trf("About {0} h {1} min left", {std::to_string(minutes / 60), std::to_string(minutes % 60)});
