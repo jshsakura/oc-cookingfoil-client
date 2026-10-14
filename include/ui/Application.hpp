@@ -34,7 +34,7 @@ constexpr int PopupFilterColumns = 2; // filter grid width in the view popup
 constexpr SortMode SortOrders[] = {SortMode::Recent,  SortMode::Popular, SortMode::Score,
                                    SortMode::Release, SortMode::Updated, SortMode::Name,
                                    SortMode::Largest, SortMode::Default};
-enum class Screen { Home, Library, Detail, Downloads, Updates, Settings, Installed, Patches, Retro, Saves, Homebrew, RetroDetail };
+enum class Screen { Home, Library, Detail, Downloads, Updates, Settings, Installed, Patches, Retro, Saves, Homebrew, RetroDetail, RetroArch };
 // The menu, top to bottom; 설정 stays last (menuOpen() relies on it).
 // Browsing first (the shop, retro games), then this console's own (내 게임
 // with its updates and DLC as tabs, saves, patches), then downloads and
@@ -496,6 +496,14 @@ private:
   std::string shelfWant_;                  // asked while the list worker was busy
   // A retro game's page (RetroDetail.cpp), as a shop game has one.
   void openRetroDetail(const retro::Game &game);
+  // RetroArch's own page (RetroArchPage.cpp): its state, and the button that
+  // gets it or checks it for new files.
+  void openRetroArchPage();
+  void retroArchPage();
+  void retroArchPageAction(Action action);
+  int retroArchQueuedAt() const;
+  int retroArchPart_ = 1;      // 0 the 전체 다시 받기 row, 1 the button
+  size_t retroArchFiles_ = 0;  // files the base pack record lists
   void retroDetail();
   void retroDetailPanel();
   void retroDetailAction(Action action);
@@ -507,7 +515,8 @@ private:
   int retroOnTheWay(const retro::Game &game, double &percent) const;
   // A page the menu gives way to: a game's, shop or retro.
   bool fullPage() const {
-    return screen_ == Screen::Detail || screen_ == Screen::RetroDetail || (screen_ == Screen::Homebrew && homebrewPageOpen());
+    return screen_ == Screen::Detail || screen_ == Screen::RetroDetail || screen_ == Screen::RetroArch ||
+           (screen_ == Screen::Homebrew && homebrewPageOpen());
   }
   // An app's page in 홈브류 (HomebrewDetail.cpp): open while its card is, and
   // behind the questions it asks (delete it, delete its shortcut).
@@ -1156,6 +1165,10 @@ private:
   // 다운로드's history rows open what they were: the game's page, the app,
   // the retro game; or say the server has it no longer.
   void openHistoryRow(const history::Entry &entry);
+  // An app's page by its id; false when the list does not have it. Before
+  // the list has come, it opens once it does.
+  bool openHomebrewPage(const std::string &id);
+  std::string homebrewOpenId_;
   // The rest of a pick leaves the queue (its rows read as cancelled).
   void dropGroup(int group, const std::string &why);
   std::deque<QueuedInstall> installQueue_;

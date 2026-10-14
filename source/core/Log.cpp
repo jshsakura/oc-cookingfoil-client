@@ -1,5 +1,7 @@
 #include "core/Json.hpp"
 #include "core/Log.hpp"
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
@@ -45,6 +47,31 @@ void openLog(const std::string &path) {
   makeDirectories(std::filesystem::path(std::filesystem::path(path).parent_path()).string());
   logPath = path;
 }
+namespace {
+bool tokenChar(char c) {
+  return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.' || c == '+' || c == '/' || c == '=';
+}
+// What follows a credential's name, and anything shaped like a signed token
+// (eyJ...), reads as "***": a bug report never carries a key or a password.
+std::string withoutSecrets(std::string line) {
+  for (const char *lead : {"Bearer ", "Basic ", "X-Access-Key: ", "access_token", "refresh_token", "password", "accessKey"}) {
+    for (size_t at = line.find(lead); at != std::string::npos; at = line.find(lead, at)) {
+      size_t from = at + std::char_traits<char>::length(lead);
+      while (from < line.size() && (line[from] == '"' || line[from] == ':' || line[from] == '=' || line[from] == ' ')) ++from;
+      size_t to = from;
+      while (to < line.size() && tokenChar(line[to])) ++to;
+      if (to > from) line.replace(from, to - from, "***");
+      at = from;
+    }
+  }
+  for (size_t at = line.find("eyJ"); at != std::string::npos; at = line.find("eyJ", at + 3)) {
+    size_t to = at;
+    while (to < line.size() && tokenChar(line[to])) ++to;
+    if (std::count(line.begin() + long(at), line.begin() + long(to), '.') >= 2) line.replace(at, to - at, "***");
+  }
+  return line;
+}
+} // namespace
 std::string withoutAddresses(const std::string &line) {
   std::string out;
   out.reserve(line.size());
@@ -71,7 +98,7 @@ std::string withoutAddresses(const std::string &line) {
   // curl names the host it could not reach.
   if (const auto host = out.find("resolve host: "); host != std::string::npos)
     out = out.substr(0, host + 14) + "(server)";
-  return out;
+  return withoutSecrets(out);
 }
 void logLine(const std::string &raw) {
   const auto line = withoutAddresses(raw);

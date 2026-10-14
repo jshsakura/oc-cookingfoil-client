@@ -15,7 +15,12 @@ struct Response {
     std::string contentRange; // a 206's Content-Range header
     uint64_t contentLength = 0; // 0 when absent
 };
+// The server's keys go to the server only; anything else (a picture on
+// another host) gets no credentials at all.
 std::vector<std::string> authHeaders(const Server& server, const State& state, const std::string& url);
+// A file download: as authHeaders, and on the server's download host (https)
+// its download token too. Only downloads take it, so no other host sees it.
+std::vector<std::string> downloadHeaders(const Server& server, const State& state, const std::string& url);
 bool internetConnected();
 // The console's link: -1 offline, else signal bars 0-3 (wired reads as 3).
 int signalStrength();

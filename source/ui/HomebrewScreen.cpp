@@ -6,6 +6,7 @@
 #include "platform/Shortcut.hpp"
 #include <algorithm>
 #include <filesystem>
+#include <utility>
 namespace foil::ui {
 namespace {
 constexpr const char *LedgerPath = "/switch/cookingfoil/homebrew.json";
@@ -29,6 +30,8 @@ void Application::loadHomebrew() {
     homebrewFinish_ = [this, apps = std::move(apps), unchanged, error, etag]() mutable {
       homebrewLoaded_ = true;
       homebrewError_ = error;
+      // A row in 다운로드 asked for an app's page before the list was here.
+      const auto wanted = std::exchange(homebrewOpenId_, std::string());
       if (error) return;
       homebrewEtag_ = etag;
       if (!unchanged) {
@@ -37,6 +40,10 @@ void Application::loadHomebrew() {
         matchHomebrewCard();
       }
       if (screen_ == Screen::Homebrew && sidebar_ && autoSidebar_ && hasFocusable()) sidebar_ = autoSidebar_ = false;
+      if (!wanted.empty() && screen_ == Screen::Homebrew && !openHomebrewPage(wanted)) {
+        alertTitle_.clear();
+        alert_ = tr("The file no longer exists on the server.");
+      }
     };
     homebrewDone_ = true;
   });

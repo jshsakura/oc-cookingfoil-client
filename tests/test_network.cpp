@@ -266,9 +266,13 @@ int runNetworkTests() {
         const auto has = [](const std::vector<std::string> &headers, const std::string &text) {
             return std::any_of(headers.begin(), headers.end(), [&](const std::string &h) { return h.find(text) != std::string::npos; });
         };
-        const auto dl = foil::net::authHeaders(shop, state, "https://dl.example:38443/games/x.nsz");
+        const auto dl = foil::net::downloadHeaders(shop, state, "https://dl.example:38443/games/x.nsz");
         CHECK(has(dl, "Authorization: Bearer abc.def.ghi") && !has(dl, "Basic") && !has(dl, "X-Device-Key"));
-        CHECK(!has(foil::net::authHeaders(shop, state, "http://dl.example/games/x.nsz"), "Bearer"));
+        CHECK(!has(foil::net::downloadHeaders(shop, state, "http://dl.example/games/x.nsz"), "Bearer"));
+        // A picture on another host gets nothing: not the token, not the keys.
+        const auto picture = foil::net::authHeaders(shop, state, "https://images.example/icon.jpg");
+        CHECK(!has(picture, "Authorization") && !has(picture, "X-Device-Key") && !has(picture, "X-Access-Key"));
+        CHECK(!has(foil::net::downloadHeaders(shop, state, "https://shop.example/api/x"), "Bearer"));
         const auto own = foil::net::authHeaders(shop, state, "https://shop.example/api/shop/sections");
         CHECK(has(own, "X-CookingFoil-Features: direct-token") && has(own, "Basic") && !has(own, "Bearer"));
         hear("HTTP/1.1 401 Unauthorized\r\n");

@@ -82,7 +82,7 @@ bool fetchTar(const Server &server, const State &state, const std::string &url, 
               const std::function<bool(const std::string &)> &allow,
               const std::function<bool(const std::string &)> &skip, bool game,
               std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel) {
-  const auto fetch = rangedTar(url, authHeaders(server, state, url), 0, "",
+  const auto fetch = rangedTar(url, downloadHeaders(server, state, url), 0, "",
                                [&](uint64_t) {
                                  auto writer = std::make_unique<TarWriter>(sd, allow);
                                  if (skip) writer->skip(skip);
@@ -123,7 +123,7 @@ bool retroFile(const Server &server, const State &state, const retro::PackFile &
   wanted.url = file.url;
   wanted.tag = file.sha256;
   wanted.size = file.size;
-  const auto got = fetchPart(file.url, authHeaders(server, state, file.url), part, wanted, false, received, cancel);
+  const auto got = fetchPart(file.url, downloadHeaders(server, state, file.url), part, wanted, false, received, cancel);
   if (status) *status = got.response.status;
   const auto fail = [&](const std::string &message) {
     if (!keepPart(got)) dropPart(part);

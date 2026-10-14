@@ -313,7 +313,7 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
       for (int attempt = 1;; ++attempt) {
         const auto sent = net::downloadToken();
         try {
-          nativeInstall(files[i], target, net::authHeaders(server, state, files[i].url));
+          nativeInstall(files[i], target, net::downloadHeaders(server, state, files[i].url));
           break;
         } catch (const std::exception &) {
           // The download token ran out: a fresh one, and the same file goes

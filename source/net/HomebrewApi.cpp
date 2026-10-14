@@ -60,7 +60,7 @@ bool fetchFile(const Server &server, const State &state, const std::string &url,
   wanted.url = url;
   wanted.tag = sha256;
   wanted.size = size;
-  const auto got = fetchPart(url, authHeaders(server, state, url), part, wanted, true, received, cancel);
+  const auto got = fetchPart(url, downloadHeaders(server, state, url), part, wanted, true, received, cancel);
   const auto fail = [&](const std::string &message) {
     if (!keepPart(got)) dropPart(part);
     error.message = message;
@@ -119,7 +119,7 @@ bool fetchBundle(const Server &server, const State &state, const homebrew::App &
   const auto kept = parsePartInfo(readFile(record));
   const uint64_t from = samePart(kept, wanted) ? kept.offset : 0;
   if (from) logLine("homebrew " + app.id + " resumes at " + std::to_string(from >> 20) + " MB");
-  const auto fetch = rangedTar(app.bundleUrl, authHeaders(server, state, app.bundleUrl), from, from ? kept.etag : "",
+  const auto fetch = rangedTar(app.bundleUrl, downloadHeaders(server, state, app.bundleUrl), from, from ? kept.etag : "",
       [&](uint64_t) {
         auto writer = std::make_unique<TarWriter>(sd, [&listed](const std::string &path) { return listed.count(path) > 0; });
         // Files already on the card as listed are read past, not written again.
@@ -169,7 +169,7 @@ bool fetchArchive(const Server &server, const State &state, const homebrew::App 
   unusable = false;
   retryAfter = 0;
   const auto &zip = app.archive;
-  const auto headers = authHeaders(server, state, zip.url);
+  const auto headers = downloadHeaders(server, state, zip.url);
   const auto busy = [&](const Response &reply) {
     if (reply.status != 503) return false;
     retryAfter = reply.retryAfter > 0 ? reply.retryAfter : 5;

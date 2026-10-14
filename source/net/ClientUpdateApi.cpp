@@ -48,7 +48,7 @@ bool installClient(const Server &server, const State &state, const update::Relea
   wanted.url = release.url;
   wanted.tag = release.sha256;
   wanted.size = release.size;
-  const auto got = fetchPart(release.url, authHeaders(server, state, release.url), part, wanted, true, received, cancel);
+  const auto got = fetchPart(release.url, downloadHeaders(server, state, release.url), part, wanted, true, received, cancel);
   const auto fail = [&](const std::string &message) {
     if (!keepPart(got)) dropPart(part);
     error.message = message;

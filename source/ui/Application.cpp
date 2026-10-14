@@ -449,6 +449,7 @@ bool Application::hasFocusable() const {
   case Screen::Settings:
   case Screen::Detail:
   case Screen::RetroDetail:
+  case Screen::RetroArch:
     return true;
   }
   return true;
@@ -1107,6 +1108,10 @@ void Application::action(Action a) {
     retroDetailAction(a);
     return;
   }
+  if (screen_ == Screen::RetroArch && a != Action::Reload) {
+    retroArchPageAction(a);
+    return;
+  }
   // 진행 중: the card, then the queue, picked with up and down.
   if (screen_ == Screen::Downloads && downloadsTab_ == 0 && !sidebar_ &&
       (a == Action::Up || a == Action::Down || a == Action::Accept || a == Action::Queue || a == Action::Search)) {
@@ -1699,6 +1704,8 @@ void Application::render() {
     detail();
   else if (screen_ == Screen::RetroDetail)
     retroDetail();
+  else if (screen_ == Screen::RetroArch)
+    retroArchPage();
   else if (screen_ == Screen::Downloads)
     downloads();
   else if (screen_ == Screen::Settings)
@@ -1753,6 +1760,13 @@ void Application::render() {
       if (!detail_.screenshots.empty()) hints.insert(hints.end() - 1, {"ZR", tr("Photos")});
       footer(hints);
     }
+  }
+  else if (screen_ == Screen::RetroArch) {
+    const bool onTheWay = retroBusy_ == "pack" || retroArchQueuedAt() >= 0;
+    const bool full = retroArchPart_ == 0 && retroArchPresent();
+    footer({{"A", onTheWay ? tr("Cancel download") : full ? tr("Get all again")
+                  : retroArchPresent() ? tr("Check for updates|retroarch") : tr("Install RetroArch")},
+            {"B", tr("Back")}});
   }
   else if (screen_ == Screen::Downloads) {
     using Hints = std::vector<std::pair<std::string, std::string>>;

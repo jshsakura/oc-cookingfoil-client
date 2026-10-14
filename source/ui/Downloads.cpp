@@ -516,42 +516,8 @@ void Application::openHistoryRow(const history::Entry &entry) {
   };
   const auto openApp = [&](const std::string &payload) {
     const auto apps = homebrew::parse("{\"homebrew\":[" + payload + "]}", "");
-    if (apps.empty()) {
+    if (apps.empty() || !openHomebrewPage(apps.front().id))
       gone();
-      return;
-    }
-    if (!homebrewLoaded_) { // the list comes when the screen shows
-      screen(Screen::Homebrew);
-      sidebar_ = false;
-      return;
-    }
-    const auto found = std::find_if(homebrew_.begin(), homebrew_.end(),
-                                    [&](const homebrew::App &app) { return app.id == apps.front().id; });
-    if (found == homebrew_.end()) {
-      gone();
-      return;
-    }
-    screen(Screen::Homebrew);
-    sidebar_ = false;
-    homebrewQuery_.clear();
-    // The tab that lists it: 설치됨 when it is on the card, else its kind's.
-    const int index = int(found - homebrew_.begin());
-    for (const int tab : {0, found->kind == homebrew::Kind::Port ? 2 : 1}) {
-      homebrewTab_ = tab;
-      const auto rows = homebrewRows();
-      const auto at = std::find(rows.begin(), rows.end(), index);
-      if (at == rows.end())
-        continue;
-      selected_ = int(at - rows.begin());
-      homebrewReturn_ = Screen::Downloads; // B goes back there
-      descriptionScroll_ = 0;
-      descriptionFocus_ = false;
-      homebrewAsk_ = true;
-      homebrewAskRow_ = homebrewStatus(*found) == homebrew::Status::Installed ? 0 : -1;
-      homebrewExtras_ = 0;
-      homebrewSaveAsk_ = false;
-      return;
-    }
   };
   if (entry.kind.empty()) {
     if (!openGame(history::catalogId(entry)))
@@ -590,8 +556,44 @@ void Application::openHistoryRow(const history::Entry &entry) {
     sidebar_ = false;
     return;
   }
-  // RetroArch: the retro screen, where Y gets it again.
-  screen(Screen::Retro);
   sidebar_ = false;
+  openRetroArchPage();
+}
+bool Application::openHomebrewPage(const std::string &id) {
+  if (!homebrewLoaded_) {
+    // The list comes when the screen shows; the page opens then (pollHomebrew).
+    homebrewOpenId_ = id;
+    screen(Screen::Homebrew);
+    sidebar_ = false;
+    return true;
+  }
+  homebrewOpenId_.clear();
+  const auto found = std::find_if(homebrew_.begin(), homebrew_.end(), [&](const homebrew::App &app) { return app.id == id; });
+  if (found == homebrew_.end())
+    return false;
+  if (screen_ != Screen::Homebrew)
+    screen(Screen::Homebrew);
+  sidebar_ = false;
+  homebrewQuery_.clear();
+  // The tab that lists it: 설치됨 when it is on the card, else its kind's.
+  const int index = int(found - homebrew_.begin());
+  for (const int tab : {0, found->kind == homebrew::Kind::Port ? 2 : 1}) {
+    homebrewTab_ = tab;
+    const auto rows = homebrewRows();
+    const auto at = std::find(rows.begin(), rows.end(), index);
+    if (at == rows.end())
+      continue;
+    selected_ = int(at - rows.begin());
+    homebrewReturn_ = Screen::Downloads; // B goes back there
+    descriptionScroll_ = 0;
+    descriptionFocus_ = false;
+    unglide();
+    homebrewAsk_ = true;
+    homebrewAskRow_ = homebrewStatus(*found) == homebrew::Status::Installed ? 0 : -1;
+    homebrewExtras_ = 0;
+    homebrewSaveAsk_ = false;
+    return true;
+  }
+  return false;
 }
 } // namespace foil::ui

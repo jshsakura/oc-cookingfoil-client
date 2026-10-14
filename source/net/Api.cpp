@@ -79,13 +79,7 @@ std::string titleId(json_object* obj, const char* key) {
 }
 std::vector<std::string> authHeaders(const Server& server, const State& state, const std::string& url) {
     std::vector<std::string> headers{"Version: " COOKINGFOIL_VERSION};
-    if (originOf(url) != originOf(server.url)) {
-        // The server's download host: its download token only, over https;
-        // the server's own keys never go anywhere but the server.
-        if (const auto token = downloadToken(); !token.empty() && url.rfind("https://", 0) == 0)
-            headers.push_back("Authorization: Bearer " + token);
-        return headers;
-    }
+    if (originOf(url) != originOf(server.url)) return headers;
     // What this client can do, so the server gives it what fits (download
     // links that take the token, not the tunnel's).
     headers.push_back("X-CookingFoil-Features: direct-token");
@@ -96,6 +90,12 @@ std::vector<std::string> authHeaders(const Server& server, const State& state, c
     if (key != state.accessKeys.end() && !key->second.empty()) headers.push_back("X-Access-Key: " + key->second);
     if (!server.cfClientId.empty()) headers.push_back("CF-Access-Client-Id: " + server.cfClientId);
     if (!server.cfClientSecret.empty()) headers.push_back("CF-Access-Client-Secret: " + server.cfClientSecret);
+    return headers;
+}
+std::vector<std::string> downloadHeaders(const Server& server, const State& state, const std::string& url) {
+    auto headers = authHeaders(server, state, url);
+    if (originOf(url) != originOf(server.url) && url.rfind("https://", 0) == 0)
+        if (const auto token = downloadToken(); !token.empty()) headers.push_back("Authorization: Bearer " + token);
     return headers;
 }
 // Compared by value (error_.message == offlineMessage()), so both sides go through tr().
@@ -1001,7 +1001,7 @@ bool Session::downloadPatch(const UserPatch& patch, const std::string& dir, std:
     std::error_code ec;
     if (!from) std::filesystem::remove_all(dir, ec);
     else logLine("patch " + patch.id + " resumes at " + std::to_string(from));
-    const auto fetch = rangedTar(url, authHeaders(server_, state_, url), from, from ? kept.etag : "",
+    const auto fetch = rangedTar(url, downloadHeaders(server_, state_, url), from, from ? kept.etag : "",
         [&](uint64_t at) {
             std::error_code ignored;
             if (!at) std::filesystem::remove_all(dir, ignored);

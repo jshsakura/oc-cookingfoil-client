@@ -28,7 +28,7 @@ bool downloadShopSave(const Server &server, const State &state, const shopsaves:
   const auto allow = [&save](const std::string &path) {
     return save.homebrewApp.empty() ? shopsaves::pathAllowed(path) : shopsaves::homebrewPathAllowed(save, path);
   };
-  const auto fetch = rangedTar(save.url, authHeaders(server, state, save.url), 0, "",
+  const auto fetch = rangedTar(save.url, downloadHeaders(server, state, save.url), 0, "",
                                [&](uint64_t at) {
                                  std::error_code ec;
                                  if (!at) {

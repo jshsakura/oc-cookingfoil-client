@@ -106,6 +106,12 @@ int runSessionTests() {
         CHECK(withoutAddresses("connect to https://shop.example.com failed") == "connect to / failed");
         CHECK(withoutAddresses("Could not resolve host: dl.example.kr") == "Could not resolve host: (server)");
         CHECK(withoutAddresses("httpd ok, nothing to hide") == "httpd ok, nothing to hide");
+        // Credentials never reach a bug report.
+        CHECK(withoutAddresses("sent Authorization: Bearer abc.DEF-1 then") == "sent Authorization: Bearer *** then");
+        CHECK(withoutAddresses("{\"accessKey\":\"0123abcd\",\"x\":1}") == "{\"accessKey\":\"***\",\"x\":1}");
+        CHECK(withoutAddresses("token eyJhbGc.eyJzdWI.sig_1 ok") == "token *** ok");
+        CHECK(withoutAddresses("password=hunter2 & more") == "password=*** & more");
+        CHECK(withoutAddresses("hash 3f2a ok, eyJust a word") == "hash 3f2a ok, eyJust a word");
     }
     return failures;
 }
