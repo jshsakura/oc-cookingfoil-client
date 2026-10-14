@@ -287,9 +287,12 @@ void Application::dialogs() {
                       body.x + 32, body.y + 24, 19, Secondary, false, body.w - 64);
   } else if (confirmCancel_) {
     // B keeps installing; A cancels, once the popup has settled.
-    const auto body = modal(700, 24 + 30 + 16,
-                            confirmExit_ ? tr("Cancel the install and exit?") : tr("Cancel the install?"),
-                            tr("Keep installing"), "", tr("Cancel install"), 25);
+    // Leaving stops the download where it is (it resumes next time), so it
+    // is put as stopping, not cancelling.
+    const auto body = confirmExit_ ? modal(700, 24 + 30 + 16, tr("Stop the download and exit?"), tr("Keep downloading"),
+                                           "", tr("Stop and exit"), 25)
+                                   : modal(700, 24 + 30 + 16, tr("Cancel the install?"), tr("Keep installing"), "",
+                                           tr("Cancel install"), 25);
     paint_.fonts.text(tr("What came down so far can be picked up next time."), body.x + 32, body.y + 24, 19, Secondary, false,
                       body.w - 64);
   } else if (screen_ == Screen::Saves && dropboxModal()) {
