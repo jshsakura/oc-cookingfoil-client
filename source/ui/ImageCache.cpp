@@ -24,8 +24,8 @@ void Application::measureImageCache(bool clear) {
     cacheBusy_ = false;
   });
 }
-// The value side of the row: a bar of the room it may take, filled as far as
-// it is, and the size in a pill ("42 MB / 128 MB").
+// The value side of the row: what the cache is for, a bar of the room it may
+// take filled as far as it is, and the size in a pill ("42 MB / 128 MB").
 void Application::imageCacheValue(float right, float mid) {
   const int64_t bytes = cacheBytes_;
   const uint64_t room = imageCacheLimit(sdFree_);
@@ -41,6 +41,8 @@ void Application::imageCacheValue(float right, float mid) {
     const float used = std::min(1.f, float(bytes) / float(std::max<uint64_t>(room, 1)));
     paint_.rect(barX, mid - Track / 2, std::max(Track, Bar * used), Track, Butter, Track / 2);
   }
+  const auto why = tr("Saves covers and screenshots for next time");
+  paint_.fonts.middle(why, barX - 20 - paint_.fonts.measure(why, 17), mid, 17, Secondary);
 }
 void Application::imageCacheAction(Action a) {
   if (a == Action::Back) cacheClearAsk_ = false;

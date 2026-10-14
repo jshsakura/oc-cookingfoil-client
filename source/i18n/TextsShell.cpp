@@ -16,6 +16,7 @@ const Translation rows[] = {
     {"Finds and deletes interrupted downloads and unused install files", "중단된 다운로드와 쓰지 않는 설치 파일을 찾아 삭제합니다", "中断したダウンロードや使われていないインストールファイルを探して削除します", "查找并删除中断的下载和未使用的安装文件"},
     {"Scanning", "찾는 중", "検索中", "查找中"},
     {"Image cache", "이미지 캐시", "画像キャッシュ", "图片缓存"},
+    {"Saves covers and screenshots for next time", "표지와 스크린샷을 저장해 다시 받지 않습니다", "カバーとスクリーンショットを保存して再取得を省きます", "保存封面和截图，无需重复下载"},
     {"Checking|size", "확인 중", "確認中", "正在检查"},
     {"Delete the image cache?", "이미지 캐시를 삭제하시겠습니까?", "画像キャッシュを削除しますか?", "要删除图片缓存吗?"},
     {"Games and download records stay. Pictures on screen are fetched again.", "게임과 다운로드 기록은 그대로 둡니다. 화면의 이미지는 다시 받습니다.", "ゲームとダウンロード履歴はそのまま残ります。画面の画像はもう一度取得します。", "游戏和下载记录会保留。屏幕上的图片会重新获取。"},
