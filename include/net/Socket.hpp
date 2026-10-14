@@ -20,4 +20,7 @@ void countReceived(size_t bytes);
 // download waits that out instead of giving up; false when it cannot tell.
 bool linkDown();
 uint64_t receivedBytes();
+// Puts a curl handle on the app's one pool of open connections, TLS
+// sessions and DNS answers, so a request reuses a connection already warm.
+void shareConnections(void *curl);
 } // namespace foil::net

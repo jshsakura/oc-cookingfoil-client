@@ -321,17 +321,27 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
       logLine("download resumes at " + std::to_string(foil::net::SegmentPlan(options.resume).received() >> 20) +
               " MB: " + content);
     }
-  // Where it stands, every few seconds, once the bytes are on the card.
+  // Where it stands, every 10 s at most, once the bytes are on the card: each
+  // save rewrites the database file, so not more often than that. The last
+  // one heard is saved too when the download stops short.
   uint64_t savedTick = 0;
+  Installer::ResumePoint latest;
+  bool unsaved = false;
+  const auto save = [&] {
+    if (flush)
+      flush();
+    sink->keepResumePoint(key, latest);
+    savedTick = svcGetSystemTick();
+    unsaved = false;
+  };
   if (sink)
     options.checkpoint = [&](const std::string &etag, uint64_t total, const std::string &plan) {
-      const uint64_t now = svcGetSystemTick();
-      if (savedTick && now - savedTick < 5ull * 19200000)
-        return;
-      savedTick = now;
-      if (flush)
-        flush();
-      sink->keepResumePoint(key, {current.url, etag, total, plan});
+      if (latest.etag == etag && latest.total == total && latest.plan == plan)
+        return; // nothing moved
+      latest = {current.url, etag, total, plan};
+      unsaved = true;
+      if (!savedTick || svcGetSystemTick() - savedTick >= 10ull * 19200000)
+        save();
     };
   const auto result = foil::net::segmentedFetch(
       current.url, [&](uint64_t) { return prepare(); },
@@ -344,6 +354,8 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
   }
   if (!result.ok) {
     // The point stays: the next try goes on from it.
+    if (sink && unsaved)
+      save();
     logLine("segmented download failed: " + result.error + " status=" + std::to_string(result.status));
     return Placed::Failed;
   }

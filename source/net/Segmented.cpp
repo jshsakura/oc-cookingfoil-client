@@ -334,6 +334,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       curl_easy_setopt(curl, CURLOPT_SOCKOPTFUNCTION, &tuneSocket);
       curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
       curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+      shareConnections(curl); // the last file's connections, still warm
       curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
       curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
       curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "identity");
