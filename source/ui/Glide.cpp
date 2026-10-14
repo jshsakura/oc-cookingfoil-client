@@ -145,10 +145,16 @@ void Application::glideStep() {
 }
 void Application::stick(float amount, float seconds) {
   constexpr float FullSpeed = 1800; // px/s at full tilt; gentle near the middle
+  // The largest list that scrolls; on a page that fits, the page itself,
+  // which only stretches and springs back, as under a finger.
   const GlideArea *target = nullptr;
-  for (const auto &a : glideAreas_)
-    if (!a.horizontal && a.max > 0 && (!target || a.area.w * a.area.h > target->area.w * target->area.h))
-      target = &a;
+  for (const bool scrolls : {true, false}) {
+    for (const auto &a : glideAreas_)
+      if (!a.horizontal && (a.max > 0) == scrolls &&
+          (!target || a.area.w * a.area.h > target->area.w * target->area.h))
+        target = &a;
+    if (target) break;
+  }
   if (!target)
     return;
   if (!(glide_.active && glide_.id == target->id)) {
@@ -157,7 +163,8 @@ void Application::stick(float amount, float seconds) {
     glide_ = {target->id, target->shown, 0, target->max, target->unit, true, false, false, SDL_GetTicks(), 0, false, false, 0};
   }
   const float speed = amount * std::abs(amount) * FullSpeed / glide_.unit;
-  glide_.pos = std::clamp(glide_.pos + speed * seconds, 0.f, glide_.max);
+  // Past an end it stretches, less the further it goes; let go, it springs back (glideStep).
+  glide_.pos = glideFollow(speed * seconds);
   glide_.velocity = 0;
   glide_.at = SDL_GetTicks();
 }

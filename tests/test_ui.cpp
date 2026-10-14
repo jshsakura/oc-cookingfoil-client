@@ -170,6 +170,12 @@ int runUiTests(SDL_Renderer *renderer) {
     app.stick(1, 0.2f);
     CHECK(app.gliding() && app.glidePos() > 0);
     CHECK(app.selectedName() == cursor);
+    // Pushed past the top it stretches a little, as under a finger, and
+    // springs back once the stick is let go.
+    app.stick(-1, 3.0f);
+    CHECK(app.glidePos() < 0 && app.glidePos() * 240 >= -90.5f);
+    for (int i = 0; i < 80; ++i) { SDL_Delay(5); app.render(); }
+    CHECK(app.glidePos() == 0);
     app.action(foil::ui::Action::Left);
     CHECK(!app.gliding());
     // Nothing glides where nothing scrolls: a drag there moves no cursor.
