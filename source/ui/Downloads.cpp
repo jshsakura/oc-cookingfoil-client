@@ -175,6 +175,10 @@ void Application::topCard(const TopCard &c) {
   // piece at a time; going back (the next file) jumps.
   const double frameAt = SDL_GetTicks() / 1000.;
   const double goal = std::clamp(c.percent, 0., 100.);
+  // Back by more than a step: it picks up from the block that was cut off
+  // (an earlier resume point), and the line under the bar says so a moment.
+  if (shownPercent_ >= 0 && goal < shownPercent_ - 1)
+    resumedNoteUntil_ = frameAt + 6;
   if (shownPercent_ < 0 || goal < shownPercent_ - 1)
     shownPercent_ = goal;
   else
@@ -196,6 +200,8 @@ void Application::topCard(const TopCard &c) {
     topCardMovedAt_ = now;
   }
   const double still = now - topCardMovedAt_;
+  if (now < resumedNoteUntil_ && !c.paused)
+    status += " · " + std::string(tr("Picking up from the block that was cut off."));
   // The console's own link gone (the Wi-Fi icon's check): said in red, and
   // that it goes on by itself. Otherwise, a while with nothing once bytes had
   // come is said calmly, without counting seconds; before any bytes it is

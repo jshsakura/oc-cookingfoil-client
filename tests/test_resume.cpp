@@ -732,43 +732,5 @@ int runResumeTests() {
           entries[1].name == "b/c.txt" && entries[1].method == 0 && entries[1].size == 5 && entries[1].offset > 0);
     CHECK(!foil::zipDirectory("not a zip at all, just words", 0, 28, at, length));
   }
-  {
-    // At home the server's direct address is used when it answers at once;
-    // should it stop, the same file goes on through the public address
-    // without that counting as a failed try. A direct address that does not
-    // answer is passed over before anything starts.
-    foil::platform::setHostSpace(64ull << 30);
-    std::vector<std::string> used;
-    std::mutex usedLock;
-    bool cutFirst = true;
-    foil::install::setHostInstall([&](const foil::Item &item) {
-      {
-        std::lock_guard<std::mutex> held(usedLock);
-        used.push_back(item.directUrl.empty() ? "public" : "direct");
-      }
-      if (!item.directUrl.empty() && cutFirst) throw std::runtime_error("cut");
-    });
-    const auto run = [&](const std::string &direct) {
-      used.clear();
-      foil::Item item;
-      item.name = "Game";
-      item.url = "https://shop.example/game.nsp";
-      item.directUrl = direct;
-      item.size = 100;
-      foil::install::Installer installer;
-      CHECK(!installer.start({item}, "Game", "", "sd", {}, {}));
-      for (int i = 0; i < 500 && installer.running(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      return installer.progress().status;
-    };
-    Mock home;
-    home.body = "x";
-    home.start(1);
-    CHECK(run(home.url + "/game.nsp?exp=1&sig=a") == foil::install::Status::Succeeded);
-    CHECK((used == std::vector<std::string>{"direct", "public"}));
-    CHECK(run("http://127.0.0.1:1/game.nsp") == foil::install::Status::Succeeded);
-    CHECK((used == std::vector<std::string>{"public"}));
-    foil::install::setHostInstall(nullptr);
-    foil::platform::setHostSpace(0);
-  }
   return failures;
 }

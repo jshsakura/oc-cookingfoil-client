@@ -6,6 +6,7 @@
 // tcp_rx_buf_max_size (main.cpp). So downloads leave it.
 #include <cstddef>
 #include <cstdint>
+#include <string>
 namespace foil::net {
 void setReceiveWindow(int bytes);
 int receiveWindow();
@@ -27,6 +28,13 @@ bool linkDown();
 // screen says it once each.
 void heardHeader(const char *line, size_t bytes);
 bool serverRestarting();
+// The download token the server hands out with its lists
+// (X-CookingFoil-Download-Token): downloads from its download host carry it
+// as a bearer token. downloadTokenRejected() says a download was refused
+// for it (401, X-CookingFoil-Token: expired or revoked) since the last one
+// came; a new one clears it.
+std::string downloadToken();
+bool downloadTokenRejected();
 uint64_t restartSerial();
 // For a curl handle with no header callback of its own (the engine's).
 void watchRestart(void *curl);

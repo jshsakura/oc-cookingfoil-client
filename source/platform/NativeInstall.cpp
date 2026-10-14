@@ -19,8 +19,7 @@ std::function<void(const Item &)> hostInstall;
 // from here, and the log keeps one line of it.
 void benchmark(const Item &item, const std::vector<std::string> &headers) {
   auto *sink = engineSink();
-  // As on the console: the direct address when the server gave one.
-  const auto &from = item.directUrl.empty() ? item.url : item.directUrl;
+  const auto &from = item.url;
   net::SegmentedOptions options;
   options.connections = net::connectionsFor(from, 0);
   options.headers = headers;

@@ -4,10 +4,6 @@
 #include <vector>
 namespace foil {
 struct Item {
-    // url: through the shop's public address. directUrl: the same file
-    // straight from the server, given only when the console is on its home
-    // network; signed, per device, short-lived. Empty otherwise.
-    std::string directUrl;
     std::string url, name, titleId, baseId, type = "base", icon, publisher, region, versionName;
     uint64_t size = 0;
     uint32_t version = 0;

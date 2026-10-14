@@ -79,7 +79,16 @@ std::string titleId(json_object* obj, const char* key) {
 }
 std::vector<std::string> authHeaders(const Server& server, const State& state, const std::string& url) {
     std::vector<std::string> headers{"Version: " COOKINGFOIL_VERSION};
-    if (originOf(url) != originOf(server.url)) return headers;
+    if (originOf(url) != originOf(server.url)) {
+        // The server's download host: its download token only, over https;
+        // the server's own keys never go anywhere but the server.
+        if (const auto token = downloadToken(); !token.empty() && url.rfind("https://", 0) == 0)
+            headers.push_back("Authorization: Bearer " + token);
+        return headers;
+    }
+    // What this client can do, so the server gives it what fits (download
+    // links that take the token, not the tunnel's).
+    headers.push_back("X-CookingFoil-Features: direct-token");
     headers.push_back(std::string("Accept-Language: ") + languageCode());
     if (!server.username.empty() || !server.password.empty()) headers.push_back("Authorization: Basic " + base64(server.username + ":" + server.password));
     if (!state.deviceKey.empty()) headers.push_back("X-Device-Key: " + state.deviceKey);
@@ -195,30 +204,9 @@ Response get(const std::string& url, const std::vector<std::string>& headers, co
     curl_slist_free_all(list); curl_easy_cleanup(curl);
     return result;
 }
-bool reachable(const std::string& url, long waitMs) {
-    CURL* curl = curl_easy_init();
-    if (!curl) return false;
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_RANGE, "0-0");
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, waitMs);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, waitMs * 2);
-    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "CookingFoil/" COOKINGFOIL_VERSION);
-#ifdef __SWITCH__
-    curl_easy_setopt(curl, CURLOPT_CAINFO, "romfs:/cacert.pem");
-#endif
-    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, +[](char* data, size_t size, size_t count, void*) {
-        heardHeader(data, size * count);
-        return size * count;
-    });
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, +[](char*, size_t size, size_t count, void*) { return size * count; });
-    const auto code = curl_easy_perform(curl);
-    long status = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-    curl_easy_cleanup(curl);
-    return code == CURLE_OK && (status == 206 || status == 200);
+void renewDownloadToken(const Server& server, const State& state) {
+    const auto url = server.url + "/api/shop/info";
+    get(url, authHeaders(server, state, url));
 }
 namespace {
 struct Stream {
@@ -508,7 +496,6 @@ namespace {
 // One game of the catalog; false for one without a download link.
 bool parseItem(json_object* object, Item& item) {
     item.url = stringField(object, "url"); if (!isHttp(item.url)) return false;
-    item.directUrl = stringField(object, "direct_url"); if (!isHttp(item.directUrl)) item.directUrl.clear();
     item.name = stringField(object, "name", "CookingFoil");
     if (item.name.empty() || item.name == "Unknown" || item.name == "CookingFoil") {
         const auto fromFile = fileTitle(stringField(object, "url"));

@@ -21,9 +21,8 @@ bool internetConnected();
 int signalStrength();
 const char* offlineMessage();
 std::string connectionError(int curlCode, const std::string& url);
-// Whether a quick ranged ask for the first byte is answered within `waitMs`
-// (the home network's direct address, before a download takes it).
-bool reachable(const std::string& url, long waitMs);
+// Asks the server for a fresh download token (it comes with any answer).
+void renewDownloadToken(const Server& server, const State& state);
 Response get(const std::string& url, const std::vector<std::string>& headers = {}, const std::string& etag = "", const std::atomic<bool>* cancel = nullptr);
 // Streams a body to onData as it arrives, only for a 200 response. onData
 // returning false aborts. No overall timeout, only a stall timeout.

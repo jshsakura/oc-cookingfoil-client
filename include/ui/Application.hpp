@@ -676,6 +676,7 @@ private:
   std::string topCardKey_;
   uint64_t topCardBytes_ = 0, topCardStartBytes_ = 0;
   double topCardMovedAt_ = 0; // when its byte count last moved
+  double resumedNoteUntil_ = 0; // its bar went back: "중단되었던 블록부터…" until then
   // A paused app or retro game sits on the card, not again in the list.
   size_t queueSkip() const { return queueHeld_ && !installQueue_.empty() && !installer_.running() && !retroDownloading() ? 1 : 0; }
   void patchGame(const UserPatch &patch, std::string &name, std::string &icon) const;

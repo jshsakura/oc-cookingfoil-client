@@ -22,6 +22,9 @@ std::string restartId;
 std::chrono::steady_clock::time_point restartUntil;
 bool restarting = false;
 std::atomic<uint64_t> restarts{0};
+std::mutex tokenLock;
+std::string token;
+std::atomic<bool> tokenRejected{false};
 // A reply's header block, in the thread curl reads it on: whether it is a
 // success so far and has no restart header.
 thread_local bool replyOk = false;
@@ -52,6 +55,24 @@ void heardHeader(const char *data, size_t bytes) {
   if (colon == std::string::npos) return;
   std::string key = line.substr(0, colon);
   for (auto &c : key) c = char(std::tolower(static_cast<unsigned char>(c)));
+  const auto trimmed = [&] {
+    auto value = line.substr(colon + 1);
+    const auto first = value.find_first_not_of(" \t");
+    return first == std::string::npos ? std::string() : value.substr(first, value.find_last_not_of(" \t") - first + 1);
+  };
+  if (key == "x-cookingfoil-download-token") {
+    const auto value = trimmed();
+    if (!value.empty() && value.find_first_of(" \t\r\n") == std::string::npos) {
+      std::lock_guard<std::mutex> held(tokenLock);
+      token = value;
+      tokenRejected = false;
+    }
+    return;
+  }
+  if (key == "x-cookingfoil-token") { // a download refused: expired or revoked
+    tokenRejected = true;
+    return;
+  }
   if (key != "x-cookingfoil-restarting") return;
   replyOk = false;
   const auto value = line.substr(colon + 1);
@@ -79,6 +100,11 @@ bool serverRestarting() {
   return restarting && std::chrono::steady_clock::now() < restartUntil;
 }
 uint64_t restartSerial() { return restarts; }
+std::string downloadToken() {
+  std::lock_guard<std::mutex> held(tokenLock);
+  return token;
+}
+bool downloadTokenRejected() { return tokenRejected; }
 void watchRestart(void *curl) {
   curl_easy_setopt(static_cast<CURL *>(curl), CURLOPT_HEADERFUNCTION, onRestartHeader);
 }

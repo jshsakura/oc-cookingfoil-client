@@ -6,6 +6,7 @@
 #include "install/EngineHooks.hpp"
 #include "core/I18n.hpp"
 #include "net/Api.hpp"
+#include "net/Socket.hpp"
 #include "platform/Storage.hpp"
 #include <algorithm>
 #include <cmath>
@@ -13,9 +14,6 @@
 #include <limits>
 #include <stdexcept>
 namespace foil::install {
-// How long the home network's direct address may take to answer before a
-// download goes through the public one instead.
-constexpr long DirectWaitMs = 2000;
 int compareVersions(const std::string &a, const std::string &b) {
   size_t i = 0, j = 0;
   while (i < a.size() || j < b.size()) {
@@ -299,26 +297,20 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
         contents_.clear();
         target = progress_.target;
       }
-      // At home the server's direct address, when it answers at once; it
-      // carries no keys (it is signed). Should it stop working, the same
-      // file goes on from the same byte through the public address, and
-      // that switch is not counted as a failed try.
-      auto item = files[i];
-      bool direct = !item.directUrl.empty() && net::reachable(item.directUrl, DirectWaitMs);
-      if (!item.directUrl.empty()) logLine(direct ? "download: direct at home" : "download: direct not answering, public address");
       // A failed item is tried again from the start: the engine skips the
       // content files it already finished, so this picks up where it broke.
       constexpr int Attempts = 3;
+      int renewed = 0;
       for (int attempt = 1;; ++attempt) {
-        auto use = item;
-        if (!direct) use.directUrl.clear();
         try {
-          nativeInstall(use, target, net::authHeaders(server, state, direct ? use.directUrl : use.url));
+          nativeInstall(files[i], target, net::authHeaders(server, state, files[i].url));
           break;
         } catch (const std::exception &) {
-          if (direct && !cancel_) {
-            logLine("download: direct stopped, on through the public address");
-            direct = false;
+          // The download token ran out: a fresh one, and the same file goes
+          // on from the same byte, not counted as a failed try.
+          if (net::downloadTokenRejected() && !cancel_ && renewed++ < 2) {
+            logLine("download: token renewed");
+            net::renewDownloadToken(server, state);
             --attempt;
             continue;
           }

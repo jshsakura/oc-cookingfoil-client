@@ -37,8 +37,7 @@ constexpr int ApplicationSegments = 8, AppletSegments = 4;
 // The file being installed, for streamToPlace: its address, the headers
 // every request carries, and how many connections it gets.
 struct Current {
-  std::string url;  // where the bytes come from now (the direct address at home)
-  std::string file; // which file it is, for resume points: its public address
+  std::string url;
   std::vector<std::string> headers;
   int connections = 1;
   bool application = false;
@@ -126,12 +125,8 @@ void nativeInstall(const Item &item, const std::string &target,
   // Connections by the server's address (2 on a private network, 4
   // outside). NCZ, which must arrive in order, uses them on a window in
   // front: 32 MB pieces as an application, 4 MB from the album.
-  // At home the server may give the file straight (directUrl): the bytes
-  // come from there, while resume points stay with the file itself, so a
-  // switch to the public address goes on from the same byte.
-  const auto &from = item.directUrl.empty() ? item.url : item.directUrl;
+  const auto &from = item.url;
   current.url = from;
-  current.file = item.url;
   current.headers = headers;
   current.application = appletGetAppletType() == AppletType_Application;
   current.connections = foil::net::connectionsFor(from, 0);
@@ -231,7 +226,7 @@ bool nczPoint(const std::string &nca, uint64_t size, std::string &point, std::ve
   const auto key = resumeKey(nca);
   const auto kept = sink->resumePoint(key);
   foil::NczPoint at;
-  if (!kept || kept->url != current.file || kept->total != size || !foil::NczPoint::isNcz(kept->plan) ||
+  if (!kept || kept->url != current.url || kept->total != size || !foil::NczPoint::isNcz(kept->plan) ||
       !foil::NczPoint::decode(kept->plan, at))
     return false;
   foil::ZstdBlockDecoder::Point state;
@@ -275,7 +270,7 @@ void keepNczPoint(const std::string &nca, uint64_t size, const std::string &poin
     std::filesystem::remove(path, ec);
     return;
   }
-  sink->keepResumePoint(key, {current.file, "", size, point});
+  sink->keepResumePoint(key, {current.url, "", size, point});
   // The newest two stay: the database may still hold the one before.
   auto files = windowFiles(key);
   std::error_code ec;
@@ -323,7 +318,7 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
   const auto key = resumeKey(content);
   if (sink)
     if (const auto point = sink->resumePoint(key);
-        point && point->url == current.file && point->total == from + size &&
+        point && point->url == current.url && point->total == from + size &&
         foil::net::SegmentPlan::load(point->plan, options.resume)) {
       options.resumeTotal = point->total;
       options.etag = point->etag;
@@ -347,7 +342,7 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
     options.checkpoint = [&](const std::string &etag, uint64_t total, const std::string &plan) {
       if (latest.etag == etag && latest.total == total && latest.plan == plan)
         return; // nothing moved
-      latest = {current.file, etag, total, plan};
+      latest = {current.url, etag, total, plan};
       unsaved = true;
       if (!savedTick || svcGetSystemTick() - savedTick >= 10ull * 19200000)
         save();

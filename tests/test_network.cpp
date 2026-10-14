@@ -246,5 +246,39 @@ int runNetworkTests() {
         hear("\r\n");
         CHECK(!foil::net::serverRestarting());
     }
+    {
+        // The download token comes in any reply's header; it goes as a bearer
+        // token to the download host (https, another host) and nowhere else,
+        // and the server's own keys never go there. A refusal is noted until
+        // a new token comes. Every request to the server says what the client
+        // can do.
+        const auto hear = [](const std::string &line) { foil::net::heardHeader(line.data(), line.size()); };
+        hear("HTTP/1.1 200 OK\r\n");
+        hear("X-CookingFoil-Download-Token: abc.def.ghi\r\n");
+        hear("\r\n");
+        CHECK(foil::net::downloadToken() == "abc.def.ghi" && !foil::net::downloadTokenRejected());
+        foil::Server shop;
+        shop.url = "https://shop.example";
+        shop.username = "user";
+        shop.password = "pass";
+        foil::State state;
+        state.deviceKey = std::string(64, 'a');
+        const auto has = [](const std::vector<std::string> &headers, const std::string &text) {
+            return std::any_of(headers.begin(), headers.end(), [&](const std::string &h) { return h.find(text) != std::string::npos; });
+        };
+        const auto dl = foil::net::authHeaders(shop, state, "https://dl.example:38443/games/x.nsz");
+        CHECK(has(dl, "Authorization: Bearer abc.def.ghi") && !has(dl, "Basic") && !has(dl, "X-Device-Key"));
+        CHECK(!has(foil::net::authHeaders(shop, state, "http://dl.example/games/x.nsz"), "Bearer"));
+        const auto own = foil::net::authHeaders(shop, state, "https://shop.example/api/shop/sections");
+        CHECK(has(own, "X-CookingFoil-Features: direct-token") && has(own, "Basic") && !has(own, "Bearer"));
+        hear("HTTP/1.1 401 Unauthorized\r\n");
+        hear("X-CookingFoil-Token: expired\r\n");
+        hear("\r\n");
+        CHECK(foil::net::downloadTokenRejected());
+        hear("HTTP/1.1 304 Not Modified\r\n");
+        hear("X-CookingFoil-Download-Token: new.token.x\r\n");
+        hear("\r\n");
+        CHECK(foil::net::downloadToken() == "new.token.x" && !foil::net::downloadTokenRejected());
+    }
     return failures;
 }
