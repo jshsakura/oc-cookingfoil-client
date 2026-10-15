@@ -2,6 +2,7 @@
 #include "net/Api.hpp"
 #include "net/Segments.hpp"
 #include "platform/Cores.hpp"
+#include <map>
 #include <mutex>
 #include "core/Version.hpp"
 #include "core/Json.hpp"
@@ -57,6 +58,9 @@ size_t writeHeader(char* data, size_t size, size_t count, void* context) {
             static_cast<Response*>(context)->contentRange = begin == std::string::npos ? "" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
         } else if (key == "content-length") {
             static_cast<Response*>(context)->contentLength = std::strtoull(line.c_str() + colon + 1, nullptr, 10);
+        } else if (key == "x-cookingfoil-enroll") {
+            auto value = line.substr(colon + 1); const auto begin = value.find_first_not_of(" \t\r\n");
+            static_cast<Response*>(context)->enroll = begin == std::string::npos ? "invalid" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
         } else if (key == "x-cookingfoil-session") {
             auto value = line.substr(colon + 1); const auto begin = value.find_first_not_of(" \t\r\n");
             static_cast<Response*>(context)->session = begin == std::string::npos ? "refused" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
@@ -69,6 +73,16 @@ size_t writeHeader(char* data, size_t size, size_t count, void* context) {
         }
     }
     return bytes;
+}
+// Why a connection failed, for the log: the system's error number (111
+// refused, 110 timed out, 113 no route) and how long it took.
+std::string failureDetail(CURL* curl, CURLcode code) {
+    if (code == CURLE_OK) return "";
+    long osErrno = 0;
+    double seconds = 0;
+    curl_easy_getinfo(curl, CURLINFO_OS_ERRNO, &osErrno);
+    curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &seconds);
+    return " errno=" + std::to_string(osErrno) + " after " + std::to_string(int(seconds * 1000)) + "ms";
 }
 bool isHttp(const std::string& url) { const auto origin = originOf(url); return origin.rfind("http://", 0) == 0 || origin.rfind("https://", 0) == 0; }
 // A field the server may send as text or as a number ("16.0.0" or 16).
@@ -97,7 +111,9 @@ std::vector<std::string> serverHeaders(const Server& server, const State& state,
     headers.push_back(std::string("Accept-Language: ") + languageCode());
     const auto token = session ? sessionToken(originOf(server.url)) : std::string();
     if (!token.empty()) headers.push_back("Authorization: Bearer " + token);
-    else if (!server.username.empty() || !server.password.empty()) headers.push_back("Authorization: Basic " + base64(server.username + ":" + server.password));
+    // No username, no Basic: a client from the website signs in with its
+    // access key alone.
+    else if (!server.username.empty()) headers.push_back("Authorization: Basic " + base64(server.username + ":" + server.password));
     if (const auto device = deviceKeyFor(state, server.url); !device.empty()) headers.push_back("X-Device-Key: " + device);
     const auto key = state.accessKeys.find(server.url);
     if (token.empty() && key != state.accessKeys.end() && !key->second.empty()) headers.push_back("X-Access-Key: " + key->second);
@@ -270,7 +286,7 @@ Response getOnce(const std::string& url, const std::vector<std::string>& headers
     if (code != CURLE_OK && result.error.empty()) result.error = connectionError(code, url);
     if (code != CURLE_OK || result.status >= 400)
         logLine("GET " + url.substr(0, url.find_first_of("?#")) + " status=" + std::to_string(result.status) +
-                " curl=" + std::to_string(int(code)) + (result.error.empty() ? "" : " " + result.error));
+                " curl=" + std::to_string(int(code)) + failureDetail(curl, code) + (result.error.empty() ? "" : " " + result.error));
     curl_slist_free_all(list); curl_easy_cleanup(curl);
     return result;
 }
@@ -442,7 +458,7 @@ Response postOnce(const std::string& url, const std::vector<std::string>& header
     // Only the address is logged: bodies carry tokens and codes.
     if (code != CURLE_OK || result.status >= 400)
         logLine("POST " + url.substr(0, url.find_first_of("?#")) + " status=" + std::to_string(result.status) +
-                " curl=" + std::to_string(int(code)));
+                " curl=" + std::to_string(int(code)) + failureDetail(curl, code));
     curl_slist_free_all(list); curl_easy_cleanup(curl);
     if (out) {
         const bool closed = std::fclose(out.release()) == 0;
@@ -1068,8 +1084,83 @@ void Session::rebind() {
     state_ = std::move(updated);
     logLine("rebind: " + status);
 }
+namespace {
+std::mutex enrollLock;
+std::map<std::string, std::string> enrollRefused; // url + token -> why, this run
+}
+void Session::forgetEnrollAttempts() {
+    std::lock_guard<std::mutex> held(enrollLock);
+    enrollRefused.clear();
+}
+bool Session::enroll(Error& error) {
+    const auto& token = server_.enrollToken;
+    const auto key = state_.accessKeys.find(server_.url);
+    if (token.empty() || (key != state_.accessKeys.end() && !key->second.empty())) return true;
+    const auto tried = server_.url + '\n' + token;
+    {
+        // Refused once: said again, not asked again (the token is spent or gone).
+        std::lock_guard<std::mutex> held(enrollLock);
+        if (const auto at = enrollRefused.find(tried); at != enrollRefused.end()) { error.message = tr(at->second.c_str()); return false; }
+    }
+    // The key made from the console: the one the server approves.
+    const auto device = state_.derivedKey.empty() ? state_.deviceKey : state_.derivedKey;
+    const auto url = server_.url + "/api/pair/enroll";
+    auto headers = authHeaders(server_, state_, url);
+    for (auto& header : headers)
+        if (header.rfind("X-Device-Key: ", 0) == 0) header = "X-Device-Key: " + device;
+    headers.push_back("Content-Type: application/json");
+    Json body(json_object_new_object());
+    json_object_object_add(body.get(), "token", json_object_new_string(token.c_str()));
+    PostOptions options;
+    options.body = json_object_to_json_string_ext(body.get(), JSON_C_TO_STRING_PLAIN);
+    options.timeout = 15;
+    const auto sent = post(url, headers, options, cancel_);
+    const auto refuse = [&](const char* why) {
+        std::lock_guard<std::mutex> held(enrollLock);
+        enrollRefused[tried] = why;
+        error.message = tr(why);
+        return false;
+    };
+    if (!sent.error.empty()) { error.message = sent.error; return false; }
+    // A server that does not know enroll (before it, or with pairing off):
+    // the token is not for it, and the console connects as before.
+    if (sent.status == 404 || sent.status == 405) { logLine("enroll: the server does not offer it; token ignored"); return true; }
+    if (sent.status == 401) {
+        logLine("enroll: refused (" + (sent.enroll.empty() ? std::string("401") : sent.enroll) + ")");
+        return refuse("The link key has expired or is not registered. Download the client again from the website.");
+    }
+    if (sent.status == 409) {
+        logLine("enroll: the console belongs to another account");
+        return refuse("This console is linked to another account.");
+    }
+    Error unread;
+    const auto reply = sent.status == 200 ? parseJson(sent.body, unread) : Json(nullptr);
+    const auto accessKey = reply ? stringField(reply.get(), "accessKey") : std::string();
+    if (!reply || stringField(reply.get(), "status") != "approved" || accessKey.empty()) {
+        logLine("enroll: unexpected reply HTTP " + std::to_string(sent.status));
+        error.message = trf("Check the server connection. HTTP {0}", {std::to_string(sent.status)});
+        return false;
+    }
+    // Saved as a key from approval is, from the file (settings chosen since
+    // this session began stay); the server knows the console by the made key.
+    auto saved = loadState(path_);
+    auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
+    updated.derivedKey = state_.derivedKey;
+    updated.accessKeys[server_.url] = accessKey;
+    updated.pairSecrets.erase(server_.url);
+    if (device != updated.deviceKey) updated.rebound.insert(server_.url);
+    if (!saveState(path_, updated, error)) { error.message = tr("Could not save the issued key. Check where the state file is stored."); return false; }
+    state_ = std::move(updated);
+    logLine("enroll: approved");
+    // Spent: out of config.json (kept there when refused, to tell why).
+    std::string failure;
+    if (!dropEnrollToken(configPath_, server_.url, failure)) logLine("enroll: token not taken out of config.json: " + failure);
+    server_.enrollToken.clear();
+    return true;
+}
 bool Session::refresh(Error& error) {
     error = {};
+    if (!enroll(error)) return false;
     rebind();
     if (!pair(error)) return false;
     {

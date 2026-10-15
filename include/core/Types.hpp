@@ -32,6 +32,10 @@ struct Item {
 struct Server {
     std::string title, url, username, password, cfClientId, cfClientSecret;
     bool enabled = true;
+    // The one-time token a client downloaded from the server's website carries
+    // (cfe_…): spent once for this console's access key (POST /api/pair/enroll),
+    // then taken out of config.json. Empty for a server set up by hand.
+    std::string enrollToken;
 };
 struct Config {
     std::vector<Server> servers;

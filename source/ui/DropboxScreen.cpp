@@ -385,19 +385,38 @@ void Application::dropboxTab() {
       dropboxQr_.draw(paint_.renderer, 908, int(Top + 75), 300);
       return;
     }
-    paint_.icon(36, 290, Top + 32, Ink, 40);
-    paint_.fonts.text(tr("Back up saves to Dropbox"), 290, Top + 96, 28, Ink, true, 900);
-    paint_.fonts.wrapped(tr("With Dropbox connected, this console uploads its save backups, and backups from other consoles or oc-save-keeper come down to restore from the This console tab."),
-                         290, Top + 150, 21, Secondary, 900, 3);
-    paint_.fonts.wrapped(tr("Connect shows a QR code. Scan it with your phone to sign in to Dropbox."), 290, Top + 240,
-                         19, Secondary, 900, 2);
-    // A in the footer connects; a tap on the card does the same.
+    // The icon beside the title, what it is for in one line, the three
+    // steps with numbered dots, and the button the first step names.
+    constexpr float Left = 300, TitleMid = Top + 62;
+    paint_.icon(36, Left, TitleMid - 20, Ink, 40);
+    paint_.fonts.middle(tr("Back up saves to Dropbox"), Left + 58, TitleMid, 28, Ink, true, 860);
+    paint_.fonts.middle(tr("Upload this console's save backups, and restore ones uploaded from other consoles."), Left, TitleMid + 58,
+                        20, Secondary, false, 920);
+    const char *steps[] = {"1. Press Connect below.", "2. Scan the QR code with your phone and sign in to Dropbox.",
+                           "3. Tap Allow, and this console finishes connecting on its own."};
+    for (int i = 0; i < 3; ++i) {
+      const float mid = Top + 188 + i * 50;
+      paint_.rect(Left, mid - 15, 30, 30, Butter, 15);
+      paint_.fonts.centered(std::to_string(i + 1), Left + 15, mid - 13, 17, Ink, 30, 1, true);
+      // The number is the dot's; the step's own "1. " is left off.
+      std::string step = tr(steps[i]);
+      if (const auto dot = step.find(". "); dot != std::string::npos && dot <= 2) step = step.substr(dot + 2);
+      paint_.fonts.middle(step, Left + 46, mid, 20, Ink, false, 880);
+    }
+    constexpr float ButtonY = Top + 346, ButtonH = 60;
+    const bool starting = dropboxBusy_ == "start";
+    const float buttonW = paint_.keyLabelWidth("A", tr("Connect"), 21, true) + 64;
+    paint_.rect(Left, ButtonY, buttonW, ButtonH, starting ? Line : Butter, 14);
+    paint_.keyLabel("A", tr("Connect"), Left + 32, ButtonY + ButtonH / 2, 21, Ink, true, !starting);
+    // A connects; a tap on the card does the same.
     hit(260, Top, 992, 466, [this] {
       sidebar_ = false;
       action(Action::Accept);
     });
-    if (dropboxBusy_ == "start") paint_.fonts.text(tr("Getting ready to connect"), 290, Top + 330, 19, Ink, true);
-    if (dropboxError_) paint_.fonts.wrapped(dropboxError_.message, 290, Top + 370, 18, Bad, 900, 2);
+    const float noteX = Left + buttonW + 28;
+    if (starting) paint_.fonts.middle(tr("Getting ready to connect"), noteX, ButtonY + ButtonH / 2, 19, Secondary, true, 1220 - noteX);
+    else if (dropboxError_)
+      paint_.fonts.wrapped(dropboxError_.message, noteX, ButtonY + 6, 18, Bad, 1220 - noteX, 2);
     return;
   }
   // The account; X (shown on the card) unlinks, after asking.

@@ -8,4 +8,7 @@ Parsed<Config> loadConfig(const std::string& path);
 std::string serializeConfig(const Config& config, bool redact = false);
 // Writes config.json in the form parseConfig reads, replacing it whole.
 bool saveConfig(const std::string& path, const Config& config, std::string& error);
+// The enroll token of the server at `serverUrl` taken out of the config.json
+// at `path`, once it was spent. True when nothing needed it.
+bool dropEnrollToken(const std::string& path, const std::string& serverUrl, std::string& error);
 }

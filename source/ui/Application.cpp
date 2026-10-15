@@ -550,6 +550,7 @@ void Application::connect(size_t index) {
   serverIndex_ = index;
   session_ = std::make_unique<net::Session>(config_.servers[index], state_,
                                             statePath_, &stop_);
+  session_->setConfigPath(configPath_);
   connected_ = false;
   images_ = std::make_unique<Images>(paint_.renderer);
   images_->source(config_.servers[index], state_, imageCacheFolder(), fixture_);
@@ -696,6 +697,11 @@ void Application::poll() {
     return;
   }
   network_.join();
+  // An enroll token the session spent is gone from the copy here too, so a
+  // later save of the servers does not write it back.
+  if (session_ && session_->server().enrollToken.empty())
+    for (auto &server : config_.servers)
+      if (server.url == session_->server().url) server.enrollToken.clear();
   if (detailRequest_) {
     detailLoading_ = false;
     if (!incomingError_) {

@@ -16,6 +16,7 @@ struct Response {
     std::string contentRange; // a 206's Content-Range header
     uint64_t contentLength = 0; // 0 when absent
     std::string session; // X-CookingFoil-Session: why the session token was refused
+    std::string enroll;  // X-CookingFoil-Enroll: "invalid" when an enroll token was refused
     int64_t date = 0;    // the Date header, Unix seconds; 0 when absent
 };
 // The server's keys go to the server only; anything else (a picture on
@@ -162,7 +163,14 @@ public:
     // The note for this server's approval request, from the app; a changed
     // one goes out with the next refresh while approval is pending.
     void setPairMessage(const std::string& message);
+    // config.json, from which a spent enroll token is taken out.
+    void setConfigPath(std::string path) { configPath_ = std::move(path); }
+    // Tests: enroll tokens refused earlier this run may be tried again.
+    static void forgetEnrollAttempts();
 private:
+    // The enroll token from the website's download, spent for this server's
+    // access key before anything else; false (with the reason) when refused.
+    bool enroll(Error& error);
     bool pair(Error& error);
     void rebind();
     void sendPairMessage();
@@ -171,7 +179,7 @@ private:
     std::string pairSecret();
     Server server_;
     State state_;
-    std::string path_, etag_, patchesEtag_;
+    std::string path_, etag_, patchesEtag_, configPath_;
     int patchesRetryAfter_ = 0;
     std::vector<UserPatch> patches_;
     std::vector<Item> items_;

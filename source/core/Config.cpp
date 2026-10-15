@@ -68,7 +68,7 @@ Parsed<Config> parseConfig(const std::string& json) {
         auto* object = json_object_array_get_idx(servers, i);
         Server server;
         if (!json_object_is_type(object, json_type_object)) { fail(tr("Check the server entries.")); return result; }
-        for (const auto* key : {"url", "title", "username", "password", "cfClientId", "cfClientSecret"}) {
+        for (const auto* key : {"url", "title", "username", "password", "cfClientId", "cfClientSecret", "enrollToken"}) {
             auto* value = field(object, key);
             if (value && (!json_object_is_type(value, json_type_string) || !headerSafe(json_object_get_string(value)))) {
                 fail(trf("{0} must be a string without line breaks.", {key})); return result;
@@ -80,6 +80,12 @@ Parsed<Config> parseConfig(const std::string& json) {
         if (server.title.empty()) server.title = originOf(server.url).substr(originOf(server.url).find("://") + 3);
         server.username = stringField(object, "username"); server.password = stringField(object, "password");
         server.cfClientId = stringField(object, "cfClientId"); server.cfClientSecret = stringField(object, "cfClientSecret");
+        // Letters, digits, '_' and '-' only (it goes into a JSON body); any
+        // other is no token at all.
+        server.enrollToken = stringField(object, "enrollToken");
+        if (server.enrollToken.size() > 128 || server.enrollToken.find_first_not_of(
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") != std::string::npos)
+            server.enrollToken.clear();
         auto* enabled = field(object, "enabled");
         if (enabled && !json_object_is_type(enabled, json_type_boolean)) { fail(tr("enabled must be true or false.")); return result; }
         server.enabled = !enabled || json_object_get_boolean(enabled);
@@ -105,6 +111,7 @@ std::string serializeConfig(const Config& config, bool redact) {
         add("password", redact && !s.password.empty() ? "••••" : s.password);
         add("cfClientId", redact && !s.cfClientId.empty() ? "••••" : s.cfClientId);
         add("cfClientSecret", redact && !s.cfClientSecret.empty() ? "••••" : s.cfClientSecret);
+        if (!s.enrollToken.empty()) add("enrollToken", redact ? "••••" : s.enrollToken);
         json_object_object_add(object, "enabled", json_object_new_boolean(s.enabled));
         json_object_array_add(servers, object);
     }
@@ -115,6 +122,15 @@ std::string serializeConfig(const Config& config, bool redact) {
 }
 bool saveConfig(const std::string& path, const Config& config, std::string& error) {
     return atomicWrite(path, serializeConfig(config), error);
+}
+bool dropEnrollToken(const std::string& path, const std::string& serverUrl, std::string& error) {
+    if (path.empty()) return true;
+    auto config = parseConfig(readFile(path));
+    if (config.error) { error = config.error.message; return false; }
+    bool changed = false;
+    for (auto& server : config.value.servers)
+        if (server.url == serverUrl && !server.enrollToken.empty()) { server.enrollToken.clear(); changed = true; }
+    return !changed || saveConfig(path, config.value, error);
 }
 Parsed<Config> loadConfig(const std::string& path) {
     std::error_code ec;
