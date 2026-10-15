@@ -2,6 +2,7 @@
 #include "core/Forwarder.hpp"
 #include "core/Json.hpp"
 #include "core/Log.hpp"
+#include "core/Sha256.hpp"
 #include "net/HomebrewApi.hpp"
 #include "platform/Shortcut.hpp"
 #include <algorithm>
@@ -54,6 +55,7 @@ void Application::pollHomebrew() {
     homebrewCard_ = std::move(homebrewCardFound_);
     homebrewCardFound_.clear();
     homebrewScanned_ = true;
+    takeHomebrewLedgerCheck();
     // The shortcuts asked about: whichever the console no longer has goes.
     for (const auto &nro : homebrewCard_) shortcuts_.erase(forwarder::titleId(forwarder::loaderPath(nro.path)));
     for (const auto &app : homebrew_) shortcuts_.erase(homebrewServerShortcut(app));
@@ -82,20 +84,57 @@ void Application::scanHomebrewCard() {
   std::vector<uint64_t> ids;
   for (const auto &app : homebrew_)
     if (const auto id = homebrewServerShortcut(app)) ids.push_back(id);
-  homebrewCardWorker_ = std::thread([this, sd, languages, ids]() mutable {
+  homebrewLedgerLooked_ = homebrewLedger_;
+  homebrewCardWorker_ = std::thread([this, sd, languages, ids, ledger = homebrewLedgerLooked_]() mutable {
     std::vector<homebrew::CardNro> found;
     std::set<uint64_t> shortcuts;
+    homebrew::LedgerCheck check;
     if (!guarded("homebrew card", [&] {
           found = homebrew::scanCard(sd, languages);
+          // The ledger against the card: a stat each, a hash only where it
+          // differs from what was seen.
+          check = homebrew::checkLedger(
+              ledger, [&](const std::string &file) { return homebrew::cardFile(sd + "/" + file); },
+              [&](const std::string &file) { return sha256File(sd + "/" + file); },
+              [&](const std::string &file) {
+                const auto nro = std::find_if(found.begin(), found.end(),
+                                              [&](const homebrew::CardNro &n) { return n.path == file; });
+                return nro == found.end() ? std::string() : nro->version;
+              });
           for (const auto &nro : found) ids.push_back(forwarder::titleId(forwarder::loaderPath(nro.path)));
           shortcuts = platform::presentShortcuts(ids);
           signaturePatchesFound_ = forwarder::signaturePatchesFound(sd);
         }))
       found.clear();
     homebrewCardFound_ = std::move(found);
+    homebrewLedgerFound_ = std::move(check);
     homebrewShortcutsFound_ = std::move(shortcuts);
     homebrewCardDone_ = true;
   });
+}
+// What the check found, for the records not changed here since it began
+// (a download settled meanwhile is newer than the look).
+void Application::takeHomebrewLedgerCheck() {
+  const auto check = std::exchange(homebrewLedgerFound_, {});
+  const auto unchanged = [&](const std::string &id) {
+    const auto now = homebrewLedger_.find(id);
+    const auto then = homebrewLedgerLooked_.find(id);
+    return now != homebrewLedger_.end() && then != homebrewLedgerLooked_.end() && now->second == then->second;
+  };
+  for (const auto &[id, record] : homebrewLedgerLooked_)
+    if (unchanged(id))
+      if (const auto on = check.onCard.find(record.file); on != check.onCard.end()) homebrewOnCard_[record.file] = on->second;
+  bool changed = false;
+  for (const auto &[id, record] : check.fixed)
+    if (unchanged(id)) {
+      homebrewLedger_[id] = record;
+      changed = true;
+    }
+  for (const auto &id : check.followed)
+    logLine("homebrew " + id + ": the card's file is not the one installed; the ledger follows the card");
+  if (check.hashed) logLine("homebrew ledger: hashed " + std::to_string(check.hashed) + " file(s) whose size or time changed");
+  homebrewLedgerLooked_.clear();
+  if (changed) saveHomebrewLedger();
 }
 // Which card file each listed app owns (the one at its install path
 // first), and the files no listed app owns, as rows of their own.
@@ -215,7 +254,10 @@ bool Application::runHomebrew(const homebrew::App &app) {
         const bool ok = net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_);
         const bool cancelled = retroCancel_;
         const uint64_t received = retroReceived_;
-        return [this, ok, error, app, cancelled, received] {
+        // The new file as written, so the next card check needs no hash.
+        const auto seen = ok ? homebrew::cardFile(sd + "/" + app.installPath) : std::nullopt;
+        const auto fileSha = seen ? sha256File(sd + "/" + app.installPath) : std::string();
+        return [this, ok, error, app, cancelled, received, seen, fileSha] {
           cardChanged();
           if (finishRetroEntry("homebrew", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
                            ok || cancelled ? "" : error.message, received))
@@ -229,7 +271,7 @@ bool Application::runHomebrew(const homebrew::App &app) {
             alert_ = error.message;
             return;
           }
-          settleHomebrew(app);
+          settleHomebrew(app, seen, fileSha);
           if (autoHomebrewShortcut(app)) return;
           message(trf("Downloaded {0}. Open it from hbmenu.", {app.name}));
         };
@@ -241,7 +283,8 @@ bool Application::runHomebrew(const homebrew::App &app) {
 // elsewhere goes (the one a previous build kept, or one straight under
 // switch/), so no duplicate stays. Files a folder install no longer lists
 // stay put: they may be the app's settings or saves.
-void Application::settleHomebrew(const homebrew::App &app) {
+void Application::settleHomebrew(const homebrew::App &app, const std::optional<homebrew::CardFile> &seen,
+                                 const std::string &fileSha) {
   std::error_code ec;
   const auto previous = homebrewLedger_.find(app.id);
   std::vector<std::string> stale{"switch/" + app.fileName};
@@ -260,7 +303,7 @@ void Application::settleHomebrew(const homebrew::App &app) {
                                          [&](const homebrew::CardNro &nro) { return nro.path == old; }),
                           homebrewCard_.end());
     }
-  homebrew::Record record{app.hash, app.version, app.installPath, {}};
+  homebrew::Record record{app.hash, app.version, app.installPath, {}, seen.value_or(homebrew::CardFile{}), fileSha};
   for (const auto &file : app.files)
     if (file.path != app.installPath) record.files.push_back(file.path);
   for (const auto &entry : app.archive.entries)

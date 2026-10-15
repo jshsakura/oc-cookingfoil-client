@@ -5,7 +5,8 @@ using namespace foil::retro;
 namespace {
 std::set<std::string> onCard;
 bool exists(const std::string &path) { return onCard.count(path) > 0; }
-uint64_t sizeOf(const std::string &) { return 10; }
+std::string shortFile; // a file on the card cut short
+uint64_t sizeOf(const std::string &path) { return path == shortFile ? 4 : 10; }
 } // namespace
 int runRetroTests() {
   int failures = 0;
@@ -157,6 +158,19 @@ int runRetroTests() {
   CHECK(plan.fetch.size() == 1);
   if (plan.fetch.size() == 1) CHECK(plan.fetch[0].path == "retroarch/cores/x.nro");
   CHECK(plan.bytes == 10);
+  // The card decides, never the record alone: a recorded file that is gone
+  // or whose size changed is fetched again. The plan reads sizes only; no
+  // file is hashed to decide.
+  record.files["retroarch/cores/x.nro"] = "c";
+  CHECK(planPack(pack, record, exists, sizeOf, "sdmc:").fetch.empty());
+  onCard.erase("sdmc:/switch/retroarch_switch.nro");
+  CHECK(planPack(pack, record, exists, sizeOf, "sdmc:").fetch.size() == 1);
+  onCard.insert("sdmc:/switch/retroarch_switch.nro");
+  shortFile = "sdmc:/retroarch/cores/x.nro";
+  const auto cut = planPack(pack, record, exists, sizeOf, "sdmc:");
+  CHECK(cut.fetch.size() == 1 && cut.fetch[0].path == "retroarch/cores/x.nro");
+  shortFile.clear();
+  record.files["retroarch/cores/x.nro"] = "old";
   const auto again = parsePackRecord(serializePackRecord(record));
   CHECK(again.files == record.files);
   // A game kept in 다운로드's history comes back whole for 다시 시도.

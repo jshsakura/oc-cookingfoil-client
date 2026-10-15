@@ -113,5 +113,25 @@ int runNczPointTests() {
   CHECK(!foil::windowFileOf("sd_3-1.win", k, n));
   CHECK(!foil::windowFileOf("sd_zz01-1.win", k, n));
   CHECK(!foil::windowFileOf("-1.win", k, n));
+    {
+    // A point with no placeholder on the console goes; one the console could
+    // not be asked about stays; window files go with their point, and files
+    // that are not windows are never touched.
+    const std::vector<std::string> points{"sd:aa", "sd:bb", "nand:cc"};
+    const auto there = [](const std::string &key) -> std::optional<bool> {
+      if (key == "sd:aa") return true;
+      if (key == "sd:bb") return false;
+      return std::nullopt;
+    };
+    const std::vector<std::string> names{foil::windowFileName("sd:aa", 10), foil::windowFileName("sd:bb", 20),
+                                         foil::windowFileName("sd:dd", 30), foil::windowFileName("nand:cc", 5),
+                                         "homebrew-x.json"};
+    const auto left = foil::resumeLeftovers(points, there, names);
+    CHECK(left.points == std::vector<std::string>{"sd:bb"});
+    CHECK((left.windows == std::vector<std::string>{foil::windowFileName("sd:bb", 20), foil::windowFileName("sd:dd", 30)}));
+    // Everything in place: nothing to do.
+    const auto all = [](const std::string &) -> std::optional<bool> { return true; };
+    CHECK(foil::resumeLeftovers({"sd:aa"}, all, {foil::windowFileName("sd:aa", 1)}).windows.empty());
+  }
   return failures;
 }

@@ -182,4 +182,24 @@ bool windowFileOf(const std::string &name, std::string &key, uint64_t &produced)
   produced = n;
   return true;
 }
+ResumeLeftovers resumeLeftovers(const std::vector<std::string> &points,
+                                const std::function<std::optional<bool>(const std::string &key)> &placeholderThere,
+                                const std::vector<std::string> &windowNames) {
+  ResumeLeftovers out;
+  std::vector<std::string> kept;
+  for (const auto &key : points) {
+    const auto there = placeholderThere(key);
+    if (there && !*there)
+      out.points.push_back(key);
+    else
+      kept.push_back(key);
+  }
+  for (const auto &name : windowNames) {
+    std::string owner;
+    uint64_t produced = 0;
+    if (windowFileOf(name, owner, produced) && std::find(kept.begin(), kept.end(), owner) == kept.end())
+      out.windows.push_back(name);
+  }
+  return out;
+}
 } // namespace foil

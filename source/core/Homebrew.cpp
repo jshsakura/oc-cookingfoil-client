@@ -3,6 +3,7 @@
 #include "core/HomebrewCard.hpp"
 #include "core/Json.hpp"
 #include <algorithm>
+#include <sys/stat.h>
 #include <cctype>
 namespace foil::homebrew {
 namespace {
@@ -209,7 +210,9 @@ Ledger parseLedger(const std::string &json) {
   if (!root || !json_object_is_type(root.get(), json_type_object)) return out;
   json_object_object_foreach(root.get(), key, value) {
     if (!json_object_is_type(value, json_type_object) || !idAllowed(key)) continue;
-    Record r{stringField(value, "hash"), stringField(value, "version"), stringField(value, "file"), {}};
+    Record r{stringField(value, "hash"), stringField(value, "version"), stringField(value, "file"), {}, {}, {}};
+    r.seen = {uint64_t(std::max<int64_t>(0, integerField(value, "size"))), integerField(value, "mtime")};
+    r.fileSha = stringField(value, "fileSha");
     auto *files = field(value, "files");
     if (json_object_is_type(files, json_type_array))
       for (size_t f = 0; f < json_object_array_length(files); ++f) {
@@ -228,6 +231,11 @@ std::string serializeLedger(const Ledger &ledger) {
     json_object_object_add(o, "hash", json_object_new_string(r.hash.c_str()));
     json_object_object_add(o, "version", json_object_new_string(r.version.c_str()));
     json_object_object_add(o, "file", json_object_new_string(r.file.c_str()));
+    if (r.seen.size) {
+      json_object_object_add(o, "size", json_object_new_int64(int64_t(r.seen.size)));
+      json_object_object_add(o, "mtime", json_object_new_int64(r.seen.mtime));
+    }
+    if (!r.fileSha.empty()) json_object_object_add(o, "fileSha", json_object_new_string(r.fileSha.c_str()));
     if (!r.files.empty()) {
       auto *files = json_object_new_array();
       for (const auto &f : r.files) json_object_array_add(files, json_object_new_string(f.c_str()));
@@ -236,6 +244,34 @@ std::string serializeLedger(const Ledger &ledger) {
     json_object_object_add(root.get(), id.c_str(), o);
   }
   return json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_NOSLASHESCAPE);
+}
+std::optional<CardFile> cardFile(const std::string &fullPath) {
+  struct stat st {};
+  if (::stat(fullPath.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) return std::nullopt;
+  return CardFile{uint64_t(st.st_size), int64_t(st.st_mtime)};
+}
+LedgerCheck checkLedger(const Ledger &ledger, const std::function<std::optional<CardFile>(const std::string &)> &look,
+                        const std::function<std::string(const std::string &)> &sha256,
+                        const std::function<std::string(const std::string &)> &cardVersion) {
+  LedgerCheck out;
+  for (const auto &[id, record] : ledger) {
+    const auto now = look(record.file);
+    out.onCard[record.file] = now.has_value();
+    if (!now || (record.seen.size && record.seen == *now && !record.fileSha.empty())) continue;
+    const auto sha = sha256(record.file);
+    ++out.hashed;
+    if (sha.empty()) continue; // unreadable now: left for the next look
+    auto fixed = record;
+    fixed.seen = *now;
+    fixed.fileSha = sha;
+    if (!record.fileSha.empty() && sha != record.fileSha) {
+      fixed.hash.clear();
+      fixed.version = cardVersion(record.file);
+      out.followed.push_back(id);
+    }
+    out.fixed[id] = std::move(fixed);
+  }
+  return out;
 }
 Status status(const App &app, const Ledger &ledger, const std::function<bool(const std::string &)> &exists,
               const std::string *cardVersion) {

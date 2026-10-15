@@ -7,6 +7,7 @@
 #include "core/Json.hpp"
 #include "core/Forwarder.hpp"
 #include "core/Homebrew.hpp"
+#include "core/NczPoint.hpp"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -71,6 +72,8 @@ Application::~Application() {
     updateWorker_.join();
   if (clockWorker_.joinable())
     clockWorker_.join();
+  if (resumeCheckWorker_.joinable())
+    resumeCheckWorker_.join();
   if (homebrewWorker_.joinable())
     homebrewWorker_.join();
   if (homebrewCardWorker_.joinable())
@@ -591,6 +594,7 @@ void Application::poll() {
   }
   pollLog();
   pollHomebrew();
+  pollResumeCheck();
   // No dimming or auto-sleep while something downloads.
   const bool downloading = installer_.running() || retroDownloading() || (patchWorker_.joinable() && !patchBusy_.empty()) ||
                            !patchQueue_.empty() ||
@@ -2384,6 +2388,7 @@ void Application::openDownloads(const std::string &sd) {
   }
   history_ = store_.load();
   installer_.loadResumePoints(store_.resumePoints());
+  checkResumePoints();
   const auto old = sd + "/switch/cookingfoil/downloads.json";
   if (history_.empty() && std::filesystem::exists(old)) {
     history_ = history::parse(readFile(old));
@@ -2394,6 +2399,50 @@ void Application::openDownloads(const std::string &sd) {
   }
   history::settle(history_);
   saveHistory();
+}
+// The points were written beside the console's placeholders, which can go
+// without them (a system cleanup, another installer); a point with nothing
+// to resume into is dropped, and the window files no point owns go. Windows
+// written in this run are never touched.
+void Application::checkResumePoints() {
+  if (resumeCheckWorker_.joinable()) return;
+  resumeChecked_ = store_.resumePoints();
+  std::vector<std::string> keys;
+  for (const auto &[key, point] : resumeChecked_) keys.push_back(key);
+  const auto started = std::filesystem::file_time_type::clock::now();
+  resumeCheckWorker_ = std::thread([this, keys, started] {
+    ResumeLeftovers leftovers;
+    guarded("resume check", [&] {
+      const auto there = platform::placeholdersThere(keys);
+      const std::string dir = sdRoot_ + "/switch/cookingfoil/resume";
+      std::vector<std::string> names;
+      std::error_code ec;
+      for (const auto &entry : std::filesystem::directory_iterator(dir, ec))
+        if (entry.last_write_time(ec) < started && !ec) names.push_back(entry.path().filename().string());
+      leftovers = resumeLeftovers(keys, [&](const std::string &key) -> std::optional<bool> {
+        const auto found = there.find(key);
+        return found == there.end() ? std::nullopt : std::optional<bool>(found->second);
+      }, names);
+      for (const auto &name : leftovers.windows) std::filesystem::remove(dir + "/" + name, ec);
+      if (!leftovers.windows.empty())
+        logLine("resume: removed " + std::to_string(leftovers.windows.size()) + " window file(s) no point owns");
+    });
+    resumeStale_ = std::move(leftovers.points);
+    resumeCheckDone_ = true;
+  });
+}
+void Application::pollResumeCheck() {
+  if (!resumeCheckDone_.exchange(false)) return;
+  resumeCheckWorker_.join();
+  // An install that began meanwhile may have made the point again.
+  for (const auto &key : std::exchange(resumeStale_, {})) {
+    const auto now = installer_.resumePoint(key);
+    const auto then = resumeChecked_.find(key);
+    if (!now || then == resumeChecked_.end() || now->plan != then->second.plan || now->url != then->second.url) continue;
+    installer_.forgetResumePoint(key);
+    logLine("resume: " + key + " has no placeholder on the console; it starts over");
+  }
+  resumeChecked_.clear();
 }
 // Every five seconds (or right away once something changed what is on the
 // card), on a worker; the frame only picks up what it found.

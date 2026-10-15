@@ -353,6 +353,9 @@ private:
   std::thread homebrewCardWorker_;
   std::atomic<bool> homebrewCardDone_{false};
   std::vector<homebrew::CardNro> homebrewCardFound_; // the worker's result, taken on the main thread
+  homebrew::Ledger homebrewLedgerLooked_;             // the ledger the worker checked
+  homebrew::LedgerCheck homebrewLedgerFound_;          // and what it found
+  void takeHomebrewLedgerCheck();
   void scanHomebrewCard();
   void matchHomebrewCard();
   const homebrew::App &homebrewAt(int index) const; // a homebrewRows() index
@@ -435,7 +438,7 @@ private:
   bool homebrewShortcutPossible(const homebrew::App &app) const;
   void requestHomebrewShortcut(const homebrew::App &app);
   void removeHomebrew(const homebrew::App &app);
-  void settleHomebrew(const homebrew::App &app);
+  void settleHomebrew(const homebrew::App &app, const std::optional<homebrew::CardFile> &seen, const std::string &fileSha);
   void saveHomebrewLedger();
   void home();
   void library();
@@ -759,6 +762,13 @@ private:
   uint32_t clockAskedAt_ = 0;         // SDL ticks then, to carry it forward
   uint32_t clockCheckedAt_ = 0;       // the last comparison, at most one a minute
   std::thread clockWorker_;
+  // Resume points checked against the console's placeholders once a run.
+  std::thread resumeCheckWorker_;
+  std::atomic<bool> resumeCheckDone_{false};
+  std::map<std::string, DownloadStore::ResumePoint> resumeChecked_;
+  std::vector<std::string> resumeStale_;
+  void checkResumePoints();
+  void pollResumeCheck();
   std::atomic<bool> clockDone_{false};
   std::function<void()> clockFinish_;
   void pollClock();

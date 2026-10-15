@@ -6,7 +6,10 @@
 // window restore() needs is too big for a plan; it goes in a file of its own
 // beside the download (windowFileName).
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include <string>
+#include <vector>
 namespace foil {
 struct NczPoint {
   static constexpr uint32_t CurrentVersion = 1;
@@ -31,4 +34,15 @@ struct NczPoint {
 // name.
 std::string windowFileName(const std::string &key, uint64_t produced);
 bool windowFileOf(const std::string &name, std::string &key, uint64_t &produced);
+// The console is the truth and a resume point only a note of it: a point
+// whose placeholder is gone goes (nothing to resume into), and so does a
+// window file no point is left to own. `placeholderThere` answers nothing
+// when it could not look, and then the point stays.
+struct ResumeLeftovers {
+  std::vector<std::string> points;  // keys to forget
+  std::vector<std::string> windows; // window file names to delete
+};
+ResumeLeftovers resumeLeftovers(const std::vector<std::string> &points,
+                                const std::function<std::optional<bool>(const std::string &key)> &placeholderThere,
+                                const std::vector<std::string> &windowNames);
 } // namespace foil

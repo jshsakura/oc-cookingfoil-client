@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 namespace foil::homebrew {
@@ -81,13 +82,44 @@ std::string sdPath(const std::string &fileName);
 // SHA-256 ("abc", W/"...").
 std::string etagSha256(const std::string &etag);
 // What this console holds, kept in sdmc:/switch/cookingfoil/homebrew.json.
+// The card is the truth and the ledger a cache of it: `size`, `mtime` and
+// `fileSha` are the .nro as it was last seen, so a later look that finds the
+// same size and time needs no hash.
+struct CardFile {
+  uint64_t size = 0;
+  int64_t mtime = 0;
+  bool operator==(const CardFile &other) const { return size == other.size && mtime == other.mtime; }
+};
 struct Record {
   std::string hash, version, file; // file: the .nro, from the SD card root
   std::vector<std::string> files;  // a folder install's other files, for removal
+  CardFile seen;                   // size 0: never seen (a ledger from before)
+  std::string fileSha;             // the .nro's own SHA-256, lowercase hex
+  bool operator==(const Record &other) const {
+    return hash == other.hash && version == other.version && file == other.file && files == other.files &&
+           seen == other.seen && fileSha == other.fileSha;
+  }
 };
 using Ledger = std::map<std::string, Record>; // by app id
 Ledger parseLedger(const std::string &json);
 std::string serializeLedger(const Ledger &ledger);
+// The size and modified time of a file at a full path, or nothing.
+std::optional<CardFile> cardFile(const std::string &fullPath);
+// The ledger checked against the card. A file with the size and time it was
+// seen with is taken as it is, unhashed. Otherwise it is hashed: the same
+// bytes (only touched, or a ledger from before marks) keep the record and
+// take the new marks; other bytes mean the card holds something else, and the
+// record follows it: no build hash (it reads as an update) and the card's
+// version. A file gone is only reported; status() already reads it so.
+struct LedgerCheck {
+  std::map<std::string, bool> onCard; // ledger file -> on the card
+  Ledger fixed;                       // the records that change, by app id
+  std::vector<std::string> followed;  // app ids whose card file differed
+  size_t hashed = 0;
+};
+LedgerCheck checkLedger(const Ledger &ledger, const std::function<std::optional<CardFile>(const std::string &)> &look,
+                        const std::function<std::string(const std::string &)> &sha256,
+                        const std::function<std::string(const std::string &)> &cardVersion);
 enum class Status { Available, Installed, Update };
 // `exists` checks a path from the SD card root. Without a ledger entry on
 // the card, `cardVersion` (the version of the app's file the card scan

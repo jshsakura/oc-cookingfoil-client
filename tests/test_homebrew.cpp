@@ -174,6 +174,59 @@ int runHomebrewTests() {
     CHECK(status(moved, ledger, there) == Status::Update);
   }
   {
+    // The card is the truth, the ledger a cache: marks round trip, the same
+    // size and time are taken unhashed, anything else is hashed and followed.
+    Record seen{"sha256:fb7d", "1.1.0", "switch/a/a.nro", {}, {100, 5}, "aa"};
+    const auto back = parseLedger(serializeLedger({{"a", seen}}));
+    CHECK(back.at("a") == seen);
+    std::map<std::string, CardFile> card{{"switch/a/a.nro", {100, 5}}};
+    std::map<std::string, std::string> bytes{{"switch/a/a.nro", "aa"}};
+    int hashes = 0;
+    const auto look = [&](const std::string &f) -> std::optional<CardFile> {
+      const auto at = card.find(f);
+      return at == card.end() ? std::nullopt : std::optional<CardFile>(at->second);
+    };
+    const auto sha = [&](const std::string &f) { ++hashes; return bytes.count(f) ? bytes.at(f) : std::string(); };
+    const auto version = [](const std::string &) { return std::string("2.0.0"); };
+    const Ledger ledger{{"a", seen}};
+    // Same: no hash, nothing to fix.
+    auto same = checkLedger(ledger, look, sha, version);
+    CHECK(hashes == 0 && same.hashed == 0 && same.fixed.empty() && same.onCard.at("switch/a/a.nro"));
+    // Only touched: hashed once, the same bytes, the record kept with new marks.
+    card["switch/a/a.nro"] = {100, 9};
+    auto touched = checkLedger(ledger, look, sha, version);
+    CHECK(hashes == 1 && touched.followed.empty() && touched.fixed.at("a").hash == "sha256:fb7d" &&
+          touched.fixed.at("a").seen == (CardFile{100, 9}));
+    // Other bytes: the record follows the card, so it no longer reads as the
+    // server's build (an update) and shows the card's version.
+    card["switch/a/a.nro"] = {120, 9};
+    bytes["switch/a/a.nro"] = "bb";
+    auto other = checkLedger(ledger, look, sha, version);
+    CHECK(other.followed == std::vector<std::string>{"a"});
+    CHECK(other.fixed.at("a").hash.empty() && other.fixed.at("a").version == "2.0.0" && other.fixed.at("a").fileSha == "bb");
+    App listed;
+    listed.id = "a";
+    listed.hash = "sha256:fb7d";
+    listed.installPath = "switch/a/a.nro";
+    const auto there = [](const std::string &) { return true; };
+    CHECK(status(listed, ledger, there) == Status::Installed);
+    CHECK(status(listed, other.fixed, there) == Status::Update);
+    // Gone: reported, not hashed.
+    hashes = 0;
+    card.clear();
+    auto gone = checkLedger(ledger, look, sha, version);
+    CHECK(hashes == 0 && !gone.onCard.at("switch/a/a.nro") && gone.fixed.empty());
+    // A ledger from before marks: hashed once and taken as it is.
+    card["switch/a/a.nro"] = {120, 9};
+    const Ledger older{{"a", {"sha256:fb7d", "1.1.0", "switch/a/a.nro", {}}}};
+    auto adopted = checkLedger(older, look, sha, version);
+    CHECK(hashes == 1 && adopted.followed.empty() && adopted.fixed.at("a").fileSha == "bb" &&
+          adopted.fixed.at("a").hash == "sha256:fb7d");
+    // Unreadable: left for the next look.
+    bytes.clear();
+    CHECK(checkLedger(older, look, sha, version).fixed.empty());
+  }
+  {
     // Patches and saves name an app by its folder; the list gives its name.
     std::vector<App> listed(2);
     listed[0].app = "ytb";

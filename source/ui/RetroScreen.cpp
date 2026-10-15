@@ -37,15 +37,6 @@ bool fileExists(const std::string &path) {
   struct stat st {};
   return stat(path.c_str(), &st) == 0;
 }
-// A file's SHA-256 as 64 lowercase hex digits; "" when it cannot be read.
-std::string sha256File(const std::string &path) {
-  std::unique_ptr<FILE, int (*)(FILE *)> in(std::fopen(path.c_str(), "rb"), std::fclose);
-  if (!in) return "";
-  Sha256 sha;
-  std::vector<char> buffer(1 << 20);
-  for (size_t n; (n = std::fread(buffer.data(), 1, buffer.size(), in.get())) > 0;) sha.update(buffer.data(), n);
-  return std::ferror(in.get()) ? "" : sha.hex();
-}
 uint64_t fileSize(const std::string &path) {
   struct stat st {};
   return stat(path.c_str(), &st) == 0 ? uint64_t(st.st_size) : 0;

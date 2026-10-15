@@ -396,6 +396,35 @@ Parsed<std::vector<std::string>> referenced(Database &db) {
 }
 } // namespace
 #endif
+std::map<std::string, bool> placeholdersThere(const std::vector<std::string> &keys) {
+  std::map<std::string, bool> out;
+#ifdef __SWITCH__
+  NcmSession ncm;
+  if (R_FAILED(ncm.rc) || keys.empty()) return out;
+  for (const auto &[prefix, id] : {std::pair<std::string, NcmStorageId>{"sd:", NcmStorageId_SdCard},
+                                   std::pair<std::string, NcmStorageId>{"nand:", NcmStorageId_BuiltInUser}}) {
+    Storage storage;
+    if (R_FAILED(ncmOpenContentStorage(&storage.cs, id))) continue;
+    storage.opened = true;
+    for (const auto &key : keys) {
+      if (key.compare(0, prefix.size(), prefix) != 0 || key.size() != prefix.size() + 32) continue;
+      // The engine names a file's placeholder by its NCA id.
+      NcmPlaceHolderId holder{};
+      bool hex = true;
+      for (int b = 0; b < 16 && hex; ++b) {
+        unsigned value = 0;
+        hex = std::sscanf(key.c_str() + prefix.size() + b * 2, "%2x", &value) == 1;
+        holder.uuid.uuid[b] = u8(value);
+      }
+      bool has = false;
+      if (hex && R_SUCCEEDED(ncmContentStorageHasPlaceHolder(&storage.cs, &has, &holder))) out[key] = has;
+    }
+  }
+#else
+  (void)keys;
+#endif
+  return out;
+}
 Parsed<CleanupReport> cleanOrphans(bool remove, CleanupProgress *progress,
                                    const std::function<bool(const std::string &key)> &keep) {
 #ifdef __SWITCH__

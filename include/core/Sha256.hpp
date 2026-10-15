@@ -18,6 +18,8 @@ private:
   size_t used_ = 0;
   uint64_t total_ = 0;
 };
+// A file's SHA-256 as 64 lowercase hex digits; "" when it cannot be read.
+std::string sha256File(const std::string &path);
 // The bytes a lowercase or uppercase hex string spells; empty when it is not
 // hex of whole bytes.
 std::string hexBytes(const std::string &hex);
