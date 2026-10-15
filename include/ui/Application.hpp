@@ -17,6 +17,7 @@
 #include "core/ShopSaves.hpp"
 #include "core/ClientUpdate.hpp"
 #include "core/Patches.hpp"
+#include "core/CardPatches.hpp"
 #include "core/I18n.hpp"
 #include <condition_variable>
 #include <deque>
@@ -310,6 +311,9 @@ public:
     int64_t installedNumber = -1; // the installed update's version number
     bool installed = false;
     int shopGroup = -1; // the game in the shop's catalog, if it is there
+    // Files on the card no record of this app accounts for (scanCardPatches):
+    // a patch of some kind is there, which one cannot be told. Shown only.
+    bool onCard = false;
   };
   // Tabs over the list; L R or a tap switches.
   // Starts on the games this console has; L R widens to every patch.
@@ -1101,6 +1105,9 @@ private:
   // Bumped whenever the ledger copy changes; a check of an older copy is dropped.
   uint64_t patchLedgerGen_ = 0, patchCheckGen_ = 0;
   std::map<std::string, PatchHealth> patchHealth_; // per patch id, what the check found
+  // Patches on the card put there some other way, found by the check's
+  // thread (incoming) and taken on the drawing thread.
+  std::vector<CardPatch> cardPatches_, incomingCardPatches_;
   Qr qr_;
   bool pairingPending_ = false;
   net::PairingInfo pairingInfo_;

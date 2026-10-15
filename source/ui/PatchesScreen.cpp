@@ -55,7 +55,7 @@ constexpr std::chrono::milliseconds CheckBudget{1500};
 } // namespace
 bool Application::patchFilterMatches(PatchFilter filter, const PatchRow &row) {
   switch (filter) {
-  case PatchFilter::Stored: return row.record.has_value();
+  case PatchFilter::Stored: return row.record.has_value() || row.onCard;
   case PatchFilter::Updates: return updateAvailable(row);
   default: return true;
   }
@@ -115,6 +115,20 @@ std::vector<Application::PatchRow> Application::allPatchRows() const {
     row.patch.name = record.name;
     row.patch.version = record.version;
     row.patch.size = record.bytes;
+    describe(row);
+    rows.push_back(std::move(row));
+  }
+  // Patches on the card put there another way: the game and what they
+  // change are known, the patch itself is not.
+  for (const auto &card : cardPatches_) {
+    PatchRow row;
+    row.patch.id = "card:" + card.titleId;
+    row.patch.titleId = card.titleId;
+    row.patch.name = tr("Unknown patch");
+    row.patch.kinds = card.kinds;
+    row.patch.size = card.bytes;
+    row.patch.files = int(card.files);
+    row.onCard = true;
     describe(row);
     rows.push_back(std::move(row));
   }
@@ -233,8 +247,11 @@ void Application::startPatchCheck() {
   }
   patchCheckStop_ = false;
   auto *checker = patchChecker_.get();
-  patchCheckWorker_ = std::thread([this, checker] {
-    guarded("patch check", [&] { checker->run(CheckLooks, CheckBudget, &patchCheckStop_); });
+  patchCheckWorker_ = std::thread([this, checker, sd = patchStore_->sdRoot(), records = patchRecords_] {
+    guarded("patch check", [&] {
+      checker->run(CheckLooks, CheckBudget, &patchCheckStop_);
+      if (!patchCheckStop_) incomingCardPatches_ = scanCardPatches(sd, records);
+    });
     patchCheckDone_ = true;
   });
 }
@@ -242,6 +259,9 @@ void Application::startPatchCheck() {
 void Application::pollPatchCheck() {
   if (patchCheckDone_.exchange(false)) {
     patchCheckWorker_.join();
+    if (patchCheckGen_ == patchLedgerGen_ && !patchCheckStop_)
+      cardPatches_ = std::move(incomingCardPatches_);
+    incomingCardPatches_.clear();
     if (patchCheckGen_ == patchLedgerGen_) {
       for (const auto &[id, health] : patchChecker_->health())
         patchHealth_[id] = health;
@@ -282,6 +302,7 @@ std::vector<PatchChoice> patchChoices(const Application::PatchRow &row, bool mis
   // game comes first. An app comes from 홈브류 instead.
   if (!app && !row.installed && row.shopGroup >= 0)
     out.push_back({PatchOp::Game, tr("Download the game"), tr("The game must be installed before the patch can be applied.")});
+  if (row.onCard) return out; // not this app's to change
   if (!row.record) {
     if (row.onServer)
       out.push_back({PatchOp::Get, tr("Download and apply the patch"), tr("Downloads the patch to the SD card and applies it right away.")});
@@ -355,8 +376,10 @@ void Application::patchAction(Action a) {
       message(tr("Try again when the patch task is done."));
       return;
     }
-    if (patchChoices(row, missingFiles(patchHealth_, row.patch.id)).empty())
+    if (patchChoices(row, missingFiles(patchHealth_, row.patch.id)).empty()) {
+      if (row.onCard) message(tr("There is no information about this patch. It was put on the SD card another way."));
       return;
+    }
     patchPickId_ = row.patch.id;
     managingPatch_ = true;
     patchMenuRow_ = 0;
@@ -607,7 +630,7 @@ void Application::patchesScreen() {
   // The title counts what the tab shows, as on 내 게임 and 홈브류.
   int on = 0;
   for (const auto &row : rows)
-    on += row.record && row.record->on;
+    on += (row.record && row.record->on) || row.onCard;
   // As on 세이브: search at the right end, the tabs (L R or a tap) left of
   // it; - reloads the list.
   const float searchX = SearchX;
@@ -705,7 +728,7 @@ void Application::patchesScreen() {
       for (const auto &kind : row.patch.kinds)
         if (std::find(kinds.begin(), kinds.end(), kind) == kinds.end()) kinds.push_back(kind);
       mismatch |= versionMismatch(row.patch, row);
-      gone &= !row.onServer;
+      gone &= !row.onServer && !row.onCard;
       bytes += row.record ? row.record->bytes : row.patch.size;
     }
     float at = 382;
@@ -739,7 +762,7 @@ void Application::patchesScreen() {
       const auto &row = rows[r];
       if (patchBusy_ == row.patch.id && !row.patch.id.empty()) busy = &row;
       update |= updateAvailable(row);
-      on |= row.record && row.record->on;
+      on |= (row.record && row.record->on) || row.onCard;
       stored |= row.record.has_value();
     }
     const std::string state = busy ? tr(patchBusyLabel_.c_str())
@@ -806,7 +829,8 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
     }
     std::string meta;
     if (!row.patch.version.empty()) meta = "v" + row.patch.version;
-    if (!row.onServer) meta += (meta.empty() ? "" : " · ") + std::string(tr("Gone from server"));
+    if (row.onCard) meta = tr("Put there another way");
+    else if (!row.onServer) meta += (meta.empty() ? "" : " · ") + std::string(tr("Gone from server"));
     if (row.record && !row.record->shadowed.empty())
       meta += (meta.empty() ? "" : " · ") + std::string(tr("Partly covered by another patch"));
     if (const char *note = healthNote(patchHealth_, row))
@@ -816,10 +840,11 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
     const bool busy = patchBusy_ == row.patch.id && !row.patch.id.empty();
     const bool update = updateAvailable(row);
     const std::string state = busy ? tr(patchBusyLabel_.c_str())
+                              : row.onCard ? tr("On")
                               : !row.record ? tr("Not installed")
                               : update ? tr("Update|item")
                               : row.record->on ? tr("On") : tr("Off");
-    const bool lit = row.record && row.record->on && !busy && !update;
+    const bool lit = ((row.record && row.record->on) || row.onCard) && !busy && !update;
     const float sw = paint_.fonts.measure(state, 15, true) + 20;
     paint_.rect(x + w - 16 - sw, y + 10, sw, 26, busy || update ? Butter : lit ? Good : Surface, 8);
     paint_.fonts.middle(state, x + w - 16 - sw + 10, y + 23, 15, lit ? Surface : Ink, true);
