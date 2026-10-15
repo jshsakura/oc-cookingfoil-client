@@ -19,7 +19,7 @@ uint64_t Application::homebrewShortcutId(const homebrew::App &app) const {
   return forwarder::titleId(forwarder::loaderPath(homebrewFile(app)));
 }
 uint64_t Application::homebrewServerShortcut(const homebrew::App &app) const {
-  return app.cardOnly ? 0 : forwarder::parseHexId(app.forwarderTitleId);
+  return app.cardOnly ? 0 : forwarder::serverShortcutId(app.forwarderTitleId);
 }
 bool Application::homebrewHasShortcut(const homebrew::App &app) const {
   const auto server = homebrewServerShortcut(app);
@@ -87,7 +87,7 @@ void Application::removeHomebrewShortcut(const homebrew::App &app) {
 void Application::removeShortcuts(const std::vector<uint64_t> &ids, const std::string &name) {
   bool removed = false;
   for (const auto id : ids) {
-    if (!id || !shortcuts_.count(id)) continue;
+    if (!forwarder::shortcutId(id) || !shortcuts_.count(id)) continue;
     if (const auto error = platform::removeShortcut(id)) {
       alertTitle_ = tr("Could not delete the shortcut");
       alert_ = error.message;

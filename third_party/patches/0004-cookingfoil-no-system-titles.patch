@@ -1,0 +1,12 @@
+--- a/source/install/install.cpp
++++ b/source/install/install.cpp
+@@ -141,6 +141,9 @@
+                 
+                 m_contentMeta.push_back(std::get<0>(cnmtTuple));
+                 NcmContentInfo cnmtContentRecord = std::get<1>(cnmtTuple);
++                // CookingFoil: never a system title, signature check or not.
++                const NcmContentMetaKey key = m_contentMeta.back().GetContentMetaKey();
++                foil::install::checkTitle(key.id, key.type);
+ 
+                 nx::ncm::ContentStorage contentStorage(m_destStorageId);
+ 

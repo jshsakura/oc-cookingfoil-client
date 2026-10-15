@@ -8,6 +8,7 @@
 #include "core/Forwarder.hpp"
 #include "core/Homebrew.hpp"
 #include "core/NczPoint.hpp"
+#include "core/TitleGuard.hpp"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -2053,6 +2054,11 @@ Error Application::startInstall(const std::vector<Item> &files, const std::strin
                                 const std::string &target, std::vector<UserPatch> patches, bool first) {
   // A file already queued or installing is not added twice; one that failed
   // or was canceled before leaves 실패 and 취소 as it goes in again.
+  for (const auto &f : files)
+    if (!catalogTitleAllowed(f.titleId) || !catalogTitleAllowed(f.baseId)) {
+      logLine("install refused: system title " + f.titleId);
+      return {tr("This is a system title, which cannot be installed.")};
+    }
   std::vector<Item> fresh;
   for (const auto &f : files) {
     const bool waiting = std::any_of(installQueue_.begin(), installQueue_.end(),

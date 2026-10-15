@@ -183,6 +183,10 @@ int runForwarderTests() {
     const auto legacy = titleId("/switch/foo/foo.nro", "", LegacyTitleIdPrefix);
     CHECK(legacy >> 56 == 0x01 && (legacy & 0x00FFFFFFFFFFFFFFULL) == (0x0595CE38EDAC1000ULL & 0x00FFFFFFFFFFFFFFULL));
     CHECK(hexId(0x0595CE38EDAC1000ULL) == "0595CE38EDAC1000");
+    // Only the shortcut range is ever installed or removed as a shortcut.
+    CHECK(shortcutId(0x0595CE38EDAC1000ULL) && shortcutId(titleId("/switch/foo/foo.nro")));
+    CHECK(!shortcutId(0x0100000000001000ULL) && !shortcutId(0x0100ABCDEF012000ULL) && !shortcutId(0x0595CE38EDAC1001ULL) && !shortcutId(0));
+    CHECK(serverShortcutId("05D8F62C1705B000") == 0x05D8F62C1705B000ULL && serverShortcutId("0100000000001000") == 0);
     CHECK(parseHexId("0595ce38edac1000") == 0x0595CE38EDAC1000ULL && parseHexId("") == 0 && parseHexId("0595CE38EDAC10") == 0);
     CHECK(launchArgs("/switch/a.nro") == "/switch/a.nro");
     CHECK(launchArgs("/switch/my app.nro", "x") == "\"/switch/my app.nro\" x");

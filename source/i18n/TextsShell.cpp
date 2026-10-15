@@ -147,6 +147,8 @@ const Translation rows[] = {
     {"It did not install, so the rest picked with it was taken off the queue.", "설치하지 못해 함께 고른 항목을 대기열에서 뺐습니다.", "インストールできなかったため、一緒に選んだ項目を順番待ちから外しました。", "安装失败，已将一起选择的项目移出队列。"},
     {"Installed. You can launch it from the HOME Menu.", "설치했습니다. 홈 메뉴에서 실행할 수 있습니다.", "インストールしました。HOMEメニューから起動できます。", "已安装。可从 HOME 菜单启动。"},
     {"Install canceled.", "설치를 취소했습니다.", "インストールをキャンセルしました。", "已取消安装。"},
+    {"This is a system title, which cannot be installed.", "시스템 타이틀이라 설치할 수 없습니다.",
+     "システムタイトルのため、インストールできません。", "这是系统内容，无法安装。"},
     {"Queued", "대기 중", "待機中", "等待中"},
     {"{0} · Queued", "{0} · 설치 대기", "{0} · インストール待ち", "{0} · 等待安装"},
     {"Done", "완료", "完了", "完成"},

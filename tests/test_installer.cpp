@@ -1,4 +1,5 @@
 #include "Test.hpp"
+#include "core/TitleGuard.hpp"
 #include "install/Installer.hpp"
 #include <algorithm>
 int runInstallerTests() {
@@ -173,6 +174,20 @@ int runInstallerTests() {
       window.add(step * 0.5, bytes += 2 * MiB);
     const double shown = window.speed(120);
     CHECK(shown > 3.6 && shown < 4.4);
+  }
+    {
+    // Never a system title, whatever the signature check: below the first
+    // application id, or a system kind of content, is refused.
+    using foil::installAllowed;
+    CHECK(!installAllowed(0x0100000000001000ULL, 0x80)); // the HOME Menu
+    CHECK(!installAllowed(0x0100000000000809ULL, 0x80)); // system data
+    CHECK(!installAllowed(0x0100000000000816ULL, 0x03)); // a system update
+    CHECK(!installAllowed(0x0100000000000000ULL, 0x80) && !installAllowed(0, 0x80));
+    CHECK(!installAllowed(0x01007EF00011E000ULL, 0x01)); // a game's id as a system program
+    CHECK(installAllowed(0x01007EF00011E000ULL, 0x80) && installAllowed(0x01007EF00011E800ULL, 0x81) &&
+          installAllowed(0x01007EF00011F001ULL, 0x82) && installAllowed(0x0595CE38EDAC1000ULL, 0x80));
+    CHECK(!foil::catalogTitleAllowed("0100000000001000") && !foil::catalogTitleAllowed("010000000000FFFF"));
+    CHECK(foil::catalogTitleAllowed("01007EF00011E000") && foil::catalogTitleAllowed("") && foil::catalogTitleAllowed("nope"));
   }
   return failures;
 }

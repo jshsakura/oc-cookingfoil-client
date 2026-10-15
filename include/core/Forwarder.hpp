@@ -37,6 +37,13 @@ std::string launchArgs(const std::string &nroPath, const std::string &extra = ""
 uint64_t titleId(const std::string &nroPath, const std::string &extra = "", uint64_t prefix = TitleIdPrefix);
 std::string hexId(uint64_t id);          // 16 upper-case hex digits
 uint64_t parseHexId(const std::string &); // 0 when it is no 16-digit id
+// Whether an id is a shortcut's: 0x05 in the top byte, the low 12 bits zero
+// (sphaira's range, and the one the server builds its forwarders in). A
+// server's id outside it could name a game or a system title, which
+// installing or removing a shortcut must never touch.
+bool shortcutId(uint64_t id);
+// The server's forwarder id when it is a shortcut's, else 0.
+uint64_t serverShortcutId(const std::string &hex);
 
 constexpr size_t NacpSize = 0x4000;
 // A NACP for an .nro that carries none: the name and author in every

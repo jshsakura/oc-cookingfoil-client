@@ -21,6 +21,10 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
 // 다운로드's database, so the next try goes on from that byte. `nca` is its id
 // or file name ("0123….nca"). True when such a point is kept for it.
 bool resumable(const std::string &nca);
+// The package's own record (its content meta key), before anything of it is
+// written: throws for a system title or a system kind of content, which this
+// app never installs, the signature check skipped or not.
+void checkTitle(uint64_t titleId, uint8_t metaType);
 void forgetResume(const std::string &nca);
 // A solid NCZ (`nca`, `size` bytes in the file): the point kept for it by this
 // download (the same file at the same place), with its decoded window read

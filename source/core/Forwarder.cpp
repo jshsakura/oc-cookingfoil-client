@@ -207,6 +207,11 @@ uint64_t parseHexId(const std::string &text) {
   if (text.size() != 16 || text.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) return 0;
   return std::stoull(text, nullptr, 16);
 }
+bool shortcutId(uint64_t id) { return (id >> 56) == (TitleIdPrefix >> 56) && (id & 0xFFF) == 0; }
+uint64_t serverShortcutId(const std::string &hex) {
+  const auto id = parseHexId(hex);
+  return shortcutId(id) ? id : 0;
+}
 std::string blankNacp(const std::string &name, const std::string &author, const std::string &version) {
   std::string nacp(NacpSize, '\0');
   for (size_t i = 0; i < NacpEntries; ++i) {

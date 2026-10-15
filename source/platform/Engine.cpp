@@ -17,6 +17,10 @@
 #include "net/Segments.hpp"
 #include "core/DownloadStore.hpp"
 #include "core/Json.hpp"
+#include "core/Log.hpp"
+#include "core/TitleGuard.hpp"
+#include <cstdio>
+#include <stdexcept>
 #include <unistd.h>
 #include <fcntl.h>
 #include <map>
@@ -196,6 +200,13 @@ std::string resumeKey(const std::string &nca) {
   return (sink ? sink->target() : std::string("sd")) + ":" + id;
 }
 } // namespace
+void checkTitle(uint64_t titleId, uint8_t metaType) {
+  if (installAllowed(titleId, metaType)) return;
+  char line[96];
+  std::snprintf(line, sizeof line, "install refused: title %016llX, content meta type 0x%02X", (unsigned long long)titleId, metaType);
+  logLine(line);
+  throw std::runtime_error(tr("This is a system title, which cannot be installed."));
+}
 bool resumable(const std::string &nca) {
   auto *sink = engineSink();
   return sink && sink->resumePoint(resumeKey(nca)).has_value();

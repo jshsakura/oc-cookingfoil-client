@@ -26,6 +26,7 @@ bool restarting = false;
 std::atomic<uint64_t> restarts{0};
 std::mutex tokenLock;
 std::string token;
+std::string tokenOrigin; // where the server says the token goes; empty until it says
 std::atomic<bool> tokenRejected{false};
 std::mutex renewLock; // one ask at a time; the others wait for its token
 std::function<long()> renewer;
@@ -78,6 +79,14 @@ void heardHeader(const char *data, size_t bytes) {
     }
     return;
   }
+  if (key == "x-cookingfoil-download-origin") {
+    const auto value = trimmed();
+    if (value.rfind("https://", 0) == 0 && value.find_first_of(" \t\r\n/", 8) == std::string::npos) {
+      std::lock_guard<std::mutex> held(tokenLock);
+      tokenOrigin = value;
+    }
+    return;
+  }
   if (key == "x-cookingfoil-session") { // the session token refused: expired | revoked | invalid
     sessionRefused.fetch_add(1);
     const auto value = trimmed();
@@ -120,6 +129,16 @@ std::string downloadToken() {
   return token;
 }
 bool downloadTokenRejected() { return tokenRejected; }
+std::string downloadTokenOrigin() {
+  std::lock_guard<std::mutex> held(tokenLock);
+  return tokenOrigin;
+}
+void forgetDownloadToken() {
+  std::lock_guard<std::mutex> held(tokenLock);
+  token.clear();
+  tokenOrigin.clear();
+  tokenRejected = false;
+}
 void setTokenRenewer(std::function<long()> renew) {
   std::lock_guard<std::mutex> held(renewLock);
   renewer = std::move(renew);

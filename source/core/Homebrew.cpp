@@ -1,4 +1,5 @@
 #include "core/Homebrew.hpp"
+#include "core/Forwarder.hpp"
 #include <set>
 #include "core/HomebrewCard.hpp"
 #include "core/Json.hpp"
@@ -68,7 +69,7 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
     a.forwarderUrl = urlField(o, "forwarder_url", base);
     a.forwarderTitleId = stringField(o, "forwarder_title_id");
     a.forwarderSize = uint64_t(std::max<int64_t>(0, integerField(o, "forwarder_size")));
-    if (a.forwarderTitleId.size() != 16 || a.forwarderTitleId.find_first_not_of("0123456789ABCDEFabcdef") != std::string::npos)
+    if (!forwarder::serverShortcutId(a.forwarderTitleId))
       a.forwarderUrl.clear(), a.forwarderTitleId.clear();
     if (!idAllowed(a.id) || a.name.empty() || a.hash.empty() || !fileNameAllowed(a.fileName) ||
         a.downloadUrl.empty())

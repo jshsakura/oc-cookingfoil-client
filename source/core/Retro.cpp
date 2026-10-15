@@ -1,4 +1,5 @@
 #include "core/Retro.hpp"
+#include "core/Forwarder.hpp"
 #include "core/Json.hpp"
 #include "core/I18n.hpp"
 #include <algorithm>
@@ -91,8 +92,7 @@ Game parseGame(json_object *object, const std::string &base) {
   g.bundleUrl = url(object, "bundleUrl", base);
   g.forwarderUrl = url(object, "forwarderUrl", base);
   g.forwarderTitleId = stringField(object, "forwarderTitleId");
-  if (g.forwarderTitleId.size() != 16 ||
-      g.forwarderTitleId.find_first_not_of("0123456789ABCDEFabcdef") != std::string::npos)
+  if (!forwarder::serverShortcutId(g.forwarderTitleId))
     g.forwarderUrl.clear(), g.forwarderTitleId.clear();
   g.forwarderSize = positive(object, "forwarderSize");
   if (auto *install = field(object, "install"); json_object_is_type(install, json_type_object)) {

@@ -9,14 +9,13 @@ namespace foil {
 constexpr uint64_t MaxZipUncompressed = 512ULL * 1024 * 1024;
 constexpr uint32_t MaxZipRatio = 100;
 constexpr size_t MaxZipEntries = 10000;
-// Rejects empty names, any "..", and absolute Unix, UNC or drive paths.
-// Inline so it is usable where minizip is not linked.
+// Rejects empty names, any "..", absolute paths, backslashes and any colon:
+// a device name (sdmc:, romfs:) as much as a drive letter. Inline so it is
+// usable where minizip is not linked.
 inline bool isSafeArchivePath(const std::string &archivePath) {
   if (archivePath.empty() || archivePath.find("..") != std::string::npos)
     return false;
-  if (archivePath[0] == '/' || archivePath[0] == '\\')
-    return false;
-  return !(archivePath.size() >= 2 && archivePath[1] == ':');
+  return archivePath[0] != '/' && archivePath.find_first_of("\\:") == std::string::npos;
 }
 
 class ZipArchive {

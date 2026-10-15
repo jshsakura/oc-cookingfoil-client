@@ -320,6 +320,20 @@ int runNetworkTests() {
         hear("X-CookingFoil-Download-Token: new.token.x\r\n");
         hear("\r\n");
         CHECK(foil::net::downloadToken() == "new.token.x" && !foil::net::downloadTokenRejected());
+        // Once the server names the direct address, the token goes there
+        // only: a mirror in the list gets nothing.
+        hear("HTTP/1.1 200 OK\r\n");
+        hear("X-CookingFoil-Download-Origin: https://dl.example:38443\r\n");
+        hear("\r\n");
+        CHECK(foil::net::downloadTokenOrigin() == "https://dl.example:38443");
+        CHECK(has(foil::net::downloadHeaders(shop, state, "https://dl.example:38443/games/x.nsz"), "Bearer new.token.x"));
+        CHECK(!has(foil::net::downloadHeaders(shop, state, "https://mirror.example/games/x.nsz"), "Bearer"));
+        CHECK(!has(foil::net::downloadHeaders(shop, state, "https://dl.example/games/x.nsz"), "Bearer"));
+        // Anything but a bare https origin is not taken.
+        hear("X-CookingFoil-Download-Origin: http://evil.example\r\n");
+        hear("X-CookingFoil-Download-Origin: https://evil.example/path\r\n");
+        CHECK(foil::net::downloadTokenOrigin() == "https://dl.example:38443");
+        foil::net::forgetDownloadToken();
     }
     return failures;
 }

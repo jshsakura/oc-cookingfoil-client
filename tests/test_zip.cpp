@@ -18,7 +18,7 @@ int pathTests() {
        {"", "../etc/passwd", "save/../../etc/passwd", "save/../file.txt", "..\\windows\\system32",
         "save\\..\\file.txt", "/etc/passwd", "/root/.ssh/id_rsa", "/home/user/file.txt", "C:\\Windows\\System32",
         "D:\\secret\\file.txt", "c:\\users\\admin\\desktop", "\\\\server\\share\\file", "\\etc\\passwd",
-        "file..txt", "save..backup/file.txt"})
+        "file..txt", "save..backup/file.txt", "sdmc:/switch/x.nro", "romfs:/a", "save/sdmc:x", "a\\b"})
     CHECK(!isSafeArchivePath(unsafe));
   CHECK(foil::MaxZipUncompressed == 512ULL * 1024 * 1024);
   CHECK(foil::MaxZipRatio == 100U);

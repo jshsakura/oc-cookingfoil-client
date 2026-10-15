@@ -181,7 +181,7 @@ int runRetroTests() {
   kept.iconUrl = "https://shop.example/i.png";
   kept.bundleUrl = "https://shop.example/b.tar";
   kept.forwarderUrl = "https://shop.example/f.nsp";
-  kept.forwarderTitleId = "0500000000000001";
+  kept.forwarderTitleId = "0500000000001000";
   kept.forwarderSize = 300;
   kept.romPath = "roms/nes/zelda.zip";
   kept.bezelPath = "retroarch/overlays/zelda.png";

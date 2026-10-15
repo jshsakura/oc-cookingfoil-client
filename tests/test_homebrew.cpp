@@ -38,17 +38,24 @@ int runHomebrewTests() {
   // that is not 16 hex digits means none.
   {
     auto e = entry;
-    e.insert(e.size() - 1, R"(,"forwarder_url":"/api/homebrew/gh-9c9ef5794087/forwarder","forwarder_title_id":"0100ABCDEF012000","forwarder_size":524288)");
+    e.insert(e.size() - 1, R"(,"forwarder_url":"/api/homebrew/gh-9c9ef5794087/forwarder","forwarder_title_id":"05ABCDEF01234000","forwarder_size":524288)");
     const auto withShortcut = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
-    CHECK(withShortcut.size() == 1 && withShortcut.front().forwarderTitleId == "0100ABCDEF012000" &&
+    CHECK(withShortcut.size() == 1 && withShortcut.front().forwarderTitleId == "05ABCDEF01234000" &&
           withShortcut.front().forwarderSize == 524288 &&
           withShortcut.front().forwarderUrl == "https://shop.example/api/homebrew/gh-9c9ef5794087/forwarder");
     if (!withShortcut.empty()) {
       const auto again = parse(R"({"homebrew":[)" + serialize(withShortcut.front()) + "]}", "");
-      CHECK(again.size() == 1 && again.front().forwarderTitleId == "0100ABCDEF012000");
+      CHECK(again.size() == 1 && again.front().forwarderTitleId == "05ABCDEF01234000");
+    }
+    // A game's or a system title's id is never a shortcut's: none.
+    for (const char *other : {"0100000000001000", "0100ABCDEF012000", "05ABCDEF01234001"}) {
+      auto foreign = e;
+      foreign.replace(foreign.find("05ABCDEF01234000"), 16, other);
+      const auto read = parse(R"({"homebrew":[)" + foreign + "]}", "https://shop.example");
+      CHECK(read.size() == 1 && read.front().forwarderTitleId.empty() && read.front().forwarderUrl.empty());
     }
     auto broken = e;
-    broken.replace(broken.find("0100ABCDEF012000"), 16, "nope");
+    broken.replace(broken.find("05ABCDEF01234000"), 16, "nope");
     const auto without = parse(R"({"homebrew":[)" + broken + "]}", "https://shop.example");
     CHECK(without.size() == 1 && without.front().forwarderUrl.empty());
   }
@@ -151,12 +158,12 @@ int runHomebrewTests() {
   hasher.update("bc", 2);
   CHECK(hasher.hex() == foil::update::sha256Hex("abc"));
   // The ledger round trips; states follow the hash and the file.
-  Ledger ledger{{"gh-9c9ef5794087", {"sha256:fb7d", "1.1.0", "switch/ytb-player/ytb-player.nro", {}}}};
+  Ledger ledger{{"gh-9c9ef5794087", {"sha256:fb7d", "1.1.0", "switch/ytb-player/ytb-player.nro", {}, {}, {}}}};
   const auto read = parseLedger(serializeLedger(ledger));
   CHECK(read.size() == 1 && read.at("gh-9c9ef5794087").file == "switch/ytb-player/ytb-player.nro");
   CHECK(parseLedger("garbage").empty());
   {
-    Ledger folder{{"gh-1", {"h", "1", "switch/ytb/ytb.nro", {"switch/ytb/data/a.bin", "../escape"}}}};
+    Ledger folder{{"gh-1", {"h", "1", "switch/ytb/ytb.nro", {"switch/ytb/data/a.bin", "../escape"}, {}, {}}}};
     const auto back = parseLedger(serializeLedger(folder));
     CHECK(back.at("gh-1").files == std::vector<std::string>{"switch/ytb/data/a.bin"});
   }
@@ -218,7 +225,7 @@ int runHomebrewTests() {
     CHECK(hashes == 0 && !gone.onCard.at("switch/a/a.nro") && gone.fixed.empty());
     // A ledger from before marks: hashed once and taken as it is.
     card["switch/a/a.nro"] = {120, 9};
-    const Ledger older{{"a", {"sha256:fb7d", "1.1.0", "switch/a/a.nro", {}}}};
+    const Ledger older{{"a", {"sha256:fb7d", "1.1.0", "switch/a/a.nro", {}, {}, {}}}};
     auto adopted = checkLedger(older, look, sha, version);
     CHECK(hashes == 1 && adopted.followed.empty() && adopted.fixed.at("a").fileSha == "bb" &&
           adopted.fixed.at("a").hash == "sha256:fb7d");
@@ -240,10 +247,10 @@ int runHomebrewTests() {
     CHECK(appTitle(listed, "nameless") == "nameless");
     CHECK(appTitle(listed, "gone") == "gone");
     // A game groups by Title ID, an app by its folder, never with each other.
-    CHECK(ownerKey("0100ABCDEF012000", "") == "0100ABCDEF012000");
+    CHECK(ownerKey("05ABCDEF01234000", "") == "05ABCDEF01234000");
     CHECK(ownerKey("", "ytb") == "app:ytb");
     CHECK(ownerKey("", "ytb") != ownerKey("ytb", ""));
-    CHECK(ownerKey("0100ABCDEF012000", "ytb") == "0100ABCDEF012000");
+    CHECK(ownerKey("05ABCDEF01234000", "ytb") == "05ABCDEF01234000");
   }
   {
     // A zip the server keeps (archive): read, kept through serialize, and

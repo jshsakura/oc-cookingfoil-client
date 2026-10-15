@@ -37,6 +37,11 @@ bool serverRestarting();
 // came; a new one clears it.
 std::string downloadToken();
 bool downloadTokenRejected();
+// The direct address the token is for (X-CookingFoil-Download-Origin,
+// "https://host:port"); empty while the server has not said. Once it has,
+// the token goes there and nowhere else.
+std::string downloadTokenOrigin();
+void forgetDownloadToken(); // tests
 // How a fresh token is asked for (the app sets it with its server; it
 // returns the reply's status), and asking after a 401 for a request sent
 // with `sent`: true when a newer token is held, and the request goes again

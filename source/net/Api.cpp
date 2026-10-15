@@ -136,7 +136,11 @@ void offerSessionFor(const Server& server, const State& state) {
 }
 std::vector<std::string> downloadHeaders(const Server& server, const State& state, const std::string& url) {
     auto headers = authHeaders(server, state, url);
-    if (originOf(url) != originOf(server.url) && url.rfind("https://", 0) == 0)
+    // Only to the direct address: a list naming another host (a mirror)
+    // never gets the token. A server that has not named it yet: any https
+    // address off the server, as before.
+    const auto direct = downloadTokenOrigin();
+    if (originOf(url) != originOf(server.url) && url.rfind("https://", 0) == 0 && (direct.empty() || originOf(url) == direct))
         if (const auto token = downloadToken(); !token.empty()) headers.push_back("Authorization: Bearer " + token);
     return headers;
 }
