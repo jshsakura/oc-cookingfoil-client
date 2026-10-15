@@ -88,4 +88,7 @@ std::string versionLabel(const Item &item);
 // The store writes free titles as "0원" or "$0.00"; those read "무료".
 std::string priceText(const std::string &amount);
 std::string formatBytes(uint64_t bytes);
+// The file's kind from its address, upper case (NSP, NSZ, XCI, XCZ); empty
+// when the address has no short extension.
+std::string fileFormat(const Item &item);
 } // namespace foil

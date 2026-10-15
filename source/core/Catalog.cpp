@@ -85,6 +85,18 @@ std::vector<Group> groupCatalog(const std::vector<Item> &items) {
   }
   return result;
 }
+std::string fileFormat(const Item &item) {
+  const auto path = item.url.substr(0, item.url.find_first_of("?#"));
+  const auto dot = path.find_last_of("./");
+  if (dot == std::string::npos || path[dot] != '.')
+    return "";
+  auto extension = path.substr(dot + 1);
+  if (extension.empty() || extension.size() > 4)
+    return "";
+  for (auto &c : extension)
+    c = char(std::toupper(static_cast<unsigned char>(c)));
+  return extension;
+}
 std::string thumbnailUrl(const std::string &url, const char *size) {
   if (url.empty() || url.find("size=") != std::string::npos ||
       url.rfind("http", 0) != 0)

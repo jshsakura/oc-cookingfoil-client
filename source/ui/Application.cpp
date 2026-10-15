@@ -1789,7 +1789,11 @@ void Application::render() {
       auto hints = descriptionFocus_ ? Hints{{"A", tr("Back to items")}, {"B", tr("Back")}}
                                        : Hints{{"A", onTheWay   ? tr("Cancel download")
                                                      : onButton ? tr("Install")
-                                                     : onStorage ? tr("Choose this") : tr("Toggle")},
+                                                     : onStorage ? tr("Choose this")
+                                                     : part_ == 0 && selection_ && selection_->baseChoices() > 1 &&
+                                                               selection_->parts().front().type == "base"
+                                                         ? tr("Other file")
+                                                         : tr("Toggle")},
                                                {"B", tr("Back")}};
       if (!detail_.screenshots.empty()) hints.insert(hints.end() - 1, {"ZR", tr("Photos")});
       footer(hints);

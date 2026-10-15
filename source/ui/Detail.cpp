@@ -223,10 +223,14 @@ void Application::detail() {
     images_->draw(thumb, x, y, 200, 112, 10);
   }
   y += detail_.screenshots.empty() ? 0 : 134;
-  if (!g.alternatives.empty()) {
+  // The base game's files not chosen (A on its row in 설치할 항목 picks one).
+  if (selection_ && selection_->baseChoices() > 1) {
     paint_.fonts.text(tr("Other files"), 40, y, 20, Ink, true);
     y += 38;
-    for (const auto &f : g.alternatives) {
+    const auto &files = selection_->baseFiles();
+    for (size_t i = 0; i < files.size(); ++i) {
+      if (i == selection_->baseChoice()) continue;
+      const auto &f = files[i];
       paint_.fonts.text(f.name + " · " + formatBytes(f.size), 40, y, 17,
                         Secondary, false, 750);
       y += 32;
@@ -290,7 +294,13 @@ void Application::detail() {
       label = f.type == "base"     ? std::string(tr("Base game"))
               : f.type == "update" ? std::string(tr("Update|item"))
                                    : "DLC · " + f.name;
-      sub = f.type == "base"     ? trf("{0} · Required", {versionLabel(f)})
+      // A game with more than one base file: its kind and which of them,
+      // A going to the next.
+      const auto choices = selection_->baseChoices();
+      sub = f.type == "base" && n == 0 && choices > 1
+                ? versionLabel(f) + " · " + fileFormat(f) + " · " + std::to_string(selection_->baseChoice() + 1) +
+                      "/" + std::to_string(choices)
+            : f.type == "base"     ? trf("{0} · Required", {versionLabel(f)})
             : f.type == "update" ? trf("{0} · Latest", {versionLabel(f)})
                                  : std::string(tr("Add-on content"));
       bytes = f.size;
@@ -384,12 +394,10 @@ void Application::detail() {
 // Returns the y below the last block.
 float Application::infoCard(const Group &g, const std::string &publisher, float y) {
   const auto &item = g.representative;
-  auto extension = item.url.substr(0, item.url.find_first_of("?#"));
-  extension = extension.substr(extension.find_last_of('.') + 1);
-  if (extension.size() > 4)
-    extension.clear();
-  for (auto &c : extension)
-    c = std::toupper(static_cast<unsigned char>(c));
+  // The base file chosen in 설치할 항목, which may not be the smallest.
+  const bool chosen = selection_ && !selection_->parts().empty() && selection_->parts().front().type == "base";
+  const auto &baseFile = chosen ? selection_->parts().front() : g.base ? *g.base : item;
+  const auto extension = fileFormat(chosen ? baseFile : item);
   const int release = detail_.releaseDate ? detail_.releaseDate : item.releaseDate;
   const int players = detail_.players ? detail_.players : item.players;
   struct Fact {
@@ -431,7 +439,7 @@ float Application::infoCard(const Group &g, const std::string &publisher, float 
   if (release) facts.push_back({11, tr("Released"), dateLabel(release)});
   if (!publisher.empty()) facts.push_back({12, tr("Publisher"), publisher});
   if (players) facts.push_back({13, tr("Players"), players == 1 ? std::string(tr("1 player")) : trf("Up to {0}", {std::to_string(players)})});
-  facts.push_back({14, tr("Base size"), formatBytes(g.base ? g.base->size : item.size)});
+  facts.push_back({14, tr("Base size"), formatBytes(baseFile.size)});
   const auto &base = g.base ? *g.base : item;
   if (base.installSize) facts.push_back({14, tr("Install size"), formatBytes(base.installSize)});
   // The update can need newer firmware than the base; the higher one counts.

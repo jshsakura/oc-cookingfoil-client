@@ -3,8 +3,11 @@
 namespace foil {
 Selection::Selection(const Group &group, std::string storage)
     : target(std::move(storage)) {
-  if (group.base)
+  if (group.base) {
     parts_.push_back(*group.base);
+    bases_.push_back(*group.base);
+    bases_.insert(bases_.end(), group.alternatives.begin(), group.alternatives.end());
+  }
   if (group.update)
     parts_.push_back(*group.update);
   for (const auto &dlc : group.dlc)
@@ -43,8 +46,14 @@ bool Selection::toggle(size_t i) {
     on = !on;
     return true;
   }
-  if (parts_[i].type == "base")
-    return false;
+  if (parts_[i].type == "base") {
+    if (i != 0 || bases_.size() < 2)
+      return false;
+    baseAt_ = (baseAt_ + 1) % bases_.size();
+    parts_[0] = bases_[baseAt_];
+    showPatches(); // its version may differ
+    return true;
+  }
   selected_[i] = !selected_[i];
   // The update on or off changes which game version the patches meet.
   if (parts_[i].type == "update") showPatches();

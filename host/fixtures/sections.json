@@ -31,6 +31,30 @@
           "title_id": "0100E5E01C098000",
           "base_title_id": "0100E5E01C098000",
           "name": "Lantern Road",
+          "size": 6012345344,
+          "url": "https://fixture.invalid/0100E5E01C098000.nsp",
+          "icon_url": "https://fixture.invalid/icons/0100E5E01C098000.jpg",
+          "app_type": "base",
+          "app_version": 0,
+          "publisher": "Butter Works",
+          "languages": [
+            "ko",
+            "en"
+          ],
+          "added_at": 2000000000,
+          "display_version": "1.0.0",
+          "release_date": 20240715,
+          "rank": 40,
+          "players": 1,
+          "categories": [
+            "RPG",
+            "Strategy"
+          ]
+        },
+        {
+          "title_id": "0100E5E01C098000",
+          "base_title_id": "0100E5E01C098000",
+          "name": "Lantern Road",
           "size": 1395864371,
           "url": "https://fixture.invalid/0100E5E01C098000-upd.nsz",
           "icon_url": "https://fixture.invalid/icons/0100E5E01C098000.jpg",

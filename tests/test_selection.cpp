@@ -28,6 +28,30 @@ int runSelectionTests() {
   CHECK(!selection.toggle(90));
   selection.target = "nand";
   CHECK(selection.target == "nand");
+  {
+    // A base game in two files: the smallest is chosen, A on its row goes
+    // to the other and back; it stays on and counts at its own size.
+    foil::Group two;
+    auto small = base, large = base;
+    small.url = "https://host/game.xcz";
+    small.size = 3000;
+    large.url = "https://host/game.nsp";
+    large.size = 5000;
+    two.base = small;
+    two.alternatives.push_back(large);
+    foil::Selection pick(two);
+    CHECK(pick.baseChoices() == 2 && pick.baseChoice() == 0);
+    CHECK(pick.files().size() == 1 && pick.files().front().url == small.url);
+    CHECK(foil::fileFormat(pick.files().front()) == "XCZ");
+    CHECK(pick.toggle(0) && pick.enabled(0));
+    CHECK(pick.baseChoice() == 1 && pick.files().front().url == large.url && pick.total() == 5000);
+    CHECK(pick.toggle(0) && pick.files().front().url == small.url);
+    // One file: the row stays as it was.
+    foil::Group single;
+    single.base = base;
+    foil::Selection one(single);
+    CHECK(one.baseChoices() == 1 && !one.toggle(0));
+  }
   group.base.reset();
   foil::Selection withoutBase(group);
   CHECK(withoutBase.toggle(0));
