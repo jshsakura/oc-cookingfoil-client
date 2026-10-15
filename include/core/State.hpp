@@ -24,9 +24,29 @@ struct State {
     // hex characters). Made before the first request, dropped once the key
     // came.
     std::map<std::string, std::string> pairSecrets;
+    // An install state.json held from before 다운로드 kept the queue; put in
+    // the queue once, then "[]".
     std::string queueJson = "[]";
 };
-Parsed<State> loadState(const std::string& path);
+// The console this card is in. Both are derived from a value only the
+// console has (platform/Identity), which is kept nowhere: the fingerprint
+// is stored to tell another console, the seal key signs the credentials so
+// an edited file is told too. Empty when the console gave nothing.
+struct DeviceIdentity {
+    std::string fingerprint; // hex, stored
+    std::string sealKey;     // raw bytes, never stored
+};
+DeviceIdentity deriveIdentity(const std::string& consoleValue);
+void setDeviceIdentity(DeviceIdentity identity);
+// Why the last load made a new device key, said once: the card came from
+// another console, the credentials were edited, or the records were lost.
+enum class Rebound { None, Moved, Changed, Recreated };
+Rebound takeRebound();
+// The state in cookingfoil.db at `dbPath`; a state.json beside it from
+// earlier builds moves in once (its device key kept) and goes. Credentials
+// that are not this console's, or do not match their seal, give way to a new
+// device key; settings stay.
+Parsed<State> loadState(const std::string& dbPath);
 // 32 random bytes as 64 lowercase hex characters; empty when the console
 // gave none.
 std::string randomKey();
@@ -38,5 +58,5 @@ struct PendingInstall {
 };
 std::string serializePending(const PendingInstall& pending); // "[]" when there is none
 std::optional<PendingInstall> parsePending(const std::string& queueJson);
-bool saveState(const std::string& path, const State& state, Error& error);
+bool saveState(const std::string& dbPath, const State& state, Error& error);
 }

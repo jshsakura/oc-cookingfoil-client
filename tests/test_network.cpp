@@ -133,7 +133,7 @@ int runNetworkTests() {
     const char* root = mkdtemp(temporary);
     CHECK(root);
     if (root) {
-        const auto path = std::string(root) + "/state.json";
+        const auto path = std::string(root) + "/cookingfoil.db";
         const auto fresh = foil::loadState(path);
         CHECK(!fresh.error && fresh.value.deviceKey.size() == 64);
         CHECK(fresh.value.deviceKey != std::string(64, '0'));
@@ -156,22 +156,24 @@ int runNetworkTests() {
             auto broken = changed; broken.deviceKey = "not-a-key"; broken.language = "ja";
             CHECK(foil::saveState(path, broken, error));
             const auto rekeyed = foil::loadState(path);
+            CHECK(foil::takeRebound() == foil::Rebound::Changed);
             CHECK(!rekeyed.error && rekeyed.value.deviceKey.size() == 64);
             CHECK(rekeyed.value.accessKeys.empty() && rekeyed.value.language == "ja");
             CHECK(foil::loadState(path).value.deviceKey == rekeyed.value.deviceKey); // saved
         }
-        // Another file in its place (not JSON, or not an object): started
-        // over with a new key, no error, and readable next time.
+        // Another file in its place (not a database, or empty): started over
+        // with a new key, no error, and readable next time.
         for (const std::string& other : {std::string("\x89PNG garbage"), std::string("[1,2,3]"), std::string()}) {
             std::ofstream(path, std::ios::binary | std::ios::trunc) << other;
             const auto over = foil::loadState(path);
+            foil::takeRebound(); // a file that is not a database: Recreated
             CHECK(!over.error && over.created && over.value.deviceKey.size() == 64);
             CHECK(foil::loadState(path).value.deviceKey == over.value.deviceKey);
         }
-        // A cut-off save: the copy it left beside is read instead.
+        // A save cut off between its two renames: the copy it left beside is
+        // read instead.
         CHECK(foil::saveState(path, changed, error));
-        std::filesystem::copy_file(path, path + ".old", std::filesystem::copy_options::overwrite_existing);
-        std::ofstream(path, std::ios::binary | std::ios::trunc) << "{\"deviceKey\":";
+        std::filesystem::rename(path, path + ".old");
         CHECK(foil::loadState(path).value.deviceKey == changed.deviceKey);
         std::filesystem::remove(path + ".old");
         CHECK(foil::saveState(path, changed, error));

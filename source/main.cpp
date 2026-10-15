@@ -5,6 +5,7 @@
 #include "ui/Runtime.hpp"
 #include "core/Log.hpp"
 #include "core/I18n.hpp"
+#include "platform/Identity.hpp"
 #include <cmath>
 #include <vector>
 #include <curl/curl.h>
@@ -83,6 +84,8 @@ int main(int argc, char **argv) {
     return 1;
   }
   curl_global_init(CURL_GLOBAL_DEFAULT);
+  // The app's keys are bound to this console (core/State).
+  foil::setDeviceIdentity(foil::platform::consoleIdentity());
   foil::openLog("sdmc:/switch/cookingfoil/log.txt");
   foil::logLine(std::string("start " COOKINGFOIL_VERSION " ") + (appletGetAppletType() == AppletType_Application ? "application" : "applet") + " mode, " + self);
   if (!updateNote.empty()) foil::logLine(updateNote);
@@ -94,7 +97,7 @@ int main(int argc, char **argv) {
     else {
       foil::ui::Application ui(app.renderer(),
                                "sdmc:/switch/cookingfoil/config.json",
-                               "sdmc:/switch/cookingfoil/state.json");
+                               "sdmc:/switch/cookingfoil/cookingfoil.db");
       if (!ui.open())
         return 1;
       // hbmenu and forwarders pass the .nro's path; an update replaces it.

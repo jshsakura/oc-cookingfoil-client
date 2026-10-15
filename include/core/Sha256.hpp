@@ -18,4 +18,10 @@ private:
   size_t used_ = 0;
   uint64_t total_ = 0;
 };
+// The bytes a lowercase or uppercase hex string spells; empty when it is not
+// hex of whole bytes.
+std::string hexBytes(const std::string &hex);
+// HMAC-SHA256 (RFC 2104) of `message` under `key` (raw bytes), as lowercase
+// hex.
+std::string hmacSha256(const std::string &key, const std::string &message);
 } // namespace foil

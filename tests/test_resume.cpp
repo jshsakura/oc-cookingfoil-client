@@ -510,7 +510,7 @@ int runResumeTests() {
     server.start(2);
     foil::Server shop;
     shop.url = server.url;
-    foil::net::Session session(shop, foil::State{}, (root / "state.json").string());
+    foil::net::Session session(shop, foil::State{}, (root / "cookingfoil.db").string());
     foil::UserPatch patch;
     patch.id = "p1";
     patch.titleId = Tid;
@@ -530,7 +530,7 @@ int runResumeTests() {
     later.body = data;
     later.start(1);
     shop.url = later.url;
-    foil::net::Session next(shop, foil::State{}, (root / "state.json").string());
+    foil::net::Session next(shop, foil::State{}, (root / "cookingfoil.db").string());
     const auto second = (root / "p2.part").string();
     std::string ignored;
     foil::atomicWrite(second + "/" + files[0].path, files[0].body, ignored);

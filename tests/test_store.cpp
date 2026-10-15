@@ -152,6 +152,8 @@ int runStoreTests() {
     CHECK(store.open(bad, error));
     CHECK(store.isOpen() && store.load().empty());
     CHECK(slurp(bad + ".broken") == garbage);
+    // Said once to whoever loads the app's state next: its keys went too.
+    CHECK(DownloadStore::takeSetAside() && !DownloadStore::takeSetAside());
     // Its journal is not left for the fresh file (TRUNCATE mode leaves an
     // empty one of the fresh file's own).
     CHECK(!exists(bad + "-journal") || std::filesystem::file_size(bad + "-journal") == 0);
@@ -435,6 +437,7 @@ int runStoreTests() {
     CHECK(DownloadStore::fileName("/tmp/x.db") == "/tmp/x.db");
     CHECK(DownloadStore::fileName("sdmc:") == "sdmc:");
   }
+  DownloadStore::takeSetAside(); // the cases above leave it set
   std::filesystem::remove_all(dir);
   return failures;
 }

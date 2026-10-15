@@ -10,7 +10,7 @@
 #include <atomic>
 #include <mutex>
 #include <thread>
-// A note typed on the approval screen is kept per server in state.json and
+// A note typed on the approval screen is kept per server in cookingfoil.db and
 // goes out with a new approval request; with none, nothing is posted.
 int runPairMismatchTests();
 int runPairMessageUiTests(SDL_Renderer *renderer) {
@@ -85,7 +85,7 @@ int runPairMessageUiTests(SDL_Renderer *renderer) {
   const char *root = mkdtemp(temporary);
   CHECK(root);
   if (root) {
-    const std::string statePath = std::string(root) + "/state.json";
+    const std::string statePath = std::string(root) + "/cookingfoil.db";
     {
       foil::ui::Application app(renderer, "", statePath);
       CHECK(app.open());
@@ -216,7 +216,7 @@ int runPairingUiTests(SDL_Renderer *renderer) {
   const char *root = mkdtemp(temporary);
   CHECK(root);
   if (root) {
-    const std::string statePath = std::string(root) + "/state.json";
+    const std::string statePath = std::string(root) + "/cookingfoil.db";
     {
       foil::ui::Application app(renderer, "", statePath);
       CHECK(app.open());
@@ -313,7 +313,7 @@ int runPairMismatchTests() {
   const char *root = mkdtemp(temporary);
   CHECK(root);
   if (root) {
-    const std::string statePath = std::string(root) + "/state.json";
+    const std::string statePath = std::string(root) + "/cookingfoil.db";
     foil::net::Session session(server, foil::loadState(statePath).value, statePath);
     foil::Error error;
     CHECK(!session.refresh(error));

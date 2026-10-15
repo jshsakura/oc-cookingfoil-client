@@ -1,7 +1,9 @@
 #pragma once
 // 다운로드's records in SQLite (cookingfoil.db on the SD card): the queue and
 // every download that ran, in list order, and where a file that was cut off
-// stands so it picks up at that byte.
+// stands so it picks up at that byte. The app's own state (settings, the
+// device key and the keys servers gave it) lives in the same file; State.cpp
+// reads and checks it.
 //
 // Two instances can share the file (the app suspended in the background and
 // a second one started from the Album), and the console has no file locks
@@ -59,6 +61,18 @@ public:
   std::map<std::string, ResumePoint> resumePoints();
   bool saveResumePoint(const std::string &key, const ResumePoint &point);
   bool forgetResumePoint(const std::string &key);
+  // The app's state as rows, unchecked: settings by name, approval notes by
+  // server, and credentials by (kind, server).
+  struct StateRows {
+    std::map<std::string, std::string> settings, notes;
+    std::map<std::pair<std::string, std::string>, std::string> credentials;
+  };
+  std::optional<StateRows> stateRows(std::string &error);
+  // Replaces all of them in one transaction.
+  bool saveStateRows(const StateRows &rows, std::string &error);
+  // A damaged file was set aside and a fresh one made since the last call,
+  // by any instance: whatever it held is gone, the keys too.
+  static bool takeSetAside();
 
 private:
   enum class Opened { Ok, Broken, Failed };

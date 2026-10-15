@@ -592,7 +592,7 @@ int runUiTests(SDL_Renderer *renderer) {
   CHECK(root != nullptr);
   if (root) {
     const auto configPath = std::string(root) + "/config.json";
-    const auto statePath = std::string(root) + "/state.json";
+    const auto statePath = std::string(root) + "/cookingfoil.db";
     std::string error;
     CHECK(foil::atomicWrite(configPath, R"({"servers":[]})", error));
     foil::ui::Application reload(renderer, configPath, statePath, "host/fixtures/art");
@@ -612,7 +612,7 @@ int runUiTests(SDL_Renderer *renderer) {
     // 설정 > + 서버 추가: the form starts empty, each field asks for the
     // keyboard, 저장 writes config.json and connects to the new server.
     const auto configPath = std::string(formRoot) + "/config.json";
-    const auto statePath = std::string(formRoot) + "/state.json";
+    const auto statePath = std::string(formRoot) + "/cookingfoil.db";
     std::string error;
     CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"Old","url":"http://127.0.0.1:1","enabled":false}]})", error));
     foil::ui::Application form(renderer, configPath, statePath, "host/fixtures/art");

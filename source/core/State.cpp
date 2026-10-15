@@ -3,6 +3,10 @@
 #include "core/Json.hpp"
 #include "core/I18n.hpp"
 #include "core/Log.hpp"
+#include "core/DownloadStore.hpp"
+#include "core/Sha256.hpp"
+#include <atomic>
+#include <mutex>
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -12,32 +16,6 @@
 namespace foil {
 static bool validDeviceKey(const std::string& key) {
     return key.size() == 64 && key.find_first_not_of("0123456789abcdef") == std::string::npos;
-}
-bool saveState(const std::string& path, const State& state, Error& error) {
-    Json object(json_object_new_object());
-    json_object_object_add(object.get(), "deviceKey", json_object_new_string(state.deviceKey.c_str()));
-    json_object_object_add(object.get(), "lastServer", json_object_new_string(state.lastServer.c_str()));
-    json_object_object_add(object.get(), "lastScreen", json_object_new_string(state.lastScreen.c_str()));
-    json_object_object_add(object.get(), "language", json_object_new_string(state.language.c_str()));
-    json_object_object_add(object.get(), "ignoreSignature", json_object_new_boolean(state.skipSignatureCheck));
-    json_object_object_add(object.get(), "ignoreFirmware", json_object_new_boolean(state.skipFirmwareCheck));
-    json_object_object_add(object.get(), "makeShortcuts", json_object_new_boolean(state.makeShortcuts));
-    json_object_object_add(object.get(), "installTarget", json_object_new_string(state.installTarget.c_str()));
-    auto* keys = json_object_new_object();
-    for (const auto& [url, key] : state.accessKeys) json_object_object_add(keys, url.c_str(), json_object_new_string(key.c_str()));
-    json_object_object_add(object.get(), "accessKeys", keys);
-    auto* notes = json_object_new_object();
-    for (const auto& [url, note] : state.pairMessages)
-        if (!note.empty()) json_object_object_add(notes, url.c_str(), json_object_new_string(note.c_str()));
-    json_object_object_add(object.get(), "pairMessages", notes);
-    auto* secrets = json_object_new_object();
-    for (const auto& [url, secret] : state.pairSecrets)
-        if (validDeviceKey(secret)) json_object_object_add(secrets, url.c_str(), json_object_new_string(secret.c_str()));
-    json_object_object_add(object.get(), "pairSecrets", secrets);
-    Error ignored;
-    auto queue = parseJson(state.queueJson, ignored);
-    json_object_object_add(object.get(), "queue", queue && json_object_is_type(queue.get(), json_type_array) ? queue.release() : json_object_new_array());
-    return atomicWrite(path, json_object_to_json_string_ext(object.get(), JSON_C_TO_STRING_PRETTY), error.message);
 }
 std::string randomKey() {
     unsigned char entropy[32]{};
@@ -53,90 +31,233 @@ std::string randomKey() {
     return key;
 }
 namespace {
-// A new state with a new device key, saved at `path`.
-Parsed<State> freshState(const std::string& path) {
-    Parsed<State> result;
-    result.value.deviceKey = randomKey();
-    if (result.value.deviceKey.empty()) { result.error.message = tr("Could not create the device key."); return result; }
-    result.created = saveState(path, result.value, result.error);
-    return result;
+std::mutex identityLock;
+DeviceIdentity identity;
+std::atomic<int> rebound{int(Rebound::None)};
+// Settings by name in the settings table; credentials by kind.
+constexpr const char* DeviceKind = "device";
+constexpr const char* FingerprintKind = "fingerprint";
+constexpr const char* AccessKind = "access";
+constexpr const char* SecretKind = "secret";
+constexpr const char* SealKind = "seal";
+constexpr const char* PendingSetting = "pendingInstall";
+DeviceIdentity currentIdentity() {
+    std::lock_guard<std::mutex> held(identityLock);
+    return identity;
 }
+// Every credential but the seal, in one string, in key order.
+std::string sealed(const DownloadStore::StateRows& rows) {
+    std::string text;
+    for (const auto& [at, value] : rows.credentials)
+        if (at.first != SealKind) text += at.first + '\0' + at.second + '\0' + value + '\n';
+    return text;
 }
-Parsed<State> loadState(const std::string& path) {
+std::string seal(const DeviceIdentity& id, const DownloadStore::StateRows& rows) {
+    return id.sealKey.empty() ? "" : hmacSha256(id.sealKey, sealed(rows));
+}
+std::string flag(bool on) { return on ? "1" : "0"; }
+// state.json of earlier builds, as it read there; nothing when it is not one.
+std::optional<State> parseLegacy(const std::string& text) {
+    Error unread;
+    auto root = parseJson(text, unread);
+    if (unread || !json_object_is_type(root.get(), json_type_object)) return std::nullopt;
+    State state;
+    state.deviceKey = stringField(root.get(), "deviceKey");
+    state.lastServer = stringField(root.get(), "lastServer");
+    state.lastScreen = stringField(root.get(), "lastScreen", "home");
+    state.language = stringField(root.get(), "language");
+    // Earlier builds saved "skipSignatureCheck": false on every save, not as
+    // a choice, so only the newer keys count.
+    auto* skip = field(root.get(), "ignoreSignature");
+    if (json_object_is_type(skip, json_type_boolean)) state.skipSignatureCheck = json_object_get_boolean(skip);
+    auto* firmware = field(root.get(), "ignoreFirmware");
+    if (json_object_is_type(firmware, json_type_boolean)) state.skipFirmwareCheck = json_object_get_boolean(firmware);
+    auto* shortcuts = field(root.get(), "makeShortcuts");
+    if (json_object_is_type(shortcuts, json_type_boolean)) state.makeShortcuts = json_object_get_boolean(shortcuts);
+    state.installTarget = stringField(root.get(), "installTarget");
+    const auto byServer = [&](const char* name, std::map<std::string, std::string>& into) {
+        auto* object = field(root.get(), name);
+        if (!json_object_is_type(object, json_type_object)) return;
+        json_object_object_foreach(object, url, value) {
+            if (json_object_is_type(value, json_type_string)) into[url] = json_object_get_string(value);
+        }
+    };
+    byServer("accessKeys", state.accessKeys);
+    byServer("pairMessages", state.pairMessages);
+    byServer("pairSecrets", state.pairSecrets);
+    auto* queue = field(root.get(), "queue");
+    if (json_object_is_type(queue, json_type_array)) state.queueJson = json_object_to_json_string_ext(queue, JSON_C_TO_STRING_PLAIN);
+    return state;
+}
+// What a server URL, a key or a setting may be; anything else is dropped.
+State cleaned(State state) {
+    if (state.installTarget != "sd" && state.installTarget != "nand") state.installTarget.clear();
+    if (state.lastScreen.empty()) state.lastScreen = "home";
+    const auto keep = [](std::map<std::string, std::string>& by, auto&& good) {
+        for (auto at = by.begin(); at != by.end();)
+            at = normalizeUrl(at->first).empty() || !good(at->second) ? by.erase(at) : std::next(at);
+    };
+    keep(state.accessKeys, [](const std::string& v) { return !v.empty(); });
+    keep(state.pairMessages, [](const std::string& v) { return !v.empty(); });
+    keep(state.pairSecrets, validDeviceKey);
+    if (!parsePending(state.queueJson)) state.queueJson = "[]";
+    return state;
+}
+State fromRows(const DownloadStore::StateRows& rows) {
+    State state;
+    const auto setting = [&](const char* name, const std::string& otherwise = "") {
+        const auto at = rows.settings.find(name);
+        return at == rows.settings.end() ? otherwise : at->second;
+    };
+    state.language = setting("language");
+    state.installTarget = setting("installTarget");
+    state.lastServer = setting("lastServer");
+    state.lastScreen = setting("lastScreen", "home");
+    state.skipSignatureCheck = setting("ignoreSignature", "1") == "1";
+    state.skipFirmwareCheck = setting("ignoreFirmware", "1") == "1";
+    state.makeShortcuts = setting("makeShortcuts", "1") == "1";
+    state.queueJson = setting(PendingSetting, "[]");
+    state.pairMessages = rows.notes;
+    for (const auto& [at, value] : rows.credentials) {
+        if (at.first == DeviceKind) state.deviceKey = value;
+        else if (at.first == AccessKind) state.accessKeys[at.second] = value;
+        else if (at.first == SecretKind) state.pairSecrets[at.second] = value;
+    }
+    return cleaned(std::move(state));
+}
+DownloadStore::StateRows toRows(const State& given, const DeviceIdentity& id) {
+    const auto state = cleaned(given);
+    DownloadStore::StateRows rows;
+    rows.settings = {{"language", state.language},
+                     {"installTarget", state.installTarget},
+                     {"lastServer", state.lastServer},
+                     {"lastScreen", state.lastScreen},
+                     {"ignoreSignature", flag(state.skipSignatureCheck)},
+                     {"ignoreFirmware", flag(state.skipFirmwareCheck)},
+                     {"makeShortcuts", flag(state.makeShortcuts)}};
+    if (state.queueJson != "[]") rows.settings[PendingSetting] = state.queueJson;
+    rows.notes = state.pairMessages;
+    rows.credentials[{DeviceKind, ""}] = state.deviceKey;
+    rows.credentials[{FingerprintKind, ""}] = id.fingerprint;
+    for (const auto& [server, key] : state.accessKeys) rows.credentials[{AccessKind, server}] = key;
+    for (const auto& [server, secret] : state.pairSecrets) rows.credentials[{SecretKind, server}] = secret;
+    rows.credentials[{SealKind, ""}] = seal(id, rows);
+    return rows;
+}
+// Credentials that are not this console's: why, or None when they are.
+Rebound check(const DownloadStore::StateRows& rows, const DeviceIdentity& id) {
+    const auto value = [&](const char* kind) {
+        const auto at = rows.credentials.find({kind, ""});
+        return at == rows.credentials.end() ? std::string() : at->second;
+    };
+    if (!validDeviceKey(value(DeviceKind))) return Rebound::Changed;
+    // The console gave nothing to check against this time: kept as they are
+    // rather than dropped for a fault of the moment.
+    if (id.fingerprint.empty()) {
+        logLine("state: no console identity; credentials kept unchecked");
+        return Rebound::None;
+    }
+    if (value(FingerprintKind) != id.fingerprint) return Rebound::Moved;
+    if (value(SealKind) != seal(id, rows)) return Rebound::Changed;
+    return Rebound::None;
+}
+// A new device key; whatever servers gave the old one goes with it.
+bool rekey(State& state) {
+    state.deviceKey = randomKey();
+    state.accessKeys.clear();
+    state.pairSecrets.clear();
+    return !state.deviceKey.empty();
+}
+const char* reasonName(Rebound why) {
+    return why == Rebound::Moved ? "another console's" : why == Rebound::Changed ? "edited" : "lost";
+}
+} // namespace
+DeviceIdentity deriveIdentity(const std::string& consoleValue) {
+    if (consoleValue.empty()) return {};
+    const auto digest = [&](const char* purpose) {
+        Sha256 hash;
+        const std::string text = std::string("CookingFoil ") + purpose + '\0' + consoleValue;
+        hash.update(text.data(), text.size());
+        return hash.hex();
+    };
+    return {digest("device fingerprint v1"), hexBytes(digest("state seal v1"))};
+}
+void setDeviceIdentity(DeviceIdentity id) {
+    std::lock_guard<std::mutex> held(identityLock);
+    identity = std::move(id);
+}
+Rebound takeRebound() { return Rebound(rebound.exchange(int(Rebound::None))); }
+bool saveState(const std::string& dbPath, const State& state, Error& error) {
+    DownloadStore store;
+    std::string failure;
+    if (!store.open(dbPath, failure) || !store.saveStateRows(toRows(state, currentIdentity()), failure)) {
+        error.message = failure.empty() ? "state not saved" : failure;
+        return false;
+    }
+    return true;
+}
+Parsed<State> loadState(const std::string& dbPath) {
     Parsed<State> result;
-    std::error_code ec;
-    if (std::filesystem::exists(path, ec) || std::filesystem::exists(path + ".old", ec)) {
-        // The app writes this file; one that cannot be read (cut off, or
-        // another file put in its place) is started over, not shown as an
-        // error the player cannot fix: the copy left by an interrupted save
-        // first, then a new one.
-        Error unread;
-        auto root = parseJson(readFile(path), unread);
-        if ((unread || !json_object_is_type(root.get(), json_type_object)) && std::filesystem::exists(path + ".old", ec)) {
-            unread = {};
-            std::ifstream old(path + ".old", std::ios::binary);
-            root = parseJson(std::string(std::istreambuf_iterator<char>(old), {}), unread);
-        }
-        if (unread || !json_object_is_type(root.get(), json_type_object)) {
-            logLine("state.json unreadable, starting over");
-            return freshState(path);
-        }
-        result.value.deviceKey = stringField(root.get(), "deviceKey");
-        // A key that is not one: a new one, and the keys and secrets the
-        // servers gave the old one go with it (they no longer match).
-        bool rekeyed = false;
-        if (!validDeviceKey(result.value.deviceKey)) {
-            logLine("state.json device key invalid, making a new one");
-            result.value.deviceKey = randomKey();
-            if (result.value.deviceKey.empty()) { result.error.message = tr("Could not create the device key."); return result; }
-            rekeyed = true;
-        }
-        result.value.lastServer = stringField(root.get(), "lastServer");
-        result.value.lastScreen = stringField(root.get(), "lastScreen", "home");
-        result.value.language = stringField(root.get(), "language");
-        // Ignoring both checks is the default: most homebrew stores expect
-        // sigpatches. Earlier builds saved "skipSignatureCheck": false on every
-        // save, not as a choice, so only the newer keys count.
-        auto* skip = field(root.get(), "ignoreSignature");
-        if (json_object_is_type(skip, json_type_boolean)) result.value.skipSignatureCheck = json_object_get_boolean(skip);
-        auto* firmware = field(root.get(), "ignoreFirmware");
-        if (json_object_is_type(firmware, json_type_boolean)) result.value.skipFirmwareCheck = json_object_get_boolean(firmware);
-        auto* shortcuts = field(root.get(), "makeShortcuts");
-        if (json_object_is_type(shortcuts, json_type_boolean)) result.value.makeShortcuts = json_object_get_boolean(shortcuts);
-        const auto target = stringField(root.get(), "installTarget");
-        if (target == "sd" || target == "nand") result.value.installTarget = target;
-        auto* keys = field(root.get(), "accessKeys");
-        if (json_object_is_type(keys, json_type_object)) {
-            json_object_object_foreach(keys, url, value) {
-                if (json_object_is_type(value, json_type_string) && !normalizeUrl(url).empty()) result.value.accessKeys[url] = json_object_get_string(value);
-            }
-        }
-        auto* notes = field(root.get(), "pairMessages");
-        if (json_object_is_type(notes, json_type_object)) {
-            json_object_object_foreach(notes, url, value) {
-                if (json_object_is_type(value, json_type_string) && *json_object_get_string(value) && !normalizeUrl(url).empty())
-                    result.value.pairMessages[url] = json_object_get_string(value);
-            }
-        }
-        auto* secrets = field(root.get(), "pairSecrets");
-        if (json_object_is_type(secrets, json_type_object)) {
-            json_object_object_foreach(secrets, url, value) {
-                if (json_object_is_type(value, json_type_string) && validDeviceKey(json_object_get_string(value)) && !normalizeUrl(url).empty())
-                    result.value.pairSecrets[url] = json_object_get_string(value);
-            }
-        }
-        auto* queue = field(root.get(), "queue");
-        if (json_object_is_type(queue, json_type_array)) result.value.queueJson = json_object_to_json_string_ext(queue, JSON_C_TO_STRING_PLAIN);
-        if (rekeyed) {
-            result.value.accessKeys.clear();
-            result.value.pairSecrets.clear();
-            Error ignored; // the next save writes it again
-            saveState(path, result.value, ignored);
-        }
+    DownloadStore store;
+    std::string failure;
+    std::optional<DownloadStore::StateRows> rows;
+    if (store.open(dbPath, failure)) rows = store.stateRows(failure);
+    if (!rows) {
+        logLine("state: " + failure);
+        result.error.message = tr("Could not read the app's records on the SD card.");
         return result;
     }
-    if (ec) { result.error.message = ec.message(); return result; }
-    return freshState(path);
+    const bool setAside = DownloadStore::takeSetAside();
+    const auto id = currentIdentity();
+    const auto legacy = (std::filesystem::path(dbPath).parent_path() / "state.json").string();
+    std::error_code ec;
+    Rebound why = Rebound::None;
+    State state;
+    bool moved = false; // state.json read in; it goes once the state is saved
+    if (rows->credentials.count({DeviceKind, ""})) {
+        state = fromRows(*rows);
+        why = check(*rows, id);
+        if (why == Rebound::None) {
+            result.value = std::move(state);
+            return result;
+        }
+    } else if (legacy != dbPath && (std::filesystem::exists(legacy, ec) || std::filesystem::exists(legacy + ".old", ec))) {
+        // Earlier builds kept it all in state.json: its key goes on, so the
+        // server sees the same console and nothing is approved again.
+        auto old = parseLegacy(readFile(legacy));
+        if (!old) old = parseLegacy(readFile(legacy + ".old")); // a save cut off between its renames
+        moved = true;
+        if (old) {
+            state = cleaned(std::move(*old));
+            if (!validDeviceKey(state.deviceKey)) why = Rebound::Changed;
+            logLine("state: state.json moved into cookingfoil.db");
+        } else {
+            // Kept for whoever wants to look; a new key, approved again.
+            std::filesystem::rename(legacy, legacy + ".broken", ec);
+            logLine("state: state.json unreadable, kept as state.json.broken");
+            why = Rebound::Recreated;
+        }
+    } else {
+        why = setAside ? Rebound::Recreated : Rebound::None; // a first start says nothing
+        result.created = true;
+    }
+    if (why != Rebound::None || state.deviceKey.empty()) {
+        if (!rekey(state)) { result.error.message = tr("Could not create the device key."); return result; }
+        if (why != Rebound::None) {
+            logLine(std::string("state: ") + reasonName(why) + " credentials; a new device key");
+            rebound = int(why);
+        }
+    }
+    Error saved;
+    if (saveState(dbPath, state, saved)) {
+        if (moved) {
+            std::filesystem::remove(legacy, ec);
+            std::filesystem::remove(legacy + ".old", ec);
+        }
+    } else
+        logLine("state: " + saved.message);
+    result.value = std::move(state);
+    return result;
 }
 std::string serializePending(const PendingInstall& pending) {
     if (pending.files.empty()) return "[]";

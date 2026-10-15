@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <atomic>
 #include <thread>
 namespace foil {
 namespace {
@@ -38,7 +39,20 @@ const char *const Migrations[] = {
     "  total INTEGER NOT NULL,"
     "  plan TEXT NOT NULL,"
     "  updated_at INTEGER NOT NULL);",
+    // 2: the app's state, from state.json (State.cpp moves it in).
+    "CREATE TABLE settings("
+    "  key TEXT PRIMARY KEY,"
+    "  value TEXT NOT NULL);"
+    "CREATE TABLE pair_notes("
+    "  server TEXT PRIMARY KEY,"
+    "  note TEXT NOT NULL);"
+    "CREATE TABLE credentials("
+    "  kind TEXT NOT NULL,"
+    "  server TEXT NOT NULL DEFAULT '',"
+    "  value TEXT NOT NULL,"
+    "  PRIMARY KEY(kind, server));",
 };
+std::atomic<bool> setAside{false};
 const char *outcomeName(history::Outcome outcome) {
   switch (outcome) {
   case history::Outcome::Done: return "done";
@@ -375,6 +389,7 @@ bool DownloadStore::open(const std::string &path, std::string &error) {
       return false;
     }
     std::remove((file + ".old").c_str());
+    setAside = true;
     const auto fresh = connect(file, db, true, newer, error);
     closeDb(db);
     if (fresh != Opened::Ok) {
@@ -595,6 +610,60 @@ bool DownloadStore::forgetResumePoint(const std::string &key) {
       return false;
     remove.text(1, key);
     return remove.step() == SQLITE_DONE;
+  });
+}
+bool DownloadStore::takeSetAside() { return setAside.exchange(false); }
+std::optional<DownloadStore::StateRows> DownloadStore::stateRows(std::string &error) {
+  std::lock_guard<std::mutex> held(lock_);
+  StateRows rows;
+  const bool ok = run(false, error, [&](sqlite3 *db, std::string &) {
+    Statement settings(db, "SELECT key, value FROM settings");
+    Statement notes(db, "SELECT server, note FROM pair_notes");
+    Statement credentials(db, "SELECT kind, server, value FROM credentials");
+    if (!settings || !notes || !credentials)
+      return false;
+    int rc;
+    while ((rc = settings.step()) == SQLITE_ROW) rows.settings[settings.column(0)] = settings.column(1);
+    if (rc != SQLITE_DONE) return false;
+    while ((rc = notes.step()) == SQLITE_ROW) rows.notes[notes.column(0)] = notes.column(1);
+    if (rc != SQLITE_DONE) return false;
+    while ((rc = credentials.step()) == SQLITE_ROW)
+      rows.credentials[{credentials.column(0), credentials.column(1)}] = credentials.column(2);
+    return rc == SQLITE_DONE;
+  });
+  if (!ok) return std::nullopt;
+  return rows;
+}
+bool DownloadStore::saveStateRows(const StateRows &rows, std::string &error) {
+  std::lock_guard<std::mutex> held(lock_);
+  return run(true, error, [&](sqlite3 *db, std::string &failure) {
+    if (!exec(db, "DELETE FROM settings; DELETE FROM pair_notes; DELETE FROM credentials;", failure))
+      return false;
+    Statement setting(db, "INSERT INTO settings(key, value) VALUES(?,?)");
+    Statement note(db, "INSERT INTO pair_notes(server, note) VALUES(?,?)");
+    Statement credential(db, "INSERT INTO credentials(kind, server, value) VALUES(?,?,?)");
+    if (!setting || !note || !credential)
+      return false;
+    for (const auto &[key, value] : rows.settings) {
+      setting.reset();
+      setting.text(1, key);
+      setting.text(2, value);
+      if (setting.step() != SQLITE_DONE) return false;
+    }
+    for (const auto &[server, text] : rows.notes) {
+      note.reset();
+      note.text(1, server);
+      note.text(2, text);
+      if (note.step() != SQLITE_DONE) return false;
+    }
+    for (const auto &[at, value] : rows.credentials) {
+      credential.reset();
+      credential.text(1, at.first);
+      credential.text(2, at.second);
+      credential.text(3, value);
+      if (credential.step() != SQLITE_DONE) return false;
+    }
+    return true;
   });
 }
 } // namespace foil

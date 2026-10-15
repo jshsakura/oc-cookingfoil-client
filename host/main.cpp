@@ -1,6 +1,7 @@
 #include "core/Config.hpp"
 #include "core/Json.hpp"
 #include "core/State.hpp"
+#include "platform/Identity.hpp"
 #include "net/Api.hpp"
 #include "ui/Application.hpp"
 #include "ui/Runtime.hpp"
@@ -40,7 +41,7 @@ namespace foil::platform {
 void setHostSpace(uint64_t bytes);
 }
 int main(int argc, char **argv) {
-  std::string shot, fixture, url, configPath, statePath = "out/state.json", language, self;
+  std::string shot, fixture, url, configPath, statePath = "out/cookingfoil.db", language, self;
   int servePort = 0;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -71,6 +72,7 @@ int main(int argc, char **argv) {
     }
   }
   curl_global_init(CURL_GLOBAL_DEFAULT);
+  foil::setDeviceIdentity(foil::platform::consoleIdentity());
   foil::openLog("out/host.log");
   std::vector<foil::Item> items;
   foil::net::NameTable genres;

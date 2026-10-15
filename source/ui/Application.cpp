@@ -231,24 +231,30 @@ void Application::toggleInstallCheck(bool &skip) {
   skip = !skip;
   saveOwnState();
 }
-// What the app keeps for itself in state.json (settings, never config.json).
+// What the app keeps for itself in cookingfoil.db (settings, never
+// config.json), written by the history writer.
 void Application::saveOwnState() {
   if (statePath_.empty())
     return;
-  Error error;
-  if (!saveState(statePath_, state_, error))
-    logLine("state: " + error.message);
+  {
+    std::lock_guard<std::mutex> held(historyMutex_);
+    if (historyClosing_) {
+      // Closing: the writer is gone, so straight to the card.
+      Error error;
+      if (!saveState(statePath_, state_, error))
+        logLine("state: " + error.message);
+      return;
+    }
+    statePending_ = state_;
+  }
+  wakeHistoryWriter();
 }
 void Application::chooseLanguage(Language lang) {
   setLanguage(lang);
   paint_.fonts.preferChinese(lang == Language::Chinese);
   state_.language = languageCode(lang);
   shopSavesLoaded_ = false; // server saves come in the language picked
-  if (!statePath_.empty()) {
-    Error error;
-    if (!saveState(statePath_, state_, error))
-      logLine("language: " + error.message);
-  }
+  saveOwnState();
   // Genre names, filter chips and home rows were built from text.
   if (session_) {
     genreNames_ = session_->genres();
@@ -559,6 +565,13 @@ void Application::poll() {
   pollCleanup();
   pollAppUpdate();
   pollClock();
+  // The keys were made again at a load (core/State): said once.
+  if (const auto why = statePath_.empty() ? Rebound::None : takeRebound(); why != Rebound::None) {
+    alertTitle_ = tr("Approve this console again");
+    alert_ = why == Rebound::Moved     ? tr("This card came from another console, so this console is approved again on the server.")
+             : why == Rebound::Changed ? tr("The saved sign-in details were changed, so this console is approved again on the server.")
+                                       : tr("The app's records could not be read and were made again, so this console is approved again on the server.");
+  }
   pollLog();
   pollHomebrew();
   // No dimming or auto-sleep while something downloads.
@@ -2014,13 +2027,7 @@ void Application::installSelected() {
   // The page stays: more can be picked right after; 다운로드 shows the rest.
   notice_.clear();
 }
-void Application::saveStateQuietly() {
-  if (statePath_.empty())
-    return;
-  Error error;
-  if (!saveState(statePath_, state_, error))
-    logLine("state: " + error.message);
-}
+void Application::saveStateQuietly() { saveOwnState(); }
 Error Application::startInstall(const std::vector<Item> &files, const std::string &name, const std::string &icon,
                                 const std::string &target, std::vector<UserPatch> patches, bool first) {
   // A file already queued or installing is not added twice; one that failed
@@ -2446,14 +2453,21 @@ void Application::wakeHistoryWriter() {
     for (;;) {
       std::optional<std::vector<history::Entry>> list;
       std::map<std::string, std::optional<install::Installer::ResumePoint>> points;
+      std::optional<State> state;
       {
         std::unique_lock<std::mutex> held(historyMutex_);
-        historyWake_.wait(held, [this] { return historyPending_ || !resumePending_.empty() || historyClosing_; });
-        if (!historyPending_ && resumePending_.empty())
+        historyWake_.wait(held, [this] {
+          return historyPending_ || !resumePending_.empty() || statePending_ || historyClosing_;
+        });
+        if (!historyPending_ && resumePending_.empty() && !statePending_)
           return; // closing, nothing left
         list = std::exchange(historyPending_, std::nullopt);
         points = std::exchange(resumePending_, {});
+        state = std::exchange(statePending_, std::nullopt);
       }
+      Error saved;
+      if (state && !saveState(statePath_, *state, saved))
+        logLine("state: " + saved.message);
       std::string error;
       if (list && !store_.save(*list, error))
         logLine("downloads: " + error);

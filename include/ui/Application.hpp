@@ -1259,6 +1259,9 @@ private:
   std::optional<std::vector<history::Entry>> historyPending_;
   // Resume points from the install thread, newest per file, for the writer.
   std::map<std::string, std::optional<install::Installer::ResumePoint>> resumePending_;
+  // The app's state (settings, keys) for cookingfoil.db, newest only: the
+  // database is read and written whole, which a button must not wait for.
+  std::optional<State> statePending_;
   bool historyClosing_ = false;
   void wakeHistoryWriter();
   // 다운로드's tabs: 0 진행 중, 1 완료, 2 실패 (and cancelled).

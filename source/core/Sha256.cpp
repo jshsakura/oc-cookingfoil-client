@@ -66,4 +66,40 @@ std::string Sha256::hex() {
     for (int shift = 28; shift >= 0; shift -= 4) out += digits[(word >> shift) & 15];
   return out;
 }
+std::string hexBytes(const std::string &hex) {
+  if (hex.size() % 2) return "";
+  const auto nibble = [](char c) {
+    return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+  };
+  std::string out;
+  for (size_t i = 0; i < hex.size(); i += 2) {
+    const int high = nibble(hex[i]), low = nibble(hex[i + 1]);
+    if (high < 0 || low < 0) return "";
+    out += char(high << 4 | low);
+  }
+  return out;
+}
+std::string hmacSha256(const std::string &key, const std::string &message) {
+  constexpr size_t Block = 64;
+  std::string k = key;
+  if (k.size() > Block) {
+    Sha256 shorter;
+    shorter.update(k.data(), k.size());
+    k = hexBytes(shorter.hex());
+  }
+  k.resize(Block, '\0');
+  std::string inner(Block, '\0'), outer(Block, '\0');
+  for (size_t i = 0; i < Block; ++i) {
+    inner[i] = char(k[i] ^ 0x36);
+    outer[i] = char(k[i] ^ 0x5c);
+  }
+  Sha256 first;
+  first.update(inner.data(), inner.size());
+  first.update(message.data(), message.size());
+  const auto innerHash = hexBytes(first.hex());
+  Sha256 second;
+  second.update(outer.data(), outer.size());
+  second.update(innerHash.data(), innerHash.size());
+  return second.hex();
+}
 } // namespace foil
