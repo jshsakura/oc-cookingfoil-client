@@ -34,6 +34,27 @@ namespace {
 std::mutex identityLock;
 DeviceIdentity identity;
 std::function<DeviceIdentity()> identitySource;
+// Credentials made or moved in while the console's ID could not be read:
+// written then, they would read as another console's once it can be. Kept
+// in memory for this run instead, and bound at the first load that reads it.
+std::mutex unboundLock;
+std::optional<State> unbound;
+void keepUnbound(const State& state) {
+    std::lock_guard<std::mutex> held(unboundLock);
+    State kept;
+    kept.deviceKey = state.deviceKey;
+    kept.accessKeys = state.accessKeys;
+    kept.pairSecrets = state.pairSecrets;
+    unbound = std::move(kept);
+}
+std::optional<State> unboundCopy() {
+    std::lock_guard<std::mutex> held(unboundLock);
+    return unbound;
+}
+void dropUnbound() {
+    std::lock_guard<std::mutex> held(unboundLock);
+    unbound.reset();
+}
 std::atomic<int> rebound{int(Rebound::None)};
 // Settings by name in the settings table; credentials by kind.
 constexpr const char* DeviceKind = "device";
@@ -207,7 +228,12 @@ bool saveState(const std::string& dbPath, const State& state, Error& error) {
         // console's at the next start. Settings are written all the same.
         const auto stored = store.stateRows(failure);
         ok = stored.has_value();
-        if (ok && stored->credentials.count({FingerprintKind, ""}) && !stored->credentials.at({FingerprintKind, ""}).empty()) {
+        if (ok && !stored->credentials.count({DeviceKind, ""})) {
+            // None bound yet: this run's stay in memory (keepUnbound).
+            keepUnbound(state);
+            rows.credentials.clear();
+            logLine("state: no console identity; credentials kept in memory until it can be read");
+        } else if (ok) {
             const auto plain = [](auto credentials) {
                 credentials.erase({FingerprintKind, ""});
                 credentials.erase({SealKind, ""});
@@ -222,6 +248,7 @@ bool saveState(const std::string& dbPath, const State& state, Error& error) {
         error.message = failure.empty() ? "state not saved" : failure;
         return false;
     }
+    if (!id.fingerprint.empty()) dropUnbound(); // bound now
     return true;
 }
 Parsed<State> loadState(const std::string& dbPath) {
@@ -249,6 +276,20 @@ Parsed<State> loadState(const std::string& dbPath) {
             result.value = std::move(state);
             return result;
         }
+    } else if (auto kept = unboundCopy()) {
+        // Made earlier this run without the console's ID: the same key goes
+        // on, and is bound below once the ID can be read.
+        state = fromRows(*rows);
+        state.deviceKey = kept->deviceKey;
+        state.accessKeys = kept->accessKeys;
+        state.pairSecrets = kept->pairSecrets;
+        if (id.fingerprint.empty()) {
+            result.value = std::move(state);
+            return result;
+        }
+        logLine("state: console identity read; credentials bound");
+        // Moved in from a state.json earlier this run: it goes once bound.
+        moved = legacy != dbPath && std::filesystem::exists(legacy, ec);
     } else if (legacy != dbPath && (std::filesystem::exists(legacy, ec) || std::filesystem::exists(legacy + ".old", ec))) {
         // Earlier builds kept it all in state.json: its key goes on, so the
         // server sees the same console and nothing is approved again.
@@ -278,7 +319,8 @@ Parsed<State> loadState(const std::string& dbPath) {
     }
     Error saved;
     if (saveState(dbPath, state, saved)) {
-        if (moved) {
+        // Unbound (no console ID), state.json stays to be moved in again.
+        if (moved && !id.fingerprint.empty()) {
             std::filesystem::remove(legacy, ec);
             std::filesystem::remove(legacy + ".old", ec);
         }

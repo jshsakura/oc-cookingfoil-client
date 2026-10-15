@@ -1,5 +1,6 @@
 #include "ui/Runtime.hpp"
 #include "ui/Theme.hpp"
+#include "core/State.hpp"
 #include <SDL2/SDL_image.h>
 #include <cstdio>
 int runConfigTests();
@@ -57,6 +58,9 @@ int main() {
   std::remove(path.c_str());
   std::puts(ok ? "Host screenshot smoke passed"
                : "Host screenshot smoke failed");
+  // A console that reads its ID, as on the Switch (test_state covers one
+  // that cannot).
+  foil::setDeviceIdentity(foil::deriveIdentity("unit tests"));
   const int failures = runConfigTests() + runNetworkTests() + runNtpTests() + runStateTests() +
                        runSessionTests() + runPairingTests() + runCatalogTests() + runUpdatesTests() + runInstalledTests() +
                        runSelectionTests() + runInstallerTests() + runPatchTests() + runI18nTests() +

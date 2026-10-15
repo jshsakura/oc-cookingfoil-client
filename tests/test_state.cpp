@@ -15,6 +15,17 @@ bool sql(const std::string &path, const char *statement) {
   sqlite3_close(db);
   return ok;
 }
+int count(const std::string &path, const char *query) {
+  sqlite3 *db = nullptr;
+  sqlite3_stmt *read = nullptr;
+  int n = -1;
+  if (sqlite3_open(path.c_str(), &db) == SQLITE_OK && sqlite3_prepare_v2(db, query, -1, &read, nullptr) == SQLITE_OK &&
+      sqlite3_step(read) == SQLITE_ROW)
+    n = sqlite3_column_int(read, 0);
+  sqlite3_finalize(read);
+  sqlite3_close(db);
+  return n;
+}
 const std::string KeyA(64, 'a'), Shop = "https://shop.example.com";
 } // namespace
 int runStateTests() {
@@ -128,6 +139,40 @@ int runStateTests() {
     foil::setDeviceIdentity(one);
   }
   {
+    // A first start that cannot read the console's ID: the key it makes is
+    // kept in memory (the same on every load this run, with what it gets),
+    // not written unbound, and bound by the first load that reads the ID.
+    std::filesystem::remove(db);
+    foil::setDeviceIdentity({});
+    auto first = foil::loadState(db).value;
+    CHECK(first.deviceKey.size() == 64 && foil::loadState(db).value.deviceKey == first.deviceKey);
+    first.accessKeys[Shop] = "issued";
+    first.language = "zh";
+    CHECK(foil::saveState(db, first, error));
+    CHECK(foil::loadState(db).value.accessKeys.at(Shop) == "issued");
+    CHECK(count(db, "SELECT COUNT(*) FROM credentials") == 0 && count(db, "SELECT COUNT(*) FROM settings") > 0);
+    foil::setDeviceIdentity(one);
+    const auto boundNow = foil::loadState(db).value;
+    CHECK(foil::takeRebound() == foil::Rebound::None);
+    CHECK(boundNow.deviceKey == first.deviceKey && boundNow.accessKeys.at(Shop) == "issued" && boundNow.language == "zh");
+    CHECK(foil::loadState(db).value.deviceKey == first.deviceKey && foil::takeRebound() == foil::Rebound::None);
+    // Bound to this console: another reads it as moved.
+    foil::setDeviceIdentity(other);
+    CHECK(foil::loadState(db).value.deviceKey != first.deviceKey && foil::takeRebound() == foil::Rebound::Moved);
+    // Moving state.json in without the ID: its key is used, the file stays
+    // until a start that reads the ID moves it in for good.
+    std::filesystem::remove(db);
+    std::string written;
+    CHECK(foil::atomicWrite(legacy, "{\"deviceKey\":\"" + KeyA + "\",\"accessKeys\":{\"" + Shop + "\":\"issued\"}}", written));
+    foil::setDeviceIdentity({});
+    CHECK(foil::loadState(db).value.deviceKey == KeyA && std::filesystem::exists(legacy));
+    CHECK(foil::loadState(db).value.accessKeys.at(Shop) == "issued");
+    foil::setDeviceIdentity(one);
+    const auto movedNow = foil::loadState(db).value;
+    CHECK(movedNow.deviceKey == KeyA && movedNow.accessKeys.at(Shop) == "issued" && !std::filesystem::exists(legacy));
+    CHECK(foil::takeRebound() == foil::Rebound::None);
+  }
+  {
     // A state.json that cannot be read: kept as state.json.broken, a new
     // key, said once.
     std::filesystem::remove(db);
@@ -145,7 +190,7 @@ int runStateTests() {
     CHECK(foil::loadState(db).value.deviceKey.size() == 64 && foil::takeRebound() == foil::Rebound::Recreated);
     CHECK(std::filesystem::exists(db + ".broken"));
   }
-  foil::setDeviceIdentity({});
+  foil::setDeviceIdentity(foil::deriveIdentity("unit tests"));
   foil::takeRebound();
   std::filesystem::remove_all(root);
   return failures;
