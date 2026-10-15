@@ -14,6 +14,41 @@
 #include <optional>
 namespace {
 // Installed games and one save for the preview: every third catalog game.
+// A game coming down and picks queued behind it, from progress.json: 진행 중
+// as the screenshots and the live preview show it.
+void previewDownloads(foil::ui::Application &ui, const std::string &fixture) {
+  foil::Error error;
+  auto json =
+      foil::parseJson(foil::readFile(fixture + "/progress.json"), error);
+  foil::install::Progress p;
+  p.status = foil::install::Status::Running;
+  p.name = foil::stringField(json.get(), "name");
+  p.icon = foil::stringField(json.get(), "icon");
+  p.target = "sd";
+  p.kind = "update";
+  p.phase = foil::stringField(json.get(), "phase");
+  p.index = foil::integerField(json.get(), "index");
+  p.count = foil::integerField(json.get(), "count");
+  p.received = foil::integerField(json.get(), "received");
+  p.total = foil::integerField(json.get(), "total");
+  p.speed = json_object_get_double(foil::field(json.get(), "speed"));
+  p.percent = p.total ? 100. * p.received / p.total : 0;
+  const auto groups = foil::groupCatalog(
+      foil::net::parseSections(foil::readFile(fixture + "/sections.json"))
+          .value);
+  for (const auto &group : groups) {
+    if (group.representative.name == p.name)
+      p.parts = foil::Selection(group).files();
+    // A few picks queued behind it, more than fit (the list scrolls).
+    if (group.representative.name != p.name && group.representative.name != "Circuit Garden")
+      for (const auto &file : foil::Selection(group).files())
+        ui.previewQueued(file, group.representative.name, group.representative.icon);
+    if (group.representative.name == "Circuit Garden")
+      p.completed.push_back(group.representative);
+  }
+  p.count = p.parts.size();
+  ui.previewInstall(p);
+}
 std::pair<foil::InstalledLibrary, foil::SaveEntry> fixtureInstalled(const std::string &fixture) {
   foil::InstalledLibrary library;
   library.installed.complete = true;
@@ -172,6 +207,13 @@ int main(int argc, char **argv) {
   // 홈브류 from the fixture's list, beside what the fake SD card holds.
   if (servePort && !fixture.empty() && std::filesystem::exists(fixture + "/homebrew.json"))
     ui.previewHomebrew(foil::homebrew::parse(foil::readFile(fixture + "/homebrew.json"), "http://fixture"));
+  // 진행 중 with a game coming down, as in the screenshots.
+  if (servePort && !fixture.empty() && std::filesystem::exists(fixture + "/progress.json"))
+    previewDownloads(ui, fixture);
+  // 패치's list from the fixture, so the screen shows patches, not a list
+  // that never comes.
+  if (servePort && !fixture.empty() && std::filesystem::exists(fixture + "/patches.json"))
+    ui.previewPatches(foil::net::parsePatches(foil::readFile(fixture + "/patches.json")));
   // The app's own path as the console passes it: from the album with no
   // shortcut, the offer to make one (the fake SD card needs the .nro).
   if (!self.empty())
@@ -227,37 +269,7 @@ int main(int argc, char **argv) {
       }
     }
     if (!fixture.empty()) {
-      foil::Error error;
-      auto json =
-          foil::parseJson(foil::readFile(fixture + "/progress.json"), error);
-      foil::install::Progress p;
-      p.status = foil::install::Status::Running;
-      p.name = foil::stringField(json.get(), "name");
-      p.icon = foil::stringField(json.get(), "icon");
-      p.target = "sd";
-      p.kind = "update";
-      p.phase = foil::stringField(json.get(), "phase");
-      p.index = foil::integerField(json.get(), "index");
-      p.count = foil::integerField(json.get(), "count");
-      p.received = foil::integerField(json.get(), "received");
-      p.total = foil::integerField(json.get(), "total");
-      p.speed = json_object_get_double(foil::field(json.get(), "speed"));
-      p.percent = p.total ? 100. * p.received / p.total : 0;
-      const auto groups = foil::groupCatalog(
-          foil::net::parseSections(foil::readFile(fixture + "/sections.json"))
-              .value);
-      for (const auto &group : groups) {
-        if (group.representative.name == p.name)
-          p.parts = foil::Selection(group).files();
-        // A few picks queued behind it, more than fit (the list scrolls).
-        if (group.representative.name != p.name && group.representative.name != "Circuit Garden")
-          for (const auto &file : foil::Selection(group).files())
-            ui.previewQueued(file, group.representative.name, group.representative.icon);
-        if (group.representative.name == "Circuit Garden")
-          p.completed.push_back(group.representative);
-      }
-      p.count = p.parts.size();
-      ui.previewInstall(p);
+      previewDownloads(ui, fixture);
       ui.screen(foil::ui::Screen::Downloads);
       ui.render();
       if (!app.screenshot(shot + "/04-downloads.png"))

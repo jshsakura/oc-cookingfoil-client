@@ -208,6 +208,12 @@ public:
     return homebrewScanned_ && !homebrewCardWorker_.joinable();
   }
   // 홈브류 without a server: the menu item and this list.
+  // 패치's shop list in the preview, as the server would send it.
+  void previewPatches(std::vector<UserPatch> patches) {
+    serverPatches_ = std::move(patches);
+    patchesLoaded_ = true;
+    patchesFixed_ = true;
+  }
   void previewHomebrew(std::vector<homebrew::App> apps) {
     features_.insert("homebrew");
     homebrew_ = std::move(apps);
@@ -1058,6 +1064,7 @@ private:
   std::map<std::string, PatchRecord> patchRecords_; // drawn; the worker owns the store
   std::vector<UserPatch> serverPatches_, incomingPatches_;
   bool patchesLoaded_ = false, patchFetching_ = false, confirmPatchRemove_ = false;
+  bool patchesFixed_ = false; // the preview's list: never asked for
   std::atomic<int> incomingPatchRetry_{0};
   uint32_t patchRetryAt_ = 0; // ticks when a 503 list asks again
   bool managingPatch_ = false; // the patch management popup is open

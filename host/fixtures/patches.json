@@ -1,0 +1,7 @@
+{"patches":[
+ {"id":"lantern-ko","title_id":"0100E5E01C098000","name":"Lantern Road 한글 패치","version":"1.2","game_version":"1.0.3","author":"Fixture","description":"메뉴와 대사를 한국어로 옮긴 패치입니다.","kinds":["romfs"],"size":48234496,"files":312,"updated_at":1760400000,"required":false},
+ {"id":"lantern-60fps","title_id":"0100E5E01C098000","name":"60FPS","version":"0.4","game_version":"1.0.3","author":"Fixture","description":"프레임 제한을 60으로 올립니다.","kinds":["exefs_patches"],"size":4096,"files":1,"updated_at":1759900000},
+ {"id":"paper-moon-ko","title_id":"01002FC00412C000","name":"Paper Moon 한글화","version":"2.0","game_version":"1.1.0","author":"Fixture","description":"전체 텍스트를 번역했습니다.","kinds":["romfs"],"size":20971520,"files":88,"updated_at":1760100000,"required":false},
+ {"id":"neon-cheats","title_id":"01008D100DE46000","name":"Neon Ronin 치트","version":"1","author":"Fixture","kinds":["cheats"],"size":2048,"files":1,"updated_at":1759500000},
+ {"id":"fox-required","title_id":"01009440164AE000","name":"Midnight Fox 실행 패치","version":"1.0","author":"Fixture","description":"이 패치가 있어야 실행됩니다.","kinds":["exefs"],"size":1048576,"files":3,"updated_at":1760300000,"required":true}
+]}

@@ -153,7 +153,7 @@ const Application::PatchRow *Application::pickedPatch(const std::vector<PatchRow
   return found == rows.end() ? nullptr : &*found;
 }
 void Application::fetchPatches() {
-  if (!session_ || patchWorker_.joinable() || !connected_)
+  if (patchesFixed_ || !session_ || patchWorker_.joinable() || !connected_)
     return;
   patchFetching_ = runPatchJob("", "", [this](net::Session &session, PatchStore &, Error &error, std::string &) {
     auto list = session.patches();

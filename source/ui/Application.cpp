@@ -369,8 +369,10 @@ std::string Application::installedIcon(const InstalledGame &game) {
   return group ? group->representative.icon : "";
 }
 void Application::clearCatalog() {
-  serverPatches_.clear();
-  patchesLoaded_ = false;
+  if (!patchesFixed_) {
+    serverPatches_.clear();
+    patchesLoaded_ = false;
+  }
   patchError_ = {};
   groups_.clear();
   groupIndex_.clear();
