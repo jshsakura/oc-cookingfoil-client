@@ -8,6 +8,7 @@ int runNetworkTests();
 int runNtpTests();
 int runStateTests();
 int runRebindTests();
+int runSessionTokenTests();
 int runSessionTests();
 int runCatalogTests();
 int runUpdatesTests();
@@ -62,7 +63,7 @@ int main() {
   // A console that reads its ID, as on the Switch (test_state covers one
   // that cannot).
   foil::setDeviceIdentity(foil::deriveIdentity(0x756e697474657374ull));
-  const int failures = runConfigTests() + runNetworkTests() + runNtpTests() + runStateTests() + runRebindTests() +
+  const int failures = runConfigTests() + runNetworkTests() + runNtpTests() + runStateTests() + runRebindTests() + runSessionTokenTests() +
                        runSessionTests() + runPairingTests() + runCatalogTests() + runUpdatesTests() + runInstalledTests() +
                        runSelectionTests() + runInstallerTests() + runPatchTests() + runI18nTests() +
                        runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runHistoryTests() + runStoreTests() + runZstdResumeTests() + runNczPointTests() + runClientUpdateTests() + runHomebrewTests() + runHomebrewCardTests() + runDropboxRowsTests() + runResumeTests() + runForwarderTests() +

@@ -3,6 +3,7 @@
 #include <atomic>
 #include <map>
 #include "core/State.hpp"
+#include "net/Socket.hpp"
 #include "core/Patches.hpp"
 #include "core/I18n.hpp"
 #include <functional>
@@ -14,6 +15,8 @@ struct Response {
     int retryAfter = 0; // the Retry-After header in seconds; 0 when absent or a date
     std::string contentRange; // a 206's Content-Range header
     uint64_t contentLength = 0; // 0 when absent
+    std::string session; // X-CookingFoil-Session: why the session token was refused
+    int64_t date = 0;    // the Date header, Unix seconds; 0 when absent
 };
 // The server's keys go to the server only; anything else (a picture on
 // another host) gets no credentials at all.
@@ -21,6 +24,10 @@ std::vector<std::string> authHeaders(const Server& server, const State& state, c
 // A file download: as authHeaders, and on the server's download host (https)
 // its download token too. Only downloads take it, so no other host sees it.
 std::vector<std::string> downloadHeaders(const Server& server, const State& state, const std::string& url);
+// GET /api/session with the sign-in, and handing that ask to the requests
+// to this server (net/Socket's session token).
+SessionGrant askSessionToken(const Server& server, const State& state);
+void offerSessionFor(const Server& server, const State& state);
 bool internetConnected();
 // The console's link: -1 offline, else signal bars 0-3 (wired reads as 3).
 int signalStrength();

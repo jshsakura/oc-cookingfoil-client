@@ -60,4 +60,31 @@ uint64_t receivedBytes();
 // Puts a curl handle on the app's one pool of open connections, TLS
 // sessions and DNS answers, so a request reuses a connection already warm.
 void shareConnections(void *curl);
+// The session token (a server offering "session-token"): asked for with the
+// server's sign-in (Basic, access key), then sent to the server's own
+// address in its place, so the password goes out once in 12 hours instead
+// of with every request. Held in memory only, never saved.
+struct SessionGrant {
+  long status = 0;
+  std::string token;
+  int64_t secondsLeft = 0; // until the server's expiresAt, by the server's clock
+};
+// The server offers it: `ask` gets one. `credentials` tells the sign-in it
+// was asked with; while it is the same, a refusal stands for the run (403:
+// the server keeps Basic), and a token held stays.
+void offerSession(const std::string &origin, const std::string &credentials, std::function<SessionGrant()> ask);
+void withdrawSession(const std::string &origin);
+// The token for a request to `origin`, asked for first when there is none,
+// when it ends within RenewBeforeSeconds, or after the server turned one
+// down; empty when the server gives none (the request signs in as before).
+constexpr int64_t RenewBeforeSeconds = 600;
+std::string sessionToken(const std::string &origin);
+// After a 401 with X-CookingFoil-Session for a request sent with `sent`:
+// a new token is asked for once, true when one newer than `sent` is held.
+bool renewSession(const std::string &sent);
+bool isSessionToken(const std::string &token);
+// The X-CookingFoil-Session replies heard so far (expired | revoked | invalid).
+uint64_t sessionRefusals();
+// Tests: every session forgotten.
+void forgetSessions();
 } // namespace foil::net

@@ -5,7 +5,9 @@
 #include <chrono>
 #include <algorithm>
 #include <curl/curl.h>
+#include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <sys/socket.h>
 #ifdef __SWITCH__
@@ -30,6 +32,7 @@ std::function<long()> renewer;
 std::chrono::steady_clock::time_point lastAsk;
 bool askedOnce = false;
 std::atomic<bool> signInRefused{false};
+std::atomic<uint64_t> sessionRefused{0};
 // A reply's header block, in the thread curl reads it on: whether it is a
 // success so far and has no restart header.
 thread_local bool replyOk = false;
@@ -75,6 +78,12 @@ void heardHeader(const char *data, size_t bytes) {
     }
     return;
   }
+  if (key == "x-cookingfoil-session") { // the session token refused: expired | revoked | invalid
+    sessionRefused.fetch_add(1);
+    const auto value = trimmed();
+    logLine("session token " + (value == "expired" || value == "revoked" || value == "invalid" ? value : std::string("refused")));
+    return;
+  }
   if (key == "x-cookingfoil-token") { // a download refused: expired or revoked
     tokenRejected = true;
     return;
@@ -117,6 +126,7 @@ void setTokenRenewer(std::function<long()> renew) {
   askedOnce = false;
 }
 bool renewDownloadToken(const std::string &sent) {
+  if (isSessionToken(sent)) return renewSession(sent);
   std::lock_guard<std::mutex> held(renewLock);
   // Another part already got a newer one.
   if (const auto now = downloadToken(); !now.empty() && now != sent && !tokenRejected) return true;
@@ -138,11 +148,17 @@ std::string bearerOf(const std::vector<std::string> &headers) {
     if (h.rfind(BearerLead, 0) == 0) return h.substr(BearerLead.size());
   return {};
 }
+namespace {
+std::string sessionAfter(const std::string &sent);
+}
 void freshenBearer(std::vector<std::string> &headers) {
   const std::string &Lead = BearerLead;
-  const auto now = downloadToken();
-  for (auto &h : headers)
-    if (h.rfind(Lead, 0) == 0 && !now.empty()) h = Lead + now;
+  for (auto &h : headers) {
+    if (h.rfind(Lead, 0) != 0) continue;
+    const auto sent = h.substr(Lead.size());
+    const auto now = isSessionToken(sent) ? sessionAfter(sent) : downloadToken();
+    if (!now.empty()) h = Lead + now;
+  }
 }
 void watchRestart(void *curl) {
   curl_easy_setopt(static_cast<CURL *>(curl), CURLOPT_HEADERFUNCTION, onRestartHeader);
@@ -203,5 +219,90 @@ void shareConnections(void *curl) {
     // curl's default of 5 would close warm download connections.
     curl_easy_setopt(static_cast<CURL *>(curl), CURLOPT_MAXCONNECTS, 16L);
   }
+}
+namespace {
+struct SessionEntry {
+  std::string credentials;
+  std::function<SessionGrant()> ask;
+  std::string token;
+  std::set<std::string> spent; // tokens it held before, to tell a reply's
+  std::chrono::steady_clock::time_point until;
+  uint64_t refusalsSeen = 0;
+  bool refused = false; // the server gave none to this sign-in
+};
+std::mutex sessionLock; // held while one is asked for; the others wait for it
+std::map<std::string, SessionEntry> sessions; // by origin
+// Under sessionLock.
+void askSession(const std::string &origin, SessionEntry &entry) {
+  entry.refusalsSeen = sessionRefused.load();
+  if (!entry.token.empty()) entry.spent.insert(entry.token);
+  entry.token.clear();
+  const auto grant = entry.ask ? entry.ask() : SessionGrant{};
+  if (grant.status == 200 && !grant.token.empty()) {
+    entry.token = grant.token;
+    entry.until = std::chrono::steady_clock::now() + std::chrono::seconds(grant.secondsLeft);
+    logLine("session token for " + origin + ": " + std::to_string(grant.secondsLeft / 60) + " min, renewed " +
+            std::to_string(RenewBeforeSeconds / 60) + " min before it ends");
+    return;
+  }
+  // 403: this server keeps the sign-in; 401: the sign-in itself is wrong,
+  // and the request it was for says so. 429 is the lock, not asked again.
+  entry.refused = true;
+  logLine("session token for " + origin + " not given: status " + std::to_string(grant.status) + "; signing in as before");
+}
+SessionEntry *owner(const std::string &sent) {
+  for (auto &[origin, entry] : sessions)
+    if (entry.token == sent || entry.spent.count(sent)) return &entry;
+  return nullptr;
+}
+std::string sessionAfter(const std::string &sent) {
+  std::lock_guard<std::mutex> held(sessionLock);
+  const auto *entry = owner(sent);
+  return entry ? entry->token : std::string();
+}
+} // namespace
+void offerSession(const std::string &origin, const std::string &credentials, std::function<SessionGrant()> ask) {
+  std::lock_guard<std::mutex> held(sessionLock);
+  auto &entry = sessions[origin];
+  if (entry.credentials != credentials) {
+    if (!entry.token.empty()) entry.spent.insert(entry.token);
+    entry.token.clear();
+    entry.refused = false;
+    entry.credentials = credentials;
+  }
+  entry.ask = std::move(ask);
+}
+void withdrawSession(const std::string &origin) {
+  std::lock_guard<std::mutex> held(sessionLock);
+  sessions.erase(origin);
+}
+std::string sessionToken(const std::string &origin) {
+  std::lock_guard<std::mutex> held(sessionLock);
+  const auto found = sessions.find(origin);
+  if (found == sessions.end() || found->second.refused) return {};
+  auto &entry = found->second;
+  const bool ending = std::chrono::steady_clock::now() + std::chrono::seconds(RenewBeforeSeconds) >= entry.until;
+  if (entry.token.empty() || ending || entry.refusalsSeen != sessionRefused.load()) askSession(origin, entry);
+  return entry.token;
+}
+bool renewSession(const std::string &sent) {
+  std::lock_guard<std::mutex> held(sessionLock);
+  auto *entry = owner(sent);
+  if (!entry || entry->refused) return false;
+  // Another request already got a newer one.
+  if (!entry->token.empty() && entry->token != sent) return true;
+  for (auto &[origin, e] : sessions)
+    if (&e == entry) askSession(origin, e);
+  return !entry->token.empty() && entry->token != sent;
+}
+bool isSessionToken(const std::string &token) {
+  if (token.empty()) return false;
+  std::lock_guard<std::mutex> held(sessionLock);
+  return owner(token) != nullptr;
+}
+uint64_t sessionRefusals() { return sessionRefused.load(); }
+void forgetSessions() {
+  std::lock_guard<std::mutex> held(sessionLock);
+  sessions.clear();
 }
 } // namespace foil::net

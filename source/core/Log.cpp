@@ -64,6 +64,12 @@ std::string withoutSecrets(std::string line) {
       at = from;
     }
   }
+  // A session token (cfs_…) wherever it shows.
+  for (size_t at = line.find("cfs_"); at != std::string::npos; at = line.find("cfs_", at + 3)) {
+    size_t to = at + 4;
+    while (to < line.size() && tokenChar(line[to])) ++to;
+    if (to > at + 4) line.replace(at, to - at, "***");
+  }
   for (size_t at = line.find("eyJ"); at != std::string::npos; at = line.find("eyJ", at + 3)) {
     size_t to = at;
     while (to < line.size() && tokenChar(line[to])) ++to;

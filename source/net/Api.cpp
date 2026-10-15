@@ -9,6 +9,7 @@
 #include "core/Config.hpp"
 #include "core/Log.hpp"
 #include "core/Homebrew.hpp"
+#include "core/Sha256.hpp"
 #include "net/Ranged.hpp"
 #include <curl/curl.h>
 #include <algorithm>
@@ -56,6 +57,12 @@ size_t writeHeader(char* data, size_t size, size_t count, void* context) {
             static_cast<Response*>(context)->contentRange = begin == std::string::npos ? "" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
         } else if (key == "content-length") {
             static_cast<Response*>(context)->contentLength = std::strtoull(line.c_str() + colon + 1, nullptr, 10);
+        } else if (key == "x-cookingfoil-session") {
+            auto value = line.substr(colon + 1); const auto begin = value.find_first_not_of(" \t\r\n");
+            static_cast<Response*>(context)->session = begin == std::string::npos ? "refused" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
+        } else if (key == "date") {
+            const auto when = curl_getdate(line.substr(colon + 1).c_str(), nullptr);
+            static_cast<Response*>(context)->date = when > 0 ? int64_t(when) : 0;
         } else if (key == "retry-after") {
             const auto seconds = std::strtol(line.c_str() + colon + 1, nullptr, 10);
             static_cast<Response*>(context)->retryAfter = int(std::clamp<long>(seconds, 0, 3600));
@@ -78,20 +85,54 @@ std::string titleId(json_object* obj, const char* key) {
     return id.size() == 16 && id.find_first_not_of("0123456789ABCDEF") == std::string::npos ? id : "";
 }
 }
-std::vector<std::string> authHeaders(const Server& server, const State& state, const std::string& url) {
+namespace {
+// `session`: the session token in place of Basic and the access key when
+// the server gives one; false for asking for it.
+std::vector<std::string> serverHeaders(const Server& server, const State& state, const std::string& url, bool session) {
     std::vector<std::string> headers{"Version: " COOKINGFOIL_VERSION};
     if (originOf(url) != originOf(server.url)) return headers;
     // What this client can do, so the server gives it what fits (download
     // links that take the token, not the tunnel's).
     headers.push_back("X-CookingFoil-Features: direct-token");
     headers.push_back(std::string("Accept-Language: ") + languageCode());
-    if (!server.username.empty() || !server.password.empty()) headers.push_back("Authorization: Basic " + base64(server.username + ":" + server.password));
+    const auto token = session ? sessionToken(originOf(server.url)) : std::string();
+    if (!token.empty()) headers.push_back("Authorization: Bearer " + token);
+    else if (!server.username.empty() || !server.password.empty()) headers.push_back("Authorization: Basic " + base64(server.username + ":" + server.password));
     if (const auto device = deviceKeyFor(state, server.url); !device.empty()) headers.push_back("X-Device-Key: " + device);
     const auto key = state.accessKeys.find(server.url);
-    if (key != state.accessKeys.end() && !key->second.empty()) headers.push_back("X-Access-Key: " + key->second);
+    if (token.empty() && key != state.accessKeys.end() && !key->second.empty()) headers.push_back("X-Access-Key: " + key->second);
     if (!server.cfClientId.empty()) headers.push_back("CF-Access-Client-Id: " + server.cfClientId);
     if (!server.cfClientSecret.empty()) headers.push_back("CF-Access-Client-Secret: " + server.cfClientSecret);
     return headers;
+}
+}
+std::vector<std::string> authHeaders(const Server& server, const State& state, const std::string& url) {
+    return serverHeaders(server, state, url, true);
+}
+SessionGrant askSessionToken(const Server& server, const State& state) {
+    const auto url = server.url + "/api/session";
+    const auto reply = get(url, serverHeaders(server, state, url, false));
+    SessionGrant grant;
+    grant.status = reply.status;
+    if (reply.status != 200) return grant;
+    Error unread;
+    const auto root = parseJson(reply.body, unread);
+    const auto token = root ? stringField(root.get(), "token") : std::string();
+    if (token.empty() || token.find_first_of(" \t\r\n") != std::string::npos) { grant.status = 0; return grant; }
+    grant.token = token;
+    // By the server's own clock where it says it: the console's may be off.
+    const int64_t now = reply.date ? reply.date : int64_t(std::time(nullptr));
+    constexpr int64_t Day = 24 * 3600;
+    const int64_t left = integerField(root.get(), "expiresAt") / 1000 - now;
+    grant.secondsLeft = left > 0 && left <= 7 * Day ? left : Day / 2;
+    return grant;
+}
+void offerSessionFor(const Server& server, const State& state) {
+    // The sign-in it is asked with: a new password or access key asks again.
+    const auto key = state.accessKeys.find(server.url);
+    const auto credentials = hmacSha256(server.url, server.username + '\n' + server.password + '\n' +
+        (key == state.accessKeys.end() ? std::string() : key->second) + '\n' + deviceKeyFor(state, server.url));
+    offerSession(originOf(server.url), credentials, [server, state] { return askSessionToken(server, state); });
 }
 std::vector<std::string> downloadHeaders(const Server& server, const State& state, const std::string& url) {
     auto headers = authHeaders(server, state, url);
@@ -164,7 +205,25 @@ std::string connectionError(int code, const std::string& url) {
         return curl_easy_strerror(static_cast<CURLcode>(code));
     }
 }
+namespace {
+Response getOnce(const std::string& url, const std::vector<std::string>& headers, const std::string& etag, const std::atomic<bool>* cancel);
+// A 401 for the session token (X-CookingFoil-Session): a new one, asked for
+// with the sign-in, and the request once more with it. Never twice.
+template <typename Send>
+Response withSession(const std::vector<std::string>& headers, Send send) {
+    auto reply = send(headers);
+    const auto sent = bearerOf(headers);
+    if (reply.status != 401 || reply.session.empty() || !isSessionToken(sent) || !renewSession(sent)) return reply;
+    auto again = headers;
+    freshenBearer(again);
+    return send(again);
+}
+}
 Response get(const std::string& url, const std::vector<std::string>& headers, const std::string& etag, const std::atomic<bool>* cancel) {
+    return withSession(headers, [&](const std::vector<std::string>& h) { return getOnce(url, h, etag, cancel); });
+}
+namespace {
+Response getOnce(const std::string& url, const std::vector<std::string>& headers, const std::string& etag, const std::atomic<bool>* cancel) {
     Response result;
     if (!isHttp(url)) { result.error = tr("Check the HTTP/HTTPS address."); return result; }
     auto* curl = curl_easy_init();
@@ -210,6 +269,7 @@ Response get(const std::string& url, const std::vector<std::string>& headers, co
                 " curl=" + std::to_string(int(code)) + (result.error.empty() ? "" : " " + result.error));
     curl_slist_free_all(list); curl_easy_cleanup(curl);
     return result;
+}
 }
 long renewDownloadToken(const Server& server, const State& state) {
     const auto url = server.url + "/api/shop/info";
@@ -312,7 +372,14 @@ size_t readUpload(char* buffer, size_t size, size_t count, void* context) {
     return std::fread(buffer, size, count, static_cast<FILE*>(context));
 }
 }
+namespace {
+Response postOnce(const std::string& url, const std::vector<std::string>& headers, const PostOptions& options, const std::atomic<bool>* cancel);
+}
 Response post(const std::string& url, const std::vector<std::string>& headers, const PostOptions& options, const std::atomic<bool>* cancel) {
+    return withSession(headers, [&](const std::vector<std::string>& h) { return postOnce(url, h, options, cancel); });
+}
+namespace {
+Response postOnce(const std::string& url, const std::vector<std::string>& headers, const PostOptions& options, const std::atomic<bool>* cancel) {
     Response result;
     if (!isHttp(url)) { result.error = tr("Check the HTTP/HTTPS address."); return result; }
     std::unique_ptr<FILE, int (*)(FILE*)> in(nullptr, std::fclose), out(nullptr, std::fclose);
@@ -362,6 +429,8 @@ Response post(const std::string& url, const std::vector<std::string>& headers, c
     }
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, postBody);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &context);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, writeHeader);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &result);
     const auto code = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
     if (context.failedWrite && result.error.empty()) result.error = trf("Could not write the file: {0}", {options.saveTo});
@@ -377,6 +446,7 @@ Response post(const std::string& url, const std::vector<std::string>& headers, c
         if (!result.error.empty() || result.status < 200 || result.status >= 300) std::remove(options.saveTo.c_str());
     }
     return result;
+}
 }
 std::vector<UserPatch> parsePatches(json_object* array) {
     std::vector<UserPatch> out;
@@ -1007,6 +1077,11 @@ bool Session::refresh(Error& error) {
             features_ = parseFeatures(response.body);
             recommendConnections(parseMaxConnections(response.body));
         } else if (response.status == 404) features_.clear();
+        // Only a server that says so is asked for a session token.
+        if (response.status == 200 || response.status == 404) {
+            if (features_.count("session-token")) offerSessionFor(server_, state_);
+            else withdrawSession(originOf(server_.url));
+        }
     }
     const auto url = server_.url + "/api/shop/sections";
     // How long the first screen waits, in the log: the list's download,
