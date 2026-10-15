@@ -5,6 +5,7 @@
 #include "core/Log.hpp"
 #include "core/DownloadStore.hpp"
 #include "core/Sha256.hpp"
+#include "core/Vault.hpp"
 #include <atomic>
 #include <cstdio>
 #include <cctype>
@@ -69,11 +70,44 @@ constexpr const char* AccessKind = "access";
 constexpr const char* SecretKind = "secret";
 constexpr const char* SealKind = "seal";
 constexpr const char* ReboundKind = "rebound"; // per server, the made key it took
+constexpr const char* DropboxKind = "dropbox"; // the Dropbox link, its tokens as JSON
 constexpr const char* PendingSetting = "pendingInstall";
 DeviceIdentity currentIdentity() {
     std::lock_guard<std::mutex> held(identityLock);
     if (identity.fingerprint.empty() && identitySource) identity = identitySource();
     return identity;
+}
+// The key the credentials are encrypted under, drawn from the console's seal
+// key: without the console it cannot be made, so a card read elsewhere (a
+// PC, another console) shows only ciphertext. Empty with no identity.
+std::string storageKey(const DeviceIdentity& id) {
+    return id.sealKey.empty() ? "" : hexBytes(hmacSha256(id.sealKey, "cookingfoil-storage-v1"));
+}
+// Kinds whose values are secrets: kept encrypted. The fingerprint, the seal
+// and the rebound marks are not secret and stay as they are.
+bool secretKind(const std::string& kind) {
+    return kind == DeviceKind || kind == AccessKind || kind == SecretKind || kind == DropboxKind;
+}
+std::string encrypt(const std::string& key, const std::string& value) {
+    const auto nonce = hexBytes(randomKey()).substr(0, 12);
+    return nonce.size() == 12 ? vault::seal(key, value, nonce) : "";
+}
+// Every secret row decrypted in place. False when one is encrypted and does
+// not open under `key` (another console's, changed, or no key this run).
+// `plain` tells a row from before encryption, read as it is.
+bool decryptRows(DownloadStore::StateRows& rows, const std::string& key, bool& plain) {
+    plain = false;
+    for (auto& [at, value] : rows.credentials) {
+        if (!secretKind(at.first)) continue;
+        if (!vault::sealed(value)) {
+            plain = plain || !value.empty();
+            continue;
+        }
+        const auto opened = key.empty() ? std::nullopt : vault::open(key, value);
+        if (!opened) return false;
+        value = *opened;
+    }
+    return true;
 }
 // Every credential but the seal, in one string, in key order.
 std::string sealed(const DownloadStore::StateRows& rows) {
@@ -173,8 +207,17 @@ DownloadStore::StateRows toRows(const State& given, const DeviceIdentity& id) {
     for (const auto& [server, secret] : state.pairSecrets) rows.credentials[{SecretKind, server}] = secret;
     if (!state.derivedKey.empty() && state.derivedKey != state.deviceKey)
         for (const auto& server : state.rebound) rows.credentials[{ReboundKind, server}] = state.derivedKey;
-    rows.credentials[{SealKind, ""}] = seal(id, rows);
     return rows;
+}
+// The secret rows encrypted and the whole set sealed, as stored. With no
+// identity nothing is written from these (saveState keeps what is stored).
+void protect(DownloadStore::StateRows& rows, const DeviceIdentity& id) {
+    const auto key = storageKey(id);
+    if (!key.empty())
+        for (auto& [at, value] : rows.credentials)
+            if (secretKind(at.first) && !vault::sealed(value)) value = encrypt(key, value);
+    rows.credentials.erase({SealKind, ""});
+    rows.credentials[{SealKind, ""}] = seal(id, rows);
 }
 // Credentials that are not this console's: why, or None when they are.
 Rebound check(const DownloadStore::StateRows& rows, const DeviceIdentity& id) {
@@ -182,7 +225,8 @@ Rebound check(const DownloadStore::StateRows& rows, const DeviceIdentity& id) {
         const auto at = rows.credentials.find({kind, ""});
         return at == rows.credentials.end() ? std::string() : at->second;
     };
-    if (!validDeviceKey(value(DeviceKind))) return Rebound::Changed;
+    // An encrypted one is looked at once it is opened (loadState).
+    if (!vault::sealed(value(DeviceKind)) && !validDeviceKey(value(DeviceKind))) return Rebound::Changed;
     // The console gave nothing to check against this time: kept as they are
     // rather than dropped for a fault of the moment.
     if (id.fingerprint.empty()) {
@@ -273,6 +317,16 @@ bool saveState(const std::string& dbPath, const State& state, Error& error) {
     const auto id = currentIdentity();
     auto rows = toRows(state, id);
     bool ok = store.open(dbPath, failure);
+    if (ok && !id.fingerprint.empty()) {
+        // The Dropbox link is saved on its own (saveDropbox): it stays, while
+        // the stored rows are this console's.
+        const auto stored = store.stateRows(failure);
+        ok = stored.has_value();
+        if (ok && check(*stored, id) == Rebound::None)
+            if (const auto link = stored->credentials.find({DropboxKind, ""}); link != stored->credentials.end())
+                rows.credentials[link->first] = link->second;
+        if (ok) protect(rows, id);
+    }
     if (ok && id.fingerprint.empty()) {
         // No console identity this run: credentials bound before stay as
         // they are, since rows written without it would read as another
@@ -315,6 +369,48 @@ bool saveSettings(const std::string& dbPath, const State& state, Error& error) {
     error.message = failure.empty() ? "settings not saved" : failure;
     return false;
 }
+std::optional<std::string> loadDropbox(const std::string& dbPath) {
+    DownloadStore store;
+    std::string failure;
+    std::optional<DownloadStore::StateRows> rows;
+    if (store.open(dbPath, failure)) rows = store.stateRows(failure);
+    const auto id = currentIdentity();
+    if (!rows || id.fingerprint.empty()) return std::nullopt;
+    const auto link = rows->credentials.find({DropboxKind, ""});
+    if (link == rows->credentials.end()) return std::nullopt;
+    if (check(*rows, id) != Rebound::None) {
+        logLine("dropbox: the stored link is not this console's; link again");
+        return std::nullopt;
+    }
+    auto opened = vault::open(storageKey(id), link->second);
+    if (!opened) logLine("dropbox: the stored link does not open with this console's key; link again");
+    return opened;
+}
+bool saveDropbox(const std::string& dbPath, const std::string& json, Error& error) {
+    DownloadStore store;
+    std::string failure;
+    const auto id = currentIdentity();
+    const auto key = storageKey(id);
+    if (key.empty()) {
+        error.message = tr("Could not read this console's ID, so the Dropbox link was not saved.");
+        return false;
+    }
+    std::optional<DownloadStore::StateRows> rows;
+    if (store.open(dbPath, failure)) rows = store.stateRows(failure);
+    if (!rows || check(*rows, id) != Rebound::None) {
+        error.message = failure.empty() ? tr("Could not read the app's records on the SD card.") : failure;
+        return false;
+    }
+    if (json.empty()) rows->credentials.erase({DropboxKind, ""});
+    else {
+        const auto sealedLink = encrypt(key, json);
+        if (sealedLink.empty()) { error.message = tr("Could not read the app's records on the SD card."); return false; }
+        rows->credentials[{DropboxKind, ""}] = sealedLink;
+    }
+    protect(*rows, id);
+    if (!store.saveStateRows(*rows, failure)) { error.message = failure; return false; }
+    return true;
+}
 Parsed<State> loadState(const std::string& dbPath) {
     Parsed<State> result;
     DownloadStore store;
@@ -334,9 +430,29 @@ Parsed<State> loadState(const std::string& dbPath) {
     State state;
     bool moved = false; // state.json read in; it goes once the state is saved
     if (rows->credentials.count({DeviceKind, ""})) {
-        state = fromRows(*rows);
-        attach(state, *rows, id);
         why = check(*rows, id);
+        auto opened = *rows;
+        bool plain = false;
+        const bool readable = decryptRows(opened, storageKey(id), plain);
+        if (why == Rebound::None && !readable && id.fingerprint.empty()) {
+            // Encrypted, and the console's ID could not be read this run:
+            // the settings go on, the keys wait for a load that can open them.
+            logLine("state: no console identity; the encrypted credentials wait for it");
+            opened.credentials.clear();
+            result.value = fromRows(opened);
+            return result;
+        }
+        if (why == Rebound::None && !readable) why = Rebound::Changed;
+        if (why == Rebound::None && !validDeviceKey(opened.credentials[{DeviceKind, ""}])) why = Rebound::Changed;
+        if (!readable) opened.credentials.clear(); // the settings stay; the keys are made again below
+        state = fromRows(opened);
+        attach(state, *rows, id);
+        if (why == Rebound::None && plain && !storageKey(id).empty()) {
+            // Written before encryption: encrypted now, once.
+            Error saved;
+            if (saveState(dbPath, state, saved)) logLine("state: credentials encrypted with the console's key");
+            else logLine("state: " + saved.message);
+        }
         if (why == Rebound::None) {
             // Every server took the made key: it is the stored one from now.
             if (const auto list = knownServers(); list && settleDeviceKey(state, *list)) {

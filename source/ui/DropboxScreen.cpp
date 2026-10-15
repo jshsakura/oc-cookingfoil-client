@@ -92,9 +92,19 @@ void Application::pollDropbox() {
 
 void Application::dropboxEnter() {
   if (!dropbox_) {
-    dropbox_ = std::make_unique<net::Dropbox>(sdRoot_ + "/switch/cookingfoil/dropbox.json", &stop_);
-    dropboxLinked_ = dropbox_->load();
-    dropboxAccount_ = dropbox_->account();
+    dropbox_ = std::make_unique<net::Dropbox>(sdRoot_ + "/switch/cookingfoil/cookingfoil.db", &stop_);
+    // The link is read from cookingfoil.db (and decrypted) off the drawing
+    // thread; the list follows once it is known.
+    runDropboxJob("list", [this]() -> std::function<void()> {
+      const bool linked = dropbox_->load();
+      const auto account = dropbox_->account();
+      return [this, linked, account] {
+        dropboxLinked_ = linked;
+        dropboxAccount_ = account;
+        if (linked && !dropboxListed_) listDropbox();
+      };
+    });
+    return;
   }
   if (dropboxLinked_ && !dropboxListed_) listDropbox();
 }

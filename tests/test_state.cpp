@@ -129,15 +129,17 @@ int runStateTests() {
     CHECK(foil::loadState(db).value.language == "ko" && foil::takeRebound() == foil::Rebound::None);
   }
   {
-    // The console's ID not read this run: the credentials are used unchecked
-    // (not taken for another console's), and a save leaves them as bound.
+    // The console's ID not read this run: the credentials, encrypted under
+    // its key, cannot be opened, so this run goes without them (not taken
+    // for another console's, nothing made again), and a save leaves them as
+    // bound.
     auto bound = foil::loadState(db).value;
     bound.accessKeys[Shop] = "issued";
     CHECK(foil::saveState(db, bound, error));
     foil::setDeviceIdentity({});
     auto unread = foil::loadState(db).value;
     CHECK(foil::takeRebound() == foil::Rebound::None);
-    CHECK(unread.deviceKey == bound.deviceKey && unread.accessKeys.at(Shop) == "issued");
+    CHECK(unread.deviceKey.empty() && unread.accessKeys.empty() && unread.language == bound.language);
     unread.accessKeys[Shop] = "other";
     unread.language = "en";
     CHECK(foil::saveState(db, unread, error));
@@ -149,7 +151,7 @@ int runStateTests() {
     // A source that failed once is asked again on the next load.
     int asked = 0;
     foil::setIdentitySource([&] { return ++asked == 1 ? foil::DeviceIdentity{} : one; });
-    CHECK(foil::loadState(db).value.deviceKey == bound.deviceKey && foil::takeRebound() == foil::Rebound::None);
+    CHECK(foil::loadState(db).value.deviceKey.empty() && foil::takeRebound() == foil::Rebound::None);
     CHECK(foil::loadState(db).value.deviceKey == bound.deviceKey && asked == 2);
     foil::setDeviceIdentity(one);
   }

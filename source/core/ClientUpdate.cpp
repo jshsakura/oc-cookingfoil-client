@@ -1,5 +1,7 @@
 #include "core/ClientUpdate.hpp"
+#include "core/Ed25519.hpp"
 #include "core/Json.hpp"
+#include "core/Sha256.hpp"
 #include "net/DropboxUtil.hpp"
 #include <algorithm>
 #include <cctype>
@@ -48,7 +50,17 @@ std::optional<Release> parseRelease(const std::string &json, const std::string &
       size > MaxSize)
     return std::nullopt;
   r.size = uint64_t(size);
+  r.signature = stringField(root.get(), "signature");
+  std::transform(r.signature.begin(), r.signature.end(), r.signature.begin(), ::tolower);
   return r;
+}
+std::string signedMessage(const Release &release) {
+  return "cookingfoil-update-v1\n" + release.version + "\n" + std::to_string(release.size) + "\n" + release.sha256 + "\n";
+}
+bool signatureValid(const Release &release, const std::string &publicKey) {
+  const auto signature = hexBytes(release.signature);
+  const auto key = publicKey.empty() ? hexBytes(ReleaseKey) : publicKey;
+  return signature.size() == 64 && ed25519::verify(signedMessage(release), signature, key);
 }
 std::string sha256Hex(const std::string &bytes) {
   static const char *hex = "0123456789abcdef";

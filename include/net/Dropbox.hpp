@@ -2,7 +2,9 @@
 // Dropbox for 세이브 > 드롭박스, after oc-save-keeper's network/Dropbox.cpp
 // (MIT). Sign-in goes through the shop's copy of save-keeper's bridge
 // (/api/dropbox), then the console trades the code with Dropbox itself
-// (PKCE, no secret) and keeps the tokens in switch/cookingfoil/dropbox.json.
+// (PKCE, no secret) and keeps the tokens in cookingfoil.db, encrypted under
+// the console's key (core/State); a dropbox.json of earlier builds moves in
+// once and goes.
 // Tokens and codes are never logged. One thread uses an instance at a time.
 #include "core/SaveBackups.hpp"
 #include "net/Api.hpp"
@@ -17,8 +19,9 @@ struct DropboxStart {
 using DropboxRevisions = std::map<uint64_t, std::vector<dropbox::Revision>>;
 class Dropbox {
 public:
-  explicit Dropbox(std::string storePath, const std::atomic<bool> *cancel = nullptr);
-  // Reads dropbox.json; false when this console is not linked.
+  // `dbPath`: cookingfoil.db; the old dropbox.json is looked for beside it.
+  explicit Dropbox(std::string dbPath, const std::atomic<bool> *cancel = nullptr);
+  // Reads the link; false when this console is not linked.
   bool load();
   bool linked() const { return credentials_.linked(); }
   const std::string &account() const { return credentials_.account; }
@@ -30,7 +33,7 @@ public:
   // Takes the approved code from the bridge, trades it for tokens with
   // Dropbox, reads the account's name and saves dropbox.json.
   Error finish(const Server &server, const State &state, const dropbox::BridgeSession &session);
-  // Forgets the link on this console (dropbox.json is removed).
+  // Forgets the link on this console.
   Error unlink();
   // Every game's backups on Dropbox, from one listing of /titles.
   Parsed<DropboxRevisions> revisions();
@@ -47,7 +50,7 @@ private:
   // An API call with the access token; one refresh and retry on a 401.
   Response call(const std::string &url, const std::vector<std::string> &headers, const PostOptions &options,
                 Error &error);
-  std::string path_;
+  std::string dbPath_, legacyPath_;
   const std::atomic<bool> *cancel_;
   dropbox::Credentials credentials_;
   bool revoked_ = false;

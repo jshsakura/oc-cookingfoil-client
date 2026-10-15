@@ -39,21 +39,34 @@ Error httpError(const char *what, const Response &response) {
 }
 } // namespace
 
-Dropbox::Dropbox(std::string storePath, const std::atomic<bool> *cancel)
-    : path_(std::move(storePath)), cancel_(cancel) {}
+Dropbox::Dropbox(std::string dbPath, const std::atomic<bool> *cancel)
+    : dbPath_(std::move(dbPath)), cancel_(cancel) {
+  legacyPath_ = (std::filesystem::path(dbPath_).parent_path() / "dropbox.json").string();
+}
 
 bool Dropbox::load() {
-  auto parsed = db::parseCredentials(readFile(path_));
-  credentials_ = parsed.error ? db::Credentials{} : parsed.value;
+  credentials_ = {};
+  if (const auto kept = loadDropbox(dbPath_)) {
+    auto parsed = db::parseCredentials(*kept);
+    if (!parsed.error) credentials_ = parsed.value;
+  }
+  std::error_code ec;
+  if (linked() || !std::filesystem::exists(legacyPath_, ec)) return linked();
+  // Earlier builds kept the tokens in plain text: moved in, encrypted, and
+  // the file goes once that is saved.
+  auto parsed = db::parseCredentials(readFile(legacyPath_));
+  if (parsed.error) return false;
+  credentials_ = parsed.value;
+  if (store()) return linked(); // not saved: the file stays for the next try
+  std::filesystem::remove(legacyPath_, ec);
+  logLine("dropbox: dropbox.json moved into cookingfoil.db, encrypted");
   return linked();
 }
 
 Error Dropbox::store() {
-  std::error_code ec;
-  makeDirectories(std::filesystem::path(std::filesystem::path(path_).parent_path()).string());
-  std::string error;
-  if (!atomicWrite(path_, db::serializeCredentials(credentials_), error))
-    return {trf("Could not save the Dropbox link. {0}", {error})};
+  Error error;
+  if (!saveDropbox(dbPath_, db::serializeCredentials(credentials_), error))
+    return {trf("Could not save the Dropbox link. {0}", {error.message})};
   return {};
 }
 
@@ -156,7 +169,10 @@ Error Dropbox::finish(const Server &server, const State &state, const db::Bridge
 
 Error Dropbox::unlink() {
   credentials_ = {};
-  if (std::remove(path_.c_str()) != 0 && std::filesystem::exists(path_))
+  Error error;
+  std::error_code ec;
+  std::filesystem::remove(legacyPath_, ec);
+  if (!saveDropbox(dbPath_, "", error) || std::filesystem::exists(legacyPath_, ec))
     return {tr("Could not remove the Dropbox link.")};
   return {};
 }

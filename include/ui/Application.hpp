@@ -618,7 +618,7 @@ private:
   const std::vector<net::dropbox::Revision> &dropboxRevisions(uint64_t id) const;
   void dropboxAction(Action action);
   void dropboxDialog(); // a game's backups, or the unlink question
-  void dropboxEnter();  // the tab opened: read dropbox.json, list once
+  void dropboxEnter();  // the tab opened: read the link, list once
   void pollDropbox();
   void startDropboxLink();
   void listDropbox();

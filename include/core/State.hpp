@@ -91,4 +91,12 @@ bool saveState(const std::string& dbPath, const State& state, Error& error);
 // stay as stored. For the screen's saves, whose copy of the keys may be
 // older than what a connection saved meanwhile.
 bool saveSettings(const std::string& dbPath, const State& state, Error& error);
+// The Dropbox link (its tokens, as JSON), kept in cookingfoil.db encrypted
+// under the console's key beside the other credentials. Nothing when there
+// is none, or when it cannot be read here: another console's card, an
+// edited record, or the console's ID not read this run.
+std::optional<std::string> loadDropbox(const std::string& dbPath);
+// Saves it (empty `json`: forgets it). Fails without the console's ID, or
+// when the stored credentials are not this console's.
+bool saveDropbox(const std::string& dbPath, const std::string& json, Error& error);
 }

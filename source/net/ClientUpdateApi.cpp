@@ -25,7 +25,17 @@ std::optional<update::Release> latestClient(const Server &server, const State &s
     return std::nullopt;
   }
   auto release = update::parseRelease(response.body, server.url);
-  if (!release) reply.error.message = tr("Could not read the server's update details.");
+  if (!release) {
+    reply.error.message = tr("Could not read the server's update details.");
+    return release;
+  }
+  // A newer build not signed with the release key: whatever it is, it is
+  // not offered. One no newer than this is only reported as the latest.
+  if (update::compareVersions(release->version, COOKINGFOIL_VERSION) > 0 && !update::signatureValid(*release)) {
+    logLine("update " + release->version + " refused: " + (release->signature.empty() ? "no signature" : "the signature does not check out"));
+    reply.error.message = tr("The update is not signed by CookingFoil, so it was not installed.");
+    return std::nullopt;
+  }
   return release;
 }
 bool installClient(const Server &server, const State &state, const update::Release &release,
@@ -36,6 +46,13 @@ bool installClient(const Server &server, const State &state, const update::Relea
   // The download goes to its own name; only once it is whole and its hash
   // checks out does it become ".new", which the next start puts in place.
   const std::string part = target + ".download", ready = target + ".new";
+  // Checked again here: a release kept from before (a queued update) goes
+  // through the same door.
+  if (!update::signatureValid(release)) {
+    logLine("update " + release.version + " refused before download: not signed with the release key");
+    error.message = tr("The update is not signed by CookingFoil, so it was not installed.");
+    return false;
+  }
   {
     std::error_code ec; // a half download an earlier version left as ".new"
     if (std::filesystem::exists(ready + ResumeFile, ec)) {

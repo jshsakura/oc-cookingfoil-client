@@ -312,7 +312,9 @@ DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&
         return failed(rc);
     }
   }
-  if (!exec(db, "PRAGMA temp_store=MEMORY;", error))
+  // secure_delete: a value replaced (a key encrypted, a link forgotten) is
+  // zeroed where it was, not left in a freed page for a PC to read.
+  if (!exec(db, "PRAGMA temp_store=MEMORY; PRAGMA secure_delete=ON;", error))
     return failed(sqlite3_errcode(db));
   if (check) {
     Statement quick(db, "PRAGMA quick_check");
