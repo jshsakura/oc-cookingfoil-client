@@ -20,3 +20,4 @@ __pycache__/
 
 # Built from forwarder/hbl by makefiles/switch.mk
 /romfs/forwarder/
+/deps/

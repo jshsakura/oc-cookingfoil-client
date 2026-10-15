@@ -116,8 +116,8 @@ texts are in each project's source distribution.
 | SDL2 | zlib | Sam Lantinga and contributors | https://www.libsdl.org |
 | SDL2_ttf | zlib | Sam Lantinga and contributors | https://github.com/libsdl-org/SDL_ttf |
 | SDL2_image | zlib | Sam Lantinga and contributors | https://github.com/libsdl-org/SDL_image |
-| libcurl | curl license (MIT/X derivative) | Daniel Stenberg and contributors | https://curl.se |
-| Mbed TLS | Apache-2.0 | The Mbed TLS Contributors | https://github.com/Mbed-TLS/mbedtls |
+| libcurl 8.23.0 (console, `scripts/build-tls.sh`) | curl license (MIT/X derivative) | Daniel Stenberg and contributors | https://curl.se |
+| Mbed TLS 3.6.7 (console, `scripts/build-tls.sh`) | Apache-2.0 | The Mbed TLS Contributors | https://github.com/Mbed-TLS/mbedtls |
 | json-c | MIT | json-c contributors | https://github.com/json-c/json-c |
 | FreeType | FreeType License (FTL) | The FreeType Project | https://freetype.org |
 | HarfBuzz | MIT ("Old MIT") | HarfBuzz contributors | https://github.com/harfbuzz/harfbuzz |

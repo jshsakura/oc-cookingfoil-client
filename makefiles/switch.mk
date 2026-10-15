@@ -29,8 +29,12 @@ CFLAGS := -g -Wall -Wextra -O2 -ffunction-sections $(ARCH) $(INCLUDE) -D__SWITCH
 CXXFLAGS := $(CFLAGS) -std=c++17 -fno-rtti
 ASFLAGS := -g $(ARCH)
 LDFLAGS = -specs=$(DEVKITPRO)/libnx/switch.specs $(ARCH) -Wl,--gc-sections,-Map,$(notdir $*.map)
-LIBS := -lSDL2_image -lSDL2_ttf `sdl2-config --libs` -lfreetype -lharfbuzz -lwebp -lpng -ljpeg `curl-config --libs` -lmbedtls -lmbedx509 -lmbedcrypto -ljson-c -lnx -lminizip -lz -lbz2
-LIBDIRS := $(PORTLIBS) $(LIBNX)
+# curl and mbedTLS from deps/tls (scripts/build-tls.sh), ahead of the
+# portlibs' older ones: TLS decrypted in the app on the CPU's AES
+# instructions, not handed to the system's ssl service.
+TLS := $(CURDIR)/deps/tls
+LIBS := -lSDL2_image -lSDL2_ttf `sdl2-config --libs` -lfreetype -lharfbuzz -lwebp -lpng -ljpeg -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -ljson-c -lnx -lminizip -lz -lbz2
+LIBDIRS := $(TLS) $(PORTLIBS) $(LIBNX)
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 export OUTPUT := $(CURDIR)/$(TARGET)
 export TOPDIR := $(CURDIR)
@@ -48,7 +52,9 @@ HBL_OUT := romfs/forwarder
 HBL_FILES := $(HBL_OUT)/main $(HBL_OUT)/main.npdm
 .PHONY: all $(BUILD)
 all: $(BUILD)
-$(BUILD): $(HBL_FILES)
+$(BUILD): $(HBL_FILES) $(TLS)/lib/libcurl.a
+$(TLS)/lib/libcurl.a: $(TOPDIR)/scripts/build-tls.sh
+	$(TOPDIR)/scripts/build-tls.sh
 $(BUILD)/hbl/hbl.elf: $(HBL_SRC)/main.c $(HBL_SRC)/trampoline.s
 	@mkdir -p $(dir $@)
 	$(CC) -std=gnu11 -O2 -g -Wall $(ARCH) -ffunction-sections -D__SWITCH__ -DVERSION=\"3.0.0\" \
