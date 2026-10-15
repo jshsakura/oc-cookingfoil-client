@@ -11,7 +11,10 @@ namespace foil::homebrew {
 // What an .nro says about itself; every field may be empty.
 struct NroInfo {
   std::string name, author, version;
-  std::string icon; // JPEG bytes
+  std::string icon; // JPEG (or PNG) bytes
+  // Why there is no icon, for the log: "" when there is one or no asset
+  // section was looked at.
+  std::string iconProblem;
   std::string nacp; // the whole NACP (0x4000 bytes) when it has one, for a HOME Menu shortcut
 };
 // Reads `size` bytes at `offset` of the file into `out`; false when it cannot.
@@ -29,6 +32,7 @@ bool readNroFile(const std::string &path, const std::vector<int> &languages, Nro
 struct CardNro {
   std::string path, name, author, version, icon;
   uint64_t size = 0;
+  int64_t mtime = 0; // with size: a file read before is not read again
 };
 // Whether a path from the SD card root is one the card scan lists:
 // switch/<x>.nro or switch/<folder>/<x>.nro, not this app's own folder
@@ -38,16 +42,19 @@ bool cardNroPath(const std::string &path);
 constexpr size_t MaxCardNros = 256;
 std::vector<std::string> cardNroPaths(std::vector<std::string> paths);
 // Every app file under <sdRoot>/switch, read; a file that is no .nro is left out.
-std::vector<CardNro> scanCard(const std::string &sdRoot, const std::vector<int> &languages);
+// One in `known` (an earlier scan) with the same size and modified time is
+// taken from there instead of read again. A file read without an icon is
+// logged once with why.
+std::vector<CardNro> scanCard(const std::string &sdRoot, const std::vector<int> &languages,
+                              const std::vector<CardNro> &known = {});
 // The listed app a card file belongs to: the one installed at that path,
 // else the one whose folder holds it (switch/<app>/), else the one whose file
 // it is straight under switch/ (switch/<fileName>); nullptr when none.
 const App *matchCard(const std::vector<App> &apps, const std::string &path);
-// The picture an app's tile shows: the server's icon until it failed to
-// load (a 404, a timeout), then `cardKey`, the icon in the app's file on the
-// card, when there is one; else the server's, whose failure draws the
-// name's initial. A card-only app goes straight to its file's icon.
-std::string tileIcon(const App &app, bool serverFailed, const std::string &cardKey);
+// The picture an app's tile shows: an app on the card shows the icon in its
+// file there (`cardKey`; empty when the file has none, and the tile draws
+// the name's initial), never the server's; one not on the card the server's.
+std::string tileIcon(const App &app, bool onCard, const std::string &cardKey);
 // For a listed app with no ledger entry but a file on the card: Installed
 // when the versions agree ("v" in front ignored) or either is unknown.
 Status cardStatus(const std::string &appVersion, const std::string &cardVersion);

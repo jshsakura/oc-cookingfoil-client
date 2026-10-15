@@ -234,7 +234,12 @@ void Images::waitOutLimit() {
 void Images::provide(const std::string &key, const std::string &bytes) {
   if (key.empty() || bytes.empty()) return;
   std::lock_guard<std::mutex> lock(mutex_);
-  if (entries_.count(key)) return;
+  // Kept as it is once given, or decoded. One drawn before it was given
+  // (a download card showing the same app) was asked of the worker, which
+  // has nothing under the name: failed or waiting, it takes the bytes now.
+  const auto found = entries_.find(key);
+  if (found != entries_.end() && !found->second.failed && (found->second.finished || found->second.surface)) return;
+  if (const auto queued = std::find(jobs_.begin(), jobs_.end(), key); queued != jobs_.end()) jobs_.erase(queued);
   entries_[key] = {bytes, nullptr, true, false, 0};
 }
 void Images::worker() {
@@ -249,6 +254,10 @@ void Images::worker() {
       url = jobs_.front();
       jobs_.pop_front();
       state = state_;
+      // A card's picture comes only through provide(); there is nothing to
+      // fetch, and failing it here would hide the bytes given meanwhile.
+      if (url.rfind("card:", 0) == 0)
+        continue;
     }
     std::string bytes;
     bool missing = false; // the server has no such picture

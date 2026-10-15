@@ -85,12 +85,12 @@ void Application::scanHomebrewCard() {
   for (const auto &app : homebrew_)
     if (const auto id = homebrewServerShortcut(app)) ids.push_back(id);
   homebrewLedgerLooked_ = homebrewLedger_;
-  homebrewCardWorker_ = std::thread([this, sd, languages, ids, ledger = homebrewLedgerLooked_]() mutable {
+  homebrewCardWorker_ = std::thread([this, sd, languages, ids, ledger = homebrewLedgerLooked_, known = homebrewCard_]() mutable {
     std::vector<homebrew::CardNro> found;
     std::set<uint64_t> shortcuts;
     homebrew::LedgerCheck check;
     if (!guarded("homebrew card", [&] {
-          found = homebrew::scanCard(sd, languages);
+          found = homebrew::scanCard(sd, languages, known);
           // The ledger against the card: a stat each, a hash only where it
           // differs from what was seen.
           check = homebrew::checkLedger(
@@ -163,16 +163,14 @@ void Application::matchHomebrewCard() {
 const homebrew::App &Application::homebrewAt(int index) const {
   return index < int(homebrew_.size()) ? homebrew_[index] : homebrewLocal_[index - homebrew_.size()];
 }
-// The server's icon, else the one in the app's file on the card: the server
-// answers 404 for an app whose release has no icon or that it has not
-// fetched yet, and a timeout leaves the tile blank until the next refresh.
+// An app on the card shows the icon in its file there, as the HOME Menu
+// and other launchers do; the server's only for one not on the card.
 std::string Application::homebrewIcon(const homebrew::App &app) {
-  const bool serverFailed = !app.iconUrl.empty() && images_->failed(app.iconUrl);
   const auto file = homebrewFile(app);
   const auto nro = std::find_if(homebrewCard_.begin(), homebrewCard_.end(),
                                 [&](const homebrew::CardNro &entry) { return entry.path == file; });
   const auto key = nro == homebrewCard_.end() || nro->icon.empty() ? std::string() : "card:" + nro->path;
-  const auto icon = homebrew::tileIcon(app, serverFailed, key);
+  const auto icon = homebrew::tileIcon(app, nro != homebrewCard_.end(), key);
   if (icon == key && !key.empty()) images_->provide(key, nro->icon);
   return icon;
 }

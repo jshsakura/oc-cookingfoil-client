@@ -77,8 +77,13 @@ int runHomebrewCardTests() {
     put32(start, 0x18, 0x10); // asset section inside the header
     CHECK(parseNro(start, en, info) && info.name.empty());
   }
-  // An icon that is no JPEG is left out; the rest still reads.
-  CHECK(parseNro(nro(nacp({{0, "X"}}, "1"), "PNG?"), en, info) && info.name == "X" && info.icon.empty());
+  // An icon that is neither JPEG nor PNG is left out, with why; the rest
+  // still reads. A PNG one is kept.
+  CHECK(parseNro(nro(nacp({{0, "X"}}, "1"), "GIF8"), en, info) && info.name == "X" && info.icon.empty() &&
+        info.iconProblem == "icon is no JPEG or PNG");
+  const std::string png = "\x89PNG\r\n";
+  CHECK(parseNro(nro(nacp({{0, "X"}}, "1"), png), en, info) && info.icon == png && info.iconProblem.empty());
+  CHECK(parseNro(nro(nacp({{0, "X"}}, "1"), Jpeg, "NRO0", "ASEX"), en, info) && info.iconProblem == "no asset section");
   // Scan path rules: switch/x.nro and switch/<folder>/x.nro only.
   CHECK(cardNroPath("switch/a.nro"));
   CHECK(cardNroPath("switch/app/app.nro"));
@@ -141,22 +146,19 @@ int runHomebrewCardTests() {
     CHECK(status(app, ledger, gone, &older) == Status::Update);
   }
   {
-    // The tile's picture: the server's icon, the card file's once the
-    // server's failed (a 404, a timeout), the server's again when the card
-    // has none (the tile then draws the name's initial).
+    // The tile's picture: an app on the card shows its file's icon, never
+    // the server's (none in the file: the name's initial); one not on the
+    // card the server's.
     App listed;
     listed.iconUrl = "https://shop.example/api/homebrew/gh-1/icon";
-    CHECK(tileIcon(listed, false, "card:switch/a.nro") == listed.iconUrl);
     CHECK(tileIcon(listed, true, "card:switch/a.nro") == "card:switch/a.nro");
-    CHECK(tileIcon(listed, true, "") == listed.iconUrl);
-    App bare = listed;
-    bare.iconUrl.clear();
-    CHECK(tileIcon(bare, false, "card:switch/a.nro") == "card:switch/a.nro");
-    CHECK(tileIcon(bare, false, "").empty());
-    // A card-only app has no server icon to try.
+    CHECK(tileIcon(listed, true, "").empty());
+    CHECK(tileIcon(listed, false, "") == listed.iconUrl);
     App local = listed;
+    local.iconUrl.clear();
     local.cardOnly = true;
-    CHECK(tileIcon(local, false, "card:switch/a.nro") == "card:switch/a.nro");
+    CHECK(tileIcon(local, true, "card:switch/a.nro") == "card:switch/a.nro");
+    CHECK(tileIcon(local, true, "").empty());
   }
   // The scan on a real folder: depth, exclusions, files that are no .nro.
   namespace fs = std::filesystem;
@@ -177,6 +179,17 @@ int runHomebrewCardTests() {
     CHECK(card[1].size == fs::file_size(sd / "switch/ytb/ytb-player.nro"));
   }
   CHECK(scanCard((sd / "missing").string(), en).empty());
+  if (card.size() == 2) {
+    // A file read before with the same size and time is taken from the
+    // earlier scan; one that changed is read again.
+    auto known = card;
+    known[0].name = "Remembered";
+    auto again = scanCard(sd.string(), en, known);
+    CHECK(again.size() == 2 && again[0].name == "Remembered" && again[1].icon == Jpeg);
+    known[0].mtime -= 1;
+    again = scanCard(sd.string(), en, known);
+    CHECK(again.size() == 2 && again[0].name == "Root");
+  }
   // Removing a card-only app: its file and the folders it leaves empty, up
   // to switch/; nothing else.
   write(sd / "switch/solo/solo.nro", "x");

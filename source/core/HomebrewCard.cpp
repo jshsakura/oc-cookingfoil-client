@@ -1,8 +1,10 @@
 #include "core/HomebrewCard.hpp"
+#include "core/Log.hpp"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <sys/stat.h>
 namespace foil::homebrew {
 namespace {
 // The .nro layout: a 0x10 byte start, then the "NRO0" header whose size
@@ -69,8 +71,10 @@ bool readNro(uint64_t fileSize, const NroReader &read, const std::vector<int> &l
   const uint64_t assets = u32(header, NroSizeAt);
   std::string asset;
   if (assets < NroHeaderEnd || !fits(assets, AssetHeaderSize, fileSize) || !read(assets, AssetHeaderSize, asset) ||
-      asset.size() != AssetHeaderSize || asset.compare(0, 4, "ASET") != 0)
+      asset.size() != AssetHeaderSize || asset.compare(0, 4, "ASET") != 0) {
+    out.iconProblem = "no asset section";
     return true;
+  }
   const uint64_t room = fileSize - assets;
   const uint64_t nacpAt = u64(asset, AssetNacpAt), nacpSize = u64(asset, AssetNacpAt + 8);
   std::string nacp;
@@ -89,9 +93,17 @@ bool readNro(uint64_t fileSize, const NroReader &read, const std::vector<int> &l
   }
   const uint64_t iconAt = u64(asset, AssetIconAt), iconSize = u64(asset, AssetIconAt + 8);
   std::string icon;
-  if (iconSize >= 4 && iconSize <= MaxIcon && fits(iconAt, iconSize, room) &&
-      read(assets + iconAt, size_t(iconSize), icon) && icon.size() == iconSize && uint8_t(icon[0]) == 0xFF &&
-      uint8_t(icon[1]) == 0xD8)
+  const auto jpeg = [&] { return uint8_t(icon[0]) == 0xFF && uint8_t(icon[1]) == 0xD8; };
+  const auto png = [&] { return icon.compare(0, 4, "\x89PNG") == 0; };
+  if (iconSize == 0)
+    out.iconProblem = "no icon in the asset section";
+  else if (iconSize < 4 || iconSize > MaxIcon || !fits(iconAt, iconSize, room))
+    out.iconProblem = "icon at " + std::to_string(iconAt) + " size " + std::to_string(iconSize) + " outside the file";
+  else if (!read(assets + iconAt, size_t(iconSize), icon) || icon.size() != iconSize)
+    out.iconProblem = "icon unreadable";
+  else if (!jpeg() && !png())
+    out.iconProblem = "icon is no JPEG or PNG";
+  else
     out.icon = std::move(icon);
   return true;
 }
@@ -140,7 +152,8 @@ std::vector<std::string> cardNroPaths(std::vector<std::string> paths) {
   if (paths.size() > MaxCardNros) paths.resize(MaxCardNros);
   return paths;
 }
-std::vector<CardNro> scanCard(const std::string &sdRoot, const std::vector<int> &languages) {
+std::vector<CardNro> scanCard(const std::string &sdRoot, const std::vector<int> &languages,
+                              const std::vector<CardNro> &known) {
   namespace fs = std::filesystem;
   std::vector<std::string> paths;
   std::error_code ec;
@@ -164,10 +177,20 @@ std::vector<CardNro> scanCard(const std::string &sdRoot, const std::vector<int> 
   list(fs::path(sdRoot) / "switch", "switch/", true);
   std::vector<CardNro> out;
   for (const auto &path : cardNroPaths(paths)) {
+    const auto full = sdRoot + "/" + path;
+    struct stat st {};
+    const int64_t mtime = ::stat(full.c_str(), &st) == 0 ? int64_t(st.st_mtime) : 0;
+    const auto before = std::find_if(known.begin(), known.end(), [&](const CardNro &n) { return n.path == path; });
+    if (before != known.end() && mtime && before->mtime == mtime && before->size == uint64_t(st.st_size)) {
+      out.push_back(*before);
+      continue;
+    }
     NroInfo info;
     uint64_t size = 0;
-    if (!readNroFile(sdRoot + "/" + path, languages, info, &size)) continue;
-    out.push_back({path, std::move(info.name), std::move(info.author), std::move(info.version), std::move(info.icon), size});
+    if (!readNroFile(full, languages, info, &size)) continue;
+    if (info.icon.empty())
+      logLine("homebrew card: " + path + " shows no icon: " + (info.iconProblem.empty() ? "unknown" : info.iconProblem));
+    out.push_back({path, std::move(info.name), std::move(info.author), std::move(info.version), std::move(info.icon), size, mtime});
   }
   return out;
 }
@@ -185,9 +208,8 @@ const App *matchCard(const std::vector<App> &apps, const std::string &path) {
     if (!app.fileName.empty() && at == "switch/" + lower(app.fileName)) return &app;
   return nullptr;
 }
-std::string tileIcon(const App &app, bool serverFailed, const std::string &cardKey) {
-  if (!app.cardOnly && !app.iconUrl.empty() && !serverFailed) return app.iconUrl;
-  return cardKey.empty() ? app.iconUrl : cardKey;
+std::string tileIcon(const App &app, bool onCard, const std::string &cardKey) {
+  return onCard || app.cardOnly ? cardKey : app.iconUrl;
 }
 Status cardStatus(const std::string &appVersion, const std::string &cardVersion) {
   const auto a = bare(appVersion), c = bare(cardVersion);
