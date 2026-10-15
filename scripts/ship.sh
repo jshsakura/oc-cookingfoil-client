@@ -81,5 +81,5 @@ gh release view client-latest -R "$COOK_RELEASE_REPO" --json body -q .body |
 grep -q "지금 버전: $version" "$notes" || { echo "the notes name no version to bump" >&2; exit 1; }
 gh release edit client-latest -R "$COOK_RELEASE_REPO" --notes-file "$notes" >/dev/null
 
-git push -q
+git push -q origin HEAD
 echo "== shipped $version"
