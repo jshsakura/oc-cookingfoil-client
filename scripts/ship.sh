@@ -35,7 +35,15 @@ fi
 
 version=$(make -s version 2>/dev/null | tail -n 1)
 echo "== building $version"
-make -j"$(nproc)" >/dev/null
+# The full output (libnx's headers warn a lot) goes to a log; its end shows
+# when the build fails.
+log=build/ship.log
+mkdir -p build
+if ! make -j"$(nproc)" >"$log" 2>&1; then
+  tail -n 40 "$log" >&2
+  echo "build failed; the whole output is in $log" >&2
+  exit 1
+fi
 built=$(python3 -c "import sys; d=open('cookingfoil.nacp','rb').read(); print(d[0x3060:0x3070].split(b'\0')[0].decode())")
 if [ "$built" != "$version" ]; then
   echo "the build says $built, the commit $version" >&2
