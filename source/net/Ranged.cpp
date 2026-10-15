@@ -4,6 +4,7 @@
 #include "core/Log.hpp"
 #include "core/Patches.hpp"
 #include "core/Sha256.hpp"
+#include "net/Direct.hpp"
 #include "net/Segmented.hpp"
 #include "net/Segments.hpp"
 #include "net/Socket.hpp"
@@ -52,13 +53,18 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
   bool fromZero = false;
   auto sendHeaders = headers; // the download token in them is swapped when it ran out
   int renewals = 0;
+  bool now = false; // asked again at once (the direct address left or a fresh token for it)
   for (int tries = 0; tries < RangedTries; ++tries) {
-    for (int waited = 0; tries && waited < RetryWaitMs * tries && !cancelled(cancel); waited += WaitStepMs)
+    for (int waited = 0; tries && !now && waited < RetryWaitMs * tries && !cancelled(cancel); waited += WaitStepMs)
       std::this_thread::sleep_for(std::chrono::milliseconds(WaitStepMs));
+    now = false;
     if (tries && cancelled(cancel))
       return last;
     const uint64_t from = fromZero ? 0 : sink.kept();
-    auto ask = sendHeaders;
+    // The direct address when the server named one; its keys with it.
+    const auto requestUrl = routeDownload(url);
+    auto ask = headersFor(requestUrl, sendHeaders);
+    const auto sent = bearerOf(ask);
     for (auto &header : rangeHeaders(from, validator))
       ask.push_back(std::move(header));
     auto verdict = RangeReply::Fail;
@@ -78,11 +84,17 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
         validator = reply.etag;
       return Start::Take;
     };
-    last = stream(url, ask, take, sink.data, cancel);
+    last = stream(requestUrl, ask, take, sink.data, cancel);
     if (!started && last.error.empty())
       take(last); // a reply without a body
     if (refused)
       return last;
+    if ((!last.error.empty() || verdict == RangeReply::Fail) && !cancelled(cancel) &&
+        afterDirectFailure(requestUrl, last.status, last.curl, sent) != DirectStep::Other) {
+      --tries;
+      now = true;
+      continue;
+    }
     // The download token ran out: a fresh one, and on from the same place.
     if (last.status == 401 && renewals < 3 && !cancelled(cancel) && renewDownloadToken(bearerOf(sendHeaders))) {
       ++renewals;

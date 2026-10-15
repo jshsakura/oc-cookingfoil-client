@@ -4,6 +4,7 @@
 #include "core/Log.hpp"
 #include "install/EngineHooks.hpp"
 #include "net/Segmented.hpp"
+#include "net/Direct.hpp"
 #include <chrono>
 #include <cstdio>
 #include <functional>
@@ -41,9 +42,9 @@ void benchmark(const Item &item, const std::vector<std::string> &headers) {
   if (!result.ok)
     throw std::runtime_error(result.error.empty() ? "status " + std::to_string(result.status) : result.error);
   const double span = seconds(), mb = double(result.total) / (1024 * 1024);
-  char line[160];
-  std::snprintf(line, sizeof line, "preview download: %.0f MB in %.1f s = %.2f MB/s, %d connections", mb, span,
-                span > 0 ? mb / span : 0, options.connections);
+  char line[200];
+  std::snprintf(line, sizeof line, "preview download: %.0f MB in %.1f s = %.2f MB/s, %d connections, %s", mb, span,
+                span > 0 ? mb / span : 0, options.connections, net::routeName(from).c_str());
   logLine(std::string(line) + ": " + item.name);
   reportBytes(item.url, result.total, span > 0 ? mb / span : 0);
 }

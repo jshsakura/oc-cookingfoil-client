@@ -1,4 +1,5 @@
 #include "net/Segmented.hpp"
+#include "net/Direct.hpp"
 #include "net/Socket.hpp"
 #include "platform/Cores.hpp"
 #include <curl/curl.h>
@@ -126,6 +127,7 @@ struct Conn {
   long status = 0;
   std::string contentRange, etag, retryAfter, range;
   std::string token; // the download token it was sent with
+  std::string url;   // where it was asked for: the direct address or the server's
   std::vector<char> pending;
 };
 struct Session;
@@ -339,14 +341,17 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       c->openEnded = openEnded;
       c->pending.reserve(s.batch);
       c->range = rangeOf(from, end, openEnded);
-      c->token = bearerOf(sendHeaders);
-      for (const auto &h : sendHeaders)
+      // The direct address when the server named one; its keys with it.
+      c->url = routeDownload(url);
+      const auto ask = headersFor(c->url, sendHeaders);
+      c->token = bearerOf(ask);
+      for (const auto &h : ask)
         if (h.find_first_of("\r\n") == std::string::npos)
           c->headers = curl_slist_append(c->headers, h.c_str());
       if (!openEnded && !s.etag.empty())
         c->headers = curl_slist_append(c->headers, ("If-Range: " + s.etag).c_str());
       CURL *curl = c->curl;
-      curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+      curl_easy_setopt(curl, CURLOPT_URL, c->url.c_str());
 #ifdef __SWITCH__
       curl_easy_setopt(curl, CURLOPT_CAINFO, "romfs:/cacert.pem");
 #endif
@@ -600,6 +605,18 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         if (paused() && !cancelled())
           continue; // read again after the pause
         const long code = c->status;
+        // The direct address failed (or wants a fresh token): asked again
+        // at once, from the same byte, without counting.
+        if (!cancelled() && afterDirectFailure(c->url, code, long(msg->data.result), c->token) != DirectStep::Other) {
+          if (!started) { // the first reply never came: the first request again
+            conns.clear();
+            contexts.clear();
+            open(0, 0, UINT64_MAX, true);
+            break; // the list just read is gone
+          }
+          waitUntil[size_t(seg)] = Clock::time_point();
+          continue;
+        }
         if (code == 503 || code == 524) {
           long wait = 5;
           if (!c->retryAfter.empty())

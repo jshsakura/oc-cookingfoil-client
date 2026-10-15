@@ -36,6 +36,7 @@ int runHomebrewTests();
 int runHomebrewCardTests();
 int runResumeTests();
 int runForwarderTests();
+int runDirectTests();
 int runShortcutUiTests(SDL_Renderer *renderer);
 int runUiTests(SDL_Renderer *renderer);
 int main() {
@@ -68,7 +69,7 @@ int main() {
   const int failures = runConfigTests() + runNetworkTests() + runNtpTests() + runStateTests() + runRebindTests() + runSessionTokenTests() + runVaultTests() + runEnrollTests() +
                        runSessionTests() + runPairingTests() + runCatalogTests() + runUpdatesTests() + runInstalledTests() +
                        runSelectionTests() + runInstallerTests() + runPatchTests() + runI18nTests() +
-                       runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runHistoryTests() + runStoreTests() + runZstdResumeTests() + runNczPointTests() + runClientUpdateTests() + runHomebrewTests() + runHomebrewCardTests() + runDropboxRowsTests() + runResumeTests() + runForwarderTests() +
+                       runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runHistoryTests() + runStoreTests() + runZstdResumeTests() + runNczPointTests() + runClientUpdateTests() + runHomebrewTests() + runHomebrewCardTests() + runDropboxRowsTests() + runResumeTests() + runForwarderTests() + runDirectTests() +
                        runUiTests(app.renderer()) + runPairingUiTests(app.renderer()) + runShortcutUiTests(app.renderer());
   std::printf("Core tests: %d failures\n", failures);
   return (ok && failures == 0) ? 0 : 1;

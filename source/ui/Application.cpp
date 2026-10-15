@@ -1,5 +1,6 @@
 #include "ui/Application.hpp"
 #include "net/Socket.hpp"
+#include "net/Direct.hpp"
 #include "core/Config.hpp"
 #include "platform/Storage.hpp"
 #include "platform/Installed.hpp"
@@ -561,6 +562,7 @@ void Application::connect(size_t index) {
 }
 void Application::renewTokensWith(const Server &server) {
   net::setTokenRenewer([server, state = state_] { return net::renewDownloadToken(server, state); });
+  net::setShopOrigin(server.url); // its files may come from its direct address
 }
 void Application::refresh() {
   if (!session_ || network_.joinable())

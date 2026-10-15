@@ -1,0 +1,86 @@
+--- a/source/util/network_util.cpp
++++ b/source/util/network_util.cpp
+@@ -21,6 +21,7 @@
+ */
+ 
+ #include "net/Socket.hpp"
++#include "net/Direct.hpp"
+ #include <memory>
+ #include <deque>
+ #include "util/network_util.hpp"
+@@ -56,6 +57,11 @@
+     }
+     static curl_slist* RequestHeaders(const std::string& url) {
+         curl_slist* list=nullptr;
++        // CookingFoil: the server's direct address takes the download token alone.
++        if(foil::net::isDirect(url)){
++            for(const auto& header:foil::net::headersFor(url,{}))list=curl_slist_append(list,header.c_str());
++            return list;
++        }
+         if(foil::originOf(url)!=g_header_origin)return list;
+         auto headers=g_extra_headers;
+         foil::net::freshenBearer(headers); // CookingFoil: the download token as it stands now
+@@ -278,7 +284,8 @@
+         curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+         curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 8L);
+-        ApplyBasicAuth(curl, authValue);
++        if (!foil::net::isDirect(requestUrl)) // CookingFoil: the server's keys stay with the server
++            ApplyBasicAuth(curl, authValue);
+         curl_slist* headerList = RequestHeaders(requestUrl);
+         if (headerList)
+             curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerList);
+@@ -303,6 +310,7 @@
+             int attempts = 0;
+             int renewals = 0; // CookingFoil: asked again with a fresh download token
+             std::string token; // CookingFoil: the download token it was sent with
++            std::string url; // CookingFoil: where it was asked for, the direct address or the server's
+             bool done = false;
+             bool checked = false; // the reply's status was looked at
+             u64* lastData = nullptr; // when any piece last received bytes
+@@ -344,7 +352,8 @@
+             const size_t from = part.start + part.data.size();
+             part.range = std::to_string(from) + "-" + std::to_string(part.start + part.length - 1);
+             part.token = foil::net::downloadToken(); // CookingFoil: what RequestHeaders puts in
+-            part.headers = SetupRangeHandle(part.curl, requestUrl, part.range, part.authValue);
++            part.url = foil::net::routeDownload(requestUrl); // CookingFoil: the direct address when there is one
++            part.headers = SetupRangeHandle(part.curl, part.url, part.range, part.authValue);
+             curl_easy_setopt(part.curl, CURLOPT_WRITEDATA, &part);
+             curl_easy_setopt(part.curl, CURLOPT_WRITEFUNCTION, collect);
+             curl_easy_setopt(part.curl, CURLOPT_PRIVATE, &part);
+@@ -420,6 +429,12 @@
+                     drop(*part);
+                 } else if (Paused() && !Stopping()) {
+                     drop(*part); // asked again after the pause
++                } else if (!Stopping() && foil::net::afterDirectFailure(part->url, code, long(msg->data.result), part->token) !=
++                                              foil::net::DirectStep::Other) {
++                    // CookingFoil: the direct address failed (or wants a fresh
++                    // token): at once, from the same byte, not as a failure.
++                    drop(*part);
++                    part->retryAt = 0;
+                 } else if (code == 401 && !Stopping() && part->renewals < 3 && foil::net::renewDownloadToken(part->token)) {
+                     // CookingFoil: the download token ran out: at once with a
+                     // fresh one, from the same byte, not as a failure.
+@@ -787,9 +802,21 @@
+                     if (remaining == 0)
+                         return 0;
+ 
+-                    const int rc = StreamHttpRangeForUrl(url, currentOffset, remaining, trackingFunc);
++                    // CookingFoil: the direct address when the server named one.
++                    const std::string sentUrl = foil::net::routeDownload(url);
++                    const int rc = StreamHttpRangeForUrl(sentUrl, currentOffset, remaining, trackingFunc);
+                     if (rc == 0)
+                         return 0;
++                    // CookingFoil: it failed there (or wants a fresh token): at
++                    // once, from the same byte, without spending a retry.
++                    if (rc != 1999 && !Stopping() &&
++                        foil::net::afterDirectFailure(sentUrl, rc < 1000 ? rc : 0, rc >= 1000 ? rc - 1000 : 0, sentToken) !=
++                            foil::net::DirectStep::Other)
++                    {
++                        attempt--;
++                        waitNs = 1;
++                        continue;
++                    }
+                     // Paused mid-transfer: not a failure; wait, then go on
+                     // from the byte it stopped at without spending a retry.
+                     if (Paused() && !Stopping())

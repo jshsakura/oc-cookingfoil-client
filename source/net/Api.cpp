@@ -361,6 +361,7 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &result);
     const auto code = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
+    result.curl = int(code);
     // A body shorter than Content-Length (the file shrank on the server)
     // ends in CURLE_PARTIAL_FILE and counts as a failure.
     if (code != CURLE_OK && !context.aborted) result.error = connectionError(code, url);
