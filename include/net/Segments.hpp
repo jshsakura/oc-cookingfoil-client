@@ -39,9 +39,9 @@ public:
 private:
   std::vector<Segment> segments_;
 };
-// How many connections a download from `serverUrl` gets: `setting` 1/2/4/8,
-// or 0 for automatic (2 for a private address, 4 otherwise), never more than
-// the server recommends.
+// How many connections a download from `serverUrl` gets: `setting` 1/2/4/8
+// (never more than the server recommends), or 0 for automatic: the server's
+// recommendation, else 2 for a private address and 4 otherwise.
 int connectionsFor(const std::string &serverUrl, int setting);
 // The server's recommendation (/api/shop/info download.maxConnections); 0
 // when it gives none.

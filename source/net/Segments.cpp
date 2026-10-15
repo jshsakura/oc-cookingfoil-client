@@ -83,10 +83,10 @@ std::atomic<int> recommended{0};
 }
 void recommendConnections(int most) { recommended = most > 0 ? std::min(most, 8) : 0; }
 int connectionsFor(const std::string &serverUrl, int setting) {
-  const int chosen = setting == 1 || setting == 2 || setting == 4 || setting == 8 ? setting
-                     : privateHost(serverUrl)                                     ? 2
-                                                                                  : 4;
   const int most = recommended;
-  return most > 0 ? std::min(chosen, most) : chosen;
+  if (setting == 1 || setting == 2 || setting == 4 || setting == 8)
+    return most > 0 ? std::min(setting, most) : setting;
+  // Automatic: what the server says it can take, else by its address.
+  return most > 0 ? most : privateHost(serverUrl) ? 2 : 4;
 }
 } // namespace foil::net

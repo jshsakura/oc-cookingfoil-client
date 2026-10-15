@@ -60,14 +60,20 @@ int runPairingTests() {
   CHECK(features.count("retro") && features.count("homebrew") && features.size() == 2);
   CHECK(foil::net::parseFeatures("{\"features\":\"retro\"}").empty());
   CHECK(foil::net::parseFeatures("bad-json").empty());
-  // The server's recommended connections bound what a download opens.
+  // The server's recommended connections are what a download opens, on a
+  // private address too; a chosen count stays under it.
   CHECK(foil::net::parseMaxConnections("{\"download\":{\"maxConnections\":3}}") == 3);
   CHECK(foil::net::parseMaxConnections("{\"features\":[]}") == 0);
   CHECK(foil::net::parseMaxConnections("{\"download\":{\"maxConnections\":0}}") == 0);
   foil::net::recommendConnections(3);
   CHECK(foil::net::connectionsFor("https://shop.example", 0) == 3);
-  CHECK(foil::net::connectionsFor("http://192.168.0.2", 0) == 2);
+  CHECK(foil::net::connectionsFor("http://192.168.0.2", 0) == 3);
+  CHECK(foil::net::connectionsFor("http://192.168.0.2", 8) == 3);
+  foil::net::recommendConnections(8);
+  CHECK(foil::net::connectionsFor("http://192.168.0.2", 0) == 8);
+  CHECK(foil::net::connectionsFor("https://shop.example", 2) == 2);
   foil::net::recommendConnections(0);
+  CHECK(foil::net::connectionsFor("http://192.168.0.2", 0) == 2);
   CHECK(foil::net::connectionsFor("https://shop.example", 0) == 4);
   return failures;
 }

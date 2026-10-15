@@ -31,6 +31,7 @@
 #include <cstdio>
 #include "core/Log.hpp"
 #include "data/buffered_placeholder_writer.hpp"
+#include <algorithm>
 #include <curl/curl.h>
 #include <stdexcept>
 namespace {
@@ -126,18 +127,21 @@ void nativeInstall(const Item &item, const std::string &target,
   // 2 MB piece held until its turn): 4 x 4 MB as an application, 4 x 2 MB
   // from the album, whose heap is small. A single connection rarely fills a
   // path with real latency, such as a player outside the server's network.
-  // Connections by the server's address (2 on a private network, 4
-  // outside). NCZ, which must arrive in order, uses them on a window in
-  // front: 32 MB pieces as an application, 4 MB from the album.
+  // As many connections as the server recommends (else 2 on a private
+  // network, 4 outside), at most 4 from the album. NCZ, which must be
+  // decompressed in order, gets them too: pieces in front are fetched at
+  // once and handed on in order.
   const auto &from = item.url;
   current.url = from;
   current.headers = headers;
   current.application = appletGetAppletType() == AppletType_Application;
   current.connections = foil::net::connectionsFor(from, 0);
+  if (!current.application)
+    current.connections = std::min(current.connections, 4);
   // Pieces of 8 MB as an application: the next byte in order is never far
   // off, so the bar and the card keep moving. A slow piece at the front
   // does not stop the others: an application holds up to two pieces a
-  // connection (4 x 2 x 8 MB = 64 MB), the album one (16 MB).
+  // connection (8 x 2 x 8 MB = 128 MB at most), the album one (16 MB).
   tin::network::SetParallelDownload(current.connections, current.application ? 0x800000 : 0x400000,
                                     current.application ? 2 : 1);
   // Off in 설정: the required system version is cleared so the console

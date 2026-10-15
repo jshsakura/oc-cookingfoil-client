@@ -133,7 +133,7 @@ std::string pairRequestBody(const std::string& deviceKey, const std::string& mes
 // (retro, homebrew, ...). Empty for a reply without them.
 std::set<std::string> parseFeatures(const std::string& json);
 // Its download.maxConnections: how many connections the server would have a
-// console open at most (0 when it does not say).
+// console open (0 when it does not say).
 int parseMaxConnections(const std::string& json);
 class Session {
 public:
