@@ -3,6 +3,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <set>
 namespace foil {
 struct State {
     std::string deviceKey, lastServer, lastScreen = "home";
@@ -25,6 +26,14 @@ struct State {
     // hex characters). Made before the first request, dropped once the key
     // came.
     std::map<std::string, std::string> pairSecrets;
+    // The key made from this console (DeviceIdentity::deviceKey) this run;
+    // not stored. Empty when the console's ID could not be read: then the
+    // stored deviceKey is the one used.
+    std::string derivedKey;
+    // Servers that took the made key in place of the stored one (POST
+    // /api/pair/rebind) while the stored one is still another; stored and
+    // sealed, gone once deviceKey becomes the made key.
+    std::set<std::string> rebound;
     // An install state.json held from before 다운로드 kept the queue; put in
     // the queue once, then "[]".
     std::string queueJson = "[]";
@@ -36,8 +45,23 @@ struct State {
 struct DeviceIdentity {
     std::string fingerprint; // hex, stored
     std::string sealKey;     // raw bytes, never stored
+    std::string deviceKey;   // 64 uppercase hex: the key servers know this console by
 };
-DeviceIdentity deriveIdentity(const std::string& consoleValue);
+// From spl's DeviceId; 0 (not read) gives an empty identity.
+DeviceIdentity deriveIdentity(uint64_t deviceId);
+// The key to send `server`: the made one once that server took it (or once
+// it is the stored one), else the stored one.
+std::string deviceKeyFor(const State& state, const std::string& server);
+// `server` still knows the console by the stored key and the made one is
+// another: it is asked to move (POST /api/pair/rebind) before anything else.
+bool needsRebind(const State& state, const std::string& server);
+// Once every one of `servers` took the made key, it becomes the stored one.
+// True when that changed `state` (to be saved).
+bool settleDeviceKey(State& state, const std::vector<std::string>& servers);
+// The servers in config.json, for settleDeviceKey at each load and rebind.
+// Until set (or once unset with nullopt), the stored key never changes.
+void setKnownServers(std::optional<std::vector<std::string>> servers);
+std::optional<std::vector<std::string>> knownServers();
 // Where the identity comes from; asked again whenever it gave nothing, so a
 // read that failed once does not last the whole run.
 void setIdentitySource(std::function<DeviceIdentity()> source);
@@ -63,4 +87,8 @@ struct PendingInstall {
 std::string serializePending(const PendingInstall& pending); // "[]" when there is none
 std::optional<PendingInstall> parsePending(const std::string& queueJson);
 bool saveState(const std::string& dbPath, const State& state, Error& error);
+// Only what the player sets (settings, approval notes, the queue): the keys
+// stay as stored. For the screen's saves, whose copy of the keys may be
+// older than what a connection saved meanwhile.
+bool saveSettings(const std::string& dbPath, const State& state, Error& error);
 }

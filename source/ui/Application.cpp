@@ -236,18 +236,27 @@ void Application::toggleInstallCheck(bool &skip) {
 void Application::saveOwnState() {
   if (statePath_.empty())
     return;
+  bool closing;
   {
     std::lock_guard<std::mutex> held(historyMutex_);
-    if (historyClosing_) {
-      // Closing: the writer is gone, so straight to the card.
-      Error error;
-      if (!saveState(statePath_, state_, error))
-        logLine("state: " + error.message);
-      return;
-    }
     statePending_ = state_;
+    closing = historyClosing_;
   }
-  wakeHistoryWriter();
+  if (closing)
+    writePendingState(); // the writer is gone, so straight to the card
+  else
+    wakeHistoryWriter();
+}
+void Application::writePendingState() {
+  std::lock_guard<std::mutex> writing(stateWriteLock_);
+  std::optional<State> state;
+  {
+    std::lock_guard<std::mutex> held(historyMutex_);
+    state = std::exchange(statePending_, std::nullopt);
+  }
+  Error error;
+  if (state && !saveSettings(statePath_, *state, error))
+    logLine("state: " + error.message);
 }
 void Application::chooseLanguage(Language lang) {
   setLanguage(lang);
@@ -490,6 +499,14 @@ void Application::reload(int prefer) {
     screen(Screen::Settings);
     return;
   }
+  {
+    // The stored device key gives way to the console's own once all of these
+    // took it (core/State).
+    std::vector<std::string> urls;
+    for (const auto &s : parsed.value.servers) urls.push_back(s.url);
+    setKnownServers(std::move(urls));
+  }
+  writePendingState(); // what was just set, before it is read back
   const auto state = loadState(statePath_);
   if (state.error) {
     error_ = state.error;
@@ -2453,7 +2470,6 @@ void Application::wakeHistoryWriter() {
     for (;;) {
       std::optional<std::vector<history::Entry>> list;
       std::map<std::string, std::optional<install::Installer::ResumePoint>> points;
-      std::optional<State> state;
       {
         std::unique_lock<std::mutex> held(historyMutex_);
         historyWake_.wait(held, [this] {
@@ -2463,11 +2479,8 @@ void Application::wakeHistoryWriter() {
           return; // closing, nothing left
         list = std::exchange(historyPending_, std::nullopt);
         points = std::exchange(resumePending_, {});
-        state = std::exchange(statePending_, std::nullopt);
       }
-      Error saved;
-      if (state && !saveState(statePath_, *state, saved))
-        logLine("state: " + saved.message);
+      writePendingState();
       std::string error;
       if (list && !store_.save(*list, error))
         logLine("downloads: " + error);

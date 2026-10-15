@@ -6,6 +6,8 @@
 #include "core/DownloadStore.hpp"
 #include "core/Sha256.hpp"
 #include <atomic>
+#include <cstdio>
+#include <cctype>
 #include <mutex>
 #include <algorithm>
 #include <filesystem>
@@ -14,8 +16,10 @@
 #include <switch.h>
 #endif
 namespace foil {
+// 64 hex characters: random ones are lowercase, the ones made from the
+// console uppercase (the servers' pattern).
 static bool validDeviceKey(const std::string& key) {
-    return key.size() == 64 && key.find_first_not_of("0123456789abcdef") == std::string::npos;
+    return key.size() == 64 && key.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
 }
 std::string randomKey() {
     unsigned char entropy[32]{};
@@ -37,6 +41,8 @@ std::function<DeviceIdentity()> identitySource;
 // Credentials made or moved in while the console's ID could not be read:
 // written then, they would read as another console's once it can be. Kept
 // in memory for this run instead, and bound at the first load that reads it.
+std::mutex serversLock;
+std::optional<std::vector<std::string>> servers;
 std::mutex unboundLock;
 std::optional<State> unbound;
 void keepUnbound(const State& state) {
@@ -62,6 +68,7 @@ constexpr const char* FingerprintKind = "fingerprint";
 constexpr const char* AccessKind = "access";
 constexpr const char* SecretKind = "secret";
 constexpr const char* SealKind = "seal";
+constexpr const char* ReboundKind = "rebound"; // per server, the made key it took
 constexpr const char* PendingSetting = "pendingInstall";
 DeviceIdentity currentIdentity() {
     std::lock_guard<std::mutex> held(identityLock);
@@ -164,6 +171,8 @@ DownloadStore::StateRows toRows(const State& given, const DeviceIdentity& id) {
     rows.credentials[{FingerprintKind, ""}] = id.fingerprint;
     for (const auto& [server, key] : state.accessKeys) rows.credentials[{AccessKind, server}] = key;
     for (const auto& [server, secret] : state.pairSecrets) rows.credentials[{SecretKind, server}] = secret;
+    if (!state.derivedKey.empty() && state.derivedKey != state.deviceKey)
+        for (const auto& server : state.rebound) rows.credentials[{ReboundKind, server}] = state.derivedKey;
     rows.credentials[{SealKind, ""}] = seal(id, rows);
     return rows;
 }
@@ -184,26 +193,68 @@ Rebound check(const DownloadStore::StateRows& rows, const DeviceIdentity& id) {
     if (value(SealKind) != seal(id, rows)) return Rebound::Changed;
     return Rebound::None;
 }
-// A new device key; whatever servers gave the old one goes with it.
-bool rekey(State& state) {
-    state.deviceKey = randomKey();
+// A new device key, the one made from this console when its ID was read;
+// whatever servers gave the old one goes with it.
+bool rekey(State& state, const DeviceIdentity& id) {
+    state.deviceKey = id.deviceKey.empty() ? randomKey() : id.deviceKey;
     state.accessKeys.clear();
     state.pairSecrets.clear();
+    state.rebound.clear();
     return !state.deviceKey.empty();
+}
+// The made key this run, and the servers that took it (a record for
+// another made key is not this console's).
+void attach(State& state, const DownloadStore::StateRows& rows, const DeviceIdentity& id) {
+    state.derivedKey = id.deviceKey;
+    state.rebound.clear();
+    if (id.deviceKey.empty()) return;
+    for (const auto& [at, value] : rows.credentials)
+        if (at.first == ReboundKind && value == id.deviceKey) state.rebound.insert(at.second);
 }
 const char* reasonName(Rebound why) {
     return why == Rebound::Moved ? "another console's" : why == Rebound::Changed ? "edited" : "lost";
 }
 } // namespace
-DeviceIdentity deriveIdentity(const std::string& consoleValue) {
-    if (consoleValue.empty()) return {};
+DeviceIdentity deriveIdentity(uint64_t deviceId) {
+    if (!deviceId) return {};
+    char text[32];
+    std::snprintf(text, sizeof text, "device-id %016llx", static_cast<unsigned long long>(deviceId));
+    const std::string consoleValue = text;
     const auto digest = [&](const char* purpose) {
         Sha256 hash;
         const std::string text = std::string("CookingFoil ") + purpose + '\0' + consoleValue;
         hash.update(text.data(), text.size());
         return hash.hex();
     };
-    return {digest("device fingerprint v1"), hexBytes(digest("state seal v1"))};
+    // The device key: HMAC-SHA256 keyed by the ID's eight bytes (little
+    // endian, as the console holds it), apart from the two above.
+    std::string bytes;
+    for (int i = 0; i < 8; ++i) bytes += char((deviceId >> (8 * i)) & 0xff);
+    auto key = hmacSha256(bytes, "cookingfoil-device-key-v1");
+    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return char(std::toupper(c)); });
+    return {digest("device fingerprint v1"), hexBytes(digest("state seal v1")), key};
+}
+bool needsRebind(const State& state, const std::string& server) {
+    return !state.derivedKey.empty() && state.derivedKey != state.deviceKey && !state.rebound.count(server);
+}
+std::string deviceKeyFor(const State& state, const std::string& server) {
+    return state.derivedKey.empty() || needsRebind(state, server) ? state.deviceKey : state.derivedKey;
+}
+void setKnownServers(std::optional<std::vector<std::string>> list) {
+    std::lock_guard<std::mutex> held(serversLock);
+    servers = std::move(list);
+}
+std::optional<std::vector<std::string>> knownServers() {
+    std::lock_guard<std::mutex> held(serversLock);
+    return servers;
+}
+bool settleDeviceKey(State& state, const std::vector<std::string>& servers) {
+    if (state.derivedKey.empty() || state.derivedKey == state.deviceKey) return false;
+    for (const auto& server : servers)
+        if (needsRebind(state, server)) return false;
+    state.deviceKey = state.derivedKey;
+    state.rebound.clear();
+    return true;
 }
 void setIdentitySource(std::function<DeviceIdentity()> source) {
     std::lock_guard<std::mutex> held(identityLock);
@@ -251,6 +302,19 @@ bool saveState(const std::string& dbPath, const State& state, Error& error) {
     if (!id.fingerprint.empty()) dropUnbound(); // bound now
     return true;
 }
+bool saveSettings(const std::string& dbPath, const State& state, Error& error) {
+    DownloadStore store;
+    std::string failure;
+    auto rows = toRows(state, currentIdentity());
+    std::optional<DownloadStore::StateRows> stored;
+    if (store.open(dbPath, failure)) stored = store.stateRows(failure);
+    if (stored) {
+        rows.credentials = stored->credentials;
+        if (store.saveStateRows(rows, failure)) return true;
+    }
+    error.message = failure.empty() ? "settings not saved" : failure;
+    return false;
+}
 Parsed<State> loadState(const std::string& dbPath) {
     Parsed<State> result;
     DownloadStore store;
@@ -271,8 +335,15 @@ Parsed<State> loadState(const std::string& dbPath) {
     bool moved = false; // state.json read in; it goes once the state is saved
     if (rows->credentials.count({DeviceKind, ""})) {
         state = fromRows(*rows);
+        attach(state, *rows, id);
         why = check(*rows, id);
         if (why == Rebound::None) {
+            // Every server took the made key: it is the stored one from now.
+            if (const auto list = knownServers(); list && settleDeviceKey(state, *list)) {
+                Error saved;
+                if (saveState(dbPath, state, saved)) logLine("state: every server took the console's key; stored");
+                else logLine("state: " + saved.message);
+            }
             result.value = std::move(state);
             return result;
         }
@@ -280,6 +351,7 @@ Parsed<State> loadState(const std::string& dbPath) {
         // Made earlier this run without the console's ID: the same key goes
         // on, and is bound below once the ID can be read.
         state = fromRows(*rows);
+        state.derivedKey = id.deviceKey;
         state.deviceKey = kept->deviceKey;
         state.accessKeys = kept->accessKeys;
         state.pairSecrets = kept->pairSecrets;
@@ -311,12 +383,13 @@ Parsed<State> loadState(const std::string& dbPath) {
         result.created = true;
     }
     if (why != Rebound::None || state.deviceKey.empty()) {
-        if (!rekey(state)) { result.error.message = tr("Could not create the device key."); return result; }
+        if (!rekey(state, id)) { result.error.message = tr("Could not create the device key."); return result; }
         if (why != Rebound::None) {
             logLine(std::string("state: ") + reasonName(why) + " credentials; a new device key");
             rebound = int(why);
         }
     }
+    state.derivedKey = id.deviceKey;
     Error saved;
     if (saveState(dbPath, state, saved)) {
         // Unbound (no console ID), state.json stays to be moved in again.

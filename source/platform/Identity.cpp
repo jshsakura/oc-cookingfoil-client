@@ -1,5 +1,4 @@
 #include "platform/Identity.hpp"
-#include <cstdio>
 #ifdef __SWITCH__
 #include <switch.h>
 #endif
@@ -7,23 +6,19 @@ namespace foil::platform {
 DeviceIdentity consoleIdentity() {
 #ifdef __SWITCH__
   // The device ID fused into the console (spl), and nothing else: another
-  // source would make another fingerprint, which reads as another console.
-  // It does not leave this function.
-  std::string value;
+  // source would make another fingerprint and key, which read as another
+  // console. It does not leave this function.
+  u64 id = 0;
   if (R_SUCCEEDED(splInitialize())) {
-    u64 id = 0;
-    if (R_SUCCEEDED(splGetConfig(SplConfigItem_DeviceId, &id)) && id) {
-      char text[17];
-      std::snprintf(text, sizeof text, "%016llx", static_cast<unsigned long long>(id));
-      value = std::string("device-id ") + text;
-    }
+    if (R_FAILED(splGetConfig(SplConfigItem_DeviceId, &id)))
+      id = 0;
     splExit();
   }
-  auto identity = deriveIdentity(value);
-  value.assign(value.size(), '\0');
+  auto identity = deriveIdentity(id);
+  id = 0;
   return identity;
 #else
-  return deriveIdentity("pc preview");
+  return deriveIdentity(0x5043207072657669ull); // "PC previ": a stand-in
 #endif
 }
 } // namespace foil::platform

@@ -5,6 +5,7 @@
 #include <sqlite3.h>
 #include <filesystem>
 #include <unistd.h>
+#include <cctype>
 // The app's state in cookingfoil.db: state.json moves in once with its
 // device key, the credentials are bound to the console and sealed, and
 // anything off gives way to a new key while the settings stay.
@@ -34,13 +35,26 @@ int runStateTests() {
   CHECK(foil::hmacSha256("Jefe", "what do ya want for nothing?") ==
         "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
   // The console's value makes both, the same each time, and shows in neither.
-  const auto one = foil::deriveIdentity("device-id 0123456789abcdef");
-  const auto other = foil::deriveIdentity("device-id fedcba9876543210");
+  const auto one = foil::deriveIdentity(0x0123456789abcdefull);
+  const auto other = foil::deriveIdentity(0xfedcba9876543210ull);
   CHECK(one.fingerprint.size() == 64 && one.sealKey.size() == 32);
-  CHECK(one.fingerprint == foil::deriveIdentity("device-id 0123456789abcdef").fingerprint);
+  CHECK(one.fingerprint == foil::deriveIdentity(0x0123456789abcdefull).fingerprint);
   CHECK(one.fingerprint != other.fingerprint && one.sealKey != other.sealKey);
   CHECK(one.fingerprint.find("0123456789abcdef") == std::string::npos);
-  CHECK(foil::deriveIdentity("").fingerprint.empty());
+  CHECK(foil::deriveIdentity(0).fingerprint.empty() && foil::deriveIdentity(0).deviceKey.empty());
+  // The device key: the same for one ID, another for another, 64 uppercase
+  // hex (the servers' ^[0-9A-F]{64}$), apart from the fingerprint.
+  CHECK(one.deviceKey == foil::deriveIdentity(0x0123456789abcdefull).deviceKey && one.deviceKey != other.deviceKey);
+  CHECK(one.deviceKey.size() == 64 && one.deviceKey.find_first_not_of("0123456789ABCDEF") == std::string::npos);
+  CHECK(one.deviceKey != one.fingerprint && foil::hexBytes(one.deviceKey) != one.sealKey);
+  {
+    // HMAC-SHA256 keyed by the ID's eight bytes, little endian.
+    std::string bytes;
+    for (int i = 0; i < 8; ++i) bytes += char((0x0123456789abcdefull >> (8 * i)) & 0xff);
+    auto expected = foil::hmacSha256(bytes, "cookingfoil-device-key-v1");
+    for (auto &c : expected) c = char(std::toupper(static_cast<unsigned char>(c)));
+    CHECK(one.deviceKey == expected);
+  }
   char temporary[] = "/tmp/cookingfoil-statedb-XXXXXX";
   const char *made = mkdtemp(temporary);
   CHECK(made);
@@ -105,7 +119,8 @@ int runStateTests() {
     CHECK(sql(db, "UPDATE credentials SET value='forged' WHERE kind='access'"));
     const auto edited = foil::loadState(db).value;
     CHECK(foil::takeRebound() == foil::Rebound::Changed);
-    CHECK(edited.accessKeys.empty() && edited.deviceKey != mine.deviceKey && edited.language == "ja");
+    // The new key is this console's own, the same one it had.
+    CHECK(edited.accessKeys.empty() && edited.deviceKey == one.deviceKey && edited.language == "ja");
     // A device key swapped for another console's: the same.
     CHECK(sql(db, ("UPDATE credentials SET value='" + KeyA + "' WHERE kind='device'").c_str()));
     CHECK(foil::loadState(db).value.deviceKey != KeyA && foil::takeRebound() == foil::Rebound::Changed);
@@ -190,7 +205,7 @@ int runStateTests() {
     CHECK(foil::loadState(db).value.deviceKey.size() == 64 && foil::takeRebound() == foil::Rebound::Recreated);
     CHECK(std::filesystem::exists(db + ".broken"));
   }
-  foil::setDeviceIdentity(foil::deriveIdentity("unit tests"));
+  foil::setDeviceIdentity(foil::deriveIdentity(0x756e697474657374ull));
   foil::takeRebound();
   std::filesystem::remove_all(root);
   return failures;

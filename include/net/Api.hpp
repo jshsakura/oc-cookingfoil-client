@@ -29,6 +29,9 @@ std::string connectionError(int curlCode, const std::string& url);
 // A secure connection failed since the last call: the console clock may be
 // off (ui/ClockFix compares it with internet time).
 bool takeCertificateFailure();
+// Each server is asked to take the console's key once a run (Session); this
+// starts a new run's worth (tests).
+void forgetRebindAttempts();
 // Asks the server for a fresh download token (it comes with any answer).
 long renewDownloadToken(const Server& server, const State& state); // the reply's status
 Response get(const std::string& url, const std::vector<std::string>& headers = {}, const std::string& etag = "", const std::atomic<bool>* cancel = nullptr);
@@ -154,6 +157,7 @@ public:
     void setPairMessage(const std::string& message);
 private:
     bool pair(Error& error);
+    void rebind();
     void sendPairMessage();
     // This server's pair secret, made and saved first when the console has no
     // key from it yet; empty when it has one or the secret could not be saved.

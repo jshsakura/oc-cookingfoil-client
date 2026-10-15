@@ -1262,6 +1262,9 @@ private:
   // The app's state (settings, keys) for cookingfoil.db, newest only: the
   // database is read and written whole, which a button must not wait for.
   std::optional<State> statePending_;
+  std::mutex stateWriteLock_; // one state write at a time, the newest last
+  // Writes the waiting settings now; reload() does, before it reads them.
+  void writePendingState();
   bool historyClosing_ = false;
   void wakeHistoryWriter();
   // 다운로드's tabs: 0 진행 중, 1 완료, 2 실패 (and cancelled).

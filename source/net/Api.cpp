@@ -86,7 +86,7 @@ std::vector<std::string> authHeaders(const Server& server, const State& state, c
     headers.push_back("X-CookingFoil-Features: direct-token");
     headers.push_back(std::string("Accept-Language: ") + languageCode());
     if (!server.username.empty() || !server.password.empty()) headers.push_back("Authorization: Basic " + base64(server.username + ":" + server.password));
-    if (!state.deviceKey.empty()) headers.push_back("X-Device-Key: " + state.deviceKey);
+    if (const auto device = deviceKeyFor(state, server.url); !device.empty()) headers.push_back("X-Device-Key: " + device);
     const auto key = state.accessKeys.find(server.url);
     if (key != state.accessKeys.end() && !key->second.empty()) headers.push_back("X-Access-Key: " + key->second);
     if (!server.cfClientId.empty()) headers.push_back("CF-Access-Client-Id: " + server.cfClientId);
@@ -906,7 +906,7 @@ void Session::sendPairMessage() {
     // secret and a note the player typed, once, and again when either changes.
     const auto note = state_.pairMessages.find(server_.url);
     const auto secret = state_.pairSecrets.find(server_.url);
-    const auto body = pairRequestBody(state_.deviceKey, note == state_.pairMessages.end() ? "" : note->second,
+    const auto body = pairRequestBody(deviceKeyFor(state_, server_.url), note == state_.pairMessages.end() ? "" : note->second,
                                       secret == state_.pairSecrets.end() ? "" : secret->second);
     if (body.empty()) { pairMessageSent_.clear(); pairMismatch_ = false; return; }
     if (body == pairMessageSent_) return;
@@ -944,8 +944,59 @@ int parseMaxConnections(const std::string& json) {
     const auto most = integerField(download, "maxConnections", 0);
     return most > 0 && most <= 64 ? int(most) : 0;
 }
+namespace {
+std::mutex reboundLock;
+std::set<std::string> reboundTried; // servers asked this run; a refusal is asked again next run
+}
+void forgetRebindAttempts() {
+    std::lock_guard<std::mutex> held(reboundLock);
+    reboundTried.clear();
+}
+// The key made from the console replaces the stored one this server knows
+// the console by: asked before anything goes out with the new key, which
+// would otherwise sit as a new console's request.
+void Session::rebind() {
+    if (!needsRebind(state_, server_.url)) return;
+    {
+        std::lock_guard<std::mutex> held(reboundLock);
+        if (!reboundTried.insert(server_.url).second) return;
+    }
+    // Told with the stored key, which this server knows.
+    const auto info = server_.url + "/api/shop/info";
+    const auto offered = get(info, authHeaders(server_, state_, info), "", cancel_);
+    if (offered.status != 200 || !parseFeatures(offered.body).count("device-rebind")) return;
+    const auto url = server_.url + "/api/pair/rebind";
+    auto headers = authHeaders(server_, state_, url);
+    for (auto& header : headers)
+        if (header.rfind("X-Device-Key: ", 0) == 0) header = "X-Device-Key: " + state_.derivedKey;
+    headers.push_back("Content-Type: application/json");
+    Json body(json_object_new_object());
+    json_object_object_add(body.get(), "from", json_object_new_string(state_.deviceKey.c_str()));
+    PostOptions options;
+    options.body = json_object_to_json_string_ext(body.get(), JSON_C_TO_STRING_PLAIN);
+    options.timeout = 15;
+    const auto sent = post(url, headers, options, cancel_);
+    Error unread;
+    auto reply = sent.status == 200 ? parseJson(sent.body, unread) : Json(nullptr);
+    const auto status = reply ? stringField(reply.get(), "status") : std::string();
+    if (status != "moved" && status != "kept") {
+        logLine("rebind not taken: " + (sent.error.empty() ? "HTTP " + std::to_string(sent.status) + (status.empty() ? "" : " " + status) : sent.error));
+        return;
+    }
+    // From the file: settings chosen since this session began must survive.
+    auto saved = loadState(path_);
+    auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
+    updated.derivedKey = state_.derivedKey;
+    updated.rebound.insert(server_.url);
+    if (const auto list = knownServers()) settleDeviceKey(updated, *list);
+    Error error;
+    if (!saveState(path_, updated, error)) { logLine("rebind not saved: " + error.message); return; }
+    state_ = std::move(updated);
+    logLine("rebind: " + status);
+}
 bool Session::refresh(Error& error) {
     error = {};
+    rebind();
     if (!pair(error)) return false;
     {
         // What the menu offers follows the server: asked on every refresh,
