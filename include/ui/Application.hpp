@@ -721,8 +721,16 @@ private:
     uint64_t bytes = 0, left = 0; // a running byte count (for the speed) and what is left
     bool paused = false, measure = true;
     std::vector<std::pair<std::string, int>> chips; // label, 0 waits / 1 now / 2 done
-    std::function<void()> onPause, onCancel;
+    std::function<void()> onPause, onCancel, onDetails; // onDetails: none when it has no page
   };
+  // What downloads now, as its 다운로드 entry; nullptr when none is running.
+  const history::Entry *runningEntry() const;
+  // Whether an entry has a page to open (a game's, an app's, a retro game's):
+  // the same pages a row of 실패, 취소 or 완료 opens.
+  bool hasPage(const history::Entry &entry) const;
+  // Opens the page of what downloads now; nothing when it has none (then
+  // 진행 중 shows no 상세 at all).
+  std::function<void()> runningDetails();
   bool topCardNow(const install::Progress &p, TopCard &card);
   void topCard(const TopCard &card);
   std::string topCardKey_;

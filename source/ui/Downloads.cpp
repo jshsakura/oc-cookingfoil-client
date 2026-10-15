@@ -62,6 +62,7 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
     card.left = p.total > p.received ? p.total - p.received : 0;
     card.paused = installer_.paused();
     card.onPause = [this] { installer_.setPaused(!installer_.paused()); };
+    card.onDetails = runningDetails();
     card.onCancel = [this] {
       cancelRetro_ = false;
       confirmExit_ = false;
@@ -113,6 +114,7 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
                                                          : std::string(tr("Checking which files to get"));
     card.chips.push_back({what, 1});
     card.onPause = [this, held] { pauseSmallDownload(!held); };
+    if (!held) card.onDetails = runningDetails();
     if (!held)
       card.onCancel = [this] {
         cancelRetro_ = true;
@@ -264,7 +266,55 @@ void Application::topCard(const TopCard &c) {
     hit(bx, 212, w, 40, c.onPause);
     paint_.rect(bx, 216, w, 32, c.paused ? Butter : Ground, 8);
     paint_.fonts.middle(label, bx + 16, 232, 16, Ink, true);
+    bx -= 10;
   }
+  // Its page, only when it has one.
+  if (c.onDetails) {
+    const std::string label = tr("Details");
+    const float w = paint_.fonts.measure(label, 16, true) + 32;
+    bx -= w;
+    hit(bx, 212, w, 40, c.onDetails);
+    paint_.rect(bx, 216, w, 32, Ground, 8);
+    paint_.fonts.middle(label, bx + 16, 232, 16, Ink, true);
+  }
+}
+const history::Entry *Application::runningEntry() const {
+  // The installer's is a game's (no kind); the other downloads have one.
+  const bool game = installer_.running();
+  const auto found = std::find_if(history_.begin(), history_.end(), [&](const history::Entry &e) {
+    return e.outcome == history::Outcome::Running && e.kind.empty() == game && e.kind != "patch" && e.kind != "reapply";
+  });
+  return found == history_.end() ? nullptr : &*found;
+}
+std::function<void()> Application::runningDetails() {
+  if (installer_.running()) {
+    // A game: its page, found by the id its first part carries.
+    const auto p = installer_.progress();
+    if (p.parts.empty()) return nullptr;
+    const auto &file = p.parts.front();
+    const auto *group = findGroup(!file.baseId.empty() ? file.baseId : !file.titleId.empty() ? file.titleId : file.url);
+    if (!group) return nullptr;
+    return [this, index = size_t(group - groups_.data())] {
+      sidebar_ = false;
+      openDetail(index);
+    };
+  }
+  const auto *entry = runningEntry();
+  if (!entry || !hasPage(*entry)) return nullptr;
+  return [this, id = entry->id] {
+    for (const auto &e : history_)
+      if (e.id == id) return openHistoryRow(e);
+  };
+}
+bool Application::hasPage(const history::Entry &entry) const {
+  if (entry.kind.empty()) {
+    const auto id = history::catalogId(entry);
+    return !id.empty() && findGroup(id);
+  }
+  if (entry.kind == "homebrew" || entry.kind == "shortcut")
+    return !homebrew::parse("{\"homebrew\":[" + entry.payload + "]}", "").empty();
+  if (entry.kind == "retro") return !retro::parseGameJson(entry.payload).bundleUrl.empty();
+  return entry.kind == "retroarch";
 }
 // Under the installer's card (or from the top): the retro and patch cards
 // and 대기 중, one area that glides under a finger or the right stick.

@@ -1827,10 +1827,13 @@ void Application::render() {
       hints.push_back({"B", tr("Back")});
       footer(hints);
     }
-    else if (downloadsTab_ == 0 && !sidebar_ && installer_.running())
-      footer(Hints{{"A", installer_.paused() ? tr("Resume") : tr("Pause")}, {"Y", tr("Cancel")}, {"B", tr("Back")}});
-    else if (downloadsTab_ == 0 && !sidebar_ && retroDownloading())
-      footer(Hints{{"A", tr("Pause")}, {"Y", tr("Cancel")}, {"B", tr("Back")}});
+    else if (downloadsTab_ == 0 && !sidebar_ && (installer_.running() || retroDownloading())) {
+      Hints hints{{"A", installer_.running() && installer_.paused() ? tr("Resume") : tr("Pause")}};
+      if (runningDetails()) hints.push_back({"X", tr("Details")});
+      hints.push_back({"Y", tr("Cancel")});
+      hints.push_back({"B", tr("Back")});
+      footer(hints);
+    }
     else if (downloadsTab_ == 0 && !sidebar_ && queueHeld_ && !installQueue_.empty())
       footer(Hints{{"A", tr("Resume")}, {"B", tr("Back")}});
     else if (downloadsTab_ == 0 || sidebar_ || downloadsList().empty())
@@ -2217,6 +2220,11 @@ void Application::runningAction(Action a) {
     }
     if (a == Action::Accept) moveShown(row, true);
     if (a == Action::Search) moveShown(row, false);
+    return;
+  }
+  // X opens its page, when it has one.
+  if (a == Action::Search) {
+    if (const auto open = runningDetails()) open();
     return;
   }
   if (a == Action::Accept && installer_.running())
