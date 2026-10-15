@@ -179,6 +179,7 @@ public:
     return std::nullopt;
   }
   void previewHistory(std::vector<history::Entry> entries) { history_ = std::move(entries); }
+  void previewRecord(history::Entry entry) { history_.push_back(std::move(entry)); }
   int downloadsTab() const { return downloadsTab_; }
   void previewStorage(uint64_t sd, uint64_t nand, uint64_t sdTotal = 476ULL << 30,
                       uint64_t nandTotal = 26ULL << 30) {

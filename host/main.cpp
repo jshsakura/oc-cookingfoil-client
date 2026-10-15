@@ -36,9 +36,26 @@ void previewDownloads(foil::ui::Application &ui, const std::string &fixture) {
   const auto groups = foil::groupCatalog(
       foil::net::parseSections(foil::readFile(fixture + "/sections.json"))
           .value);
+  // The game coming down, as a real pick leaves it in 다운로드: the parts
+  // before the current one done, the current one running, the rest queued
+  // first. Its page then reads 다운로드 중, not 설치하기.
   for (const auto &group : groups) {
-    if (group.representative.name == p.name)
-      p.parts = foil::Selection(group).files();
+    if (group.representative.name != p.name) continue;
+    p.parts = foil::Selection(group).files();
+    for (size_t i = 0; i < p.parts.size(); ++i) {
+      if (i > p.index) {
+        ui.previewQueued(p.parts[i], p.name, p.icon);
+        continue;
+      }
+      foil::history::Entry entry;
+      entry.id = 900000 + i;
+      entry.install = {p.name, p.icon, "sd", {p.parts[i]}};
+      entry.outcome = i < p.index ? foil::history::Outcome::Done : foil::history::Outcome::Running;
+      entry.at = int64_t(std::time(nullptr));
+      ui.previewRecord(std::move(entry));
+    }
+  }
+  for (const auto &group : groups) {
     // A few picks queued behind it, more than fit (the list scrolls).
     if (group.representative.name != p.name && group.representative.name != "Circuit Garden")
       for (const auto &file : foil::Selection(group).files())
