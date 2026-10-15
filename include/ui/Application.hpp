@@ -749,6 +749,22 @@ private:
   update::Release appRelease_;
   std::string appUpdateError_, selfPath_;
   void noticeRollBack(); // an update undone at start says so (AppUpdate.cpp)
+  // A secure connection failed and the console clock is off from internet
+  // time: asked once per run, then set to it (ClockFix.cpp). Failing, the
+  // log keeps why and the popup leads to a bug report.
+  enum class ClockFix { None, Checking, Ask, Setting, Failed };
+  ClockFix clockFix_ = ClockFix::None;
+  bool clockAsked_ = false;
+  int64_t clockInternet_ = 0;         // internet time when asked, Unix seconds
+  uint32_t clockAskedAt_ = 0;         // SDL ticks then, to carry it forward
+  uint32_t clockCheckedAt_ = 0;       // the last comparison, at most one a minute
+  std::thread clockWorker_;
+  std::atomic<bool> clockDone_{false};
+  std::function<void()> clockFinish_;
+  void pollClock();
+  void clockDialog();
+  void clockAction(Action action);
+  bool clockModal() const { return clockFix_ == ClockFix::Ask || clockFix_ == ClockFix::Setting || clockFix_ == ClockFix::Failed; }
   bool appUpdateAsk_ = false;
   std::thread updateWorker_;
   std::atomic<bool> updateDone_{false}, updateCancel_{false};

@@ -127,6 +127,10 @@ int signalStrength() {
     return 3;
 #endif
 }
+namespace {
+std::atomic<bool> certificateFailed{false};
+}
+bool takeCertificateFailure() { return certificateFailed.exchange(false); }
 std::string connectionError(int code, const std::string& url) {
     if ((code == CURLE_COULDNT_RESOLVE_HOST || code == CURLE_COULDNT_CONNECT ||
          code == CURLE_OPERATION_TIMEDOUT) && !internetConnected())
@@ -143,7 +147,9 @@ std::string connectionError(int code, const std::string& url) {
     case CURLE_PEER_FAILED_VERIFICATION:
     case CURLE_SSL_CONNECT_ERROR: {
         // Certificates are checked against the console's clock; one left far
-        // in the past (no time sync) fails every secure connection.
+        // in the past (no time sync) fails every secure connection. The app
+        // compares it with internet time and offers to set it.
+        certificateFailed = true;
         const auto now = std::time(nullptr);
         std::tm local{};
         localtime_r(&now, &local);

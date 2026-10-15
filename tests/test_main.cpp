@@ -4,6 +4,7 @@
 #include <cstdio>
 int runConfigTests();
 int runNetworkTests();
+int runNtpTests();
 int runSessionTests();
 int runCatalogTests();
 int runUpdatesTests();
@@ -55,7 +56,7 @@ int main() {
   std::remove(path.c_str());
   std::puts(ok ? "Host screenshot smoke passed"
                : "Host screenshot smoke failed");
-  const int failures = runConfigTests() + runNetworkTests() +
+  const int failures = runConfigTests() + runNetworkTests() + runNtpTests() +
                        runSessionTests() + runPairingTests() + runCatalogTests() + runUpdatesTests() + runInstalledTests() +
                        runSelectionTests() + runInstallerTests() + runPatchTests() + runI18nTests() +
                        runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runHistoryTests() + runStoreTests() + runZstdResumeTests() + runNczPointTests() + runClientUpdateTests() + runHomebrewTests() + runHomebrewCardTests() + runDropboxRowsTests() + runResumeTests() + runForwarderTests() +

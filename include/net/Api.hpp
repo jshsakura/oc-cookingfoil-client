@@ -26,6 +26,9 @@ bool internetConnected();
 int signalStrength();
 const char* offlineMessage();
 std::string connectionError(int curlCode, const std::string& url);
+// A secure connection failed since the last call: the console clock may be
+// off (ui/ClockFix compares it with internet time).
+bool takeCertificateFailure();
 // Asks the server for a fresh download token (it comes with any answer).
 long renewDownloadToken(const Server& server, const State& state); // the reply's status
 Response get(const std::string& url, const std::vector<std::string>& headers = {}, const std::string& etag = "", const std::atomic<bool>* cancel = nullptr);

@@ -69,6 +69,8 @@ Application::~Application() {
     bugWorker_.join();
   if (updateWorker_.joinable())
     updateWorker_.join();
+  if (clockWorker_.joinable())
+    clockWorker_.join();
   if (homebrewWorker_.joinable())
     homebrewWorker_.join();
   if (homebrewCardWorker_.joinable())
@@ -556,6 +558,7 @@ void Application::poll() {
   pollPatchCheck();
   pollCleanup();
   pollAppUpdate();
+  pollClock();
   pollLog();
   pollHomebrew();
   // No dimming or auto-sleep while something downloads.
@@ -918,6 +921,10 @@ void Application::action(Action a) {
   }
   if (alert_.empty() && (appUpdateAsk_ || appUpdate_ == AppUpdate::Downloading)) {
     appUpdateAction(a);
+    return;
+  }
+  if (alert_.empty() && clockModal()) {
+    clockAction(a);
     return;
   }
   if (!alert_.empty()) {

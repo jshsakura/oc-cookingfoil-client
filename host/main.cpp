@@ -105,7 +105,9 @@ int main(int argc, char **argv) {
     if ((!refreshed && !session.pairingPending()) ||
         (refreshed && !session.refresh(error))) {
       std::cerr << error.message << '\n';
-      return 1;
+      // Served, the app opens anyway and shows how it meets the failure.
+      if (!servePort)
+        return 1;
     }
     items = session.takeItems();
     if (session.pairingPending())
