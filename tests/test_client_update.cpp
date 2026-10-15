@@ -1,10 +1,6 @@
 #include "Test.hpp"
 #include "core/ClientUpdate.hpp"
-#include "core/Ed25519.hpp"
 #include "core/Json.hpp"
-#include "core/Sha256.hpp"
-#include "net/ClientUpdateApi.hpp"
-#include <atomic>
 #include "platform/Storage.hpp"
 #include <cstdlib>
 #include <filesystem>
@@ -99,53 +95,10 @@ int runClientUpdateTests() {
   }
   CHECK(sha256Hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
   {
-    // Signed with the release key (scripts/sign-release.sh, the real key):
-    // the version, size and hash it names, and nothing else, pass.
-    const auto signedRelease = parseRelease(
-        R"({"version":"9.9.9","size":25,"sha256":"6a3da8fc07fc53eebdebd7e68974941660ab14cb7990ea6ce91a36d64e349d9d",)"
-        R"("url":"/api/client/download","signature":"a0b1165810037f857acdb4da78344898e145bf338e9a83b853133648655d733c)"
-        R"(3e123435925461165b38b9a1b97858225ea751f8e847037561976869d0befd05"})",
-        "https://s");
-    CHECK(signedRelease.has_value());
-    if (signedRelease) {
-      CHECK(signatureValid(*signedRelease));
-      CHECK(signedMessage(*signedRelease) ==
-            "cookingfoil-update-v1\n9.9.9\n25\n6a3da8fc07fc53eebdebd7e68974941660ab14cb7990ea6ce91a36d64e349d9d\n");
-      // Passed off as a newer version, a larger file or another file: refused.
-      auto newer = *signedRelease;
-      newer.version = "9.9.10";
-      auto bigger = *signedRelease;
-      bigger.size = 26;
-      auto other = *signedRelease;
-      other.sha256[0] = '7';
-      auto forged = *signedRelease;
-      forged.signature[5] = forged.signature[5] == '0' ? '1' : '0';
-      auto unsigned_ = *signedRelease;
-      unsigned_.signature.clear();
-      for (const auto *bad : {&newer, &bigger, &other, &forged, &unsigned_}) CHECK(!signatureValid(*bad));
-      // Another key's signature over the same release: refused by the
-      // release key, taken by its own.
-      const auto seed = foil::hexBytes("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60");
-      const auto pub = foil::hexBytes("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
-      auto otherKey = *signedRelease;
-      std::string hex;
-      for (unsigned char c : foil::ed25519::sign(signedMessage(otherKey), seed + pub)) {
-        hex += "0123456789abcdef"[c >> 4];
-        hex += "0123456789abcdef"[c & 15];
-      }
-      otherKey.signature = hex;
-      CHECK(!signatureValid(otherKey) && signatureValid(otherKey, pub));
-      // An unsigned release is turned away before anything is downloaded
-      // (the server here does not exist: a request would fail otherwise).
-      foil::Server nowhere;
-      nowhere.url = "http://127.0.0.1:9";
-      std::atomic<uint64_t> received{0};
-      foil::Error error;
-      const auto target = (std::filesystem::temp_directory_path() / "cookingfoil-unsigned-test.nro").string();
-      CHECK(!foil::net::installClient(nowhere, {}, unsigned_, target, received, error, nullptr));
-      CHECK(error.message.find("CookingFoil") != std::string::npos && received == 0);
-      CHECK(!std::filesystem::exists(target + ".new") && !std::filesystem::exists(target + ".download"));
-    }
+    // A release is the server's word on version, size and hash; nothing
+    // more is asked of it (no signature).
+    const auto plain = parseRelease(R"({"version":"9.9.9","size":25,"sha256":")" + sha + R"(","url":"/api/client/download"})", "https://s");
+    CHECK(plain && plain->version == "9.9.9" && plain->size == 25 && plain->url == "https://s/api/client/download");
   }
   return failures;
 }

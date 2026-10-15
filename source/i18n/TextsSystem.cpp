@@ -128,8 +128,6 @@ const Translation rows[] = {
     {"Save the file as UTF-8.", "UTF-8로 저장해 주세요.", "UTF-8で保存してください。", "请以 UTF-8 保存。"},
     {"Check the JSON syntax. {0}", "JSON 문법을 확인해 주세요. {0}", "JSONの構文を確認してください。{0}", "请检查 JSON 语法。{0}"},
     {"Could not read the app's records on the SD card.", "SD 카드의 앱 기록을 읽지 못했습니다.", "SDカードのアプリの記録を読み込めませんでした。", "无法读取 SD 卡上的应用记录。"},
-    {"The update is not signed by CookingFoil, so it was not installed.", "CookingFoil이 서명한 업데이트가 아니라서 설치하지 않았습니다.",
-     "CookingFoilの署名がないアップデートのため、インストールしませんでした。", "该更新没有 CookingFoil 的签名，因此未安装。"},
     {"Could not read this console's ID, so the Dropbox link was not saved.", "콘솔 ID를 읽지 못해 드롭박스 연결을 저장하지 못했습니다.",
      "本体のIDを読み取れなかったため、Dropboxの連携を保存できませんでした。", "无法读取本主机的 ID，因此未能保存 Dropbox 关联。"},
     {"Approve this console again", "다시 인증이 필요합니다", "再認証が必要です", "需要重新认证"},

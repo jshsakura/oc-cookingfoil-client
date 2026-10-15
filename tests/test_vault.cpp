@@ -1,6 +1,5 @@
 #include "Test.hpp"
 #include "core/DownloadStore.hpp"
-#include "core/Ed25519.hpp"
 #include "core/Json.hpp"
 #include "core/Sha256.hpp"
 #include "core/State.hpp"
@@ -11,8 +10,8 @@
 #include <iterator>
 // Credentials at rest: encrypted under a key only this console can make
 // (ChaCha20, then HMAC-SHA256 over it), so the card read on a PC or in
-// another console shows nothing usable; and Ed25519, which the app's own
-// updates are checked with. Each against its standard's published vectors.
+// another console shows nothing usable. ChaCha20 against RFC 8439's
+// published vector.
 namespace {
 std::string bytes(const std::string &hex) { return foil::hexBytes(hex); }
 std::string hexOf(const std::string &raw) {
@@ -68,27 +67,6 @@ int runVaultTests() {
     CHECK(!vault::open(key, text + "00") && !vault::open(key.substr(1), text));
     // A new nonce, another text: the same value never reads the same twice.
     CHECK(vault::seal(key, secret, std::string(12, 'm')) != text);
-  }
-  {
-    // RFC 8032 7.1, tests 1 and 2.
-    const auto seed1 = bytes("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60");
-    const auto key1 = bytes("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
-    const auto sig1 = bytes("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e3970"
-                            "1cf9b46bd25bf5f0595bbe24655141438e7a100b");
-    CHECK(ed25519::verify("", sig1, key1));
-    CHECK(ed25519::sign("", seed1 + key1) == sig1);
-    const auto seed2 = bytes("4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb");
-    const auto key2 = bytes("3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c");
-    const auto sig2 = bytes("92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613"
-                            "d0f11d8c387b2eaeb4302aeeb00d291612bb0c00");
-    CHECK(ed25519::verify(bytes("72"), sig2, key2));
-    CHECK(ed25519::sign(bytes("72"), seed2 + key2) == sig2);
-    // Another message, another key, a changed signature: refused.
-    CHECK(!ed25519::verify(bytes("73"), sig2, key2) && !ed25519::verify(bytes("72"), sig2, key1));
-    auto changed = sig2;
-    changed[10] = char(changed[10] ^ 1);
-    CHECK(!ed25519::verify(bytes("72"), changed, key2));
-    CHECK(!ed25519::verify(bytes("72"), sig2.substr(1), key2) && !ed25519::verify(bytes("72"), sig2, key2.substr(1)));
   }
   char temporary[] = "/tmp/cookingfoil-vault-XXXXXX";
   const char *made = mkdtemp(temporary);
