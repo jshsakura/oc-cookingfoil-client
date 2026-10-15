@@ -85,7 +85,7 @@ int main(int argc, char **argv) {
   }
   curl_global_init(CURL_GLOBAL_DEFAULT);
   // The app's keys are bound to this console (core/State).
-  foil::setDeviceIdentity(foil::platform::consoleIdentity());
+  foil::setIdentitySource(foil::platform::consoleIdentity);
   foil::openLog("sdmc:/switch/cookingfoil/log.txt");
   foil::logLine(std::string("start " COOKINGFOIL_VERSION " ") + (appletGetAppletType() == AppletType_Application ? "application" : "applet") + " mode, " + self);
   if (!updateNote.empty()) foil::logLine(updateNote);

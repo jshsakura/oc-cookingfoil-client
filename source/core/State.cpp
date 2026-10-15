@@ -33,6 +33,7 @@ std::string randomKey() {
 namespace {
 std::mutex identityLock;
 DeviceIdentity identity;
+std::function<DeviceIdentity()> identitySource;
 std::atomic<int> rebound{int(Rebound::None)};
 // Settings by name in the settings table; credentials by kind.
 constexpr const char* DeviceKind = "device";
@@ -43,6 +44,7 @@ constexpr const char* SealKind = "seal";
 constexpr const char* PendingSetting = "pendingInstall";
 DeviceIdentity currentIdentity() {
     std::lock_guard<std::mutex> held(identityLock);
+    if (identity.fingerprint.empty() && identitySource) identity = identitySource();
     return identity;
 }
 // Every credential but the seal, in one string, in key order.
@@ -182,15 +184,41 @@ DeviceIdentity deriveIdentity(const std::string& consoleValue) {
     };
     return {digest("device fingerprint v1"), hexBytes(digest("state seal v1"))};
 }
+void setIdentitySource(std::function<DeviceIdentity()> source) {
+    std::lock_guard<std::mutex> held(identityLock);
+    identitySource = std::move(source);
+    identity = {};
+}
 void setDeviceIdentity(DeviceIdentity id) {
     std::lock_guard<std::mutex> held(identityLock);
+    identitySource = nullptr;
     identity = std::move(id);
 }
 Rebound takeRebound() { return Rebound(rebound.exchange(int(Rebound::None))); }
 bool saveState(const std::string& dbPath, const State& state, Error& error) {
     DownloadStore store;
     std::string failure;
-    if (!store.open(dbPath, failure) || !store.saveStateRows(toRows(state, currentIdentity()), failure)) {
+    const auto id = currentIdentity();
+    auto rows = toRows(state, id);
+    bool ok = store.open(dbPath, failure);
+    if (ok && id.fingerprint.empty()) {
+        // No console identity this run: credentials bound before stay as
+        // they are, since rows written without it would read as another
+        // console's at the next start. Settings are written all the same.
+        const auto stored = store.stateRows(failure);
+        ok = stored.has_value();
+        if (ok && stored->credentials.count({FingerprintKind, ""}) && !stored->credentials.at({FingerprintKind, ""}).empty()) {
+            const auto plain = [](auto credentials) {
+                credentials.erase({FingerprintKind, ""});
+                credentials.erase({SealKind, ""});
+                return credentials;
+            };
+            if (plain(stored->credentials) != plain(rows.credentials))
+                logLine("state: no console identity; new credentials kept for this run only");
+            rows.credentials = stored->credentials;
+        }
+    }
+    if (!ok || !store.saveStateRows(rows, failure)) {
         error.message = failure.empty() ? "state not saved" : failure;
         return false;
     }

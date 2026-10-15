@@ -6,8 +6,9 @@
 namespace foil::platform {
 DeviceIdentity consoleIdentity() {
 #ifdef __SWITCH__
-  // The device ID fused into the console (spl); the serial number when spl
-  // does not answer. Neither leaves this function.
+  // The device ID fused into the console (spl), and nothing else: another
+  // source would make another fingerprint, which reads as another console.
+  // It does not leave this function.
   std::string value;
   if (R_SUCCEEDED(splInitialize())) {
     u64 id = 0;
@@ -17,12 +18,6 @@ DeviceIdentity consoleIdentity() {
       value = std::string("device-id ") + text;
     }
     splExit();
-  }
-  if (value.empty() && R_SUCCEEDED(setsysInitialize())) {
-    SetSysSerialNumber serial{};
-    if (R_SUCCEEDED(setsysGetSerialNumber(&serial)) && serial.number[0])
-      value = std::string("serial ") + serial.number;
-    setsysExit();
   }
   auto identity = deriveIdentity(value);
   value.assign(value.size(), '\0');

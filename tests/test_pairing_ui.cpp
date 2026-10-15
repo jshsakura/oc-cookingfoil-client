@@ -119,7 +119,12 @@ int runPairMessageUiTests(SDL_Renderer *renderer) {
         CHECK(!request->password);
       }
       app.enterText("  철수 거실 기기\n");
-      const auto saved = foil::loadState(statePath).value.pairMessages;
+      // Saved by the writer thread, off the screen's.
+      auto saved = foil::loadState(statePath).value.pairMessages;
+      for (const auto until = SDL_GetTicks() + 5000; !saved.count(server.url) && SDL_GetTicks() < until;) {
+        SDL_Delay(20);
+        saved = foil::loadState(statePath).value.pairMessages;
+      }
       CHECK(saved.count(server.url) && saved.at(server.url) == "철수 거실 기기");
       deadline = SDL_GetTicks() + 5000;
       while (postCount() == 1 && SDL_GetTicks() < deadline) {

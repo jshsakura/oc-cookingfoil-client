@@ -1,5 +1,6 @@
 #pragma once
 #include "core/Types.hpp"
+#include <functional>
 #include <map>
 #include <optional>
 namespace foil {
@@ -37,7 +38,10 @@ struct DeviceIdentity {
     std::string sealKey;     // raw bytes, never stored
 };
 DeviceIdentity deriveIdentity(const std::string& consoleValue);
-void setDeviceIdentity(DeviceIdentity identity);
+// Where the identity comes from; asked again whenever it gave nothing, so a
+// read that failed once does not last the whole run.
+void setIdentitySource(std::function<DeviceIdentity()> source);
+void setDeviceIdentity(DeviceIdentity identity); // a fixed one (tests)
 // Why the last load made a new device key, said once: the card came from
 // another console, the credentials were edited, or the records were lost.
 enum class Rebound { None, Moved, Changed, Recreated };
