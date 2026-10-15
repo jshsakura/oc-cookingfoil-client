@@ -7,7 +7,9 @@
 #include "core/SaveArchive.hpp"
 #include <algorithm>
 #include <cstdio>
+#include <chrono>
 #include <filesystem>
+#include <thread>
 namespace foil::net {
 namespace {
 namespace db = dropbox;
@@ -121,7 +123,18 @@ Error Dropbox::finish(const Server &server, const State &state, const db::Bridge
   const auto url = db::bridgeUrl(server.url, session.sessionId, "consume");
   PostOptions options;
   options.body = pollBody(session);
-  const auto consumed = post(url, shopHeaders(server, state, url), options, cancel_);
+  options.timeout = 30;
+  // The approval is taken once: a connection that never opened sent
+  // nothing, so asking again is safe, and giving up would leave the phone's
+  // sign-in done and this console never told.
+  constexpr int Tries = 4;
+  Response consumed;
+  for (int attempt = 1; attempt <= Tries; ++attempt) {
+    consumed = post(url, shopHeaders(server, state, url), options, cancel_);
+    if (consumed.curl != 7 || attempt == Tries || (cancel_ && cancel_->load())) break;
+    logLine("dropbox: consume could not connect; trying again (" + std::to_string(attempt) + ")");
+    std::this_thread::sleep_for(std::chrono::seconds(attempt));
+  }
   if (!consumed.error.empty()) return {consumed.error};
   if (consumed.status != 200) {
     logLine("dropbox: bridge consume HTTP " + std::to_string(consumed.status));

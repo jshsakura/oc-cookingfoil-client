@@ -240,6 +240,15 @@ int runSessionTokenTests() {
     }
   }
   {
+    // A connection that never opened says so (curl 7): nothing was sent, so
+    // a one-time request (Dropbox's consume) may go again.
+    foil::net::PostOptions none;
+    none.body = "{}";
+    const auto refused = foil::net::post("http://127.0.0.1:9/api/x", {}, none);
+    CHECK(refused.curl == 7 && refused.status == 0 && !refused.error.empty());
+    CHECK(foil::net::get(server.url + "/api/shop/info", {}).curl == 0);
+  }
+  {
     // The token never reaches the log.
     CHECK(foil::withoutAddresses("{\"token\":\"cfs_abc-DEF.1\"} sent cfs_x9") == "{\"token\":\"***\"} sent ***");
   }

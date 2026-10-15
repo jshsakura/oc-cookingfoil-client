@@ -283,6 +283,7 @@ Response getOnce(const std::string& url, const std::vector<std::string>& headers
         code = curl_easy_perform(curl);
     }
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
+    result.curl = int(code);
     if (code != CURLE_OK && result.error.empty()) result.error = connectionError(code, url);
     if (code != CURLE_OK || result.status >= 400)
         logLine("GET " + url.substr(0, url.find_first_of("?#")) + " status=" + std::to_string(result.status) +
@@ -453,6 +454,7 @@ Response postOnce(const std::string& url, const std::vector<std::string>& header
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &result);
     const auto code = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
+    result.curl = int(code);
     if (context.failedWrite && result.error.empty()) result.error = trf("Could not write the file: {0}", {options.saveTo});
     if (code != CURLE_OK && result.error.empty()) result.error = connectionError(code, url);
     // Only the address is logged: bodies carry tokens and codes.

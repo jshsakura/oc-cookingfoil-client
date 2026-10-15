@@ -17,6 +17,7 @@ struct Response {
     uint64_t contentLength = 0; // 0 when absent
     std::string session; // X-CookingFoil-Session: why the session token was refused
     std::string enroll;  // X-CookingFoil-Enroll: "invalid" when an enroll token was refused
+    int curl = 0;        // curl's result; 7 (CURLE_COULDNT_CONNECT): nothing was sent
     int64_t date = 0;    // the Date header, Unix seconds; 0 when absent
 };
 // The server's keys go to the server only; anything else (a picture on
