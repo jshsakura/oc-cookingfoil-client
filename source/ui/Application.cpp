@@ -292,8 +292,9 @@ bool Application::open() {
   took();
   logLine("startup " + steps);
   // The bar runs on to its end before the app shows, rather than the app
-  // popping up from part way: a short fill, then a moment full.
-  constexpr uint32_t FillMs = 450, HoldMs = 250;
+  // popping up from part way: a short fill, then a second full to read the
+  // last word.
+  constexpr uint32_t FillMs = 450, HoldMs = 1000;
   const float from = progressShown;
   // The last word changes each start, one of a few kitchen lines.
   static const char *const Done[] = {"Well done!", "Golden brown, just right!", "A wild homebrew appeared!",
@@ -305,6 +306,9 @@ bool Application::open() {
     const uint32_t gone = SDL_GetTicks() - fillFrom;
     const float t = std::min(1.f, gone / float(FillMs)), eased = 1 - (1 - t) * (1 - t);
     paint_.splash(done, from + (1 - from) * eased, seconds());
+    // The catalog that arrives while the last word shows is laid out now, so
+    // the home opens filled rather than with its placeholders.
+    if (done_.exchange(false)) takeNetwork();
     if (!platform::serviceApplet()) {
       exitRequested_ = true;
       break;
@@ -890,6 +894,10 @@ void Application::poll() {
     }
     return;
   }
+  takeNetwork();
+}
+// What the network thread brought: a detail, the approval state or the catalog.
+void Application::takeNetwork() {
   network_.join();
   // An enroll token the session spent is gone from the copy here too, so a
   // later save of the servers does not write it back.
@@ -974,6 +982,9 @@ void Application::poll() {
   incoming_ = {};
   error_ = {};
   offerResume();
+  // 홈브류 is read ahead once the home is up, so it opens with its list.
+  needHomebrewList();
+  if (!homebrewScanned_ && features_.count("homebrew")) scanHomebrewCard();
 }
 const std::vector<size_t> &Application::libraryList() const {
   std::string key = std::to_string(catalogVersion_) + "|" + std::to_string(int(librarySort_)) + "|";

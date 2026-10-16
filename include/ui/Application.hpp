@@ -349,6 +349,7 @@ public:
   static constexpr int PatchFilters = 3;
 
 private:
+  void takeNetwork();
   // False when there was nothing new to write.
   bool keepResumeChanges();
   // Leaving the screen (HOME, sleep): a running download's place goes to

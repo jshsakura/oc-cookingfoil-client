@@ -4,6 +4,7 @@
 #include "core/Log.hpp"
 #include "core/Sha256.hpp"
 #include "net/HomebrewApi.hpp"
+#include "platform/Cores.hpp"
 #include "platform/Shortcut.hpp"
 #include <algorithm>
 #include <filesystem>
@@ -24,6 +25,7 @@ void Application::loadHomebrew() {
   auto etag = homebrewEtag_;
   const bool titles = features_.count("homebrew-titles") > 0;
   homebrewWorker_ = std::thread([this, server, state, etag, titles]() mutable {
+    const platform::OnCore off(platform::NetworkCore); // the drawing core keeps the screen moving
     std::vector<homebrew::App> apps;
     bool unchanged = false;
     Error error;
@@ -87,6 +89,7 @@ void Application::scanHomebrewCard() {
     if (const auto id = homebrewServerShortcut(app)) ids.push_back(id);
   homebrewLedgerLooked_ = homebrewLedger_;
   homebrewCardWorker_ = std::thread([this, sd, languages, ids, ledger = homebrewLedgerLooked_, known = homebrewCard_]() mutable {
+    const platform::OnCore off(platform::WriterCore); // every .nro read off the drawing core
     std::vector<homebrew::CardNro> found;
     std::set<uint64_t> shortcuts;
     homebrew::LedgerCheck check;
