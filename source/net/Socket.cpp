@@ -1,5 +1,6 @@
 #include "net/Socket.hpp"
 #include "net/Segments.hpp"
+#include "net/Tuner.hpp"
 #include "core/Log.hpp"
 #include <atomic>
 #include <cstdlib>
@@ -93,6 +94,12 @@ void heardHeader(const char *data, size_t bytes) {
   if (key == "x-cookingfoil-max-connections") {
     const long most = std::strtol(trimmed().c_str(), nullptr, 10);
     if (most > 0 && most <= 64) recommendConnections(int(most));
+    return;
+  }
+  // Consoles downloading from the server now, this one included: the
+  // connections are shared out among them.
+  if (key == "x-cookingfoil-active-downloads") {
+    heardActiveDownloads(int(std::strtol(trimmed().c_str(), nullptr, 10)));
     return;
   }
   if (key == "x-cookingfoil-session") { // the session token refused: expired | revoked | invalid

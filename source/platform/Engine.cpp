@@ -16,6 +16,7 @@
 #include <cctype>
 #include "net/Segments.hpp"
 #include "net/Direct.hpp"
+#include "net/Tuner.hpp"
 #include "core/DownloadStore.hpp"
 #include "core/Json.hpp"
 #include "core/Log.hpp"
@@ -161,12 +162,17 @@ void nativeInstall(const Item &item, const std::string &target,
   auto path = item.url.substr(0, item.url.find_first_of("?#"));
   for (auto &c : path)
     c = std::tolower(static_cast<unsigned char>(c));
+  // The connections are found as it goes, under current.connections
+  // (net/Tuner.hpp), for this file only.
+  foil::net::startTuning(current.connections);
+  struct Tuning {
+    ~Tuning() { foil::net::stopTuning(); }
+  } tuning;
   // One line in the log per file once it is in: size, time, average speed,
-  // connections, compressed or not, and where from (the server's direct
-  // address, or its own).
+  // the connections it ended with and why, compressed or not, and where
+  // from (the server's direct address, or its own).
   struct Summary {
     std::string name;
-    int connections;
     bool compressed;
     std::string route;
     uint64_t bytes = foil::net::receivedBytes(), tick = svcGetSystemTick();
@@ -176,13 +182,13 @@ void nativeInstall(const Item &item, const std::string &target,
       const double mb = double(foil::net::receivedBytes() - bytes) / (1024 * 1024);
       // How long of it the network waited on the card and the install.
       const double waited = foil::net::cardHeldSeconds() - held;
-      char line[240];
-      std::snprintf(line, sizeof(line), "download %.1f MB in %.0f s = %.1f MB/s, %d connections, %s, %s, waited on the card %.0f s: ",
-                    mb, seconds, seconds > 0 ? mb / seconds : 0, connections, compressed ? "compressed" : "plain",
-                    route.c_str(), waited);
+      char line[320];
+      std::snprintf(line, sizeof(line), "download %.1f MB in %.0f s = %.1f MB/s, %s, %s, %s, waited on the card %.0f s: ",
+                    mb, seconds, seconds > 0 ? mb / seconds : 0, foil::net::tuningSummary().c_str(),
+                    compressed ? "compressed" : "plain", route.c_str(), waited);
       logLine(line + name);
     }
-  } summary{item.name, current.connections,
+  } summary{item.name,
             path.size() >= 4 && (path.substr(path.size() - 4) == ".nsz" || path.substr(path.size() - 4) == ".xcz"),
             foil::net::routeName(from)};
   if (path.size() >= 4 && (path.substr(path.size() - 4) == ".xci" ||

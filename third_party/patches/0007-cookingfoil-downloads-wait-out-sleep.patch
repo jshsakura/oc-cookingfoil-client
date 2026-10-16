@@ -1,14 +1,15 @@
 --- a/source/util/network_util.cpp
 +++ b/source/util/network_util.cpp
-@@ -22,6 +22,7 @@
+@@ -22,6 +22,8 @@
  
  #include "net/Socket.hpp"
  #include "net/Direct.hpp"
++#include "net/Tuner.hpp"
 +#include "core/Log.hpp"
  #include <memory>
  #include <deque>
  #include "util/network_util.hpp"
-@@ -375,8 +376,35 @@
+@@ -375,8 +377,35 @@
          // connection or a server error is retried without counting.
          u64 lastData = armGetSystemTick();
          const u64 resumeWindow = armGetSystemTickFreq() * 60;
@@ -44,16 +45,21 @@
              // A slow piece at the front does not hold the other connections:
              // they go on to the next pieces while fewer than `connections` are
              // being read, up to `ahead` pieces a connection held in all.
-@@ -386,7 +414,7 @@
+@@ -386,8 +415,11 @@
                      count += !part->done;
                  return count;
              };
 -            while (reading() < g_parallelConnections &&
-+            while (!offline && reading() < g_parallelConnections &&
-                    (int)window.size() < g_parallelConnections * g_parallelAhead && next < end)
+-                   (int)window.size() < g_parallelConnections * g_parallelAhead && next < end)
++            // CookingFoil: as many as the tuner says now, never more than set.
++            const int tuned = foil::net::tunedConnections();
++            const int connections = tuned > 0 ? std::min(tuned, g_parallelConnections) : g_parallelConnections;
++            while (!offline && reading() < connections &&
++                   (int)window.size() < connections * g_parallelAhead && next < end)
              {
                  auto part = std::make_unique<Part>();
-@@ -406,10 +434,11 @@
+                 part->start = next;
+@@ -406,10 +438,11 @@
                      if (!part->done) drop(*part);
                  WaitWhilePaused();
                  if (Stopping()) { failed = true; break; }
@@ -66,7 +72,15 @@
              int running = 0;
              curl_multi_perform(multi, &running);
              int left = 0;
-@@ -778,6 +807,11 @@
+@@ -452,6 +485,7 @@
+                     curl_off_t serverWait = 0;
+                     curl_easy_getinfo(msg->easy_handle, CURLINFO_RETRY_AFTER, &serverWait);
+                     drop(*part);
++                    if (!foil::net::linkDown()) foil::net::tuneTrouble(); // CookingFoil: one fewer may do better
+                     const bool busy = code == 503 || code == 429 || code == 524;
+                     const u64 quiet = (armGetSystemTick() - lastData) / armGetSystemTickFreq();
+                     const u64 wait = busy ? (serverWait > 0 ? std::min<u64>(u64(serverWait), 60) : 5)
+@@ -778,6 +812,11 @@
                  return written;
              };
  
@@ -78,7 +92,7 @@
              while (true)
              {
                  long waitNs = 0;
-@@ -796,6 +830,7 @@
+@@ -796,6 +835,7 @@
                          return 1;
  
                      const size_t currentOffset = requestOffset + bytesReceived;
@@ -86,7 +100,7 @@
                      sentToken = foil::net::downloadToken(); // CookingFoil: what this ask carries
                      const size_t remaining = requestSize - bytesReceived;
  
-@@ -859,6 +894,19 @@
+@@ -859,6 +899,19 @@
                              url.c_str(), rc);
                          return 1;
                      }

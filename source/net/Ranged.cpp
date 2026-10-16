@@ -5,6 +5,7 @@
 #include "core/Patches.hpp"
 #include "core/Sha256.hpp"
 #include "net/Direct.hpp"
+#include "net/Tuner.hpp"
 #include "net/Segmented.hpp"
 #include "net/Segments.hpp"
 #include "net/Socket.hpp"
@@ -180,6 +181,11 @@ bool fetchParallel(const std::string &url, const std::vector<std::string> &heade
   options.connections = connectionsFor(url, 0);
   options.headers = headers;
   options.batchBytes = 1u << 20;
+  // Found as it goes under the server's ceiling, for this file only.
+  startTuning(options.connections);
+  struct Tuning {
+    ~Tuning() { stopTuning(); }
+  } tuning;
   options.bufferBytes = 16ull << 20;
   options.cancelled = [cancel] { return cancel && cancel->load(); };
   options.log = [](const std::string &line) { logLine(line); };

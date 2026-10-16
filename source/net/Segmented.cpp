@@ -1,5 +1,6 @@
 #include "net/Segmented.hpp"
 #include "net/Direct.hpp"
+#include "net/Tuner.hpp"
 #include "net/Socket.hpp"
 #include "platform/Cores.hpp"
 #include <curl/curl.h>
@@ -324,7 +325,10 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
     const size_t batch = std::max<size_t>(options.batchBytes, 256u << 10);
     Writer writer(write, std::max<uint64_t>(options.bufferBytes, 2 * batch));
     Session s{url, batch, options, writer, planLock, plan, written};
+    // options.connections is the most; a download being tuned starts at
+    // what the tuner says and follows it (net/Tuner.hpp).
     int limit = std::max(1, options.connections);
+    if (const int tuned = tunedConnections(); tuned > 0) limit = std::min(limit, tuned);
     int wanted = limit; // what the limit returns to once 429s stop
     Clock::time_point limitedAt;
     const bool resuming = !restarted && !options.resume.empty() && options.resumeTotal > 0;
@@ -558,6 +562,14 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         log("network back; download goes on");
         offlineSaid = false;
       }
+      if (const int tuned = tunedConnections(); tuned > 0) {
+        const int target = std::min(tuned, std::max(1, options.connections));
+        if (target != wanted) {
+          wanted = target;
+          // Down at once; up at once too unless a 429 is still being eased off.
+          if (limit > wanted || Clock::now() - limitedAt >= LimitCalm) limit = wanted;
+        }
+      }
       if (const auto asked = checkpointAsked.load(); asked != checkpointSeen) {
         checkpointSeen = asked;
         checkpointNow();
@@ -663,6 +675,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
           continue;
         }
         if (code == 503 || code == 524) {
+          tuneTrouble();
           long wait = 5;
           if (!c->retryAfter.empty())
             wait = std::clamp(std::atol(c->retryAfter.c_str()), 1L, 60L);
@@ -670,6 +683,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
           continue; // not counted
         }
         if (code == 429) { // Cloudflare's limit (1015 included): half the connections
+          tuneTrouble();
           limit = std::max(1, limit / 2);
           limitedAt = Clock::now();
           log("download rate limited (429): " + std::to_string(limit) + " connections");
@@ -692,6 +706,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         // window; the parts are asked again once it is back.
         if (linkDown())
           s.lastData = Clock::now();
+        if (!linkDown()) tuneTrouble(); // a drop, a timeout, an error: one fewer may do better
         if (!fatal && !c->changed && (code >= 500 || !c->bad) && Clock::now() - s.lastData < ResumeWindow) {
           // The longer nothing has come, the longer between asks: 2 s at
           // first, up to 15 s, so a server that is down is not hammered.
