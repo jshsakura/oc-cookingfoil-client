@@ -1628,7 +1628,12 @@ void Application::action(Action a) {
         saveOwnState();
         break;
       case 2: appUpdateAction(a); break;
-      case 3: startCleanup(false); break;
+      case 3:
+        // Said first, as the image cache is: what goes and what stays.
+        if (cleanupBusy_) break;
+        confirmCleanup_ = true;
+        dialogFocus_ = 0;
+        break;
       case 4:
         if (cacheBusy_) break; // emptying it now
         measureImageCache(false); // a running count: nothing to walk
@@ -2949,6 +2954,8 @@ void Application::pollCleanup() {
   if (cleanupResult_.error) {
     alertTitle_ = tr("Could not clean up leftovers");
     alert_ = cleanupResult_.error.message;
+  } else if (cleanupRemoving_ && report.files + report.placeholders == 0) {
+    message(tr("No leftover files to clean up."));
   } else if (cleanupRemoving_) {
     message(trf("Deleted {0} leftover files · {1}.", {count, formatBytes(report.bytes)}));
     cardChanged(); // free space changed
@@ -3004,13 +3011,8 @@ void Application::languageDialog() {
   }
 }
 void Application::cleanupDialog() {
-  const auto &report = cleanupResult_.value;
-  const auto body = modal(700, 24 + 90 + 16, tr("Delete leftover files?"), tr("Cancel"), "", tr("Delete"), 37);
-  const float x = body.x + 32, y = body.y + 24;
-  paint_.fonts.text(trf("{0} files · {1}", {std::to_string(report.files + report.placeholders), formatBytes(report.bytes)}),
-                    x, y, 22, Ink, true, body.w - 64);
+  const auto body = modal(700, 24 + 52 + 16, tr("Delete leftover files?"), tr("Cancel"), "", tr("Delete"), 37);
   paint_.fonts.wrapped(tr("Deletes files no game uses and pieces of cut-off installs. Installed games and saves stay."),
-                       x, y + 38, 18, Secondary, body.w - 64, 2);
-
+                       body.x + 32, body.y + 24, 18, Secondary, body.w - 64, 2);
 }
 } // namespace foil::ui
