@@ -141,7 +141,6 @@ const Translation rows[] = {
 // Hunter's roast).
     {"Well done!", "맛있게 잘 구워졌습니다!", "上手に焼けました！", "烤得恰到好处！"},
     {"Golden brown, just right!", "노릇노릇, 딱 좋게 익었습니다!", "こんがり、ちょうどいい焼き加減！", "外焦里嫩，刚刚好！"},
-    {"Smells like butter!", "버터 향이 솔솔 납니다!", "バターのいい香りがします！", "闻到黄油香啦！"},
     {"A wild homebrew appeared!", "앗! 야생의 홈브류가 나타났다!", "あ！やせいの自作ソフトがあらわれた！", "啊！野生的自制软件出现了！"},
     {"Reading the app's records on the SD card.", "SD 카드에서 앱 기록을 읽고 있습니다.", "SDカードからアプリの記録を読み込んでいます。", "正在读取 SD 卡上的应用记录。"},
     {"If another CookingFoil is open, close it.", "다른 곳에서 CookingFoil이 열려 있다면 닫아 주세요.", "ほかでCookingFoilが開いている場合は閉じてください。", "如果其他地方还开着 CookingFoil，请将其关闭。"},
