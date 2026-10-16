@@ -50,6 +50,12 @@ int runCardPatchTests() {
   record.files.push_back("atmosphere/contents/0100ABCD12340800/exefs/main.npdm");
   record.files.push_back("SaltySD/plugins/FPSLocker/patches/0100beef00000000/1A2B.yaml");
   CHECK(foil::scanCardPatches(sd.string(), {{"p1", record}}).empty());
+  // A Mac that opened the folders leaves "._" files and .DS_Store: they
+  // make no unknown patch of one the app installed.
+  put(sd / "atmosphere/contents" / game / "romfs/data/._a.bin", 4);
+  put(sd / "atmosphere/contents" / game / ".DS_Store", 6);
+  put(sd / "atmosphere/contents" / game / "cheats/._1234567890ABCDEF.txt", 4);
+  CHECK(foil::scanCardPatches(sd.string(), {{"p1", record}}).empty());
   // No card folders at all: nothing, and no error.
   CHECK(foil::scanCardPatches((sd / "missing").string(), {}).empty());
   std::filesystem::remove_all(sd);

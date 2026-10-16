@@ -14,6 +14,10 @@ int64_t integerField(json_object* obj, const char* key, int64_t fallback = 0);
 // anything else reads as "".
 std::string urlField(json_object* obj, const char* key, const std::string& base);
 std::string readFile(const std::string& path);
+// What a Mac (or Windows) leaves on a card it touched: "._name" AppleDouble
+// files, .DS_Store, .Spotlight-V100, .Trashes, .fseventsd, Thumbs.db. Never
+// an app, a patch or a ROM; scans of the card pass over them.
+bool systemJunk(const std::string& name);
 bool atomicWrite(const std::string& path, const std::string& contents, std::string& error);
 // mkdir -p that stops at a device root ("sdmc:"): std::filesystem::create_directories
 // takes "sdmc:" for a folder on the console and fails before making any.

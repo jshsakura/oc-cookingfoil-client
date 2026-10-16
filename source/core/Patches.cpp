@@ -575,7 +575,7 @@ bool PatchStore::load(Error &error) {
     std::vector<std::string> orphans;
     for (auto it = fs::recursive_directory_iterator(baseRoot, ec);
          !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
-      if (it->is_regular_file(ec)) {
+      if (!systemJunk(it->path().filename().string()) && it->is_regular_file(ec)) {
         const auto rel = it->path().string().substr(baseRoot.size() + 1);
         if (!isCheatPath(rel))
           userFiles.push_back(rel);
@@ -815,6 +815,8 @@ bool PatchStore::holdsOnly(const PatchRecord &record, const std::string &root, c
       return false;
     if (it->is_symlink(ec))
       return false; // a link: leave it to the file by file path
+    if (systemJunk(it->path().filename().string()))
+      continue; // a Mac's "._" file: neither ours nor the user's
     if (it->is_regular_file(ec))
       found.push_back(root + "/" + it->path().string().substr(dir.size() + 1));
     else if (!it->is_directory(ec))

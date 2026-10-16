@@ -171,6 +171,11 @@ int runHomebrewCardTests() {
   write(sd / "switch/cookingfoil/cookingfoil.nro", nro(nacp({{0, "Self"}}, "1")));
   write(sd / "hbmenu.nro", nro(nacp({{0, "Menu"}}, "1")));
   write(sd / "switch/fake.nro", "not an nro at all");
+  // What a Mac leaves beside each file it touched is no app, even one that
+  // reads as an nro.
+  write(sd / "switch/._root.nro", nro(nacp({{0, "Mac"}}, "1")));
+  write(sd / "switch/ytb/._ytb-player.nro", nro(nacp({{0, "Mac"}}, "1")));
+  write(sd / "switch/.DS_Store", "x");
   const auto card = scanCard(sd.string(), en);
   CHECK(card.size() == 2);
   if (card.size() == 2) {

@@ -77,6 +77,10 @@ int64_t integerField(json_object* obj, const char* key, int64_t fallback) {
     auto* value = field(obj, key);
     return json_object_is_type(value, json_type_int) ? json_object_get_int64(value) : fallback;
 }
+bool systemJunk(const std::string& name) {
+    return name.rfind("._", 0) == 0 || name == ".DS_Store" || name == ".Spotlight-V100" || name == ".Trashes" ||
+           name == ".fseventsd" || name == "Thumbs.db" || name == "desktop.ini";
+}
 std::string readFile(const std::string& path) {
     std::ifstream input(path, std::ios::binary);
     // atomicWrite leaves "<path>.old" if power went out mid-replace.

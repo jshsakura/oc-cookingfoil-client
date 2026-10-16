@@ -191,6 +191,14 @@ Parsed<Config> loadConfig(const std::string& path) {
                     (beside.empty() ? std::string(" nothing beside it") : " beside it:" + beside));
             if (restoreServers(path)) return parseConfig(readExactly(path));
         }
+        // Servers read well: the copy beside it is kept the same, whoever
+        // wrote config.json (an older build, a hand edit), so anything that
+        // later leaves it empty is undone at the next read. Written only
+        // when it differs.
+        if (!parsed.error && !parsed.value.servers.empty() && readExactly(path + ".bak") != text) {
+            std::string ignored;
+            atomicWrite(path + ".bak", text, ignored);
+        }
         return parsed;
     }
     // Gone: a copy left beside it comes back before a fresh empty one is made.

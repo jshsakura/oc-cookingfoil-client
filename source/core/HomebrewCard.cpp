@@ -1,3 +1,4 @@
+#include "core/Json.hpp"
 #include "core/HomebrewCard.hpp"
 #include "core/Log.hpp"
 #include <algorithm>
@@ -162,6 +163,7 @@ std::vector<CardNro> scanCard(const std::string &sdRoot, const std::vector<int> 
     for (fs::directory_iterator it(folder, ec), end; !ec && it != end && seen < MaxEntries; it.increment(ec), ++seen) {
       std::error_code typeError;
       const auto name = it->path().filename().string();
+      if (systemJunk(name)) continue; // a Mac's "._app.nro" is no app
       if (it->is_regular_file(typeError)) paths.push_back(prefix + name);
       else if (descend && it->is_directory(typeError)) {
         std::error_code inner;
@@ -169,7 +171,8 @@ std::vector<CardNro> scanCard(const std::string &sdRoot, const std::vector<int> 
         for (fs::directory_iterator sub(it->path(), inner), subEnd; !inner && sub != subEnd && count < MaxEntries;
              sub.increment(inner), ++count) {
           std::error_code subType;
-          if (sub->is_regular_file(subType)) paths.push_back(prefix + name + "/" + sub->path().filename().string());
+          const auto file = sub->path().filename().string();
+          if (!systemJunk(file) && sub->is_regular_file(subType)) paths.push_back(prefix + name + "/" + file);
         }
       }
     }

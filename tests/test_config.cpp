@@ -101,6 +101,17 @@ int runConfigTests() {
         // Servers removed on purpose stay removed: the save writes .bak alike.
         CHECK(foil::saveConfig(path, foil::Config{}, error));
         CHECK(foil::loadConfig(path).value.servers.empty());
+        // Servers read well keep .bak the same, even when config.json was
+        // written by something else (an older build): emptied later, it
+        // comes back.
+        {
+            std::filesystem::remove(path + ".bak");
+            { std::ofstream f(path); f << foil::serializeConfig(saved); }
+            CHECK(foil::loadConfig(path).value.servers.size() == 1);
+            CHECK(std::filesystem::exists(path + ".bak"));
+            { std::ofstream f(path); f << foil::serializeConfig(foil::Config{}); }
+            CHECK(foil::loadConfig(path).value.servers.size() == 1);
+        }
         // A config.json left empty (cut while being made) reads as missing.
         CHECK(foil::saveConfig(path, saved, error));
         { std::ofstream f(path); }

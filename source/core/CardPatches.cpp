@@ -1,3 +1,4 @@
+#include "core/Json.hpp"
 #include "core/CardPatches.hpp"
 #include "core/TitleGuard.hpp"
 #include <algorithm>
@@ -23,7 +24,8 @@ void filesBelow(const fs::path &root, const fs::path &dir, std::vector<std::pair
   if (!fs::is_directory(dir, ec)) return;
   for (fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end;
        it.increment(ec)) {
-    if (!it->is_regular_file(ec)) continue;
+    // A Mac's "._" files and the like are not part of any patch.
+    if (systemJunk(it->path().filename().string()) || !it->is_regular_file(ec)) continue;
     const auto size = it->file_size(ec);
     out.emplace_back(fs::relative(it->path(), root, ec).generic_string(), ec ? 0 : uint64_t(size));
   }
