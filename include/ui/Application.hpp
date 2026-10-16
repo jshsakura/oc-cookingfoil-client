@@ -452,9 +452,10 @@ private:
   uint64_t homebrewShortcutId(const homebrew::App &app) const;
   uint64_t homebrewServerShortcut(const homebrew::App &app) const;
   bool homebrewHasShortcut(const homebrew::App &app) const;
-  // Makes the app's shortcut from its file on the card; replaces the
-  // server's for it, if that one is installed. True when something was said.
-  bool makeHomebrewShortcut(const homebrew::App &app, bool justDownloaded);
+  // A shortcut made here, in its queue turn: the server's picture as its
+  // icon (the .nro's when that cannot be had). payload: a homebrew app's
+  // JSON, "retro:" and a game's, or "self".
+  void queueShortcut(const std::string &name, const std::string &icon, const std::string &payload);
   void removeHomebrewShortcut(const homebrew::App &app);
   void removeShortcuts(const std::vector<uint64_t> &ids, const std::string &name); // those the console has
   // After a download, when 설정 asks for shortcuts: made here when the
@@ -1342,6 +1343,7 @@ private:
                 uint64_t size, const std::string &payload, int group = 0, bool first = false);
   void queuePatchJobs(const std::vector<UserPatch> &patches, int group);
   Error launchJob(const QueuedInstall &next);
+  bool startShortcut(const QueuedInstall &next); // false when it cannot start
   // Whether a download (of any kind) runs now; the next one waits for it.
   bool downloadRunning() const;
   // The installer, the queue and the screens see the order the rows run in.

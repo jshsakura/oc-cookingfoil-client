@@ -1,5 +1,8 @@
 #include "Test.hpp"
 #include "core/HomebrewCard.hpp"
+#include "ui/ShortcutIcon.hpp"
+#include <SDL.h>
+#include <SDL_image.h>
 #include <filesystem>
 #include <fstream>
 #include <unistd.h>
@@ -45,6 +48,39 @@ void write(const std::filesystem::path &path, const std::string &bytes) {
 } // namespace
 int runHomebrewCardTests() {
   int failures = 0;
+  {
+    // A shortcut's icon from the server's picture: its middle square, made
+    // 256x256 JPEG within the control data's room; nothing from no picture.
+    SDL_Surface *wide = SDL_CreateRGBSurfaceWithFormat(0, 400, 300, 24, SDL_PIXELFORMAT_RGB24);
+    CHECK(wide);
+    if (wide) {
+      SDL_FillRect(wide, nullptr, SDL_MapRGB(wide->format, 0, 0, 255));
+      const SDL_Rect middle{50, 0, 300, 300};
+      SDL_FillRect(wide, &middle, SDL_MapRGB(wide->format, 255, 0, 0));
+      std::string bmp(1 << 20, '\0');
+      SDL_RWops *rw = SDL_RWFromMem(bmp.data(), int(bmp.size()));
+      CHECK(SDL_SaveBMP_RW(wide, rw, 0) == 0);
+      bmp.resize(size_t(SDL_RWtell(rw)));
+      SDL_RWclose(rw);
+      SDL_FreeSurface(wide);
+      const auto icon = foil::ui::shortcutIconJpeg(bmp);
+      CHECK(icon.size() > 4 && icon.size() <= 0x20000 && uint8_t(icon[0]) == 0xFF && uint8_t(icon[1]) == 0xD8);
+      SDL_Surface *back = IMG_Load_RW(SDL_RWFromConstMem(icon.data(), int(icon.size())), 1);
+      CHECK(back && back->w == 256 && back->h == 256);
+      if (back) {
+        SDL_Surface *rgb = SDL_ConvertSurfaceFormat(back, SDL_PIXELFORMAT_RGB24, 0);
+        if (rgb) {
+          // The edges were blue outside the middle square: none of it shows.
+          const auto *edge = static_cast<const uint8_t *>(rgb->pixels) + 128 * rgb->pitch + 2 * 3;
+          CHECK(edge[0] > 200 && edge[2] < 60);
+          SDL_FreeSurface(rgb);
+        }
+        SDL_FreeSurface(back);
+      }
+    }
+    CHECK(foil::ui::shortcutIconJpeg("").empty());
+    CHECK(foil::ui::shortcutIconJpeg("not a picture").empty());
+  }
   const auto ko = nacpLanguages("ko"), en = nacpLanguages("en"), zh = nacpLanguages("zh");
   CHECK(ko == (std::vector<int>{12, 0, 1}));
   CHECK(en == (std::vector<int>{0, 1}));

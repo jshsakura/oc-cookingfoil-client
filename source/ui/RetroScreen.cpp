@@ -70,7 +70,7 @@ bool Application::retroBezelMissing(const retro::Game &game) const {
   return found != retroOnCard_.end() && !found->second;
 }
 bool Application::runRetroJob(const std::string &busy, std::function<std::function<void()>()> job) {
-  if (!session_) return false;
+  if (!session_ && busy != "shortcut") return false; // a shortcut is made from the card, with the server's picture if any
   if (busy == "list") {
     if (retroListWorker_.joinable()) return false;
     retroListWorker_ = std::thread([this, job = std::move(job)] {

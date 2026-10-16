@@ -6,10 +6,42 @@
 #include "core/Log.hpp"
 #include "platform/Shortcut.hpp"
 #include "platform/Storage.hpp"
+#include "core/Json.hpp"
+#include <cstdlib>
+#include "net/Api.hpp"
+#include "ui/ShortcutIcon.hpp"
 namespace foil::ui {
 namespace {
 // The app's own icon on the self-shortcut offer.
 constexpr int HomeIcon = 0;
+// What a queued shortcut is made of, decided when it is asked for and kept
+// in its row ("plan:" and this as JSON).
+struct Plan {
+  std::string file, launch, extra, name, author, display, iconUrl;
+  uint64_t replaces = 0; // the server's shortcut for it, which goes
+};
+std::string serializePlan(const Plan &plan) {
+  Json body(json_object_new_object());
+  const auto put = [&](const char *key, const std::string &value) {
+    json_object_object_add(body.get(), key, json_object_new_string(value.c_str()));
+  };
+  put("file", plan.file), put("launch", plan.launch), put("extra", plan.extra), put("name", plan.name);
+  put("author", plan.author), put("display", plan.display), put("iconUrl", plan.iconUrl);
+  put("replaces", std::to_string(plan.replaces));
+  return "plan:" + std::string(json_object_to_json_string_ext(body.get(), JSON_C_TO_STRING_PLAIN));
+}
+bool parsePlan(const std::string &payload, Plan &plan) {
+  if (payload.rfind("plan:", 0) != 0) return false;
+  Error error;
+  const auto body = parseJson(payload.substr(5), error);
+  if (!body) return false;
+  plan.file = stringField(body.get(), "file"), plan.launch = stringField(body.get(), "launch");
+  plan.extra = stringField(body.get(), "extra"), plan.name = stringField(body.get(), "name");
+  plan.author = stringField(body.get(), "author"), plan.display = stringField(body.get(), "display");
+  plan.iconUrl = stringField(body.get(), "iconUrl");
+  plan.replaces = std::strtoull(stringField(body.get(), "replaces", "0").c_str(), nullptr, 10);
+  return !plan.file.empty();
+}
 } // namespace
 bool Application::homebrewShortcutRow(const homebrew::App &app) const {
   // Shown even where none can be made: the row says so before A is pressed.
@@ -67,20 +99,6 @@ bool Application::makeShortcutFromNro(const std::string &file, const std::string
   }
   return true;
 }
-// Made here, it points at the file actually on the card and needs no
-// download, so it wins over the server's; the server's, when installed, goes
-// so the HOME Menu does not show the app twice.
-bool Application::makeHomebrewShortcut(const homebrew::App &app, bool justDownloaded) {
-  const auto file = homebrewFile(app);
-  if (!homebrew::cardNroPath(file)) return false;
-  if (!makeShortcutFromNro(file, "", app.name, "", "", "", justDownloaded)) return true;
-  const auto server = homebrewServerShortcut(app);
-  if (server && server != homebrewShortcutId(app) && shortcuts_.count(server)) {
-    if (const auto error = platform::removeShortcut(server)) logLine("shortcut: server one stays: " + error.message);
-    else shortcuts_.erase(server);
-  }
-  return true;
-}
 void Application::removeHomebrewShortcut(const homebrew::App &app) {
   removeShortcuts({homebrewShortcutId(app), homebrewServerShortcut(app)}, app.name);
 }
@@ -100,26 +118,98 @@ void Application::removeShortcuts(const std::vector<uint64_t> &ids, const std::s
 }
 bool Application::autoHomebrewShortcut(const homebrew::App &app) {
   if (!state_.makeShortcuts) return false;
-  if (platform::canMakeShortcuts() && makeHomebrewShortcut(app, true)) return true;
+  if (platform::canMakeShortcuts() && homebrew::cardNroPath(homebrewFile(app))) {
+    queueShortcut(app.name, homebrewIcon(app),
+                  serializePlan({homebrewFile(app), "", "", app.name, "", app.name, app.iconUrl, homebrewServerShortcut(app)}));
+    return true;
+  }
   return installShortcut(app.name, app.iconUrl, app.forwarderUrl, app.forwarderTitleId, app.forwarderSize);
 }
-// The server's shortcut first: it carries the game's own icon. Without one,
-// a shortcut made here starts the game's core with the ROM, under RetroArch's
-// icon and the game's name.
+// Made here: the game's core with the ROM, under the game's name and the
+// server's picture of it. The server's own only where none can be made here.
 bool Application::installRetroShortcut(const retro::Game &game) {
   if (!retroReady(game)) return false; // it would open to an error
+  if (state_.makeShortcuts && !retro::corePath(game.core).empty() && !game.romPath.empty() &&
+      platform::canMakeShortcuts() && retroArchPresent()) {
+    const auto rom = "sdmc:/" + game.romPath;
+    // The id comes from the core's path and the ROM, so each game has its own.
+    queueShortcut(game.name, game.iconUrl,
+                  serializePlan({retro::RetroArchApp, retro::corePath(game.core),
+                                 rom.find(' ') == std::string::npos ? rom : "\"" + rom + "\"", game.name, "RetroArch",
+                                 game.name, game.iconUrl, forwarder::serverShortcutId(game.forwarderTitleId)}));
+    return true;
+  }
   if (!game.forwarderUrl.empty())
     return installShortcut(game.name, game.iconUrl, game.forwarderUrl, game.forwarderTitleId, game.forwarderSize);
-  const auto core = retro::corePath(game.core);
-  if (!state_.makeShortcuts || core.empty() || game.romPath.empty() || !platform::canMakeShortcuts() ||
-      !retroArchPresent())
-    return false;
-  const auto rom = "sdmc:/" + game.romPath;
-  const auto extra = rom.find(' ') == std::string::npos ? rom : "\"" + rom + "\"";
-  // The id comes from the core's path and the ROM, so each game has its own.
-  const auto made = makeShortcutFromNro(retro::RetroArchApp, core, game.name, extra, game.name, "RetroArch", true);
-  if (made) logLine("retro shortcut " + game.name + " -> " + core);
-  return true;
+  return false;
+}
+void Application::queueShortcut(const std::string &name, const std::string &icon, const std::string &payload) {
+  queueJob("shortcut", trf("{0} shortcut", {name}), icon, "", 0, payload);
+}
+// Its turn: the picture fetched and the shortcut written on the writer core,
+// so the screen keeps moving; said and its row ended back here.
+bool Application::startShortcut(const QueuedInstall &next) {
+  Plan plan;
+  if (!parsePlan(next.payload, plan)) {
+    // A row from before plans: a homebrew app's JSON.
+    const auto apps = homebrew::parse("{\"homebrew\":[" + next.payload + "]}", "");
+    if (apps.empty() || !homebrew::cardNroPath(homebrewFile(apps.front()))) return false;
+    const auto &app = apps.front();
+    plan = {homebrewFile(app), "", "", app.name, "", app.name, app.iconUrl, homebrewServerShortcut(app)};
+  }
+  const auto server = session_ ? session_->server() : Server{};
+  retroBytes_ = 0; // nothing to download: no percent on its row
+  return runRetroJob("shortcut", [this, plan, server, state = state_, sd = sdRoot_,
+                                  languages = homebrew::nacpLanguages(languageCode())]() -> std::function<void()> {
+    Error error;
+    uint64_t id = 0;
+    homebrew::NroInfo info;
+    if (!homebrew::readNroFile(sd + forwarder::loaderPath(plan.file), languages, info))
+      error.message = trf("Could not read the app file: {0}", {plan.file});
+    else {
+      // The server's picture, as the web shows it now (its address carries
+      // the version); the .nro's own when it cannot be had.
+      std::string icon;
+      if (plan.iconUrl.rfind("http", 0) == 0) {
+        auto headers = net::authHeaders(server, state, plan.iconUrl);
+        headers.push_back("Accept: image/jpeg,image/png,image/webp;q=0.8");
+        const auto got = net::get(plan.iconUrl, headers);
+        if (got.status == 200 && got.error.empty()) icon = shortcutIconJpeg(got.body);
+        if (icon.empty()) logLine("shortcut: " + plan.display + " keeps the app's own icon (HTTP " + std::to_string(got.status) + ")");
+      }
+      platform::ShortcutRequest request;
+      request.nroPath = forwarder::loaderPath(plan.launch.empty() ? plan.file : plan.launch);
+      request.extraArgs = plan.extra;
+      request.name = plan.name;
+      request.author = plan.author;
+      request.nacp = info.nacp.empty() ? forwarder::blankNacp(info.name.empty() ? plan.display : info.name, info.author, info.version)
+                                       : info.nacp;
+      request.icon = icon.empty() ? info.icon : icon;
+      error = platform::makeShortcut(request, id);
+    }
+    const bool patches = !error && forwarder::signaturePatchesFound(sd);
+    return [this, plan, error, id, patches] {
+      finishRetroEntry("shortcut", error ? history::Outcome::Failed : history::Outcome::Done, error.message, 0, 0);
+      if (error) {
+        alertTitle_ = tr("Could not make the shortcut");
+        alert_ = error.message;
+        return;
+      }
+      shortcuts_.insert(id);
+      // The server's for the same app goes, so the HOME Menu shows it once.
+      if (plan.replaces && plan.replaces != id && shortcuts_.count(plan.replaces)) {
+        if (const auto removed = platform::removeShortcut(plan.replaces)) logLine("shortcut: server one stays: " + removed.message);
+        else shortcuts_.erase(plan.replaces);
+      }
+      // Unsigned, the shortcut opens only with signature patches: said now,
+      // not when the HOME Menu shows an error code.
+      if (!patches) {
+        alertTitle_ = tr("Shortcut made");
+        alert_ = trf("Made the {0} shortcut. No signature patches were found, so it may fail to open. Install signature patches such as sys-patch first.", {plan.display});
+      } else
+        message(trf("Added the {0} shortcut to the HOME Menu.", {plan.display}));
+    };
+  });
 }
 void Application::shortcutRemoveDialog() {
   const auto *app = homebrewPicked();
@@ -170,10 +260,8 @@ bool Application::homebrewShortcutPossible(const homebrew::App &app) const {
 // to be made in its turn; the server's forwarder when none can be made here.
 void Application::requestHomebrewShortcut(const homebrew::App &app) {
   if (platform::canMakeShortcuts() && homebrew::cardNroPath(homebrewFile(app))) {
-    if (downloadRunning() || !installQueue_.empty())
-      queueJob("shortcut", trf("{0} shortcut", {app.name}), homebrewIcon(app), "", 0, homebrew::serialize(app));
-    else
-      makeHomebrewShortcut(app, false);
+    queueShortcut(app.name, homebrewIcon(app),
+                  serializePlan({homebrewFile(app), "", "", app.name, "", app.name, app.iconUrl, homebrewServerShortcut(app)}));
     return;
   }
   if (!app.cardOnly && !app.forwarderUrl.empty() && session_) {

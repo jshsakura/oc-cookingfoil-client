@@ -427,7 +427,15 @@ int runShortcutUiTests(SDL_Renderer *renderer) {
     CHECK(app.alert().empty() && app.appPopupOpen());
     settle(app);
     app.action(Action::Accept);
-    CHECK(app.hasShortcut(demo) && app.appPopupOpen());
+    // Made on its own thread in its queue turn: there once that is done.
+    const auto made = [&] {
+      for (int i = 0; i < 300 && !app.hasShortcut(demo); ++i) {
+        app.poll();
+        SDL_Delay(10);
+      }
+      return app.hasShortcut(demo);
+    };
+    CHECK(made() && app.appPopupOpen());
     app.action(Action::Accept);
     CHECK(app.askingShortcutRemoval() && !app.appPopupOpen());
     settle(app);
@@ -440,7 +448,7 @@ int runShortcutUiTests(SDL_Renderer *renderer) {
     CHECK(!app.hasShortcut(demo) && app.appPopupOpen());
     // The last row deletes the app, and its shortcut goes with it.
     app.action(Action::Accept);
-    CHECK(app.hasShortcut(demo));
+    CHECK(made());
     app.action(Action::Down);
     CHECK(app.appPopupRow() == 1);
     settle(app);

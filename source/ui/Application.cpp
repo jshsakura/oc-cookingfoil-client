@@ -2474,7 +2474,8 @@ bool Application::queueJob(const std::string &kind, const std::string &name, con
     alert_ = error.message;
   else {
     sounds_.play(Cue::Add);
-    message(waits ? tr("Added to the download queue.") : tr("Download started."));
+    // A shortcut made at once says so itself when it is in.
+    if (waits || kind != "shortcut") message(waits ? tr("Added to the download queue.") : tr("Download started."));
   }
   return true;
 }
@@ -2666,14 +2667,13 @@ Error Application::launchJob(const QueuedInstall &next) {
   } else if (next.kind == "shortcut") {
     // Made here from the app's file (or this app's own): no download, only
     // NCM, which is free now.
-    const auto apps = homebrew::parse("{\"homebrew\":[" + next.payload + "]}", "");
-    if (next.payload == "self")
+    if (next.payload == "self") {
       makeShortcutFromNro(forwarder::loaderPath(selfPath_).substr(1), "", "CookingFoil", "", "", "", false);
-    else if (!apps.empty())
-      makeHomebrewShortcut(apps.front(), false);
-    started = next.payload == "self" || !apps.empty();
-    if (started)
       history::end(history_, next.entry, history::Outcome::Done, "", int64_t(std::time(nullptr)));
+      started = true;
+    } else
+      started = startShortcut(next); // its row ends when it is made
+
   }
   if (!started)
     return failed(tr("Could not start the download."));
