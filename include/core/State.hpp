@@ -15,6 +15,8 @@ struct State {
     // Send the log to the server on its own when an error shows.
     // Install a HOME Menu shortcut with each retro game and homebrew app.
     bool makeShortcuts = true;
+    // The app's sounds (start, cursor, queue, done, error), 설정's 효과음.
+    bool sounds = true;
     // "sd" or "nand", chosen in 설정; empty follows config.json's installTarget.
     std::string installTarget;
     std::map<std::string, std::string> accessKeys;

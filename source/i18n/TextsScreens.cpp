@@ -483,6 +483,8 @@ const Translation rows[] = {
     {"Updates", "업데이트", "更新", "更新"},
     {"Languages", "지원 언어", "対応言語", "支持语言"},
     {"Required patch", "필수 패치", "必須パッチ", "必需补丁"},
+    {"Sound effects", "효과음", "効果音", "音效"},
+    {"Plays sounds at start, on cursor moves and as downloads come and go", "켤 때, 커서를 옮길 때, 다운로드를 넣고 마칠 때 소리를 냅니다", "起動時、カーソル移動、ダウンロードの追加と完了で音を鳴らします", "在启动、移动光标、添加和完成下载时播放提示音"},
     {"GitHub stars", "GitHub 별", "GitHub スター", "GitHub 星标"},
     {"License", "라이선스", "ライセンス", "许可证"},
     {"Last updated", "최근 갱신", "最終更新", "最近更新"},

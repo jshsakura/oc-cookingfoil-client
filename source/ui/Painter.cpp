@@ -351,6 +351,7 @@ static const char *IconPaths[] = {
     R"(<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/>)", // 41 picture
     R"(<path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>)", // 42 layers (versions)
     R"(<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>)", // 43 user (an account)
+    R"(<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/>)", // 44 speaker
 };
 // Glyph-like marks read better a touch heavier than the menu icons.
 // Marks read a touch heavier than outline icons.

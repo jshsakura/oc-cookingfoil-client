@@ -183,6 +183,11 @@ int runNetworkTests() {
         changed.makeShortcuts = false;
         CHECK(foil::saveState(path, changed, error));
         CHECK(!foil::loadState(path).value.makeShortcuts);
+        // 효과음: on unless turned off.
+        CHECK(fresh.value.sounds);
+        changed.sounds = false;
+        CHECK(foil::saveState(path, changed, error));
+        CHECK(!foil::loadState(path).value.sounds);
         // Where installs go, chosen in 설정; empty follows config.json.
         CHECK(fresh.value.installTarget.empty());
         changed.installTarget = "nand";

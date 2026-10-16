@@ -9,6 +9,7 @@
 #include "ui/Images.hpp"
 #include "ui/Painter.hpp"
 #include "ui/Qr.hpp"
+#include "ui/Sounds.hpp"
 #include "core/Installed.hpp"
 #include "core/SaveBackups.hpp"
 #include "core/Retro.hpp"
@@ -304,7 +305,7 @@ public:
   void saveOwnState();
   // 설정's options card: 언어, 기본 저장 위치, 앱 업데이트, 남은 파일 정리,
   // then the switches: 서명 검사, 펌웨어 검사, 홈 메뉴 바로가기, 오류 로그 전송.
-  static constexpr int SettingsOptions = 9;
+  static constexpr int SettingsOptions = 10;
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).
@@ -1047,6 +1048,8 @@ private:
   void message(const std::string &text);
   Painter paint_;
   std::unique_ptr<Images> images_;
+  Sounds sounds_;
+  bool alertHeard_ = false; // the error cue played for the alert on screen
   Config config_;
   State state_;
   Error error_;

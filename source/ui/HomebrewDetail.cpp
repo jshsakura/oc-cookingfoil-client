@@ -168,7 +168,7 @@ void Application::homebrewDetail() {
     else
       facts.push_back({27, tr("Firmware"), app.requiredFirmware});
   }
-  if (app.stars >= 0) facts.push_back({25, tr("GitHub stars"), std::to_string(app.stars)});
+  if (app.stars >= 0) facts.push_back({31, tr("GitHub stars"), std::to_string(app.stars)});
   if (!app.license.empty()) facts.push_back({16, tr("License"), app.license});
   if (!app.updatedAt.empty()) facts.push_back({11, tr("Last updated"), dayLabel(app.updatedAt)});
   constexpr float Left = 40, Width = 750, Cell = Width / 3, RowHeight = 66;

@@ -134,6 +134,9 @@ void Application::settings() {
   note(7, !state_.makeShortcuts            ? tr("Not made")
           : platform::canMakeShortcuts() ? tr("Creates a shortcut when a retro game or homebrew app downloads")
                                          : tr("Only for items the server has a shortcut for"));
+  // The app's sounds: the start, cursor steps, the queue, done and errors.
+  option(9, 44, tr("Sound effects"), "", Ink, true, state_.sounds ? 1 : 0);
+  note(9, tr("Plays sounds at start, on cursor moves and as downloads come and go"));
   // The log's tail to the server, only when pressed: what went wrong reaches
   // whoever runs it.
   option(8, 33, tr("Send a bug report"),

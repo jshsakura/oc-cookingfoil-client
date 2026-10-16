@@ -1,6 +1,7 @@
 #include "Test.hpp"
 #include "core/I18n.hpp"
 #include "core/Catalog.hpp"
+#include "core/Chime.hpp"
 #include <algorithm>
 int runCatalogTests() {
   int failures = 0;
@@ -9,6 +10,18 @@ int runCatalogTests() {
   CHECK(foil::thumbnailUrl("https://shop/i?size=sm") == "https://shop/i?size=sm");
   CHECK(foil::thumbnailUrl("installed:0100") == "installed:0100");
   CHECK(foil::thumbnailUrl("").empty());
+  {
+    // The sounds: as long as their scores, loud only up to their gain, and
+    // ending in silence (no click).
+    const auto start = foil::chime(foil::Cue::Start, 48000), move = foil::chime(foil::Cue::Move, 48000);
+    CHECK(start.size() == size_t(1.4f * 48000) && move.size() == size_t(0.06f * 48000));
+    for (int i = 0; i < foil::CueCount; ++i) {
+      const auto s = foil::chime(foil::Cue(i), 48000);
+      int peak = 0;
+      for (const auto v : s) peak = std::max(peak, std::abs(int(v)));
+      CHECK(!s.empty() && peak > 3000 && peak <= int(0.46f * 32767) && std::abs(int(s.back())) < 64);
+    }
+  }
   {
     // Shared words and lists: equal text is one copy, compared by content.
     foil::Item a, b;

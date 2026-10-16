@@ -189,9 +189,15 @@ bool Application::open() {
   // The saved language is read now so the captions are already in it;
   // reload() sets it again with the config as the last fallback.
   step(tr("Reading the app's records on the SD card."), 0.12f, "records");
-  if (!statePath_.empty())
-    state_.language = loadState(statePath_).value.language;
+  if (!statePath_.empty()) {
+    const auto saved = loadState(statePath_).value;
+    state_.language = saved.language;
+    state_.sounds = saved.sounds;
+  }
   applyStartupLanguage();
+  // The start cue plays on its own thread while the steps below go on.
+  sounds_.setOn(state_.sounds);
+  if (sounds_.open()) sounds_.play(Cue::Start);
   // Each step says what it is doing under the logo, so a slow SD card or
   // server shows where the time goes.
   step(tr("Preparing the image cache"), 0.2f, "images");
@@ -766,10 +772,13 @@ void Application::poll() {
     }
     // The card leaves 진행 중 at once; how it ended is said here and kept
     // in 완료 or 실패.
-    if (installStatus == install::Status::Succeeded)
+    if (installStatus == install::Status::Succeeded) {
+      sounds_.play(Cue::Done);
       message(installer_.progress().name + " · " + tr("Installed. You can launch it from the HOME Menu."));
-    else if (installStatus == install::Status::Failed)
+    } else if (installStatus == install::Status::Failed) {
+      sounds_.play(Cue::Error);
       message(installer_.progress().name + " · " + installer_.progress().error);
+    }
   }
   // A patch job whose patch the worker finished (or skipped) ends its row.
   if (!patchWorker_.joinable() && patchQueue_.empty())
@@ -862,6 +871,7 @@ void Application::poll() {
     state_.skipSignatureCheck = mine.skipSignatureCheck;
     state_.skipFirmwareCheck = mine.skipFirmwareCheck;
     state_.makeShortcuts = mine.makeShortcuts;
+    state_.sounds = mine.sounds;
     state_.installTarget = mine.installTarget;
     state_.pairMessages = mine.pairMessages;
   }
@@ -1048,6 +1058,9 @@ std::string Application::selectedName() const {
 }
 void Application::action(Action a) {
   poll();
+  if (a == Action::Up || a == Action::Down || a == Action::Left || a == Action::Right || a == Action::Previous ||
+      a == Action::Next)
+    sounds_.play(Cue::Move);
   // A button brings the view back to the cursor. Text read by finger stays
   // where it was read to: its scroll steps take the glide's place.
   if (glide_.active && glide_.id == "description")
@@ -1537,6 +1550,11 @@ void Application::action(Action a) {
       case 5: toggleInstallCheck(state_.skipSignatureCheck); break;
       case 6: toggleInstallCheck(state_.skipFirmwareCheck); break;
       case 7: toggleInstallCheck(state_.makeShortcuts); break;
+      case 9:
+        toggleInstallCheck(state_.sounds);
+        sounds_.setOn(state_.sounds);
+        sounds_.play(Cue::Add); // turned on: heard at once
+        break;
       case 8:
         bugAsk_ = true;
         bugMessage_.clear();
@@ -1850,6 +1868,9 @@ float Application::statusBar() {
 }
 void Application::render() {
   poll();
+  // An alert that comes up says so once with the error cue.
+  if (alert_.empty()) alertHeard_ = false;
+  else if (!std::exchange(alertHeard_, true)) sounds_.play(Cue::Error);
   hits_.clear();
   glideAreas_.clear();
   glideStep();
@@ -2274,6 +2295,7 @@ Error Application::startInstall(const std::vector<Item> &files, const std::strin
   const bool waits = downloadRunning();
   if (auto error = launchQueued())
     return error;
+  sounds_.play(Cue::Add);
   message(waits ? tr("Added to the download queue.") : tr("Download started."));
   return {};
 }
@@ -2333,8 +2355,10 @@ bool Application::queueJob(const std::string &kind, const std::string &name, con
   const bool waits = downloadRunning() || installQueue_.size() > 1;
   if (auto error = launchQueued())
     alert_ = error.message;
-  else
+  else {
+    sounds_.play(Cue::Add);
     message(waits ? tr("Added to the download queue.") : tr("Download started."));
+  }
   return true;
 }
 void Application::queuePatchJobs(const std::vector<UserPatch> &patches, int group) {

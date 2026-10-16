@@ -180,6 +180,7 @@ State fromRows(const DownloadStore::StateRows& rows) {
     state.skipSignatureCheck = setting("ignoreSignature", "1") == "1";
     state.skipFirmwareCheck = setting("ignoreFirmware", "1") == "1";
     state.makeShortcuts = setting("makeShortcuts", "1") == "1";
+    state.sounds = setting("sounds", "1") == "1";
     state.queueJson = setting(PendingSetting, "[]");
     state.pairMessages = rows.notes;
     for (const auto& [at, value] : rows.credentials) {
@@ -198,7 +199,8 @@ DownloadStore::StateRows toRows(const State& given, const DeviceIdentity& id) {
                      {"lastScreen", state.lastScreen},
                      {"ignoreSignature", flag(state.skipSignatureCheck)},
                      {"ignoreFirmware", flag(state.skipFirmwareCheck)},
-                     {"makeShortcuts", flag(state.makeShortcuts)}};
+                     {"makeShortcuts", flag(state.makeShortcuts)},
+                     {"sounds", flag(state.sounds)}};
     if (state.queueJson != "[]") rows.settings[PendingSetting] = state.queueJson;
     rows.notes = state.pairMessages;
     rows.credentials[{DeviceKind, ""}] = state.deviceKey;
