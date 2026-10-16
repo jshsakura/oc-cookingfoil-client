@@ -735,6 +735,9 @@ private:
   UserPatch patchQueueNow_; // the queued patch the worker has
   void gallery();
   int screenshotStrip(int y);
+  std::string shopAddress(const std::string &url) const;
+  float chipRow(const std::string &title, const std::vector<std::string> &labels, float y);
+  std::string homebrewNotesOf_, homebrewNotes_; // the app whose notes homebrewNotes_ holds, as plain text
   std::string galleryName() const;
   void downloads();
   void updates();

@@ -6,6 +6,8 @@
 #include "core/I18n.hpp"
 #include "platform/Shortcut.hpp"
 #include "core/HomebrewCard.hpp"
+#include "install/Installer.hpp"
+#include "platform/Storage.hpp"
 #include <algorithm>
 #include <cmath>
 namespace foil::ui {
@@ -146,6 +148,7 @@ void Application::homebrewDetail() {
   struct Fact {
     int icon;
     std::string label, value;
+    SDL_Color color = Ink;
   };
   std::vector<Fact> facts;
   if (!app.cardOnly && !app.version.empty()) facts.push_back({19, tr("Latest version"), "v" + app.version});
@@ -155,6 +158,19 @@ void Application::homebrewDetail() {
   if (!app.releasedAt.empty()) facts.push_back({11, tr("Released"), dayLabel(app.releasedAt)});
   facts.push_back({16, tr("Type|homebrew"), app.kind == homebrew::Kind::Port ? tr("Ports") : tr("Tools")});
   if (app.title) facts.push_back({26, tr("Title ID"), app.titleId});
+  if (!app.requiredFirmware.empty()) {
+    // A title the console's firmware is too old for says so, as a game does.
+    Item need;
+    need.requiredFirmware = app.requiredFirmware;
+    const auto console = platform::firmwareVersion();
+    if (!install::missingFirmware({need}, console).empty())
+      facts.push_back({27, tr("Firmware"), trf("{0}+ · console {1}", {app.requiredFirmware, console}), Bad});
+    else
+      facts.push_back({27, tr("Firmware"), app.requiredFirmware});
+  }
+  if (app.stars >= 0) facts.push_back({25, tr("GitHub stars"), std::to_string(app.stars)});
+  if (!app.license.empty()) facts.push_back({16, tr("License"), app.license});
+  if (!app.updatedAt.empty()) facts.push_back({11, tr("Last updated"), dayLabel(app.updatedAt)});
   constexpr float Left = 40, Width = 750, Cell = Width / 3, RowHeight = 66;
   const int rows = int((facts.size() + 2) / 3);
   const auto file = homebrewFile(app);
@@ -164,7 +180,7 @@ void Application::homebrewDetail() {
     const float x = Left + 20 + (n % 3) * Cell, top = y + 16 + (n / 3) * RowHeight;
     paint_.icon(facts[n].icon, x, top + 1, Secondary, 16);
     paint_.fonts.middle(facts[n].label, x + 22, top + 9, 15, Secondary);
-    paint_.fonts.text(facts[n].value, x, top + 24, 18, Ink, true, Cell - 30);
+    paint_.fonts.text(facts[n].value, x, top + 24, 18, facts[n].color, true, Cell - 30);
   }
   if (pathRow > 0) {
     const float top = y + 16 + rows * RowHeight;
@@ -175,7 +191,22 @@ void Application::homebrewDetail() {
     paint_.fonts.middle(file, Left + 42 + labelW, top + 17, 16, Ink, false, Width - 82 - labelW);
   }
   y += int(rows * RowHeight + 24 + pathRow + 22);
+  std::vector<std::string> languages;
+  for (const auto &code : app.languages)
+    if (const auto name = languageLabel(code); std::find(languages.begin(), languages.end(), name) == languages.end())
+      languages.push_back(name);
+  y = int(chipRow(tr("Languages"), languages, float(y)));
   y = screenshotStrip(y);
+  // The release's notes, as plain text (made once per app).
+  if (homebrewNotesOf_ != app.id) {
+    homebrewNotesOf_ = app.id;
+    homebrewNotes_ = homebrew::plainNotes(app.releaseNotes);
+  }
+  if (!homebrewNotes_.empty()) {
+    paint_.fonts.text(tr("Release notes"), 40, y, 20, Ink, true);
+    y += 40;
+    y += int(paint_.fonts.wrapped(homebrewNotes_, 40, y, 17, Secondary, 750, 40, false, 1.5f)) + 24;
+  }
   descriptionHeight_ = std::max(0, y + offset - (BandBottom - Pad));
   {
     SDL_Rect full{0, 0, 1280, 660};

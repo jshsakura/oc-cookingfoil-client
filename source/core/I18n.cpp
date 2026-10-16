@@ -68,6 +68,17 @@ const char *languageCode(Language language) {
   }
   return "ko";
 }
+std::string languageLabel(const std::string &code) {
+  // Built per call so the names follow the interface language.
+  const std::pair<const char *, const char *> names[] = {
+      {"ko", tr("Korean")}, {"en", tr("English")}, {"ja", tr("Japanese")}, {"zh", tr("Chinese")},
+      {"fr", tr("French")}, {"de", tr("German")}, {"es", tr("Spanish")}, {"it", tr("Italian")},
+      {"ru", tr("Russian")}, {"pt", tr("Portuguese")}, {"nl", tr("Dutch")}};
+  for (const auto &[key, name] : names)
+    if (code.rfind(key, 0) == 0)
+      return name;
+  return code;
+}
 const char *languageName(Language language) {
   switch (language) {
   case Language::English: return "English";

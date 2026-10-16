@@ -8,17 +8,6 @@
 #include <optional>
 namespace foil::ui {
 namespace {
-std::string languageName(const std::string &code) {
-  // Built per call so the names follow the interface language.
-  const std::pair<const char *, const char *> names[] = {
-      {"ko", tr("Korean")}, {"en", tr("English")}, {"ja", tr("Japanese")}, {"zh", tr("Chinese")},
-      {"fr", tr("French")}, {"de", tr("German")}, {"es", tr("Spanish")}, {"it", tr("Italian")},
-      {"ru", tr("Russian")}, {"pt", tr("Portuguese")}, {"nl", tr("Dutch")}};
-  for (const auto &[key, name] : names)
-    if (code.rfind(key, 0) == 0)
-      return name;
-  return code;
-}
 // 1234 -> "1,234".
 std::string countText(int count) {
   auto text = std::to_string(count);
@@ -145,6 +134,8 @@ void Application::detail() {
       return;
     x += paint_.pill(text, x, Top + 100, true, 17) + 10;
   };
+  if (item.requiredPatches || (g.base && g.base->requiredPatches))
+    pill(tr("Required patch"));
   const auto &languages = item.languages;
   if (std::find(languages.begin(), languages.end(), "ko") != languages.end())
     pill(tr("Korean"));
@@ -368,6 +359,25 @@ void Application::detail() {
 }
 // Facts as a labeled grid, then languages, genres and contents as chips.
 // Returns the y below the last block.
+// A titled row of chips (languages, genres) in the left column; y below it.
+float Application::chipRow(const std::string &title, const std::vector<std::string> &labels, float y) {
+  constexpr float Left = 40, Width = 750;
+  if (labels.empty())
+    return y;
+  paint_.fonts.text(title, Left, y, 18, Ink, true);
+  float x = Left + 110;
+  for (const auto &label : labels) {
+    const float w = paint_.fonts.measure(label, 16, true) + 24;
+    if (x + w > Left + Width) {
+      x = Left + 110;
+      y += 38;
+    }
+    paint_.rect(x, y - 3, w, 30, Surface, 15);
+    paint_.fonts.middle(label, x + 12, y + 12, 16, Ink, true);
+    x += w + 8;
+  }
+  return y + 46;
+}
 float Application::infoCard(const Group &g, const std::string &publisher, float y) {
   const auto &item = g.representative;
   // The base file chosen in 설치할 항목, which may not be the smallest.
@@ -450,26 +460,10 @@ float Application::infoCard(const Group &g, const std::string &publisher, float 
     paint_.fonts.text(facts[n].value, x, top + 24, 18, facts[n].color, true, Cell - 30);
   }
   y += rows * RowHeight + 24 + 22;
-  auto chips = [&](const std::string &title, const std::vector<std::string> &labels) {
-    if (labels.empty())
-      return;
-    paint_.fonts.text(title, Left, y, 18, Ink, true);
-    float x = Left + 110;
-    for (const auto &label : labels) {
-      const float w = paint_.fonts.measure(label, 16, true) + 24;
-      if (x + w > Left + Width) {
-        x = Left + 110;
-        y += 38;
-      }
-      paint_.rect(x, y - 3, w, 30, Surface, 15);
-      paint_.fonts.middle(label, x + 12, y + 12, 16, Ink, true);
-      x += w + 8;
-    }
-    y += 46;
-  };
+  auto chips = [&](const std::string &title, const std::vector<std::string> &labels) { y = chipRow(title, labels, y); };
   std::vector<std::string> languages;
   for (const auto &code : item.languages) {
-    const auto name = languageName(code);
+    const auto name = languageLabel(code);
     if (std::find(languages.begin(), languages.end(), name) == languages.end())
       languages.push_back(name);
   }

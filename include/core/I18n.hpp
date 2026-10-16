@@ -16,6 +16,9 @@ inline const char *languageCode() { return languageCode(language()); }
 // The language's own name, as a picker shows it (한국어, English, 日本語, 中文).
 const char *languageName(Language language);
 Language languageFromCode(const std::string &code, Language fallback);
+// A content language code ("ko", "en-US", "zh-TW") as the interface names
+// it (한국어, 영어, 중국어); one it does not know comes back as it is.
+std::string languageLabel(const std::string &code);
 
 // Screen text: the English key in, the current language out. "Name|sort":
 // the part after | only tells apart keys that read the same in English;

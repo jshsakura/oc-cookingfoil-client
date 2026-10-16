@@ -580,6 +580,20 @@ int runPatchTests() {
       CHECK(!list[0].required && !list[2].required);
     }
   }
+  // A patch's own pictures: full addresses or shop paths, at most 8
+  // screenshots; anything else is left out.
+  {
+    const auto list = foil::net::parsePatches(std::string(R"({"patches":[
+      {"id":"p-1","title_id":"01001730144DA000","icon_url":"/api/patches/p-1/icon?v=2","banner_url":"javascript:x",
+       "screenshots":["/s/1?v=1","https://cdn.example/2.jpg",3,"ftp://x","/4","/5","/6","/7","/8","/9"]},
+      {"id":"p-2","title_id":"01001730144DA000","icon_url":null,"banner_url":"https://cdn.example/b.jpg"}]})"));
+    CHECK(list.size() == 2);
+    if (list.size() == 2) {
+      CHECK(list[0].iconUrl == "/api/patches/p-1/icon?v=2" && list[0].bannerUrl.empty());
+      CHECK(list[0].screenshots.size() == 8 && list[0].screenshots[1] == "https://cdn.example/2.jpg");
+      CHECK(list[1].iconUrl.empty() && list[1].bannerUrl == "https://cdn.example/b.jpg" && list[1].screenshots.empty());
+    }
+  }
   // An app's patch: no Title ID, its app's folder instead. Entries that name
   // neither, or an app folder that is not one safe name, are left out.
   {

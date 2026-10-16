@@ -362,6 +362,11 @@ void Application::patchAction(Action a) {
       managingPatch_ = false;
       return;
     }
+    if (a == Action::Preview && !picked->patch.screenshots.empty()) {
+      galleryOpen_ = true;
+      screenshot_ = 0;
+      return;
+    }
     const auto choices = patchChoices(*picked, missingFiles(patchHealth_, picked->patch.id));
     if (a == Action::Up)
       patchMenuRow_ = std::max(0, patchMenuRow_ - 1);
@@ -459,7 +464,7 @@ void Application::patchGame(const UserPatch &patch, std::string &name, std::stri
       name = patch.gameNames[k];
   }
   if (icon.empty() && !patch.gameIcon.empty())
-    icon = patch.gameIcon[0] == '/' && session_ ? session_->server().url + patch.gameIcon : patch.gameIcon;
+    icon = shopAddress(patch.gameIcon);
   if (name.empty())
     name = patch.titleId;
 }
@@ -871,6 +876,7 @@ void Application::patchDialog() {
   if (managingPatch_) {
     if (pickingPatch_) paint_.rect(0, 0, 1280, 720, {0, 0, 0, 120});
     patchMenu(row);
+    if (galleryOpen_) gallery();
   }
   if (!confirmPatchRemove_)
     return;
@@ -899,7 +905,18 @@ void Application::patchMenu(const PatchRow &row) {
   const float gameH = paint_.fonts.wrapped(row.game, -10000, -10000, 18, Ink, nameW, 2, true);
   const float nameH = paint_.fonts.wrapped(row.patch.name, -10000, -10000, 16, Secondary, nameW, 2);
   const float head = std::max(Icon, gameH + 4 + nameH + 10 + 26);
-  const float fixed = 24 + head + 16 + 8 + choices.size() * (ChoiceHeight + ChoiceGap) + 14;
+  // Its screenshots, a row of three under the description; ZR or a tap
+  // opens them large.
+  std::vector<std::string> shots;
+  for (const auto &shot : row.patch.screenshots) shots.push_back(shopAddress(shot));
+  if (detail_.screenshots != shots) {
+    detail_.screenshots = shots;
+    galleryOpen_ = false;
+    screenshot_ = 0;
+  }
+  constexpr float ShotH = 112, ShotGap = 12;
+  const float shotRow = shots.empty() ? 0 : ShotH + 16;
+  const float fixed = 24 + head + 16 + 8 + shotRow + choices.size() * (ChoiceHeight + ChoiceGap) + 14;
   const int room = std::max(2, int((720 - 48 - 60 - 60 - fixed) / (17 * 1.3f)));
   const float describedHeight =
       described ? paint_.fonts.wrapped(row.patch.description, -10000, -10000, 17, Secondary, Width - 64, room) + 10 : 0;
@@ -907,7 +924,9 @@ void Application::patchMenu(const PatchRow &row) {
   const auto body = modal(Width, bodyHeight, tr("Details"), tr("Close"), "", "", 32);
   const float x = body.x + 32, w = body.w - 64, textX = x + Icon + 20;
   float y = body.y + 24;
-  cover(row.icon, x, y, int(Icon), false, row.game, !row.patch.homebrewApp.empty());
+  // The patch's own icon when the server has one, else its game's.
+  cover(row.patch.iconUrl.empty() ? row.icon : shopAddress(row.patch.iconUrl), x, y, int(Icon), false, row.game,
+        !row.patch.homebrewApp.empty());
   paint_.fonts.wrapped(row.game, textX, y, 18, Ink, nameW, 2, true);
   const float nameY = y + gameH + 4;
   paint_.fonts.wrapped(row.patch.name, textX, nameY, 16, Secondary, nameW, 2);
@@ -931,6 +950,22 @@ void Application::patchMenu(const PatchRow &row) {
     y += describedHeight;
   }
   y += 8;
+  const float shotW = (w - 2 * ShotGap) / 3;
+  for (size_t i = 0; i < shots.size() && i < 3; ++i) {
+    const float sx = x + i * (shotW + ShotGap);
+    hit(sx, y, shotW, ShotH, [this, i] {
+      galleryOpen_ = true;
+      screenshot_ = i;
+    });
+    const auto thumb = thumbnailUrl(shots[i]);
+    if (images_->failed(thumb)) {
+      paint_.rect(sx, y, shotW, ShotH, Line, 10);
+      continue;
+    }
+    if (!images_->loaded(thumb)) paint_.skeleton(sx, y, shotW, ShotH, 10);
+    images_->draw(thumb, sx, y, int(shotW), int(ShotH), 10);
+  }
+  y += shotRow;
   for (int i = 0; i < int(choices.size()); ++i) {
     hit(x, y, w, ChoiceHeight, [this, i] {
       patchMenuRow_ = i;

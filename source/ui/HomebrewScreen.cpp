@@ -246,6 +246,7 @@ bool Application::getHomebrew(const homebrew::App &app) {
     file.size = app.size;
     file.versionName = app.version;
     file.format = "nsp"; // its address ends in /download
+    file.requiredFirmware = app.requiredFirmware; // checked as a game's is
     if (auto error = startInstall({file}, app.name, app.iconUrl, installTarget())) {
       alertTitle_ = tr("Cannot download this app");
       alert_ = error.message;

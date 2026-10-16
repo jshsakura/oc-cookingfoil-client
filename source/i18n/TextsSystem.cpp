@@ -94,6 +94,8 @@ const Translation rows[] = {
     {"Running in applet mode", "애플릿 모드로 실행했습니다", "アプレットモードで起動しました", "以小程序模式运行"},
     {"Opened from the Album there is little memory, so big installs can be slow or fail. Launch a game while holding R to open in application mode.", "앨범에서 열면 메모리가 적어 큰 게임 설치가 느리거나 실패할 수 있습니다. 게임을 R 버튼을 누른 채 실행하면 애플리케이션 모드로 열립니다.", "アルバムから開くとメモリが少なく、大きなゲームのインストールが遅くなったり失敗したりすることがあります。Rボタンを押しながらゲームを起動するとアプリケーションモードで開きます。", "从相册打开时内存较少，大型游戏的安装可能很慢或失败。按住 R 键启动游戏即可以应用程序模式打开。"},
     {"Applet mode", "애플릿 모드", "アプレットモード", "小程序模式"},
+    {"Screen stays on", "화면 꺼짐 방지", "画面オフ防止", "防止熄屏"},
+    {"Downloads go on even after you go to the HOME Menu.", "HOME 메뉴로 나가도 다운로드는 계속됩니다.", "HOME メニューに戻ってもダウンロードは続きます。", "返回 HOME 菜单后下载仍会继续。"},
     {"Could not open the save.", "세이브를 열지 못했습니다.", "セーブを開けませんでした。", "无法打开存档。"},
     {"Launch a game while holding R and try again in application mode.", "게임을 R 버튼을 누른 채 실행해 애플리케이션 모드에서 다시 시도합니다.", "Rボタンを押しながらゲームを起動し、アプリケーションモードで再試行します。", "按住 R 键启动游戏，在应用程序模式下重试。"},
     {"Could not save the backup details.", "백업 정보를 저장하지 못했습니다.", "バックアップ情報を保存できませんでした。", "无法保存备份信息。"},

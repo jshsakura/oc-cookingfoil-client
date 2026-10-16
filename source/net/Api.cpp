@@ -537,6 +537,13 @@ std::vector<UserPatch> parsePatches(json_object* array) {
                 auto* kind = json_object_array_get_idx(kinds, k);
                 if (json_object_is_type(kind, json_type_string)) p.kinds.emplace_back(json_object_get_string(kind));
             }
+        const auto picture = [](std::string url) { return isHttp(url) || url.rfind("/", 0) == 0 ? url : std::string(); };
+        p.iconUrl = picture(stringField(object, "icon_url"));
+        p.bannerUrl = picture(stringField(object, "banner_url"));
+        if (auto* shots = field(object, "screenshots"); json_object_is_type(shots, json_type_array))
+            for (size_t k = 0; k < json_object_array_length(shots) && p.screenshots.size() < 8; ++k)
+                if (auto* shot = json_object_array_get_idx(shots, k); json_object_is_type(shot, json_type_string))
+                    if (auto url = picture(json_object_get_string(shot)); !url.empty()) p.screenshots.push_back(std::move(url));
         out.push_back(std::move(p));
     }
     return out;
@@ -638,6 +645,7 @@ bool parseItem(json_object* object, Item& item) {
     item.scoreLabel = stringField(object, "score_label");
     item.scoreSource = stringField(object, "score_source");
     item.patches = int(std::min<uint64_t>(positive(object, "patches"), 999));
+    item.requiredPatches = int(std::min<uint64_t>(positive(object, "required_patches"), 999));
     if (auto* icons = field(object, "icons"); json_object_is_type(icons, json_type_object)) {
         static const char* codes[] = {"ko", "en", "ja", "zh"};
         for (int k = 0; k < 4; ++k)

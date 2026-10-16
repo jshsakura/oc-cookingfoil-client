@@ -27,6 +27,11 @@ struct UserPatch {
   // shop itself does not list. Names are ko, en, ja, zh; any may be empty.
   std::string gameName, gameIcon;
   std::vector<std::string> gameNames;
+  // The patch's own pictures, full addresses or shop paths (made full when
+  // drawn, as gameIcon): an icon (empty: the game's), a wide picture and up
+  // to 8 screenshots.
+  std::string iconUrl, bannerUrl;
+  std::vector<std::string> screenshots;
 };
 // Whether a patch for titleId may write this SD-root relative path. Only the
 // game's own contents folder, exefs patches and FPSLocker patches qualify.

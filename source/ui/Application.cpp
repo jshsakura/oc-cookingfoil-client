@@ -1056,7 +1056,7 @@ void Application::action(Action a) {
   unglide();
   if (cleanupBusy_) // the progress modal is up until it finishes
     return;
-  if (galleryOpen_ && fullPage()) {
+  if (galleryOpen_ && (fullPage() || (screen_ == Screen::Patches && managingPatch_))) {
     if (a == Action::Back) galleryOpen_ = false;
     else if (!detail_.screenshots.empty()) {
       const auto count = detail_.screenshots.size();
@@ -1630,6 +1630,8 @@ void Application::card(const Group &g, float x, float y, bool selected,
     else paint_.fonts.text(g.representative.name, x, y + 158, 18, Ink, false, 150);
     // Badges in priority order; one that would spill past the card is left out.
     std::vector<std::string> labels;
+    if (g.representative.requiredPatches || (g.base && g.base->requiredPatches))
+      labels.push_back(tr("Required patch")); // it does not run without one
     if (g.base && !g.base->priceDiscount.empty())
       labels.push_back(tr("eShop sale"));
     if (g.update)
@@ -1835,6 +1837,15 @@ float Application::statusBar() {
     x += w + 10;
   }
 #endif
+  // On 다운로드 while something comes down: the screen does not dim or
+  // sleep (platform::keepAwake), said as the applet mode is.
+  if (screen_ == Screen::Downloads && awake_) {
+    const auto awake = tr("Screen stays on");
+    const float w = paint_.fonts.measure(awake, 15, true) + 18;
+    paint_.rect(x - 8, Mid - 13, w, 26, {214, 241, 223, 255}, 8);
+    paint_.fonts.middle(awake, x + 1, Mid, 15, Good, true);
+    x += w + 10;
+  }
   return x;
 }
 void Application::render() {
@@ -1987,6 +1998,8 @@ void Application::render() {
     footer(managedGame_ ? std::vector<std::pair<std::string, std::string>>{{"A", tr("Select")}, {"B", tr("Back")}}
            : installed_.games.empty() ? std::vector<std::pair<std::string, std::string>>{{"B", tr("Back")}}
                                       : std::vector<std::pair<std::string, std::string>>{{"A", tr("Manage")}, {"B", tr("Back")}});
+  else if (screen_ == Screen::Patches && managingPatch_ && galleryOpen_)
+    footer({{"L R", tr("Prev / next photo")}, {"B", tr("Close")}});
   else if (screen_ == Screen::Patches)
     // L R and Y are header buttons, as on 설치된 게임.
     footer(patchRows().empty() || sidebar_

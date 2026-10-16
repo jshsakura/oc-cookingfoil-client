@@ -52,6 +52,25 @@ int runHomebrewTests() {
     }
     CHECK(apps.size() == 1 && apps[0].bannerUrl.empty() && apps[0].screenshots.empty());
   }
+  // What the app's record and repository say of it.
+  {
+    auto e = entry;
+    e.replace(e.rfind('}'), 1, R"(,"languages":["en-US","ko","ja"],"required_firmware":"16.0.0","stars":1234,)"
+                               R"("license":"MIT","updated_at":"2026-10-15T08:00:00Z","release_notes":"## New\n- one"})");
+    const auto got = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
+    CHECK(got.size() == 1);
+    if (!got.empty()) {
+      CHECK((got[0].languages == std::vector<std::string>{"en-US", "ko", "ja"}) && got[0].requiredFirmware == "16.0.0");
+      CHECK(got[0].stars == 1234 && got[0].license == "MIT" && got[0].updatedAt == "2026-10-15T08:00:00Z");
+      CHECK(got[0].releaseNotes == "## New\n- one");
+    }
+    CHECK(apps[0].stars == -1 && apps[0].languages.empty() && apps[0].releaseNotes.empty());
+  }
+  // Release notes read as plain text.
+  CHECK(plainNotes("## What's new\r\n\n\n- **Faster** list\n  * nested `code`\n\n---\n"
+                   "See [the wiki](https://example.com/w) <br>![shot](https://example.com/a.png)done") ==
+        "What's new\n\n• Faster list\n  • nested code\n\nSee the wiki done");
+  CHECK(plainNotes("").empty());
   // An app installed as a title: no SD path, files, zip or shortcut, and
   // never one naming a system title.
   {

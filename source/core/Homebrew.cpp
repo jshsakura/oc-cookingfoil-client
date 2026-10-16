@@ -75,6 +75,16 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
     a.kind = stringField(o, "kind") == "port" ? Kind::Port : Kind::Tool;
     a.bannerUrl = urlField(o, "banner_url", base);
     a.screenshots = urlList(o, "screenshots", base, 8);
+    if (auto *codes = field(o, "languages"); json_object_is_type(codes, json_type_array))
+      for (size_t k = 0; k < json_object_array_length(codes) && a.languages.size() < 32; ++k)
+        if (auto *code = json_object_array_get_idx(codes, k); json_object_is_type(code, json_type_string))
+          a.languages.emplace_back(json_object_get_string(code));
+    a.requiredFirmware = stringField(o, "required_firmware");
+    a.releaseNotes = stringField(o, "release_notes").substr(0, 6000);
+    a.license = stringField(o, "license");
+    a.updatedAt = stringField(o, "updated_at");
+    if (auto *stars = field(o, "stars"); json_object_is_type(stars, json_type_int))
+      a.stars = int(std::clamp<int64_t>(json_object_get_int64(stars), 0, INT32_MAX));
     if (stringField(o, "install_type") == "title") {
       // Installed as a game is: nothing on the SD card but the title. One
       // naming a system title is never offered.
@@ -202,6 +212,54 @@ std::string serialize(const App &a) {
     json_object_object_add(o.get(), "archive", archive);
   }
   return json_object_to_json_string_ext(o.get(), JSON_C_TO_STRING_PLAIN | JSON_C_TO_STRING_NOSLASHESCAPE);
+}
+std::string plainNotes(const std::string &markdown) {
+  std::string out;
+  size_t start = 0;
+  int blanks = 0;
+  while (start <= markdown.size()) {
+    const auto end = std::min(markdown.find('\n', start), markdown.size());
+    std::string line = markdown.substr(start, end - start);
+    start = end + 1;
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    // HTML tags (<br>, <img ...>, <details>) are not text.
+    for (size_t open; (open = line.find('<')) != std::string::npos;) {
+      const auto close = line.find('>', open);
+      if (close == std::string::npos) break;
+      line.erase(open, close - open + 1);
+    }
+    // ![alt](src) goes; [words](url) keeps its words.
+    for (size_t open; (open = line.find('[')) != std::string::npos;) {
+      const auto close = line.find("](", open);
+      const auto stop = close == std::string::npos ? std::string::npos : line.find(')', close);
+      if (stop == std::string::npos) break;
+      const bool image = open > 0 && line[open - 1] == '!';
+      const auto words = image ? std::string() : line.substr(open + 1, close - open - 1);
+      line.replace(image ? open - 1 : open, stop - open + 1 + (image ? 1 : 0), words);
+    }
+    const auto indent = line.find_first_not_of(" \t");
+    auto first = indent;
+    if (first == std::string::npos) {
+      if (!out.empty() && ++blanks == 1) out += "\n";
+      continue;
+    }
+    std::string body = line.substr(first);
+    const bool heading = body[0] == '#';
+    while (!body.empty() && (body[0] == '#' || body[0] == '>')) body.erase(0, 1);
+    if (body.size() > 1 && (body[0] == '-' || body[0] == '*' || body[0] == '+') && body[1] == ' ')
+      body = "• " + body.substr(2);
+    if (body.find_first_not_of("-*_= ") == std::string::npos) continue; // a rule
+    for (const char *mark : {"**", "__", "`"})
+      for (size_t at; (at = body.find(mark)) != std::string::npos;) body.erase(at, std::string(mark).size());
+    first = body.find_first_not_of(' ');
+    if (first == std::string::npos) continue;
+    if (heading && !out.empty() && blanks == 0) out += "\n";
+    const bool nested = indent >= 2 && body.compare(first, 4, "• ") == 0; // a list inside a list
+    out += (nested ? "  " : "") + body.substr(first) + "\n";
+    blanks = 0;
+  }
+  while (!out.empty() && out.back() == '\n') out.pop_back();
+  return out;
 }
 bool appFolderAllowed(const std::string &app) {
   if (app.empty() || app.size() > 64 || app.find("..") != std::string::npos) return false;

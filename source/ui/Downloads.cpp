@@ -1,6 +1,7 @@
 #include "ui/Application.hpp"
 #include "net/Socket.hpp"
 #include "net/Tuner.hpp"
+#include "platform/Storage.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -45,7 +46,11 @@ void Application::downloads() {
     if (!installQueue_.empty())
       runningList(90);
     else
-      notice(tr("Nothing is downloading."), tr("Pick items on a game's page, then press A to install."), 4);
+      notice(tr("Nothing is downloading."),
+             std::string(tr("Pick items on a game's page, then press A to install.")) +
+                 // As an application the queue goes on under the HOME Menu (platform::keepRunningInBackground).
+                 (platform::applicationMode() ? "\n" + std::string(tr("Downloads go on even after you go to the HOME Menu.")) : ""),
+             4);
     return;
   }
   topCard(card);

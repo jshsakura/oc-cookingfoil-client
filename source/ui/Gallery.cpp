@@ -27,9 +27,18 @@ int Application::screenshotStrip(int y) {
   }
   return y + 134;
 }
+// A shop path ("/api/…") made full against the server; a full address as it is.
+std::string Application::shopAddress(const std::string &url) const {
+  return !url.empty() && url[0] == '/' && session_ ? session_->server().url + url : url;
+}
 // Whose screenshots the gallery shows: the game, the RetroArch game or the app.
 std::string Application::galleryName() const {
   if (screen_ == Screen::RetroDetail) return retroPick_.name;
+  if (screen_ == Screen::Patches) {
+    const auto rows = patchRows();
+    const auto *row = pickedPatch(rows);
+    return row ? row->patch.name : std::string();
+  }
   if (screen_ == Screen::Homebrew) {
     const auto *app = homebrewPicked();
     return app ? app->name : std::string();

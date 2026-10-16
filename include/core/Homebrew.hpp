@@ -60,7 +60,18 @@ struct App {
   // (at most 8), as a game's page shows them.
   std::string bannerUrl;
   std::vector<std::string> screenshots;
+  // From the app's own record and its repository: the languages it speaks
+  // (content codes, "en-US"), the firmware a title needs ("16.0.0"), the
+  // release's notes (markdown, at most 6000 characters), stars (-1: not
+  // said), the licence (SPDX) and the repository's last push (ISO time).
+  std::vector<std::string> languages;
+  std::string requiredFirmware, releaseNotes, license, updatedAt;
+  int stars = -1;
 };
+// Release notes as plain text to read on the console: headings, emphasis,
+// code marks and HTML tags go, links keep their words, images go, list items
+// become "• ", and runs of blank lines become one.
+std::string plainNotes(const std::string &markdown);
 // GET /api/homebrew's list; entries missing what is needed, or with a file
 // name that could leave its folder, are left out.
 std::vector<App> parse(const std::string &json, const std::string &base);

@@ -26,6 +26,7 @@ struct Item {
     int score = 0, scoreCount = 0;
     Word scoreLabel, scoreSource;
     int patches = 0; // user patches the server holds for this game (feature user-patches)
+    int requiredPatches = 0; // of those, the ones the game does not run without
     // Store names per language (feature item-names): ko, en, ja, zh in that
     // order, empty when the server sends none. Left empty (no allocation)
     // for the many items without names.
