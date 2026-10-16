@@ -605,9 +605,9 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         if (paused() && !cancelled())
           continue; // read again after the pause
         const long code = c->status;
-        // The direct address failed (or wants a fresh token): asked again
-        // at once, from the same byte, without counting.
-        if (!cancelled() && afterDirectFailure(c->url, code, long(msg->data.result), c->token) != DirectStep::Other) {
+        // A 401 on the direct address a fresh token answers: asked again at
+        // once, from the same byte, without counting.
+        if (!cancelled() && afterDirectFailure(c->url, code, c->token) == DirectStep::Again) {
           if (!started) { // the first reply never came: the first request again
             conns.clear();
             contexts.clear();

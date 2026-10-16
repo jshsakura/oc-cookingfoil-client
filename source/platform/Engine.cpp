@@ -163,14 +163,12 @@ void nativeInstall(const Item &item, const std::string &target,
     c = std::tolower(static_cast<unsigned char>(c));
   // One line in the log per file once it is in: size, time, average speed,
   // connections, compressed or not, and where from (the server's direct
-  // address, or its own; "direct, then server" when the direct one failed
-  // on the way).
+  // address, or its own).
   struct Summary {
     std::string name;
     int connections;
     bool compressed;
     std::string route;
-    unsigned leaves = foil::net::directLeaves();
     uint64_t bytes = foil::net::receivedBytes(), tick = svcGetSystemTick();
     double held = foil::net::cardHeldSeconds();
     ~Summary() {
@@ -178,11 +176,10 @@ void nativeInstall(const Item &item, const std::string &target,
       const double mb = double(foil::net::receivedBytes() - bytes) / (1024 * 1024);
       // How long of it the network waited on the card and the install.
       const double waited = foil::net::cardHeldSeconds() - held;
-      const auto from = route == "direct" && foil::net::directLeaves() != leaves ? std::string("direct, then server") : route;
       char line[240];
       std::snprintf(line, sizeof(line), "download %.1f MB in %.0f s = %.1f MB/s, %d connections, %s, %s, waited on the card %.0f s: ",
                     mb, seconds, seconds > 0 ? mb / seconds : 0, connections, compressed ? "compressed" : "plain",
-                    from.c_str(), waited);
+                    route.c_str(), waited);
       logLine(line + name);
     }
   } summary{item.name, current.connections,

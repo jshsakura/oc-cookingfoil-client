@@ -89,8 +89,9 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
       take(last); // a reply without a body
     if (refused)
       return last;
+    // A 401 on the direct address a fresh token answers: at once.
     if ((!last.error.empty() || verdict == RangeReply::Fail) && !cancelled(cancel) &&
-        afterDirectFailure(requestUrl, last.status, last.curl, sent) != DirectStep::Other) {
+        afterDirectFailure(requestUrl, last.status, sent) == DirectStep::Again) {
       --tries;
       now = true;
       continue;

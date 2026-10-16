@@ -52,16 +52,16 @@
                      drop(*part);
                  } else if (Paused() && !Stopping()) {
                      drop(*part); // asked again after the pause
-+                } else if (!Stopping() && foil::net::afterDirectFailure(part->url, code, long(msg->data.result), part->token) !=
-+                                              foil::net::DirectStep::Other) {
-+                    // CookingFoil: the direct address failed (or wants a fresh
-+                    // token): at once, from the same byte, not as a failure.
++                } else if (!Stopping() && foil::net::afterDirectFailure(part->url, code, part->token) ==
++                                              foil::net::DirectStep::Again) {
++                    // CookingFoil: a 401 on the direct address a fresh token
++                    // answers: at once, from the same byte, not as a failure.
 +                    drop(*part);
 +                    part->retryAt = 0;
                  } else if (code == 401 && !Stopping() && part->renewals < 3 && foil::net::renewDownloadToken(part->token)) {
                      // CookingFoil: the download token ran out: at once with a
                      // fresh one, from the same byte, not as a failure.
-@@ -787,9 +802,21 @@
+@@ -787,9 +802,20 @@
                      if (remaining == 0)
                          return 0;
  
@@ -71,11 +71,10 @@
 +                    const int rc = StreamHttpRangeForUrl(sentUrl, currentOffset, remaining, trackingFunc);
                      if (rc == 0)
                          return 0;
-+                    // CookingFoil: it failed there (or wants a fresh token): at
-+                    // once, from the same byte, without spending a retry.
-+                    if (rc != 1999 && !Stopping() &&
-+                        foil::net::afterDirectFailure(sentUrl, rc < 1000 ? rc : 0, rc >= 1000 ? rc - 1000 : 0, sentToken) !=
-+                            foil::net::DirectStep::Other)
++                    // CookingFoil: a 401 on the direct address a fresh token
++                    // answers: at once, from the same byte, without spending a retry.
++                    if (rc == 401 && !Stopping() &&
++                        foil::net::afterDirectFailure(sentUrl, rc, sentToken) == foil::net::DirectStep::Again)
 +                    {
 +                        attempt--;
 +                        waitNs = 1;

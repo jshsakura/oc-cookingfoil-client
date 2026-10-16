@@ -8,15 +8,16 @@
 #include <poll.h>
 #include <unistd.h>
 #include <atomic>
+#include <chrono>
 #include <cstring>
 #include <mutex>
 #include <thread>
 #include <utility>
 #include <vector>
 // A download from the server's own address goes to its direct address
-// (X-CookingFoil-Download-Origin) with the download token alone; the direct
-// address failing sends it to the server's own at once, from the same byte,
-// and the direct one rests for the run's next ten minutes.
+// (X-CookingFoil-Download-Origin) with the download token alone, and only
+// there: the direct address failing fails the download; it never goes to
+// the public address instead (that one may be metered).
 namespace {
 // Serves one file with ranges (206) over plain HTTP, keeping each request.
 struct Files {
@@ -116,20 +117,15 @@ int runDirectTests() {
     const auto direct = routeDownload(game);
     CHECK(headersFor(direct, keys) == std::vector<std::string>{"Authorization: Bearer first"});
     CHECK(headersFor(game, keys) == keys);
-    // Failures the caller handles as before; ones on the server's address too.
-    CHECK(afterDirectFailure(direct, 404, 0, "first") == DirectStep::Other);
-    CHECK(afterDirectFailure(direct, 206, 56, "first") == DirectStep::Other); // a drop mid-transfer
-    CHECK(afterDirectFailure(game, 503, 0, "first") == DirectStep::Other);
+    // Failures other than a 401 are the caller's, as always; the route stays.
+    CHECK(afterDirectFailure(direct, 404, "first") == DirectStep::Other);
+    CHECK(afterDirectFailure(direct, 502, "first") == DirectStep::Other);
+    CHECK(afterDirectFailure(direct, 0, "first") == DirectStep::Other);
+    CHECK(afterDirectFailure(game, 401, "first") == DirectStep::Other);
     CHECK(routeName(game) == "direct");
-    // A 5xx leaves it: the server's own address for the rest of the rest.
-    const auto before = directLeaves();
-    CHECK(afterDirectFailure(direct, 502, 0, "first") == DirectStep::Leave);
-    CHECK(routeDownload(game) == game && directLeaves() == before + 1);
-    CHECK(afterDirectFailure(direct, 0, 7, "first") == DirectStep::Leave); // another part: still left
-    CHECK(directLeaves() == before + 1); // counted once
   }
   {
-    // 401: a fresh token once; refused with it too, the direct address is left.
+    // 401: a fresh token once; refused with it too, the caller's (a failure).
     forgetDirect();
     setShopOrigin(shop);
     int asked = 0;
@@ -139,12 +135,12 @@ int runDirectTests() {
       return 200L;
     });
     const auto direct = routeDownload(game);
-    CHECK(afterDirectFailure(direct, 401, 0, "first") == DirectStep::Again);
+    CHECK(afterDirectFailure(direct, 401, "first") == DirectStep::Again);
     CHECK(asked == 1 && downloadToken() == "second");
-    CHECK(afterDirectFailure(direct, 401, 0, "first") == DirectStep::Again); // a part sent with the old one
+    CHECK(afterDirectFailure(direct, 401, "first") == DirectStep::Again); // a part sent with the old one
     CHECK(asked == 1);
-    CHECK(afterDirectFailure(direct, 401, 0, "second") == DirectStep::Leave);
-    CHECK(routeDownload(game) == game);
+    CHECK(afterDirectFailure(direct, 401, "second") == DirectStep::Other);
+    CHECK(routeDownload(game) == direct); // still the only way
     setTokenRenewer(nullptr);
   }
   Files files;
@@ -153,12 +149,40 @@ int runDirectTests() {
   const std::string url = "http://127.0.0.1:" + std::to_string(files.port) + "/api/get/game.nsp?k=1";
   const std::vector<std::string> keys{"X-Access-Key: shop-key"};
   {
-    // The direct address refuses the connection: every part goes to the
-    // server's own at once, its keys with it, and the file comes whole.
+    // The direct address refuses the connection: it is asked again there
+    // (a dead one for minutes, as any server) until it fails or is
+    // cancelled, and nothing reaches the public address.
     forgetDirect();
     setShopOrigin("http://127.0.0.1:" + std::to_string(files.port));
     hear("X-CookingFoil-Download-Origin: https://127.0.0.1:1\r\n");
     CHECK(routeName(url) == "direct");
+    SegmentedOptions options;
+    options.connections = 2;
+    options.headers = keys;
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    options.cancelled = [until] { return std::chrono::steady_clock::now() > until; };
+    const auto result = segmentedFetch(
+        url, [](uint64_t) { return true; }, [](uint64_t, const char *, size_t) { return true; }, options);
+    CHECK(!result.ok && result.cancelled);
+    RangedSink sink;
+    std::string got;
+    sink.kept = [&] { return uint64_t(got.size()); };
+    sink.begin = [&](uint64_t from, const Response &) {
+      got.resize(size_t(from));
+      return true;
+    };
+    sink.data = [&](const char *data, size_t size) {
+      got.append(data, size);
+      return true;
+    };
+    CHECK(!rangedOk(rangedStream(url, keys, "", sink, nullptr)));
+    CHECK(files.take().empty());
+  }
+  {
+    // No direct address named: the server's own, with its keys.
+    forgetDirect();
+    forgetDownloadToken();
+    setShopOrigin("http://127.0.0.1:" + std::to_string(files.port));
     std::string got(files.body.size(), '\0');
     SegmentedOptions options;
     options.connections = 3;
@@ -172,34 +196,9 @@ int runDirectTests() {
         },
         options);
     CHECK(result.ok && got == files.body);
-    CHECK(routeName(url) == "server");
     const auto sent = files.take();
     CHECK(!sent.empty());
-    for (const auto &request : sent)
-      CHECK(has(request, "GET /api/get/game.nsp?k=1 ") && has(request, "X-Access-Key: shop-key") &&
-            !has(request, "Bearer"));
-  }
-  {
-    // The same for a one-connection download (homebrew, saves, the app).
-    forgetDirect();
-    setShopOrigin("http://127.0.0.1:" + std::to_string(files.port));
-    CHECK(routeName(url) == "direct");
-    std::string got;
-    RangedSink sink;
-    sink.kept = [&] { return uint64_t(got.size()); };
-    sink.begin = [&](uint64_t from, const Response &) {
-      got.resize(size_t(from));
-      return true;
-    };
-    sink.data = [&](const char *data, size_t size) {
-      got.append(data, size);
-      return true;
-    };
-    const auto reply = rangedStream(url, keys, "", sink, nullptr);
-    CHECK(rangedOk(reply) && got == files.body);
-    CHECK(routeName(url) == "server");
-    const auto sent = files.take();
-    CHECK(sent.size() == 1 && has(sent.front(), "X-Access-Key: shop-key"));
+    for (const auto &request : sent) CHECK(has(request, "X-Access-Key: shop-key") && !has(request, "Bearer"));
   }
   forgetDirect();
   forgetDownloadToken();
