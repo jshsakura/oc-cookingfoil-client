@@ -32,18 +32,21 @@ std::string memory() {
 #endif
   return "";
 }
+// Keeps the last KeptLogBytes, from a whole line.
+void trimLog(const std::string &path) {
+  std::error_code error;
+  auto text = readFile(path);
+  text.erase(0, text.size() - std::min<size_t>(text.size(), KeptLogBytes));
+  const auto line = text.find('\n');
+  if (line != std::string::npos) text.erase(0, line + 1);
+  std::string ignored;
+  if (!atomicWrite(path, text, ignored)) std::filesystem::remove(path, error);
+}
 } // namespace
 void openLog(const std::string &path) {
   std::lock_guard<std::mutex> lock(mutex);
   std::error_code error;
-  if (std::filesystem::file_size(path, error) > MaxLogBytes && !error) {
-    auto text = readFile(path);
-    text.erase(0, text.size() - std::min<size_t>(text.size(), KeptLogBytes));
-    const auto line = text.find('\n');
-    if (line != std::string::npos) text.erase(0, line + 1);
-    std::string ignored;
-    if (!atomicWrite(path, text, ignored)) std::filesystem::remove(path, error);
-  }
+  if (std::filesystem::file_size(path, error) > MaxLogBytes && !error) trimLog(path);
   makeDirectories(std::filesystem::path(std::filesystem::path(path).parent_path()).string());
   logPath = path;
 }
@@ -116,7 +119,11 @@ void logLine(const std::string &raw) {
     const auto now = std::time(nullptr);
     std::strftime(stamp, sizeof(stamp), "%m-%d %H:%M:%S", std::localtime(&now));
     std::fprintf(file, "%s %s%s\n", stamp, line.c_str(), memory().c_str());
+    const long size = std::ftell(file);
     std::fclose(file);
+    // A long session (or something logging in a loop) is cut back here too,
+    // not only at the next start: the log never grows past twice its size.
+    if (size > long(2 * MaxLogBytes)) trimLog(logPath);
   }
 }
 std::string logTail(size_t maxBytes) {

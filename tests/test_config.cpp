@@ -3,6 +3,7 @@
 #include "core/Config.hpp"
 #include "core/Json.hpp"
 #include <filesystem>
+#include "core/Log.hpp"
 #include <fstream>
 #include <unistd.h>
 int runConfigTests() {
@@ -113,6 +114,21 @@ int runConfigTests() {
         CHECK(!fresh.error && fresh.created && fresh.value.servers.empty());
         std::filesystem::remove_all(root);
     }
+    {
+    // A long session's log is cut back as it goes, not only at the next
+    // start: it never grows past twice its cap, and the newest lines stay.
+    char folder[] = "/tmp/cookingfoil-log-XXXXXX";
+    if (const char* dir = mkdtemp(folder)) {
+      const std::string path = std::string(dir) + "/log.txt";
+      foil::openLog(path);
+      const std::string filler(200, 'x');
+      for (int i = 0; i < 8000; ++i) foil::logLine("line " + std::to_string(i) + " " + filler);
+      CHECK(std::filesystem::file_size(path) <= 2 * 512 * 1024 + 4096);
+      CHECK(foil::readFile(path).find("line 7999 ") != std::string::npos);
+      foil::openLog(""); // later tests log nowhere, as before
+      std::filesystem::remove_all(dir);
+    }
+  }
     {
     // An unfinished install survives a round trip through state.json's queue.
     foil::PendingInstall pending{"Paper Moon", "https://x/icon", "nand", {}};

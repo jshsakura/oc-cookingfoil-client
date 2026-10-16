@@ -105,8 +105,13 @@ void saveInstalledCache(const std::string &language, const std::map<std::string,
     json_object_object_add(games, id.c_str(), entry);
   }
   json_object_object_add(root.get(), "games", games);
+  // Written only when it changed: every visit to 내 게임 or 세이브 reads the
+  // games again, and rewriting the same file each time only wears the card.
+  const std::string text = json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PLAIN);
+  const auto path = InstalledCache + "/index.json";
+  if (readFile(path) == text) return;
   std::string ignored;
-  atomicWrite(InstalledCache + "/index.json", json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PLAIN), ignored);
+  atomicWrite(path, text, ignored);
 }
 uint64_t currentApplication(Error &error) {
   auto rc = pmdmntInitialize();

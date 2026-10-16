@@ -354,8 +354,10 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
       logLine("download resumes at " + std::to_string(foil::net::SegmentPlan(options.resume).received() >> 20) +
               " MB: " + content);
     }
-  // Where it stands, every 10 s at most, once the bytes are on the card: each
-  // save rewrites the database file, so not more often than that. The last
+  // Where it stands, every 30 s at most, once the bytes are on the card: each
+  // save rewrites the database file whole, so not more often than that (a
+  // pause, HOME, sleep or leaving saves at once; only a power cut loses up
+  // to 30 s of it). The last
   // one heard is saved too when the download stops short.
   uint64_t savedTick = 0;
   Installer::ResumePoint latest;
@@ -380,7 +382,7 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
       }
       latest = {current.url, etag, total, plan};
       unsaved = true;
-      if (urgent || !savedTick || svcGetSystemTick() - savedTick >= 10ull * 19200000)
+      if (urgent || !savedTick || svcGetSystemTick() - savedTick >= 30ull * 19200000)
         save();
     };
   const auto result = foil::net::segmentedFetch(
