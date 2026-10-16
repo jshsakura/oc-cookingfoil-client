@@ -295,11 +295,15 @@ bool Application::open() {
   // popping up from part way: a short fill, then a moment full.
   constexpr uint32_t FillMs = 450, HoldMs = 250;
   const float from = progressShown;
+  // The last word changes each start, one of a few kitchen lines.
+  static const char *const Done[] = {"Well done!", "Golden brown, just right!", "Smells like butter!",
+                                     "Eat it while it's hot!"};
+  const std::string done = tr(Done[std::time(nullptr) % std::size(Done)]);
   const uint32_t fillFrom = SDL_GetTicks();
   for (;;) {
     const uint32_t gone = SDL_GetTicks() - fillFrom;
     const float t = std::min(1.f, gone / float(FillMs)), eased = 1 - (1 - t) * (1 - t);
-    paint_.splash(tr("Well done!"), from + (1 - from) * eased, seconds());
+    paint_.splash(done, from + (1 - from) * eased, seconds());
     if (!platform::serviceApplet()) {
       exitRequested_ = true;
       break;

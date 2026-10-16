@@ -137,7 +137,12 @@ const Translation rows[] = {
     {"Pausing. What came so far is kept.", "일시정지하는 중입니다. 받은 만큼은 남겨 둡니다.",
      "一時停止しています。ここまでの分は残ります。", "正在暂停。已下载的部分会保留。"},
     {"Cancelling.", "취소하는 중입니다.", "キャンセルしています。", "正在取消。"},
-    {"Well done!", "맛있게 잘 구워졌습니다!", "上手に焼けました！", "烤得恰到好处！"}, // the splash's last word, after Monster Hunter's roast
+    // The splash's last word, one of these at random (the first after Monster
+// Hunter's roast).
+    {"Well done!", "맛있게 잘 구워졌습니다!", "上手に焼けました！", "烤得恰到好处！"},
+    {"Golden brown, just right!", "노릇노릇, 딱 좋게 익었습니다!", "こんがり、ちょうどいい焼き加減！", "外焦里嫩，刚刚好！"},
+    {"Smells like butter!", "버터 향이 솔솔 납니다!", "バターのいい香りがします！", "闻到黄油香啦！"},
+    {"Eat it while it's hot!", "식기 전에 드세요!", "冷めないうちにどうぞ！", "趁热吃吧！"},
     {"Reading the app's records on the SD card.", "SD 카드에서 앱 기록을 읽고 있습니다.", "SDカードからアプリの記録を読み込んでいます。", "正在读取 SD 卡上的应用记录。"},
     {"If another CookingFoil is open, close it.", "다른 곳에서 CookingFoil이 열려 있다면 닫아 주세요.", "ほかでCookingFoilが開いている場合は閉じてください。", "如果其他地方还开着 CookingFoil，请将其关闭。"},
     {"The link key has expired or is not registered. Download the client again from the website.",
