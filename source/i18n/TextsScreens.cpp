@@ -498,6 +498,7 @@ const Translation rows[] = {
     {"Updating", "업데이트 중", "更新中", "正在更新"},
     {"Downloading", "받는 중", "ダウンロード中", "正在下载"},
     {"Downloading {0}", "다운로드 중 {0}", "ダウンロード中 {0}", "正在下载 {0}"},
+    {"Preparing|download", "준비 중", "準備中", "准备中"},
     {"Waiting to download", "다운로드 대기 중", "ダウンロード待ち", "等待下载"},
     {"Turning off", "끄는 중", "オフにしています", "正在关闭"},
     {"Turning on", "켜는 중", "オンにしています", "正在开启"},

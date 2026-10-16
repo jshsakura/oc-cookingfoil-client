@@ -350,6 +350,7 @@ public:
 
 private:
   void takeNetwork();
+  void onTheWayButton(float x, float w, bool downloading, double percent);
   // False when there was nothing new to write.
   bool keepResumeChanges();
   // Leaving the screen (HOME, sleep): a running download's place goes to

@@ -289,18 +289,7 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
   if (homebrewAskRow_ < 0 && panelFocus) paint_.ring(X, 568, W, 60, 14);
   double percent = 0;
   if (const int onTheWay = homebrewOnTheWay(app, percent)) {
-    const bool downloading = onTheWay == 2;
-    paint_.rect(X, 568, W, 60, downloading ? Ink : SDL_Color{228, 225, 218, 255}, 14);
-    if (downloading) {
-      constexpr float Inset = 18, Track = 5;
-      const float width = W - 2 * Inset;
-      paint_.rect(X + Inset, 568 + 60 - 11, width, Track, {70, 70, 76, 255}, Track / 2);
-      paint_.rect(X + Inset, 568 + 60 - 11, std::max(Track, width * float(percent) / 100), Track, Butter, Track / 2);
-    }
-    const auto label = downloading ? trf("Downloading {0}", {std::to_string(int(percent)) + "%"})
-                                   : std::string(tr("Waiting to download"));
-    paint_.fonts.middle(label, X + (W - paint_.fonts.measure(label, 21, true)) / 2, downloading ? 594 : 598, 21,
-                        downloading ? Surface : Secondary, true);
+    onTheWayButton(X, W, onTheWay == 2, percent);
   } else if (app.cardOnly) {
     paint_.rect(X, 568, W, 60, {228, 225, 218, 255}, 14);
     const std::string label = tr("Not on the server");

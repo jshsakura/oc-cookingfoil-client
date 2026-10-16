@@ -338,20 +338,7 @@ void Application::detail() {
   // whether to cancel it.
   double percent = 0;
   if (const int onTheWay = pickedOnTheWay(percent)) {
-    const bool downloading = onTheWay == 2;
-    paint_.rect(840, 568, 386, 60, downloading ? Ink : SDL_Color{228, 225, 218, 255}, 14);
-    if (downloading) {
-      constexpr float Inset = 18, Track = 5;
-      const float width = 386 - 2 * Inset;
-      paint_.rect(840 + Inset, 568 + 60 - 11, width, Track, {70, 70, 76, 255}, Track / 2);
-      paint_.rect(840 + Inset, 568 + 60 - 11, std::max(Track, width * float(std::min(percent, 100.)) / 100), Track,
-                  Butter, Track / 2);
-    }
-    const auto label = downloading ? trf("Downloading {0}", {std::to_string(int(percent)) + "%"})
-                                   : std::string(tr("Waiting to download"));
-    const float labelWidth = paint_.fonts.measure(label, 21, true);
-    paint_.fonts.middle(label, 840 + (386 - labelWidth) / 2, downloading ? 594 : 598, 21,
-                        downloading ? Surface : Secondary, true);
+    onTheWayButton(840, 386, onTheWay == 2, percent);
   } else {
     paint_.rect(840, 568, 386, 60, Butter, 14);
     const auto install = tr("Install|action");
@@ -479,5 +466,30 @@ float Application::infoCard(const Group &g, const std::string &publisher, float 
   chips(tr("Genres"), genres);
   // What the game is made of shows in the install list on the right.
   return y;
+}
+// A pick on its way, in place of its button: dark with a butter bar while it
+// downloads, quiet gray while it waits its turn. Before the first byte (the
+// connection, the token, the files already there) a short bar runs back and
+// forth, so the press shows at once rather than a still 0%.
+void Application::onTheWayButton(float x, float w, bool downloading, double percent) {
+  constexpr float Top = 568, Height = 60;
+  paint_.rect(x, Top, w, Height, downloading ? Ink : SDL_Color{228, 225, 218, 255}, 14);
+  const bool preparing = downloading && percent <= 0;
+  if (downloading) {
+    constexpr float Inset = 18, Track = 5;
+    const float width = w - 2 * Inset, y = Top + Height - 11;
+    paint_.rect(x + Inset, y, width, Track, {70, 70, 76, 255}, Track / 2);
+    if (preparing) {
+      const float run = width * 0.3f, t = float(SDL_GetTicks() % 1400) / 1400.f;
+      const float at = (t < 0.5f ? t * 2 : 2 - t * 2) * (width - run);
+      paint_.rect(x + Inset + at, y, run, Track, Butter, Track / 2);
+    } else
+      paint_.rect(x + Inset, y, std::max(Track, width * float(std::min(percent, 100.)) / 100), Track, Butter, Track / 2);
+  }
+  const auto label = preparing     ? std::string(tr("Preparing|download"))
+                     : downloading ? trf("Downloading {0}", {std::to_string(int(percent)) + "%"})
+                                   : std::string(tr("Waiting to download"));
+  paint_.fonts.middle(label, x + (w - paint_.fonts.measure(label, 21, true)) / 2, downloading ? Top + 26 : Top + 30, 21,
+                      downloading ? Surface : Secondary, true);
 }
 } // namespace foil::ui
