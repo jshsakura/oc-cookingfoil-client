@@ -234,7 +234,7 @@ void Application::appUpdateAction(Action a) {
 }
 void Application::appUpdateDialog() {
   if (appUpdate_ == AppUpdate::Downloading) {
-    const auto body = modal(640, 24 + 60 + 24, tr("Downloading the update"), tr("Cancel"), "", "", 4);
+    const auto body = modal(640, 24 + 60 + 24, tr("Downloading the update"), tr("Cancel"), "", NoAccept, 4);
     const float ratio = appRelease_.size ? std::min(1.f, float(updateReceived_.load()) / float(appRelease_.size)) : 0.f;
     paint_.fonts.text("v" + appRelease_.version + " · " + formatBytes(updateReceived_.load()) + " / " +
                           formatBytes(appRelease_.size),

@@ -4,8 +4,11 @@ namespace foil::ui {
 // Key hints ending at `right`, like the screen footer; each one is tappable.
 void Application::dialogHints(float right, float y, const std::string &close,
                               const std::string &apply, const std::string &accept, const std::string &remove) {
-  // `accept` names what A does when the popup is one decision (다운로드).
-  std::vector<std::pair<std::string, std::string>> keys{{"A", accept.empty() ? std::string(tr("Select")) : accept}};
+  // `accept` names what A does when the popup is one decision (다운로드);
+  // NoAccept leaves A out, for a popup where only B does anything.
+  std::vector<std::pair<std::string, std::string>> keys;
+  if (accept != NoAccept)
+    keys.push_back({"A", accept.empty() ? std::string(tr("Select")) : accept});
   if (!remove.empty())
     keys.push_back({"X", remove});
   if (!apply.empty())

@@ -665,16 +665,17 @@ void Application::patchesScreen() {
   // it; - reloads the list.
   const float searchX = SearchX;
   searchBar(patchQuery_, searchX);
+  const auto tabCount = [&](PatchFilter filter) {
+    return int(std::count_if(all.begin(), all.end(), [&](const PatchRow &row) { return patchFilterMatches(filter, row); }));
+  };
   const float tabsLeft =
       headerTabs({filterLabel(PatchFilter::Stored), filterLabel(PatchFilter::All), filterLabel(PatchFilter::Updates)},
                  int(patchFilter_), [this](int n) {
                    patchFilter_ = PatchFilter(n);
                    selected_ = 0;
                  }, searchX - 16, 0,
-                 // As on 내 게임: how many have an update, by its tab.
-                 {0, 0, int(std::count_if(all.begin(), all.end(), [this](const PatchRow &row) {
-                    return patchFilterMatches(PatchFilter::Updates, row);
-                  }))});
+                 // How many each tab holds, beside its label.
+                 {tabCount(PatchFilter::Stored), tabCount(PatchFilter::All), tabCount(PatchFilter::Updates)});
   const float titleEnd =
       pageTitle(tr("Mods"), !patchQuery_.empty() ? countLabel(rows.size(), patchQuery_) : on ? trf("{0} · {1} on", {std::to_string(rows.size()), std::to_string(on)}) : std::to_string(rows.size()), tabsLeft);
   // The background file check says it is running, quietly: a pulsing dot
