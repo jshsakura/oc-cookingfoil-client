@@ -49,6 +49,37 @@ static void openTextKeyboard(foil::ui::Application &ui, const foil::ui::Applicat
     ui.enterText(text.data());
   swkbdClose(&keyboard);
 }
+// Every button pressed since the last frame, from the controllers' recent
+// samples (they keep 17): reading only the newest state lost a quick tap
+// whenever a frame ran long.
+struct PadHistory {
+  u64 seen[2][3] = {};
+  bool primed[2][3] = {};
+};
+static u64 newPresses(PadHistory &history) {
+  static const HidNpadIdType ids[] = {HidNpadIdType_Handheld, HidNpadIdType_No1};
+  u64 down = 0;
+  for (int i = 0; i < 2; ++i) {
+    const u32 styles = hidGetNpadStyleSet(ids[i]);
+    for (int style = 0; style < 3; ++style) { // FullKey, Handheld, JoyDual: style bits 0, 1, 2
+      if (!(styles & (1u << style)))
+        continue;
+      HidNpadCommonState states[17];
+      const size_t count = style == 0   ? hidGetNpadStatesFullKey(ids[i], states, 17)
+                           : style == 1 ? hidGetNpadStatesHandheld(ids[i], states, 17)
+                                        : hidGetNpadStatesJoyDual(ids[i], states, 17);
+      if (!count)
+        continue;
+      // Newest first: each sample after the last frame against the one before it.
+      if (history.primed[i][style])
+        for (size_t k = 0; k + 1 < count && states[k].sampling_number > history.seen[i][style]; ++k)
+          down |= states[k].buttons & ~states[k + 1].buttons;
+      history.seen[i][style] = states[0].sampling_number;
+      history.primed[i][style] = true;
+    }
+  }
+  return down;
+}
 int main(int argc, char **argv) {
   // TCP receive windows above libnx's defaults (64 KB growing to 256 KB).
   // A socket starts at tcp_rx_buf_size and the stack grows it as a transfer
@@ -108,6 +139,7 @@ int main(int argc, char **argv) {
       if (argc > 0 && argv[0])
         ui.setSelfPath(argv[0]);
       PadState pad;
+      PadHistory history;
       padConfigureInput(1, HidNpadStyleSet_NpadStandard);
       padInitializeDefault(&pad);
       uint32_t repeatAt = 0, stickAt = 0, heartbeatAt = 0;
@@ -132,13 +164,15 @@ int main(int argc, char **argv) {
           ui.poll();
           if (ui.shouldQuit())
             break;
+          history = {}; // what was pressed elsewhere is not for this app
           svcSleepThread(50'000'000);
           continue;
         }
         padUpdate(&pad);
-        if ((padGetButtonsDown(&pad) & HidNpadButton_Plus) && ui.requestQuit())
+        auto keys = padGetButtonsDown(&pad) | newPresses(history);
+        if ((keys & HidNpadButton_Plus) && ui.requestQuit())
           break;
-        if (padGetButtonsDown(&pad) & HidNpadButton_Minus)
+        if (keys & HidNpadButton_Minus)
           ui.refreshAll();
         SDL_Event event;
         bool quit = false;
@@ -172,7 +206,6 @@ int main(int argc, char **argv) {
         }
         if (quit && ui.requestQuit())
           break;
-        auto keys = padGetButtonsDown(&pad);
         if (keys & HidNpadButton_StickR) ui.scrollToTop(); // the right stick pressed in: to the top
         const u64 up = HidNpadButton_Up | HidNpadButton_StickLUp,
                   down = HidNpadButton_Down | HidNpadButton_StickLDown,

@@ -14,7 +14,7 @@ int runCatalogTests() {
     // The sounds: as long as their scores, loud only up to their gain, and
     // ending in silence (no click).
     const auto start = foil::chime(foil::Cue::Start, 48000), move = foil::chime(foil::Cue::Move, 48000);
-    CHECK(start.size() == size_t(3.f * 48000) && move.size() == size_t(0.06f * 48000));
+    CHECK(start.size() == size_t(2.8f * 48000) && move.size() == size_t(0.06f * 48000));
     for (int i = 0; i < foil::CueCount; ++i) {
       const auto s = foil::chime(foil::Cue(i), 48000);
       int peak = 0;

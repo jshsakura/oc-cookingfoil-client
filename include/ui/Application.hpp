@@ -1224,9 +1224,10 @@ private:
   bool removalOperation_ = false;
   // Popups with one decision take A only once they have been up a moment,
   // so the A that opened them (a double press) does not also answer them.
+  // A quarter second: longer (it was 0.7 s) swallowed a deliberate press.
   int popupKind_ = 0;
   uint32_t popupAt_ = 0;
-  bool settled() const { return SDL_GetTicks() - popupAt_ >= 700; }
+  bool settled() const { return SDL_GetTicks() - popupAt_ >= 250; }
   uint32_t removalAt_ = 0; // when the delete popup opened
   std::optional<InstalledGame> managedGame_;
   std::optional<RemovalRequest> removal_;

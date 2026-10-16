@@ -3,7 +3,7 @@
 #include <cmath>
 namespace foil {
 namespace {
-enum class Wave { Marimba, Pulse, Triangle, Sine, Glock, Vibes, Pluck };
+enum class Wave { Marimba, Pulse, Triangle, Sine, Glock, Vibes, Pluck, Square };
 struct Note {
   float at;   // seconds from the start
   int pitch;  // MIDI note number (69 is A4)
@@ -16,8 +16,8 @@ struct Score {
   std::vector<Note> notes;
 };
 constexpr float Pi = 3.14159265f;
-constexpr int F3 = 53, G3 = 55, A3 = 57, D4 = 62, F4 = 65, A4 = 69, C4 = 60, E4 = 64, G4 = 67, B4 = 71, C5 = 72, D5 = 74, E5 = 76, G5 = 79, A5 = 81, C6 = 84, D6 = 86, E6 = 88,
-              G6 = 91, B6 = 95, C7 = 96;
+constexpr int C3 = 48, F3 = 53, G3 = 55, A3 = 57, D4 = 62, F4 = 65, A4 = 69, C4 = 60, E4 = 64, G4 = 67, B4 = 71, C5 = 72, D5 = 74, E5 = 76, G5 = 79, A5 = 81, C6 = 84, D6 = 86, E6 = 88,
+              G6 = 91, B5 = 83, B6 = 95, C7 = 96;
 float hertz(int pitch) { return 440.f * std::pow(2.f, (pitch - 69) / 12.f); }
 float sample(Wave wave, float f, float t) {
   switch (wave) {
@@ -29,6 +29,10 @@ float sample(Wave wave, float f, float t) {
   }
   case Wave::Sine:
     return std::sin(2 * Pi * f * t);
+  case Wave::Square: { // a soft square: its first three odd harmonics only
+    const float p = 2 * Pi * f * t;
+    return std::sin(p) + std::sin(3 * p) / 3 + std::sin(5 * p) / 5;
+  }
   case Wave::Glock: // a small bell: the note and a quickly fading, slightly sharp sixth partial
     return std::sin(2 * Pi * f * t) + 0.25f * std::exp(-t / 0.05f) * std::sin(2 * Pi * f * 2.76f * t);
   case Wave::Vibes: // a metal bar with its tremolo
@@ -42,18 +46,15 @@ float sample(Wave wave, float f, float t) {
 }
 Score score(Cue cue) {
   switch (cue) {
-  case Cue::Start: { // 우쿨렐레: strummed C, C, Am, F, G and C ringing on
-    Score s{3.f, 0.16f, 0.22f, 0.3f, {}};
-    struct Strum {
-      float at, ring, volume, spread;
-      int notes[4];
-    };
-    static constexpr Strum Strums[] = {{0, 0.6f, 0.45f, 0.025f, {C4, E4, G4, C5}},   {0.4f, 0.4f, 0.35f, 0.02f, {C4, E4, G4, C5}},
-                                       {0.75f, 0.5f, 0.4f, 0.025f, {A3, C4, E4, A4}}, {1.15f, 0.5f, 0.4f, 0.025f, {F3, C4, F4, A4}},
-                                       {1.55f, 0.4f, 0.4f, 0.025f, {G3, D4, G4, B4}}, {1.9f, 1.6f, 0.45f, 0.03f, {C4, E4, G4, C5}}};
-    for (const auto &strum : Strums)
-      for (int k = 0; k < 4; ++k)
-        s.notes.push_back({strum.at + k * strum.spread, strum.notes[k], 0, strum.ring * 1.2f, Wave::Pluck, strum.volume});
+  case Cue::Start: { // 동전 두 개: two coin blips, then a short 8-bit fanfare over a bass
+    Score s{2.8f, 0.15f, 0.2f, 0.45f, {}};
+    for (const float at : {0.f, 0.45f}) {
+      s.notes.push_back({at, B5, 0.05f, 0.08f, Wave::Square, 0.4f});
+      s.notes.push_back({at + 0.07f, E6, 0.05f, 0.25f, Wave::Square, 0.4f});
+    }
+    const int run[] = {G5, C6, E6, G6};
+    for (int i = 0; i < 4; ++i) s.notes.push_back({0.95f + i * 0.1f, run[i], 0.05f, i < 3 ? 0.1f : 0.8f, Wave::Square, 0.4f});
+    for (const float at : {0.95f, 1.25f}) s.notes.push_back({at, C3, 0.1f, 0.6f, Wave::Triangle, 0.6f});
     return s;
   }
   case Cue::Move: // 틱: a high, very short sine per step
