@@ -296,7 +296,10 @@ bool Application::open() {
   constexpr uint32_t FillMs = 450, HoldMs = 250;
   const float from = progressShown;
   // The last word changes each start, one of a few kitchen lines.
-  static const char *const Done[] = {"Well done!", "Golden brown, just right!", "A wild homebrew appeared!"};
+  static const char *const Done[] = {"Well done!",          "Golden brown, just right!",
+                                     "A wild homebrew appeared!", "You got the Butter!",
+                                     "It's dangerous to cook alone! Take this.", "You cooked something tasty!",
+                                     "Butter looks happy!", "3, 2, 1, GO!", "Let's-a go!"};
   const std::string done = tr(Done[std::time(nullptr) % std::size(Done)]);
   const uint32_t fillFrom = SDL_GetTicks();
   for (;;) {
