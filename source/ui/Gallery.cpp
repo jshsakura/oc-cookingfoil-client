@@ -1,5 +1,41 @@
 #include "ui/Application.hpp"
 namespace foil::ui {
+// The page's screenshots (detail_.screenshots) under its description: the
+// first three, each opening the gallery at itself; y below them.
+int Application::screenshotStrip(int y) {
+  const auto &shots = detail_.screenshots;
+  if (shots.empty()) return y;
+  paint_.fonts.text(tr("Screenshots"), 40, y, 20, Ink, true);
+  paint_.keyLabel("ZR", tr("Enlarge · or tap a picture"), 150, y + 14, 17, Secondary);
+  y += 40;
+  for (size_t i = 0; i < shots.size() && i < 3; ++i) {
+    const int x = 40 + int(i) * 214;
+    hit(x, y, 200, 112, [this, i] {
+      galleryOpen_ = true;
+      screenshot_ = i;
+    });
+    const auto thumb = thumbnailUrl(shots[i]);
+    // A picture that will not load says so instead of shimmering forever.
+    if (images_->failed(thumb)) {
+      paint_.rect(x, y, 200, 112, Line, 10);
+      const std::string none = tr("No image");
+      paint_.fonts.middle(none, x + (200 - paint_.fonts.measure(none, 16)) / 2, y + 56, 16, Secondary);
+      continue;
+    }
+    if (!images_->loaded(thumb)) paint_.skeleton(x, y, 200, 112, 10);
+    images_->draw(thumb, x, y, 200, 112, 10);
+  }
+  return y + 134;
+}
+// Whose screenshots the gallery shows: the game, the RetroArch game or the app.
+std::string Application::galleryName() const {
+  if (screen_ == Screen::RetroDetail) return retroPick_.name;
+  if (screen_ == Screen::Homebrew) {
+    const auto *app = homebrewPicked();
+    return app ? app->name : std::string();
+  }
+  return detailGroup_ < groups_.size() ? groups_[detailGroup_].representative.name : std::string();
+}
 void Application::gallery() {
   if (detail_.screenshots.empty()) return;
   screenshot_ %= detail_.screenshots.size();
@@ -7,7 +43,7 @@ void Application::gallery() {
   paint_.rect(0, 0, 1280, 660, {10, 10, 14, 255});
   hit(0, 0, 640, 660, [this] { action(Action::Previous); });
   hit(640, 0, 640, 660, [this] { action(Action::Next); });
-  const auto name = detailGroup_ < groups_.size() ? groups_[detailGroup_].representative.name : std::string();
+  const auto name = galleryName();
   const float after = paint_.fonts.middle(tr("Screenshots"), 40, 40, 26, Surface, true);
   paint_.fonts.middle(name, after + 16, 40, 19, {170, 170, 178, 255}, false, 1180 - after);
   // The full-screen photo at the screen's width, not the original.

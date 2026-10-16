@@ -35,6 +35,23 @@ int runHomebrewTests() {
   CHECK(bad(R"("id":"gh-9c9ef5794087")", R"("id":"a/b")"));
   CHECK(bad(R"("download_url":"/api)", R"("download_url":"ftp://x/api)"));
   CHECK(parse("nope", "https://s").empty());
+  // The page's backdrop and screenshots, made full like its other pictures;
+  // at most 8, and anything not an address left out.
+  {
+    auto e = entry;
+    e.replace(e.rfind('}'), 1, R"(,"banner_url":"/api/homebrew/x/banner?v=1","screenshots":["/s/1.jpg?v=1",7,"ftp://no",)"
+                               R"("https://cdn.example/2.jpg","/3","/4","/5","/6","/7","/8","/9"]})");
+    const auto got = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
+    CHECK(got.size() == 1);
+    if (!got.empty()) {
+      CHECK(got[0].bannerUrl == "https://shop.example/api/homebrew/x/banner?v=1");
+      CHECK(got[0].screenshots.size() == 8 && got[0].screenshots[0] == "https://shop.example/s/1.jpg?v=1" &&
+            got[0].screenshots[1] == "https://cdn.example/2.jpg");
+      const auto again = parse(R"({"homebrew":[)" + serialize(got[0]) + "]}", "https://shop.example");
+      CHECK(again.size() == 1 && again[0].bannerUrl == got[0].bannerUrl && again[0].screenshots == got[0].screenshots);
+    }
+    CHECK(apps.size() == 1 && apps[0].bannerUrl.empty() && apps[0].screenshots.empty());
+  }
   // An app installed as a title: no SD path, files, zip or shortcut, and
   // never one naming a system title.
   {

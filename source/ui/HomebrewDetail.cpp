@@ -88,9 +88,18 @@ void Application::homebrewDetail() {
   const auto &app = *picked;
   const auto status = homebrewStatus(app);
   const auto icon = homebrewIcon(app);
+  // Its screenshots go where a game's do, for the strip and the gallery.
+  if (detail_.screenshots != app.screenshots) {
+    detail_.screenshots = app.screenshots;
+    galleryOpen_ = false;
+    screenshot_ = 0;
+  }
+  // The server's wide picture behind the header, else the icon blurred.
+  const auto backdrop = app.bannerUrl.empty() ? icon : app.bannerUrl;
   paint_.rect(0, 0, 1280, 212, {10, 10, 14, 255});
-  if (!icon.empty() && !images_->loaded(icon) && !images_->failed(icon)) paint_.skeleton(0, 0, 1280, 212, 0, true);
-  images_->draw(icon, 0, 0, 1280, 212, 0, true);
+  if (!backdrop.empty() && !images_->loaded(backdrop) && !images_->failed(backdrop))
+    paint_.skeleton(0, 0, 1280, 212, 0, true);
+  images_->draw(backdrop, 0, 0, 1280, 212, 0, true);
   paint_.icon(7, 32, 14, Surface, 20);
   paint_.fonts.middle(homebrewReturn_ == Screen::Downloads ? tr("Downloads") : tr("Homebrew"), 56, 24, 17, Surface);
   hit(24, 4, 200, 40, [this] { action(Action::Back); });
@@ -166,6 +175,7 @@ void Application::homebrewDetail() {
     paint_.fonts.middle(file, Left + 42 + labelW, top + 17, 16, Ink, false, Width - 82 - labelW);
   }
   y += int(rows * RowHeight + 24 + pathRow + 22);
+  y = screenshotStrip(y);
   descriptionHeight_ = std::max(0, y + offset - (BandBottom - Pad));
   {
     SDL_Rect full{0, 0, 1280, 660};
@@ -175,6 +185,7 @@ void Application::homebrewDetail() {
                      descriptionFocus_);
   }
   homebrewDetailPanel(app);
+  if (galleryOpen_) gallery();
 }
 // The right panel: the app's rows, then the button.
 void Application::homebrewDetailPanel(const homebrew::App &app) {

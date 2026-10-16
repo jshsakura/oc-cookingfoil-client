@@ -443,7 +443,10 @@ void Application::homebrewAction(Action a) {
       if (homebrewReturn_ != Screen::Homebrew) screen(std::exchange(homebrewReturn_, Screen::Homebrew));
     } else if (a == Action::Up) homebrewAskRow_ = homebrewAskRow_ < 0 ? extras - 1 : std::max(0, homebrewAskRow_ - 1);
     else if (a == Action::Down) homebrewAskRow_ = homebrewAskRow_ < 0 || homebrewAskRow_ >= extras - 1 ? -1 : homebrewAskRow_ + 1;
-    else if (a == Action::Accept && settled() && picked && homebrewAskRow_ < 0) homebrewButton(*picked);
+    else if (a == Action::Preview && picked && !picked->screenshots.empty()) {
+      galleryOpen_ = true;
+      screenshot_ = 0;
+    } else if (a == Action::Accept && settled() && picked && homebrewAskRow_ < 0) homebrewButton(*picked);
     else if (a == Action::Accept && settled() && picked) {
       const auto kinds = homebrewExtraKinds(*picked);
       if (homebrewAskRow_ >= 0 && kinds[homebrewAskRow_] == 3) { // 지우기 asks first

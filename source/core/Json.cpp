@@ -145,11 +145,24 @@ bool atomicWrite(const std::string& path, const std::string& contents, std::stri
     }
     return true;
 }
-std::string urlField(json_object* obj, const char* key, const std::string& base) {
-    const auto value = stringField(obj, key);
+static std::string absoluteUrl(const std::string& value, const std::string& base) {
     if (value.rfind("https://", 0) == 0 || value.rfind("http://", 0) == 0) return value;
     if (value.rfind("/", 0) == 0 && value.rfind("//", 0) != 0 && !base.empty()) return base + value;
     return "";
+}
+std::string urlField(json_object* obj, const char* key, const std::string& base) {
+    return absoluteUrl(stringField(obj, key), base);
+}
+std::vector<std::string> urlList(json_object* obj, const char* key, const std::string& base, size_t most) {
+    std::vector<std::string> out;
+    auto* list = field(obj, key);
+    if (!json_object_is_type(list, json_type_array)) return out;
+    for (size_t i = 0; i < json_object_array_length(list) && out.size() < most; ++i) {
+        auto* item = json_object_array_get_idx(list, i);
+        if (!json_object_is_type(item, json_type_string)) continue;
+        if (auto url = absoluteUrl(json_object_get_string(item), base); !url.empty()) out.push_back(std::move(url));
+    }
+    return out;
 }
 void writeBuffer(std::FILE* file) {
     if (file) std::setvbuf(file, nullptr, _IOFBF, 1 << 20);

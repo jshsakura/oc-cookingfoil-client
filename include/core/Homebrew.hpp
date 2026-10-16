@@ -56,6 +56,10 @@ struct App {
   // shortcut; titleId is 16 upper-case hex digits.
   bool title = false;
   std::string titleId;
+  // The page's wide backdrop (empty: the icon, blurred) and its screenshots
+  // (at most 8), as a game's page shows them.
+  std::string bannerUrl;
+  std::vector<std::string> screenshots;
 };
 // GET /api/homebrew's list; entries missing what is needed, or with a file
 // name that could leave its folder, are left out.

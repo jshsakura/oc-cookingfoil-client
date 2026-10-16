@@ -1998,8 +1998,12 @@ void Application::render() {
     const auto button = !app ? std::string() : app->cardOnly ? std::string()
                         : homebrewOnTheWay(*app, percent) ? std::string(tr("Cancel download")) : homebrewButtonLabel(*app);
     using Hints = std::vector<std::pair<std::string, std::string>>;
-    if (homebrewAskRow_ >= 0) footer({{"A", tr("Select")}, {"B", tr("Back")}});
-    else footer(button.empty() ? Hints{{"B", tr("Back")}} : Hints{{"A", button}, {"B", tr("Back")}});
+    auto hints = homebrewAskRow_ >= 0 ? Hints{{"A", tr("Select")}, {"B", tr("Back")}}
+                 : button.empty()      ? Hints{{"B", tr("Back")}}
+                                       : Hints{{"A", button}, {"B", tr("Back")}};
+    if (app && !app->screenshots.empty()) hints.insert(hints.end() - 1, {"ZR", tr("Photos")});
+    if (galleryOpen_) hints = {{"L R", tr("Prev / next photo")}, {"B", tr("Close")}};
+    footer(hints);
   }
   else if (screen_ == Screen::Homebrew) {
     // A opens the app's page: what it gets or updates, its facts, patches

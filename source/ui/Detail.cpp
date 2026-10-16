@@ -196,30 +196,7 @@ void Application::detail() {
       paint_.skeleton(40 + i * 214, y + 40, 200, 112, 10);
     y += 174;
   }
-  if (!detail_.screenshots.empty()) {
-    paint_.fonts.text(tr("Screenshots"), 40, y, 20, Ink, true);
-    paint_.keyLabel("ZR", tr("Enlarge · or tap a picture"), 150, y + 14, 17, Secondary);
-    y += 40;
-  }
-  for (size_t i = 0; i < detail_.screenshots.size() && i < 3; ++i) {
-    const int x = 40 + i * 214;
-    hit(x, y, 200, 112, [this, i] {
-      galleryOpen_ = true;
-      screenshot_ = i;
-    });
-    const auto thumb = thumbnailUrl(detail_.screenshots[i]);
-    // A picture that will not load says so instead of shimmering forever.
-    if (images_->failed(thumb)) {
-      paint_.rect(x, y, 200, 112, Line, 10);
-      const std::string none = tr("No image");
-      paint_.fonts.middle(none, x + (200 - paint_.fonts.measure(none, 16)) / 2, y + 56, 16, Secondary);
-      continue;
-    }
-    if (!images_->loaded(thumb))
-      paint_.skeleton(x, y, 200, 112, 10);
-    images_->draw(thumb, x, y, 200, 112, 10);
-  }
-  y += detail_.screenshots.empty() ? 0 : 134;
+  y = screenshotStrip(y);
   // The base game's files not chosen (A on its row in 설치할 항목 picks one).
   if (selection_ && selection_->baseChoices() > 1) {
     paint_.fonts.text(tr("Other files"), 40, y, 20, Ink, true);

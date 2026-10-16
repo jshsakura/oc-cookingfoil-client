@@ -734,6 +734,8 @@ private:
   std::deque<UserPatch> patchQueue_;
   UserPatch patchQueueNow_; // the queued patch the worker has
   void gallery();
+  int screenshotStrip(int y);
+  std::string galleryName() const;
   void downloads();
   void updates();
   void installUpdates(bool all);

@@ -13,6 +13,9 @@ int64_t integerField(json_object* obj, const char* key, int64_t fallback = 0);
 // A server path ("/api/...") joined to `base`, or an absolute http(s) URL;
 // anything else reads as "".
 std::string urlField(json_object* obj, const char* key, const std::string& base);
+// An array of addresses (shop paths made full with `base`), at most `most`;
+// anything else in it is left out.
+std::vector<std::string> urlList(json_object* obj, const char* key, const std::string& base, size_t most);
 std::string readFile(const std::string& path);
 // What a Mac (or Windows) leaves on a card it touched: "._name" AppleDouble
 // files, .DS_Store, .Spotlight-V100, .Trashes, .fseventsd, Thumbs.db. Never

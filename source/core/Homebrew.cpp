@@ -73,6 +73,8 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
     if (!forwarder::serverShortcutId(a.forwarderTitleId))
       a.forwarderUrl.clear(), a.forwarderTitleId.clear();
     a.kind = stringField(o, "kind") == "port" ? Kind::Port : Kind::Tool;
+    a.bannerUrl = urlField(o, "banner_url", base);
+    a.screenshots = urlList(o, "screenshots", base, 8);
     if (stringField(o, "install_type") == "title") {
       // Installed as a game is: nothing on the SD card but the title. One
       // naming a system title is never offered.
@@ -160,6 +162,12 @@ std::string serialize(const App &a) {
   add("install_path", a.installPath);
   add("kind", a.kind == Kind::Port ? "port" : "tool");
   add("app", a.app);
+  if (!a.bannerUrl.empty()) add("banner_url", a.bannerUrl);
+  if (!a.screenshots.empty()) {
+    auto *shots = json_object_new_array();
+    for (const auto &url : a.screenshots) json_object_array_add(shots, json_object_new_string(url.c_str()));
+    json_object_object_add(o.get(), "screenshots", shots);
+  }
   if (a.title) {
     add("install_type", "title");
     add("title_id", a.titleId);

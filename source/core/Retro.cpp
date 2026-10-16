@@ -183,16 +183,8 @@ Detail parseDetail(const std::string &json, const std::string &base) {
       if (json_object_is_type(genre, json_type_string) && json_object_get_string_len(genre) > 0)
         m.genres.emplace_back(json_object_get_string(genre));
     }
-  auto *shots = field(root.get(), "screenshots");
-  if (json_object_is_type(shots, json_type_array))
-    for (size_t i = 0; i < json_object_array_length(shots) && m.screenshots.size() < 8; ++i) {
-      auto *shot = json_object_array_get_idx(shots, i);
-      if (!json_object_is_type(shot, json_type_string)) continue;
-      // Shop paths and full addresses, as the game's other pictures.
-      const std::string value = json_object_get_string(shot);
-      if (value.rfind("https://", 0) == 0 || value.rfind("http://", 0) == 0) m.screenshots.push_back(value);
-      else if (value.rfind("/", 0) == 0 && value.rfind("//", 0) != 0 && !base.empty()) m.screenshots.push_back(base + value);
-    }
+  // Shop paths and full addresses, as the game's other pictures.
+  m.screenshots = urlList(root.get(), "screenshots", base, 8);
   auto *list = field(root.get(), "variants");
   if (!json_object_is_type(list, json_type_array)) return d;
   for (size_t i = 0; i < json_object_array_length(list) && d.variants.size() < 100; ++i) {

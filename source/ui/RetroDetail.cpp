@@ -339,29 +339,7 @@ void Application::retroDetail() {
     y += Height + 16;
   }
   y = int(retroInfoCard(float(y))) + 22;
-  const auto &shots = detail_.screenshots;
-  if (!shots.empty()) {
-    paint_.fonts.text(tr("Screenshots"), 40, y, 20, Ink, true);
-    paint_.keyLabel("ZR", tr("Enlarge · or tap a picture"), 150, y + 14, 17, Secondary);
-    y += 40;
-  }
-  for (size_t i = 0; i < shots.size() && i < 3; ++i) {
-    const int sx = 40 + int(i) * 214;
-    hit(sx, y, 200, 112, [this, i] {
-      galleryOpen_ = true;
-      screenshot_ = i;
-    });
-    const auto thumb = thumbnailUrl(shots[i]);
-    if (images_->failed(thumb)) {
-      paint_.rect(sx, y, 200, 112, Line, 10);
-      const std::string none = tr("No image");
-      paint_.fonts.middle(none, sx + (200 - paint_.fonts.measure(none, 16)) / 2, y + 56, 16, Secondary);
-      continue;
-    }
-    if (!images_->loaded(thumb)) paint_.skeleton(sx, y, 200, 112, 10);
-    images_->draw(thumb, sx, y, 200, 112, 10);
-  }
-  y += shots.empty() ? 0 : 134;
+  y = screenshotStrip(y);
   descriptionHeight_ = std::max(0, y + offset - (BandBottom - Pad));
   {
     SDL_Rect full{0, 0, 1280, 660};
