@@ -299,7 +299,7 @@ bool Application::open() {
   for (;;) {
     const uint32_t gone = SDL_GetTicks() - fillFrom;
     const float t = std::min(1.f, gone / float(FillMs)), eased = 1 - (1 - t) * (1 - t);
-    paint_.splash(tr("Ready."), from + (1 - from) * eased, seconds());
+    paint_.splash(tr("Well done!"), from + (1 - from) * eased, seconds());
     if (!platform::serviceApplet()) {
       exitRequested_ = true;
       break;
