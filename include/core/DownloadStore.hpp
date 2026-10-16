@@ -73,6 +73,9 @@ public:
   // A damaged file was set aside and a fresh one made since the last call,
   // by any instance: whatever it held is gone, the keys too.
   static bool takeSetAside();
+  // The error a store gives while another instance (or this one) holds the
+  // file for longer than it waits: a moment's, not the file's.
+  static bool busy(const std::string &error);
 
 private:
   enum class Opened { Ok, Broken, Failed };

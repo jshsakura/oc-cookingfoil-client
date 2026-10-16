@@ -129,42 +129,30 @@ std::string readExactly(const std::string& path) {
     if (!input) return {};
     return std::string(std::istreambuf_iterator<char>(input), {});
 }
-// The servers are the one thing that cannot be got back from anywhere else.
-// When config.json is gone, or reads with no servers while a copy with them
-// is left beside it (a write cut between moving the old file aside and
-// putting the new one in place, or an older build that then made a fresh
-// empty one), that copy goes back: the new one first (.tmp, synced before
-// any rename), then the one before it (.old), then the last saved (.bak).
-// A deliberate save leaves none of .tmp and .old and writes .bak alike, so
-// servers removed on purpose stay removed.
-bool restoreServers(const std::string& path) {
-    for (const auto* side : {".tmp", ".old", ".bak"}) {
+// A save cut between moving the old file aside and putting the new one in
+// place leaves no config.json but its .tmp (complete, synced before any
+// rename) and .old: the save goes on from there. Only atomicWrite leaves
+// these, so a config.json deleted by hand stays deleted.
+bool finishCutSave(const std::string& path) {
+    for (const auto* side : {".tmp", ".old"}) {
         const auto copy = readExactly(path + side);
-        if (copy.empty()) continue;
-        const auto parsed = parseConfig(copy);
-        if (parsed.error || parsed.value.servers.empty()) continue;
+        if (copy.empty() || parseConfig(copy).error) continue;
         std::string error;
         if (!atomicWrite(path, copy, error)) {
-            logLine(std::string("config: could not restore from ") + side + ": " + error);
+            logLine(std::string("config: could not finish a cut save from ") + side + ": " + error);
             return false;
         }
-        atomicWrite(path + ".bak", copy, error); // a copy stays for next time
         std::error_code ec;
         std::filesystem::remove(path + ".tmp", ec);
         std::filesystem::remove(path + ".old", ec);
-        logLine(std::string("config: servers restored from ") + side);
+        logLine(std::string("config: a cut save finished from ") + side);
         return true;
     }
     return false;
 }
 } // namespace
 bool saveConfig(const std::string& path, const Config& config, std::string& error) {
-    const auto text = serializeConfig(config);
-    if (!atomicWrite(path, text, error)) return false;
-    // The last saved, kept apart: what goes back if config.json is lost.
-    std::string ignored;
-    atomicWrite(path + ".bak", text, ignored);
-    return true;
+    return atomicWrite(path, serializeConfig(config), error);
 }
 bool dropEnrollToken(const std::string& path, const std::string& serverUrl, std::string& error) {
     if (path.empty()) return true;
@@ -177,32 +165,22 @@ bool dropEnrollToken(const std::string& path, const std::string& serverUrl, std:
 }
 Parsed<Config> loadConfig(const std::string& path) {
     std::error_code ec;
+    // Copies kept by 0.3.88 to 0.3.94 brought deleted servers back; they go.
+    std::filesystem::remove(path + ".bak", ec);
     if (std::filesystem::exists(path, ec)) {
         const auto text = readExactly(path);
-        // Nothing in it (cut while being made) reads as missing.
-        const bool blank = text.find_first_not_of(" \t\r\n") == std::string::npos;
+        // What is on the card is what counts: nothing in it is no servers.
+        if (text.find_first_not_of(" \t\r\n") == std::string::npos) {
+            logLine("config: config.json is empty (" + std::to_string(text.size()) + " bytes)");
+            return {};
+        }
         auto parsed = parseConfig(text);
-        if (blank || (!parsed.error && parsed.value.servers.empty())) {
-            // What the card holds when it reads with no servers, for the log.
-            std::string beside;
-            for (const auto* side : {".tmp", ".old", ".bak"})
-                if (std::filesystem::exists(path + side, ec)) beside += std::string(" ") + side;
-            logLine("config: no servers in " + std::to_string(text.size()) + " bytes;" +
-                    (beside.empty() ? std::string(" nothing beside it") : " beside it:" + beside));
-            if (restoreServers(path)) return parseConfig(readExactly(path));
-        }
-        // Servers read well: the copy beside it is kept the same, whoever
-        // wrote config.json (an older build, a hand edit), so anything that
-        // later leaves it empty is undone at the next read. Written only
-        // when it differs.
-        if (!parsed.error && !parsed.value.servers.empty() && readExactly(path + ".bak") != text) {
-            std::string ignored;
-            atomicWrite(path + ".bak", text, ignored);
-        }
+        if (parsed.error)
+            logLine("config: config.json does not read (" + std::to_string(text.size()) + " bytes, line " +
+                    std::to_string(parsed.error.line) + "): " + parsed.error.message);
         return parsed;
     }
-    // Gone: a copy left beside it comes back before a fresh empty one is made.
-    if (!ec && restoreServers(path)) return parseConfig(readExactly(path));
+    if (!ec && finishCutSave(path)) return parseConfig(readExactly(path));
     Parsed<Config> result;
     if (ec) { result.error.message = ec.message(); return result; }
     const auto parent = std::filesystem::path(path).parent_path();

@@ -624,6 +624,15 @@ private:
   void sortShopSaves(); // games and apps here first, then by name, each one's saves together
   bool shopSavesLoaded_ = false, shopSavesMissing_ = false, incomingShopSavesMissing_ = false;
   Error shopSavesError_, incomingShopSavesError_;
+  // The app's records held by a write still going at start (a slow card):
+  // the servers show at once and a worker reads them again until it can,
+  // then reload goes on (stateWaiting_ meanwhile, from stateWaitAt_).
+  std::thread stateWorker_;
+  std::atomic<bool> stateReady_{false};
+  bool stateWaiting_ = false;
+  uint32_t stateWaitAt_ = 0;
+  int statePrefer_ = -1;
+  void waitForState(int prefer);
   std::thread shopSavesWorker_;
   std::atomic<bool> shopSavesDone_{false};
   int shopSaveRow_ = 0;
@@ -857,7 +866,7 @@ private:
               std::function<void()> pressOther = {});
   // 홈 with nothing to show and a button on its notice: 설정 when no server
   // is set up, 다시 시도 when the one set up did not answer.
-  bool homeOffersSettings() const { return groups_.empty() && !session_; }
+  bool homeOffersSettings() const { return groups_.empty() && !session_ && !stateWaiting_; }
 public:
   // The banner's tags, as the website's (#218): score, sale (else the
   // regular price), Korean, size,

@@ -74,7 +74,9 @@ Rebound takeRebound();
 // earlier builds moves in once (its device key kept) and goes. Credentials
 // that are not this console's, or do not match their seal, give way to a new
 // device key; settings stay.
-Parsed<State> loadState(const std::string& dbPath);
+// `busy`: set when the file was held the whole time it waited (another
+// write still going), not a fault of the file; reading again later works.
+Parsed<State> loadState(const std::string& dbPath, bool* busy = nullptr);
 // 32 random bytes as 64 lowercase hex characters; empty when the console
 // gave none.
 std::string randomKey();

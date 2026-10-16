@@ -411,7 +411,7 @@ bool saveDropbox(const std::string& dbPath, const std::string& json, Error& erro
     if (!store.saveStateRows(*rows, failure)) { error.message = failure; return false; }
     return true;
 }
-Parsed<State> loadState(const std::string& dbPath) {
+Parsed<State> loadState(const std::string& dbPath, bool* busy) {
     Parsed<State> result;
     DownloadStore store;
     std::string failure;
@@ -419,6 +419,7 @@ Parsed<State> loadState(const std::string& dbPath) {
     if (store.open(dbPath, failure)) rows = store.stateRows(failure);
     if (!rows) {
         logLine("state: " + failure);
+        if (busy) *busy = DownloadStore::busy(failure);
         result.error.message = tr("Could not read the app's records on the SD card.");
         return result;
     }

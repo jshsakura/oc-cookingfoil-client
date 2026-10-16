@@ -81,42 +81,37 @@ int runConfigTests() {
         CHECK(!loaded.error && loaded.value.servers.size() == 1);
         CHECK(loaded.value.servers[0].title == "내 서버" && loaded.value.servers[0].password == "pass word");
         CHECK(loaded.value.language == "en");
-        // A save cut after the old file went aside: config.json is missing and
-        // its servers come back from what is beside it, not an empty file.
+        // A save cut after the old file went aside: config.json is missing
+        // and the save goes on from what atomicWrite left beside it.
         std::filesystem::rename(path, path + ".old");
-        std::filesystem::remove(path + ".bak");
         auto restored = foil::loadConfig(path);
         CHECK(!restored.error && !restored.created && restored.value.servers.size() == 1);
         CHECK(!std::filesystem::exists(path + ".old"));
-        // An older build already made an empty one over it: healed the same way.
-        CHECK(foil::saveConfig(path, saved, error)); // .bak has the server again
-        { std::ofstream f(path); f << foil::serializeConfig(foil::Config{}); }
-        CHECK(foil::loadConfig(path).value.servers.size() == 1);
         // The new copy, complete before any rename, wins over the older one.
         foil::Config newer = saved;
         newer.servers[0].title = "새 이름";
         { std::ofstream f(path + ".tmp"); f << foil::serializeConfig(newer); }
-        std::filesystem::remove(path);
+        std::filesystem::rename(path, path + ".old");
         CHECK(foil::loadConfig(path).value.servers[0].title == "새 이름");
-        // Servers removed on purpose stay removed: the save writes .bak alike.
-        CHECK(foil::saveConfig(path, foil::Config{}, error));
+        // What is on the card is what counts: servers taken out by hand, or
+        // config.json deleted, stay gone; a .bak an older build kept goes.
+        { std::ofstream f(path + ".bak"); f << foil::serializeConfig(saved); }
+        { std::ofstream f(path); f << foil::serializeConfig(foil::Config{}); }
         CHECK(foil::loadConfig(path).value.servers.empty());
-        // Servers read well keep .bak the same, even when config.json was
-        // written by something else (an older build): emptied later, it
-        // comes back.
-        {
-            std::filesystem::remove(path + ".bak");
-            { std::ofstream f(path); f << foil::serializeConfig(saved); }
-            CHECK(foil::loadConfig(path).value.servers.size() == 1);
-            CHECK(std::filesystem::exists(path + ".bak"));
-            { std::ofstream f(path); f << foil::serializeConfig(foil::Config{}); }
-            CHECK(foil::loadConfig(path).value.servers.size() == 1);
-        }
-        // A config.json left empty (cut while being made) reads as missing.
+        CHECK(!std::filesystem::exists(path + ".bak"));
         CHECK(foil::saveConfig(path, saved, error));
+        CHECK(!std::filesystem::exists(path + ".bak"));
+        std::filesystem::remove(path);
+        auto deleted = foil::loadConfig(path);
+        CHECK(!deleted.error && deleted.created && deleted.value.servers.empty());
+        // Nothing in it: no servers, not an error, and the file stays as it is.
         { std::ofstream f(path); }
-        CHECK(foil::loadConfig(path).value.servers.size() == 1);
-        CHECK(foil::saveConfig(path, foil::Config{}, error));
+        auto blank = foil::loadConfig(path);
+        CHECK(!blank.error && blank.value.servers.empty() && foil::readFile(path).empty());
+        // Unreadable: its error and its line, and the file is left alone.
+        { std::ofstream f(path); f << "{ \"servers\": [ cut"; }
+        CHECK(foil::loadConfig(path).error);
+        CHECK(foil::readFile(path) == "{ \"servers\": [ cut");
         // A broken copy beside it is not taken.
         std::filesystem::remove(path);
         std::filesystem::remove(path + ".bak");

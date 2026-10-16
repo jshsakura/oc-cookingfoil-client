@@ -89,6 +89,8 @@ Application::~Application() {
     homebrewCardWorker_.join();
   if (shopSavesWorker_.joinable())
     shopSavesWorker_.join();
+  if (stateWorker_.joinable())
+    stateWorker_.join();
   if (dropboxWorker_.joinable())
     dropboxWorker_.join();
   flushHistory();
@@ -521,9 +523,9 @@ void Application::reload(int prefer) {
   auto parsed = loadConfig(configPath_);
   // Read with no servers at start: read again a few times before 설정 takes
   // over (a console was seen reading none at start and its servers a moment
-  // later). Only the first time: a refresh with none answers at once.
+  // later). Only the first time: a refresh with none answers at once. A file made just now (a first start) has none to wait for.
   const bool first = std::exchange(configReadOnce_, true) == false;
-  for (int again = 0; first && again < 3 && !parsed.error && parsed.value.servers.empty(); ++again) {
+  for (int again = 0; first && !parsed.created && again < 3 && !parsed.error && parsed.value.servers.empty(); ++again) {
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
     parsed = loadConfig(configPath_);
   }
@@ -540,7 +542,15 @@ void Application::reload(int prefer) {
     setKnownServers(std::move(urls));
   }
   writePendingState(); // what was just set, before it is read back
-  const auto state = loadState(statePath_);
+  bool busy = false;
+  const auto state = loadState(statePath_, &busy);
+  if (state.error && busy && !session_) {
+    // Held by a write still going, not broken: the servers show now (not an
+    // empty 설정) and the records are read again until they can be.
+    config_ = std::move(parsed.value);
+    waitForState(prefer);
+    return;
+  }
   if (state.error) {
     error_ = state.error;
     screen(Screen::Settings);
@@ -606,7 +616,32 @@ void Application::refresh() {
     done_ = true;
   });
 }
+void Application::waitForState(int prefer) {
+  statePrefer_ = prefer;
+  if (stateWaiting_) return; // already reading again
+  stateWaiting_ = true;
+  stateWaitAt_ = SDL_GetTicks();
+  error_ = {};
+  if (stateWorker_.joinable()) stateWorker_.join();
+  stateWorker_ = std::thread([this, path = statePath_] {
+    while (!stop_) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(300));
+      bool busy = false;
+      guarded("state", [&] {
+        const auto read = loadState(path, &busy);
+        if (!read.error) busy = false;
+      });
+      if (!busy) break; // readable now, or broken: reload says which
+    }
+    stateReady_ = true;
+  });
+}
 void Application::poll() {
+  if (stateReady_.exchange(false)) {
+    stateWorker_.join();
+    stateWaiting_ = false;
+    reload(statePrefer_);
+  }
   pollDevice();
   pollSaveJob();
   pollRetro();
@@ -1290,6 +1325,7 @@ void Application::action(Action a) {
         if (homeOffersSettings()) screen(Screen::Settings);
         else refreshAll();
       }
+      if (a == Action::Left) sidebar_ = true; // to the menu, as from any page's first item
       return;
     }
     if (a == Action::Next) {

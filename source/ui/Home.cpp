@@ -50,6 +50,14 @@ std::vector<Application::HeroTag> Application::heroTags(const Group &g) const {
 }
 void Application::home() {
   if (groups_.empty()) {
+    if (stateWaiting_) {
+      // A write still holds the records (a slow card); past a few seconds,
+      // what may be holding them for longer.
+      const bool long_ = SDL_GetTicks() - stateWaitAt_ > 8000;
+      notice(tr("Reading the app's records on the SD card."),
+             long_ ? tr("If another CookingFoil is open, close it.") : "", 25);
+      return;
+    }
     if (!session_) {
       const bool none = std::none_of(config_.servers.begin(), config_.servers.end(),
                                      [](const auto &s) { return s.enabled; });

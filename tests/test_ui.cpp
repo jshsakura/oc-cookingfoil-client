@@ -85,6 +85,20 @@ int runUiTests(SDL_Renderer *renderer) {
   CHECK(fonts.measure("한글 日本 中文", 18) > 80);
   auto parsed =
       foil::net::parseSections(foil::readFile("host/fixtures/sections.json"));
+  {
+    // An empty 홈 (no server yet) offers 설정 on its notice; Left still
+    // goes to the menu, as from any page's first item.
+    foil::ui::Application empty(renderer, "", "", "host/fixtures/art");
+    CHECK(empty.open());
+    empty.screen(foil::ui::Screen::Home);
+    empty.action(foil::ui::Action::Right);
+    CHECK(!empty.onMenu());
+    empty.action(foil::ui::Action::Left);
+    CHECK(empty.onMenu() && empty.current() == foil::ui::Screen::Home);
+    empty.action(foil::ui::Action::Right);
+    empty.action(foil::ui::Action::Accept);
+    CHECK(empty.current() == foil::ui::Screen::Settings);
+  }
   foil::ui::Application app(renderer, "", "", "host/fixtures/art");
   CHECK(app.open());
   app.setItems(parsed.value);

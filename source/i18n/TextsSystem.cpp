@@ -128,6 +128,8 @@ const Translation rows[] = {
     {"Save the file as UTF-8.", "UTF-8로 저장해 주세요.", "UTF-8で保存してください。", "请以 UTF-8 保存。"},
     {"Check the JSON syntax. {0}", "JSON 문법을 확인해 주세요. {0}", "JSONの構文を確認してください。{0}", "请检查 JSON 语法。{0}"},
     {"Could not read the app's records on the SD card.", "SD 카드의 앱 기록을 읽지 못했습니다.", "SDカードのアプリの記録を読み込めませんでした。", "无法读取 SD 卡上的应用记录。"},
+    {"Reading the app's records on the SD card.", "SD 카드에서 앱 기록을 읽고 있습니다.", "SDカードからアプリの記録を読み込んでいます。", "正在读取 SD 卡上的应用记录。"},
+    {"If another CookingFoil is open, close it.", "다른 곳에서 CookingFoil이 열려 있다면 닫아 주세요.", "ほかでCookingFoilが開いている場合は閉じてください。", "如果其他地方还开着 CookingFoil，请将其关闭。"},
     {"The link key has expired or is not registered. Download the client again from the website.",
      "연동 키가 만료됐거나 등록되지 않았습니다. 웹에서 클라이언트를 다시 받아 주세요.",
      "連携キーの有効期限が切れているか、登録されていません。Webからクライアントをもう一度ダウンロードしてください。",

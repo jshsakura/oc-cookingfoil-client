@@ -1,3 +1,6 @@
+#include <ctime>
+#include <fstream>
+#include "core/DownloadStore.hpp"
 #include "Test.hpp"
 #include "core/State.hpp"
 #include "core/Sha256.hpp"
@@ -93,6 +96,18 @@ int runStateTests() {
     queued.queueJson = "[]";
     CHECK(foil::saveState(db, queued, error));
     CHECK(foil::loadState(db).value.queueJson == "[]");
+  }
+  {
+    // Held by a write still going (another instance's lock, fresh): busy, a
+    // moment's error, not the file's; once let go it reads as before.
+    const auto lock = foil::DownloadStore::fileName(db) + ".lock";
+    { std::ofstream f(lock); f << std::time(nullptr) << " 1 1\n"; }
+    bool busy = false;
+    CHECK(foil::loadState(db, &busy).error && busy);
+    std::filesystem::remove(lock);
+    busy = false;
+    const auto again = foil::loadState(db, &busy);
+    CHECK(!again.error && !busy && again.value.deviceKey == KeyA);
   }
   {
     // The card in another console: a new key, the server keys and secrets

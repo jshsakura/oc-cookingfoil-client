@@ -244,6 +244,7 @@ private:
   bool held_ = false;
 };
 } // namespace
+bool DownloadStore::busy(const std::string &error) { return error == Busy; }
 DownloadStore::~DownloadStore() { close(); }
 std::string DownloadStore::fileName(const std::string &path) {
   // SQLite takes a path without "/" at its start as relative and puts the
