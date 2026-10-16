@@ -25,16 +25,20 @@ void Application::home() {
       notice(config_.servers.empty() ? tr("No servers added.")
              : none                  ? tr("No servers are on.")
                                      : tr("Choose a server in Settings."),
-             tr("Enter a server's address and account with \"+ Add server\" in Settings."), 21);
+             tr("Enter a server's address and account with \"+ Add server\" in Settings."), 21,
+             tr("Go to Settings"), [this] { screen(Screen::Settings); }, tr("Refresh"), "-", [this] { refreshAll(); });
       return;
     }
     if (error_) {
-      notice(pairingPending_ ? tr("Waiting for device approval.")
-             : error_.message == net::offlineMessage()
-                 ? tr("No internet connection.")
-                 : tr("Couldn't connect to the server."),
-             error_.message + "\n" + tr("Check the server in Settings and press - to refresh."),
-             error_.message == net::offlineMessage() ? 20 : 25);
+      // A dropped line or a server that did not answer is tried again here;
+      // nothing points to 설정 for what is likely a moment's outage.
+      const bool offline = error_.message == net::offlineMessage();
+      if (pairingPending_)
+        notice(tr("Waiting for device approval."), error_.message, 25);
+      else
+        notice(offline ? tr("No internet connection.") : tr("Couldn't connect to the server."),
+               offline ? error_.message : error_.message + "\n" + tr("Check the server in Settings and press - to refresh."),
+               offline ? 20 : 25, tr("Try again"), [this] { refreshAll(); });
       return;
     }
     if (connected_) {

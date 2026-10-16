@@ -19,10 +19,15 @@ struct Response {
     std::string enroll;  // X-CookingFoil-Enroll: "invalid" when an enroll token was refused
     int curl = 0;        // curl's result; 7 (CURLE_COULDNT_CONNECT): nothing was sent
     int64_t date = 0;    // the Date header, Unix seconds; 0 when absent
+    bool directNamed = false; // X-CookingFoil-Download-Origin came with it
 };
 // The server's keys go to the server only; anything else (a picture on
 // another host) gets no credentials at all.
 std::vector<std::string> authHeaders(const Server& server, const State& state, const std::string& url);
+// After the server's info or list answered (`url`): a success over https
+// without X-CookingFoil-Download-Origin means the server turned its direct
+// address off, so the address and token held from before are dropped.
+void followDirectNaming(const std::string& url, const Response& response);
 // A file download: as authHeaders, and on the server's download host (https)
 // its download token too. Only downloads take it, so no other host sees it.
 std::vector<std::string> downloadHeaders(const Server& server, const State& state, const std::string& url);

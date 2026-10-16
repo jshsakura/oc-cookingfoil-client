@@ -630,7 +630,8 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(reload.groupCount() == 13);
     reload.action(foil::ui::Action::Reload);
     CHECK(reload.groupCount() == 0);
-    CHECK(reload.current() == foil::ui::Screen::Settings);
+    // No server left: it stays put (홈 says how to add one), not 설정.
+    CHECK(reload.current() != foil::ui::Screen::Settings);
     std::filesystem::remove_all(root);
   }
   char formDirectory[] = "/tmp/cookingfoil-form-XXXXXX";
@@ -645,7 +646,9 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"Old","url":"http://127.0.0.1:1","enabled":false}]})", error));
     foil::ui::Application form(renderer, configPath, statePath, "host/fixtures/art");
     CHECK(form.open());
-    CHECK(form.current() == foil::ui::Screen::Settings);
+    // No server on: the app does not jump to 설정 by itself.
+    CHECK(form.current() != foil::ui::Screen::Settings);
+    form.screen(foil::ui::Screen::Settings);
     form.render();
     // One server card, then "+ 서버 추가" under it, both 52 tall with a 12 gap.
     form.touch(700, 86 + 52 + 12 + 26);

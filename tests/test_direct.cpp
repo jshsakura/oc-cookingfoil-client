@@ -1,5 +1,6 @@
 #include "Test.hpp"
 #include "net/Direct.hpp"
+#include "net/Api.hpp"
 #include "net/Ranged.hpp"
 #include "net/Segmented.hpp"
 #include "net/Socket.hpp"
@@ -232,6 +233,37 @@ int runDirectTests() {
     const auto sent = files.take();
     CHECK(!sent.empty());
     for (const auto &request : sent) CHECK(has(request, "X-Access-Key: shop-key") && !has(request, "Bearer"));
+  }
+  {
+    // The server turned its direct address off: its next info or list reply
+    // over https names none, and what was held goes (downloads go back to
+    // the list's own addresses without a restart).
+    const auto named = [] {
+      forgetDownloadToken();
+      hear("X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
+      hear("X-CookingFoil-Download-Token: held\r\n");
+    };
+    const std::string info = "https://shop.example/api/shop/info";
+    Response reply;
+    reply.status = 200;
+    named();
+    reply.directNamed = true; // still named: kept
+    followDirectNaming(info, reply);
+    CHECK(downloadTokenOrigin() == "https://dl.example:8443" && downloadToken() == "held");
+    reply.directNamed = false; // named no more: dropped
+    followDirectNaming(info, reply);
+    CHECK(downloadTokenOrigin().empty() && downloadToken().empty());
+    named();
+    reply.status = 304; // an unchanged list counts the same
+    followDirectNaming(info, reply);
+    CHECK(downloadTokenOrigin().empty());
+    named();
+    reply.status = 503; // a failure says nothing about it
+    followDirectNaming(info, reply);
+    CHECK(downloadTokenOrigin() == "https://dl.example:8443");
+    reply.status = 200; // a plain http server is never given one
+    followDirectNaming("http://shop.example/api/shop/info", reply);
+    CHECK(downloadToken() == "held");
   }
   forgetDirect();
   forgetDownloadToken();

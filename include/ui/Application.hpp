@@ -848,7 +848,15 @@ private:
   void dialogs();
   float infoCard(const Group &g, const std::string &publisher, float y);
   // Centered notice card for empty, error and waiting states.
-  void notice(const std::string &title, const std::string &body = "", int icon = -1);
+  // `button`, when given, sits under the text: A (on the content) or a tap
+  // presses it. `other` sits beside it, pressed by its own `otherKey` or a tap.
+  void notice(const std::string &title, const std::string &body = "", int icon = -1, const std::string &button = "",
+              std::function<void()> press = {}, const std::string &other = "", const std::string &otherKey = "",
+              std::function<void()> pressOther = {});
+  // 홈 with nothing to show and a button on its notice: 설정 when no server
+  // is set up, 다시 시도 when the one set up did not answer.
+  bool homeOffersSettings() const { return groups_.empty() && !session_; }
+  bool homeOffersRetry() const { return groups_.empty() && session_ && error_ && !pairingPending_; }
   // Page title and its meta text, centered on the header's button line.
   // Returns the x after the meta text.
   // `metaRight`: where header buttons start, so long meta text stops short.

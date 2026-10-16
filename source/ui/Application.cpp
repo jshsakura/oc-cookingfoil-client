@@ -224,15 +224,8 @@ void Application::usePatchFolder(const std::string &sd) {
   // the queue, which picks up again once the shop is reachable.
   openDownloads(sd);
   rebuildQueue();
-  // Left waiting or cut off last time: it goes on by itself once the shop is
-  // reachable, so it says what, instead of a download starting unasked.
-  if (!installQueue_.empty()) {
-    const auto &next = installQueue_.front();
-    const auto name = next.kind == "retroarch" ? std::string("RetroArch") : next.name;
-    message(installQueue_.size() == 1 ? trf("Going on with a download from last time: {0}", {name})
-                                      : trf("Going on with {0} downloads from last time, first {1}",
-                                            {std::to_string(installQueue_.size()), name}));
-  }
+  // Left waiting or cut off last time: asked about once the shop is
+  // reachable (offerResume), so nothing is said here.
   // A check of the old card stops first; it holds only a copy of the ledger.
   patchCheckStop_ = true;
   if (patchCheckWorker_.joinable())
@@ -489,7 +482,7 @@ void Application::screen(Screen screen) {
 bool Application::hasFocusable() const {
   switch (screen_) {
   case Screen::Home:
-    return !groups_.empty();
+    return !groups_.empty() || homeOffersSettings() || homeOffersRetry(); // its notice's button
   case Screen::Library:
     return true; // the search box is always there
   case Screen::Installed:
@@ -568,10 +561,10 @@ void Application::reload(int prefer) {
   }
   auto found = std::find_if(config_.servers.begin(), config_.servers.end(),
                             [](const auto &s) { return s.enabled; });
-  if (found == config_.servers.end()) {
-    screen(Screen::Settings);
+  // No server to connect to: the screen stays where it is; 홈 says how to
+  // add one (설정 is a tap away). Only an error in the files sends it there.
+  if (found == config_.servers.end())
     return;
-  }
   connect(found - config_.servers.begin());
 }
 void Application::connect(size_t index) {
@@ -1291,6 +1284,14 @@ void Application::action(Action a) {
     return;
   }
   if (screen_ == Screen::Home) {
+    // The notice's button: 설정 with no server yet, 다시 시도 after a failure.
+    if (homeOffersSettings() || homeOffersRetry()) {
+      if (a == Action::Accept) {
+        if (homeOffersSettings()) screen(Screen::Settings);
+        else refreshAll();
+      }
+      return;
+    }
     if (a == Action::Next) {
       openTheme(row_ > 0 ? size_t(row_ - 1) : 0);
       return;

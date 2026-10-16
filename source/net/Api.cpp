@@ -50,7 +50,9 @@ size_t writeHeader(char* data, size_t size, size_t count, void* context) {
     auto colon = line.find(':');
     if (colon != std::string::npos) {
         auto key = line.substr(0, colon); std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return std::tolower(c); });
-        if (key == "etag") {
+        if (key == "x-cookingfoil-download-origin") {
+            static_cast<Response*>(context)->directNamed = true;
+        } else if (key == "etag") {
             auto value = line.substr(colon + 1); const auto begin = value.find_first_not_of(" \t\r\n");
             static_cast<Response*>(context)->etag = begin == std::string::npos ? "" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
         } else if (key == "content-range") {
@@ -292,9 +294,23 @@ Response getOnce(const std::string& url, const std::vector<std::string>& headers
     return result;
 }
 }
+// The server's info or list answered over https: it names its direct
+// address on every such reply while that is on, and on none once it is
+// turned off, so a reply without it drops the address and token held from
+// before (downloads go back to the list's own addresses at once, not only
+// after the app starts again).
+void followDirectNaming(const std::string& url, const Response& response) {
+    if (url.rfind("https://", 0) != 0) return; // plain http is never given one
+    if (response.status != 200 && response.status != 304) return;
+    if (response.directNamed || downloadTokenOrigin().empty()) return;
+    logLine("download: the server no longer names a direct address; its own addresses from now");
+    forgetDownloadToken();
+}
 long renewDownloadToken(const Server& server, const State& state) {
     const auto url = server.url + "/api/shop/info";
-    return get(url, authHeaders(server, state, url)).status;
+    const auto response = get(url, authHeaders(server, state, url));
+    followDirectNaming(url, response);
+    return response.status;
 }
 namespace {
 struct Stream {
@@ -1171,6 +1187,7 @@ bool Session::refresh(Error& error) {
         // so content added on the server shows without a restart.
         const auto info = server_.url + "/api/shop/info";
         const auto response = get(info, authHeaders(server_, state_, info), "", cancel_);
+        followDirectNaming(info, response);
         if (response.status == 200) {
             features_ = parseFeatures(response.body);
             recommendConnections(parseMaxConnections(response.body));
@@ -1186,6 +1203,7 @@ bool Session::refresh(Error& error) {
     // then reading it.
     const auto asked = std::chrono::steady_clock::now();
     auto response = get(url, authHeaders(server_, state_, url), etag_, cancel_);
+    followDirectNaming(url, response);
     const auto since = [](std::chrono::steady_clock::time_point from) {
         return std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - from).count()) + "ms";
     };

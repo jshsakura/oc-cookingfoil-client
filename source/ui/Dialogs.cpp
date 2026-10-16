@@ -110,7 +110,9 @@ float Application::pageTitle(const std::string &title, const std::string &meta, 
 std::string Application::countLabel(size_t count, const std::string &query) const {
   return query.empty() ? std::to_string(count) : trf("Search results: {0}", {std::to_string(count)});
 }
-void Application::notice(const std::string &title, const std::string &body, int icon) {
+void Application::notice(const std::string &title, const std::string &body, int icon, const std::string &button,
+                         std::function<void()> press, const std::string &other, const std::string &otherKey,
+                         std::function<void()> pressOther) {
   // Centered between the page header and the footer.
   constexpr float Width = 640, Left = 260 + (992 - Width) / 2, BodyTop = 110,
                   BodyBottom = 660, Center = Left + Width / 2, TextWidth = Width - 80;
@@ -121,7 +123,9 @@ void Application::notice(const std::string &title, const std::string &body, int 
                                  : 0;
   constexpr float IconSize = 44;
   const float iconSpace = icon >= 0 ? IconSize + 16 : 0;
-  const float height = 48 + iconSpace + 30 + (lines ? 14 + bodyHeight : 0) + 44;
+  constexpr float ButtonH = 56, ButtonGap = 28;
+  const float buttonSpace = button.empty() ? 0 : ButtonGap + ButtonH;
+  const float height = 48 + iconSpace + 30 + (lines ? 14 + bodyHeight : 0) + buttonSpace + 44;
   // An empty page still answers a finger as a list would: it stretches and
   // springs back (nothing to scroll, so its end is its start).
   const float pulled = glide("empty", 232, 84, 1048, BodyBottom - 84, 0, 0, 1);
@@ -133,6 +137,27 @@ void Application::notice(const std::string &title, const std::string &body, int 
   paint_.fonts.centered(title, Center, Top + 44 + iconSpace, 24, Ink, TextWidth, 2, true);
   if (lines)
     paint_.fonts.centered(body, Center, Top + 92 + iconSpace, 19, Secondary, TextWidth, lines);
+  if (!button.empty()) {
+    // The main one in butter, with A while the cursor is on the page (as
+    // 연결하기 is); the other beside it in the card's grey, with its own key.
+    const bool focused = !sidebar_ && headerFocus_.empty();
+    constexpr float Gap = 14;
+    const float width = (focused ? paint_.keyLabelWidth("A", button, 20, true) : paint_.fonts.measure(button, 20, true)) + 64;
+    const float otherWidth = other.empty() ? 0 : paint_.keyLabelWidth(otherKey, other, 20, true) + 64;
+    const float total = width + (other.empty() ? 0 : Gap + otherWidth);
+    const float x = Center - total / 2, y = Top + height - 44 - ButtonH;
+    if (focused) paint_.ring(x, y, width, ButtonH, 14);
+    paint_.rect(x, y, width, ButtonH, Butter, 14);
+    if (focused) paint_.keyLabel("A", button, x + 32, y + ButtonH / 2, 20, Ink, true);
+    else paint_.fonts.middle(button, x + 32, y + ButtonH / 2, 20, Ink, true);
+    if (press) hit(x, y, width, ButtonH, press);
+    if (!other.empty()) {
+      const float ox = x + width + Gap;
+      paint_.rect(ox, y, otherWidth, ButtonH, Ground, 14);
+      paint_.keyLabel(otherKey, other, ox + 32, y + ButtonH / 2, 20, Ink, true);
+      if (pressOther) hit(ox, y, otherWidth, ButtonH, pressOther);
+    }
+  }
   unclip();
 }
 void Application::viewPopup() {

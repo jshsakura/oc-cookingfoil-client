@@ -44,6 +44,7 @@ const Translation rows[] = {
     {"Install after the console scan finishes.", "본체 조회가 끝난 뒤 설치합니다.", "本体の確認が終わってからインストールします。", "主机检查完成后再安装。"},
     {"Downloads", "다운로드", "ダウンロード", "下载"},
     {"Settings", "설정", "設定", "设置"},
+    {"Go to Settings", "설정으로 이동", "設定を開く", "前往设置"},
     {"Connected", "연결됨", "接続済み", "已连接"},
     {"Awaiting approval", "승인 대기", "承認待ち", "等待批准"},
     {"Connecting", "연결 중", "接続中", "连接中"},

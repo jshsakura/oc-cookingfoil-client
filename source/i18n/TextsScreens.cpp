@@ -178,8 +178,6 @@ const Translation rows[] = {
     {"RetroArch's base files are not on the card, so the game was not downloaded. Get RetroArch (Y on the retro screen), then try again.", "RetroArch 기본 파일이 SD 카드에 없어 게임을 받지 않았습니다. 레트로 화면에서 Y로 RetroArch를 받은 뒤 다시 시도해 주세요.", "RetroArchの基本ファイルがSDカードにないため、ゲームを入手しませんでした。レトロ画面でYを押してRetroArchを入手してから、もう一度お試しください。", "SD 卡上没有 RetroArch 基本文件，因此未下载游戏。请在复古游戏画面按 Y 获取 RetroArch 后重试。"},
     {"Once it is on the card, its patches, saves and HOME Menu shortcut are managed here.", "받고 나면 패치, 세이브, 홈 메뉴 바로가기를 여기서 관리합니다.", "入手すると、パッチ、セーブ、HOMEメニューのショートカットをここで管理します。", "下载后，可在此管理补丁、存档和 HOME 菜单快捷方式。"},
     {"Not on the server", "서버 목록에 없음", "サーバーにありません", "不在服务器上"},
-    {"Going on with a download from last time: {0}", "지난번에 받던 것을 이어서 받습니다: {0}", "前回の続きを入手します: {0}", "继续上次的下载: {0}"},
-    {"Going on with {0} downloads from last time, first {1}", "지난번에 받던 {0}개를 이어서 받습니다. 먼저 {1}", "前回の続きを{0}件入手します。最初は {1}", "继续上次的 {0} 个下载，先下载 {1}"},
     {"Check the details below.", "아래 정보를 확인해 주세요.", "下の情報をご確認ください。", "请查看下方信息。"},
     {"Size|info", "용량", "容量", "大小"},
     {"Developer", "개발사", "開発元", "开发商"},
