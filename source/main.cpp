@@ -6,6 +6,7 @@
 #include "core/Log.hpp"
 #include "core/I18n.hpp"
 #include "platform/Identity.hpp"
+#include "platform/Focus.hpp"
 #include <cmath>
 #include <vector>
 #include <curl/curl.h>
@@ -114,7 +115,18 @@ int main(int argc, char **argv) {
       constexpr uint32_t UpdateConfirmMs = 8000;
       const uint32_t startedAt = SDL_GetTicks();
       bool confirmed = false;
+      // Under the HOME Menu the downloads go on (as an application).
+      foil::platform::keepRunningInBackground();
       while (appletMainLoop()) {
+        // Not on screen: nothing is drawn or read from the pads; the queue
+        // still moves on (the next download starts when one ends).
+        if (!foil::platform::onScreen()) {
+          ui.poll();
+          if (ui.shouldQuit())
+            break;
+          svcSleepThread(50'000'000);
+          continue;
+        }
         if (!confirmed && SDL_GetTicks() - startedAt >= UpdateConfirmMs) {
           confirmed = true;
           foil::platform::confirmUpdate(self);

@@ -23,6 +23,19 @@ void onLeavingScreen(std::function<void()> leaving) {
   hooked = true;
 #endif
 }
+void keepRunningInBackground() {
+#ifdef __SWITCH__
+  if (appletGetAppletType() == AppletType_Application || appletGetAppletType() == AppletType_SystemApplication)
+    appletSetFocusHandlingMode(AppletFocusHandlingMode_NoSuspend);
+#endif
+}
+bool onScreen() {
+#ifdef __SWITCH__
+  return appletGetFocusState() == AppletFocusState_InFocus;
+#else
+  return true;
+#endif
+}
 void stopWatchingScreen() {
 #ifdef __SWITCH__
   if (hooked) appletUnhook(&cookie);
