@@ -1,4 +1,5 @@
 #include "ui/Application.hpp"
+#include <cmath>
 #include "core/Log.hpp"
 #include "platform/Saves.hpp"
 #include <algorithm>
@@ -179,8 +180,17 @@ void Application::savePanel() {
                     x, y + 4, 19, Secondary, true);
   y += Label;
   // Backups, then "delete this save".
-  const int first = std::clamp(saveRow_ - VisibleRows / 2, 1, std::max(1, last - VisibleRows + 1));
-  for (int row = first; row <= last && row < first + VisibleRows; ++row, y += Row + Gap) {
+  // Rows 1..last (the backups, then "delete"); the one at the top follows the
+  // cursor, or the finger and the right stick while they move it.
+  const int rows = last, visible = std::min(VisibleRows, rows);
+  const float listTop = y;
+  const float top = glide("saveBackups", x, listTop, w, visible * (Row + Gap),
+                          float(std::clamp(saveRow_ - 1 - VisibleRows / 2, 0, std::max(0, rows - VisibleRows))),
+                          float(rows - VisibleRows), Row + Gap);
+  const int firstIndex = std::max(0, int(std::floor(top)));
+  clipTo(x, listTop, w, visible * (Row + Gap));
+  for (int row = firstIndex + 1; row <= last && row <= firstIndex + 1 + VisibleRows; ++row) {
+    y = listTop + (row - 1 - top) * (Row + Gap);
     hit(x, y, w, Row, [this, row] { saveRow_ = row; saveAction(Action::Accept); });
     if (saveRow_ == row && idle) paint_.focusRow(x, y, w, Row, Ground, 12);
     else paint_.rect(x, y, w, Row, Ground, 12);
@@ -200,6 +210,7 @@ void Application::savePanel() {
     const auto size = formatBytes(uint64_t(b.size));
     paint_.fonts.middle(size, x + w - 20 - paint_.fonts.measure(size, 18, true), y + Row / 2, 18, Ink, true);
   }
+  unclip();
   if (saveConfirm_ == SaveConfirm::None) return;
   // Confirmation over the panel, one decision in its footer.
   const auto &b = backups_[saveRow_ - 1];

@@ -1,6 +1,7 @@
 // An app's patches and saves in 홈브류: the server lists them with the
 // game ones, naming the app's folder (switch/<app>) instead of a Title ID.
 #include "ui/Application.hpp"
+#include <cmath>
 #include "core/I18n.hpp"
 #include "core/Json.hpp"
 #include "net/ShopSavesApi.hpp"
@@ -132,10 +133,16 @@ void Application::homebrewExtrasDialog() {
   const auto body = modal(Width, 16 + shown * (Row + Gap) + 8,
                           app->name + " · " + (patchList ? tr("Patches") : tr("Saves")), tr("Close"), "", accept,
                           patchList ? 32 : 36);
-  const float x = body.x + 24, w = body.w - 48;
-  const int first = std::clamp(homebrewExtraRow_ - Visible / 2, 0, std::max(0, count - Visible));
-  for (int n = first; n < count && n < first + Visible; ++n) {
-    const float y = body.y + 16 + (n - first) * (Row + Gap);
+  const float x = body.x + 24, w = body.w - 48, listTop = body.y + 16;
+  // The row at the top follows the cursor, or the finger and the right
+  // stick while they move it (stretching past an end, as every list does).
+  const float top = glide("homebrewExtras", x, listTop, w, shown * (Row + Gap),
+                          float(std::clamp(homebrewExtraRow_ - Visible / 2, 0, std::max(0, count - Visible))),
+                          float(count - Visible), Row + Gap);
+  const int first = std::max(0, int(std::floor(top)));
+  clipTo(x, listTop, w, shown * (Row + Gap));
+  for (int n = first; n < count && n <= first + Visible; ++n) {
+    const float y = listTop + (n - top) * (Row + Gap);
     hit(x, y, w, Row, [this, n] {
       homebrewExtraRow_ = n;
       action(Action::Accept);
@@ -179,6 +186,7 @@ void Application::homebrewExtrasDialog() {
       paint_.fonts.text(bytes, x + w - 16 - paint_.fonts.measure(bytes, 17, true), y + 44, 17, Ink, true);
     }
   }
+  unclip();
 }
 // The files go into the app's folder; what they replace is kept first.
 void Application::homebrewSaveDialog() {
