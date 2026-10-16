@@ -6,6 +6,7 @@
 #include "net/Segmented.hpp"
 #include "net/Direct.hpp"
 #include "net/Tuner.hpp"
+#include "core/Config.hpp"
 #include <chrono>
 #include <cstdio>
 #include <functional>
@@ -25,7 +26,7 @@ void benchmark(const Item &item, const std::vector<std::string> &headers) {
   net::SegmentedOptions options;
   options.connections = net::connectionsFor(from, 0);
   options.headers = headers;
-  net::startTuning(options.connections);
+  net::startTuning(options.connections, originOf(net::routeDownload(from)));
   struct Tuning {
     ~Tuning() { net::stopTuning(); }
   } tuning;

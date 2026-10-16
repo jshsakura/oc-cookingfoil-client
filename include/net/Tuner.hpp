@@ -7,6 +7,9 @@
 //   to the count before (the better one for fewer connections) and waits
 //   longer before trying again (6 spans, doubling to 24), so a count that
 //   is right is not shaken every few seconds.
+// - Settled, it keeps watching: when the speed at its count moves by more
+//   than Shift (the line got busier or freer), it tries again at once
+//   instead of waiting, so a count that has gone stale is found anew.
 // - Trouble (an error, a retry, a timeout) in two spans in a row steps down
 //   one (never below 1); a single blip changes nothing.
 // - A span with no bytes (paused, offline) decides nothing.
@@ -18,7 +21,7 @@
 namespace foil::net {
 class ConnectionTuner {
 public:
-  static constexpr double SpanSeconds = 7, Gain = 1.10;
+  static constexpr double SpanSeconds = 7, Gain = 1.10, Shift = 0.30;
   static constexpr int TrySpans = 2, RetryAfter = 6, MostWait = 24;
   explicit ConnectionTuner(int ceiling = 0);
   int connections() const { return now_; }
@@ -31,6 +34,10 @@ public:
   int span(uint64_t bytes, double seconds, int downloading);
   // "connections 3 (tuned), 2 others downloading".
   std::string summary(int downloading) const;
+  // The next download to the same place goes on with what was found: the
+  // count (under the new `ceiling`) and the wait before the next try. A try
+  // under way is finished over the new download's spans.
+  void carryOn(int ceiling);
 
 private:
   void settle(int wait, const char *reason);
@@ -43,13 +50,17 @@ private:
   double speed_ = 0;   // bytes a second at this count, smoothed
   double before_ = 0;  // the speed the try is measured against
   double trySum_ = 0;
+  double settled_ = 0; // the speed when the count was last decided
   std::string reason_ = "start";
 };
 // The one running download's tuner. startTuning() begins one under the
-// server's `ceiling`; tunedConnections() is 0 while none runs (a caller
-// keeps its own count then), else the count now, closing a span when one
-// is due by the bytes the downloads counted (countReceived).
-void startTuning(int ceiling);
+// server's `ceiling` for a download from `place` (its address' origin):
+// queued downloads from the same place one after another keep what the
+// last one found instead of measuring from 2 again; another place starts
+// over. tunedConnections() is 0 while none runs (a caller keeps its own
+// count then), else the count now, closing a span when one is due by the
+// bytes the downloads counted (countReceived).
+void startTuning(int ceiling, const std::string &place);
 void stopTuning();
 int tunedConnections();
 void tuneTrouble();

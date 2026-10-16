@@ -81,10 +81,40 @@ int runTunerTests() {
     // The running tuner: 0 while none runs, the start count once begun.
     foil::net::stopTuning();
     CHECK(foil::net::tunedConnections() == 0);
-    foil::net::startTuning(4);
+    foil::net::startTuning(4, "https://first.example");
     CHECK(foil::net::tunedConnections() == 2);
     foil::net::stopTuning();
     CHECK(foil::net::tunedConnections() == 0);
+  }
+  {
+    // What one download found, the next from the same place keeps: no
+    // measuring from 2 again, and no try sooner than it was due.
+    ConnectionTuner tuner(4);
+    run(tuner, 1, 20 * MB);
+    run(tuner, 2, 30 * MB); // 3 kept
+    run(tuner, 1, 30 * MB); // trying 4
+    run(tuner, 2, 30 * MB); // no better: back to 3, next try in 6 spans
+    CHECK(tuner.connections() == 3);
+    tuner.carryOn(4);
+    CHECK(tuner.connections() == 3);
+    CHECK(run(tuner, 5, 30 * MB) == 3); // still waiting out its try
+    CHECK(tuner.summary(0) == "connections 3 (tuned)");
+    // A lower ceiling for the next one applies at once.
+    tuner.carryOn(2);
+    CHECK(tuner.connections() == 2);
+    // The line changes under a decided count (here: far slower for a while):
+    // it tries again at once instead of waiting its turn.
+    ConnectionTuner watch(4);
+    run(watch, 1, 20 * MB);
+    run(watch, 2, 21 * MB); // no better: back to 2, next try in 6 spans
+    CHECK(watch.connections() == 2);
+    CHECK(run(watch, 2, 20 * MB) == 2);
+    watch.span(8 * MB, 7, 0);
+    CHECK(watch.span(8 * MB, 7, 0) == 3); // more than 30% off: a try now
+    // A fresh tuner says it kept nothing; one carried on from the start says "kept".
+    ConnectionTuner fresh(4);
+    fresh.carryOn(4);
+    CHECK(fresh.summary(0) == "connections 2 (kept)");
   }
   return failures;
 }

@@ -11,6 +11,7 @@ int ConnectionTuner::ceiling(int downloading) const {
   return downloading > 1 ? std::max(1, ceiling_ / downloading) : ceiling_;
 }
 void ConnectionTuner::settle(int wait, const char *reason) {
+  settled_ = speed_;
   trying_ = false;
   here_ = tried_ = 0;
   trySum_ = 0;
@@ -53,6 +54,14 @@ int ConnectionTuner::span(uint64_t bytes, double seconds, int downloading) {
   }
   speed_ = speed_ > 0 ? speed_ * 0.5 + speed * 0.5 : speed;
   ++here_;
+  // The line changed under a decided count: look again now.
+  if (settled_ == 0)
+    settled_ = speed_;
+  else if (here_ >= 2 && (speed_ < settled_ * (1 - Shift) || speed_ > settled_ * (1 + Shift))) {
+    settled_ = speed_;
+    wait_ = here_;
+    reason_ = "re-tuned";
+  }
   if (here_ >= wait_ && now_ < most && troubled_ == 0) {
     trying_ = true;
     before_ = speed_;
@@ -61,6 +70,15 @@ int ConnectionTuner::span(uint64_t bytes, double seconds, int downloading) {
     ++now_;
   }
   return now_;
+}
+void ConnectionTuner::carryOn(int ceiling) {
+  ceiling_ = std::max(1, ceiling);
+  if (now_ > ceiling_) {
+    now_ = ceiling_;
+    speed_ = 0;
+    settle(RetryAfter, "shared");
+  }
+  if (reason_ == "start") reason_ = "kept";
 }
 std::string ConnectionTuner::summary(int downloading) const {
   auto text = "connections " + std::to_string(now_) + " (" + reason_ + ")";
@@ -72,13 +90,18 @@ using Clock = std::chrono::steady_clock;
 std::mutex lock;
 bool running = false;
 ConnectionTuner tuner;
+std::string tunedFor; // the place the tuner learned
 Clock::time_point spanStart;
 uint64_t spanBytes = 0;
 std::atomic<int> active{0};
 } // namespace
-void startTuning(int ceiling) {
+void startTuning(int ceiling, const std::string &place) {
   std::lock_guard<std::mutex> held(lock);
-  tuner = ConnectionTuner(ceiling);
+  if (!place.empty() && place == tunedFor)
+    tuner.carryOn(ceiling);
+  else
+    tuner = ConnectionTuner(ceiling);
+  tunedFor = place;
   running = true;
   spanStart = Clock::now();
   spanBytes = receivedBytes();

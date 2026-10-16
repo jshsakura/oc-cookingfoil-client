@@ -164,7 +164,7 @@ void nativeInstall(const Item &item, const std::string &target,
     c = std::tolower(static_cast<unsigned char>(c));
   // The connections are found as it goes, under current.connections
   // (net/Tuner.hpp), for this file only.
-  foil::net::startTuning(current.connections);
+  foil::net::startTuning(current.connections, originOf(foil::net::routeDownload(from)));
   struct Tuning {
     ~Tuning() { foil::net::stopTuning(); }
   } tuning;
