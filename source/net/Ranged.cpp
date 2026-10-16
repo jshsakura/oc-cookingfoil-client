@@ -9,6 +9,7 @@
 #include "net/Segments.hpp"
 #include "net/Socket.hpp"
 #include "platform/Storage.hpp"
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstdio>
@@ -20,6 +21,9 @@ namespace fs = std::filesystem;
 namespace {
 constexpr int RetryWaitMs = 1000; // times the try number: 1 s, then 2 s
 constexpr int WaitStepMs = 100;
+// As every download: while bytes came in this recently, a drop is not a
+// failed try (a console rejoining Wi-Fi, or waking from sleep mid-transfer).
+constexpr auto ResumeWindow = std::chrono::seconds(60);
 // A tar's boundary is saved this often, so a power cut costs little.
 constexpr uint64_t CheckpointBytes = 16ull << 20;
 bool cancelled(const std::atomic<bool> *cancel) { return cancel && cancel->load(); }
@@ -53,7 +57,12 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
   bool fromZero = false;
   auto sendHeaders = headers; // the download token in them is swapped when it ran out
   int renewals = 0;
-  bool now = false; // asked again at once (the direct address left or a fresh token for it)
+  bool now = false; // asked again at once (a fresh token for the direct address)
+  auto lastData = std::chrono::steady_clock::now();
+  const auto take = [&](const char *data, size_t size) {
+    lastData = std::chrono::steady_clock::now();
+    return sink.data(data, size);
+  };
   for (int tries = 0; tries < RangedTries; ++tries) {
     for (int waited = 0; tries && !now && waited < RetryWaitMs * tries && !cancelled(cancel); waited += WaitStepMs)
       std::this_thread::sleep_for(std::chrono::milliseconds(WaitStepMs));
@@ -69,7 +78,7 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
       ask.push_back(std::move(header));
     auto verdict = RangeReply::Fail;
     bool started = false, refused = false;
-    const auto take = [&](const Response &reply) {
+    const auto start = [&](const Response &reply) {
       started = true;
       verdict = judgeRange(from, reply.status, reply.contentRange);
       if (verdict == RangeReply::Fail)
@@ -84,9 +93,9 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
         validator = reply.etag;
       return Start::Take;
     };
-    last = stream(requestUrl, ask, take, sink.data, cancel);
+    last = stream(requestUrl, ask, start, take, cancel);
     if (!started && last.error.empty())
-      take(last); // a reply without a body
+      start(last); // a reply without a body
     if (refused)
       return last;
     // A 401 on the direct address a fresh token answers: at once.
@@ -123,6 +132,19 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
     fromZero = false;
     if (last.error.empty() || cancelled(cancel))
       return last;
+    // Within the window: not a try; again after a wait that grows the longer
+    // nothing has come (2 s to 15 s), from where it stopped. A drop that came
+    // with bytes (the console slept mid-transfer) starts the window again.
+    if (sink.kept() > from)
+      lastData = std::chrono::steady_clock::now();
+    if (const auto quiet = std::chrono::steady_clock::now() - lastData; quiet < ResumeWindow) {
+      const auto wait = std::clamp<long>(long(std::chrono::duration_cast<std::chrono::seconds>(quiet).count() / 4), 2, 15);
+      for (long waited = 0; waited < wait * 1000 && !cancelled(cancel); waited += WaitStepMs)
+        std::this_thread::sleep_for(std::chrono::milliseconds(WaitStepMs));
+      --tries;
+      now = true;
+      continue;
+    }
     logLine("ranged: dropped at " + std::to_string(sink.kept()) + ", try " + std::to_string(tries + 2) + " of " +
             std::to_string(RangedTries));
   }

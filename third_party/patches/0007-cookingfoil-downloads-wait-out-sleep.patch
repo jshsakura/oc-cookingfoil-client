@@ -1,0 +1,108 @@
+--- a/source/util/network_util.cpp
++++ b/source/util/network_util.cpp
+@@ -22,6 +22,7 @@
+ 
+ #include "net/Socket.hpp"
+ #include "net/Direct.hpp"
++#include "core/Log.hpp"
+ #include <memory>
+ #include <deque>
+ #include "util/network_util.hpp"
+@@ -375,8 +376,35 @@
+         // connection or a server error is retried without counting.
+         u64 lastData = armGetSystemTick();
+         const u64 resumeWindow = armGetSystemTickFreq() * 60;
++        // CookingFoil: the same rules as the app's own downloads: a turn this
++        // long after the last one means the console slept, and the pieces
++        // get their full window again; with no network nothing is asked for.
++        const u64 sleepGap = armGetSystemTickFreq() * 10;
++        u64 lastTurn = armGetSystemTick();
++        bool offlineSaid = false;
+         while (delivered < size && !failed)
+         {
++            {
++                const u64 turn = armGetSystemTick();
++                if (turn - lastTurn > sleepGap)
++                {
++                    foil::logLine("download went on after " + std::to_string((turn - lastTurn) / armGetSystemTickFreq()) + " s away");
++                    lastData = turn;
++                }
++                lastTurn = turn;
++            }
++            const bool offline = foil::net::linkDown();
++            if (offline)
++            {
++                lastData = armGetSystemTick();
++                if (!offlineSaid) foil::logLine("download waits for the network");
++                offlineSaid = true;
++            }
++            else if (offlineSaid)
++            {
++                foil::logLine("network back; download goes on");
++                offlineSaid = false;
++            }
+             // A slow piece at the front does not hold the other connections:
+             // they go on to the next pieces while fewer than `connections` are
+             // being read, up to `ahead` pieces a connection held in all.
+@@ -386,7 +414,7 @@
+                     count += !part->done;
+                 return count;
+             };
+-            while (reading() < g_parallelConnections &&
++            while (!offline && reading() < g_parallelConnections &&
+                    (int)window.size() < g_parallelConnections * g_parallelAhead && next < end)
+             {
+                 auto part = std::make_unique<Part>();
+@@ -406,10 +434,11 @@
+                     if (!part->done) drop(*part);
+                 WaitWhilePaused();
+                 if (Stopping()) { failed = true; break; }
++                lastData = lastTurn = armGetSystemTick(); // the pause is no silence
+             }
+             const u64 now = armGetSystemTick();
+             for (auto& part : window)
+-                if (!part->done && !part->curl && part->retryAt <= now && !issue(*part)) failed = true;
++                if (!offline && !part->done && !part->curl && part->retryAt <= now && !issue(*part)) failed = true;
+             int running = 0;
+             curl_multi_perform(multi, &running);
+             int left = 0;
+@@ -778,6 +807,11 @@
+                 return written;
+             };
+ 
++            // CookingFoil: as the app's own downloads: while bytes came in the
++            // last minute a drop is not a failed try, and a drop that came
++            // with bytes (the console slept mid-transfer) starts that minute again.
++            u64 lastData = armGetSystemTick();
++            const u64 resumeWindow = armGetSystemTickFreq() * 60;
+             while (true)
+             {
+                 long waitNs = 0;
+@@ -796,6 +830,7 @@
+                         return 1;
+ 
+                     const size_t currentOffset = requestOffset + bytesReceived;
++                    const size_t receivedBefore = bytesReceived;
+                     sentToken = foil::net::downloadToken(); // CookingFoil: what this ask carries
+                     const size_t remaining = requestSize - bytesReceived;
+ 
+@@ -859,6 +894,19 @@
+                             url.c_str(), rc);
+                         return 1;
+                     }
++                    // CookingFoil: within the window, not a try: again after a
++                    // wait that grows the longer nothing has come (2 s to 15 s).
++                    if (bytesReceived > receivedBefore)
++                        lastData = armGetSystemTick();
++                    if (armGetSystemTick() - lastData < resumeWindow)
++                    {
++                        const u64 quiet = (armGetSystemTick() - lastData) / armGetSystemTickFreq();
++                        for (u64 waited = 0; waited < std::clamp<u64>(quiet / 4, 2, 15) * 10 && !Stopping(); ++waited)
++                            svcSleepThread(100000000ULL);
++                        attempt--;
++                        waitNs = 1;
++                        continue;
++                    }
+ 
+                     LOG_DEBUG("StreamDataRange: retriable error (url=%s rc=%d), %d retries left\n",
+                         url.c_str(), rc, kMaxRetries - attempt);
