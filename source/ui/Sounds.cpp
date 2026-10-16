@@ -1,5 +1,6 @@
 #include "ui/Sounds.hpp"
 #include "core/Log.hpp"
+#include "platform/Cores.hpp"
 #include <algorithm>
 namespace foil::ui {
 namespace {
@@ -35,6 +36,7 @@ bool Sounds::open() {
   voices_.reserve(MostVoices + 1);
   SDL_PauseAudioDevice(device_, 0);
   maker_ = std::thread([this] {
+    const platform::OnCore off(platform::WriterCore); // never a frame's time
     for (int i = 0; i < CueCount; ++i) {
       auto samples = chime(Cue(i), Rate);
       SDL_LockAudioDevice(device_);

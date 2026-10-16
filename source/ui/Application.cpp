@@ -3,6 +3,7 @@
 #include "net/Direct.hpp"
 #include "net/Segmented.hpp"
 #include "platform/Focus.hpp"
+#include "platform/Cores.hpp"
 #include "core/Config.hpp"
 #include "platform/Storage.hpp"
 #include "platform/Installed.hpp"
@@ -211,6 +212,7 @@ bool Application::open() {
   loading_ = true;
   std::atomic<bool> loaded{false}, fontsOpen{false}, fontsFailed{false};
   std::thread loader([&] {
+    const platform::OnCore off(platform::WriterCore); // the drawing core keeps the splash moving
     guarded("startup", [&] {
       if (!paint_.fonts.open()) {
         fontsFailed = true;
@@ -701,6 +703,8 @@ void Application::refresh() {
   // The approval note may have changed since the session last asked.
   session_->setPairMessage(pairMessage());
   network_ = std::thread([this] {
+    // Reading the catalog (seconds of JSON) stays off the drawing core too.
+    const platform::OnCore off(platform::NetworkCore);
     incomingError_ = {};
     const bool ok = guarded("catalog", [this] {
       if (session_->refresh(incomingError_) && !session_->unchanged())
