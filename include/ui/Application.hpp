@@ -1332,6 +1332,7 @@ private:
   void forgetInstall();
   void saveStateQuietly();
   void offerResume();
+  bool configReadOnce_ = false; // the first read at start reads again when it finds no servers
   bool resumeOffered_ = false, confirmResume_ = false; // asked at start: go on with what was cut off
   bool resumeAsked() const { return confirmResume_ && !installQueue_.empty(); }
   // The menu's screen is the one shown: 내 게임 is its 업데이트 and DLC tabs too,

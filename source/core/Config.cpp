@@ -144,7 +144,11 @@ bool restoreServers(const std::string& path) {
         const auto parsed = parseConfig(copy);
         if (parsed.error || parsed.value.servers.empty()) continue;
         std::string error;
-        if (!atomicWrite(path, copy, error)) return false;
+        if (!atomicWrite(path, copy, error)) {
+            logLine(std::string("config: could not restore from ") + side + ": " + error);
+            return false;
+        }
+        atomicWrite(path + ".bak", copy, error); // a copy stays for next time
         std::error_code ec;
         std::filesystem::remove(path + ".tmp", ec);
         std::filesystem::remove(path + ".old", ec);
@@ -178,8 +182,15 @@ Parsed<Config> loadConfig(const std::string& path) {
         // Nothing in it (cut while being made) reads as missing.
         const bool blank = text.find_first_not_of(" \t\r\n") == std::string::npos;
         auto parsed = parseConfig(text);
-        if ((blank || (!parsed.error && parsed.value.servers.empty())) && restoreServers(path))
-            return parseConfig(readExactly(path));
+        if (blank || (!parsed.error && parsed.value.servers.empty())) {
+            // What the card holds when it reads with no servers, for the log.
+            std::string beside;
+            for (const auto* side : {".tmp", ".old", ".bak"})
+                if (std::filesystem::exists(path + side, ec)) beside += std::string(" ") + side;
+            logLine("config: no servers in " + std::to_string(text.size()) + " bytes;" +
+                    (beside.empty() ? std::string(" nothing beside it") : " beside it:" + beside));
+            if (restoreServers(path)) return parseConfig(readExactly(path));
+        }
         return parsed;
     }
     // Gone: a copy left beside it comes back before a fresh empty one is made.

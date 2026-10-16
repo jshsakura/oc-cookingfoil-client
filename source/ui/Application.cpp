@@ -526,6 +526,14 @@ void Application::reload(int prefer) {
   }
   poll();
   auto parsed = loadConfig(configPath_);
+  // Read with no servers at start: read again a few times before 설정 takes
+  // over (a console was seen reading none at start and its servers a moment
+  // later). Only the first time: a refresh with none answers at once.
+  const bool first = std::exchange(configReadOnce_, true) == false;
+  for (int again = 0; first && again < 3 && !parsed.error && parsed.value.servers.empty(); ++again) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    parsed = loadConfig(configPath_);
+  }
   if (parsed.error) {
     error_ = parsed.error;
     screen(Screen::Settings);
