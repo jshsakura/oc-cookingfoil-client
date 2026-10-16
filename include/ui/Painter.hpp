@@ -45,9 +45,11 @@ public:
   void toggle(float x, float y, bool on);
   // Loading screen, presented at once: the mark and wordmark centered on
   // the ground, with a caption under them once fonts are open.
-  // `progress` 0..1 fills the bar under the logo; each startup step draws
-  // once (nothing animates while a step blocks), so the bar is what moves.
-  void splash(const std::string &caption = "", float progress = 0);
+  // `progress` 0..1 fills the bar under the logo. `seconds` since the
+  // screen came up makes the butter bounce; the mark and wordmark are made
+  // once and kept until splashDone().
+  void splash(const std::string &caption = "", float progress = 0, float seconds = 0);
+  void splashDone();
   // Controller key badge: an ink circle (a pill for "L R"/"ZR") with the key
   // centered. Every key shown on screen uses this. Returns its width.
   float key(const std::string &name, float x, float centerY, bool enabled = true);
@@ -76,6 +78,7 @@ private:
   std::map<int, SDL_Texture *> corners_;
   SDL_Texture *cornerTexture(int r);
   SDL_Texture *logo_ = nullptr, *wordmark_ = nullptr;
+  SDL_Texture *splashMark_ = nullptr, *splashWord_ = nullptr;
   std::map<std::string, SDL_Texture *> flags_;
   SDL_Texture *renderWordmark(int size = 27);
   SDL_Texture *renderMark(int size);

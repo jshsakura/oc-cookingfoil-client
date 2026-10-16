@@ -16,6 +16,8 @@
 #include <cctype>
 #include <chrono>
 #include <thread>
+#include <atomic>
+#include <mutex>
 #include <filesystem>
 namespace foil::ui {
 // Server names are the user's own, except the stock ones config files ship
@@ -165,9 +167,18 @@ void Application::keepDownloadPlace() {
     std::this_thread::sleep_for(10ms);
 }
 bool Application::open() {
-  // Startup runs on the main thread, so each step also lets the console
-  // handle HOME, and says how long the one before it took: all in one line
-  // at the end (a "start" with no "startup" after it stopped on the way).
+  // The first steps run on the main thread; the slow ones (the SD card, the
+  // server settings, the console's games) on a thread of their own while
+  // this one keeps the butter bouncing and lets the console handle HOME.
+  // Each says how long the one before it took: all in one line at the end
+  // (a "start" with no "startup" after it stopped on the way).
+  {
+    int w = 0, h = 0;
+    SDL_GetRendererOutputSize(paint_.renderer, &w, &h);
+    outputScale_ = w / 1280.f;
+  }
+  const uint32_t shownAt = SDL_GetTicks();
+  const auto seconds = [&] { return (SDL_GetTicks() - shownAt) / 1000.f; };
   auto stepAt = SDL_GetTicks();
   std::string stepName = "window", steps;
   const auto took = [&] {
@@ -179,9 +190,21 @@ bool Application::open() {
     progressShown = progress;
     stepAt = SDL_GetTicks();
     stepName = name;
-    paint_.splash(caption, progress);
+    paint_.splash(caption, progress, seconds());
     if (!platform::serviceApplet())
       exitRequested_ = true;
+  };
+  // What the loading thread is on, for the frames drawn meanwhile.
+  std::mutex shownLock;
+  std::string caption;
+  float progress = 0;
+  const auto background = [&](const std::string &text, float to, const char *name) {
+    std::lock_guard<std::mutex> lock(shownLock);
+    took();
+    stepAt = SDL_GetTicks();
+    stepName = name;
+    caption = text;
+    progress = to;
   };
   step("", 0.05f, "fonts");
   if (!paint_.fonts.open())
@@ -202,32 +225,61 @@ bool Application::open() {
   // Each step says what it is doing under the logo, so a slow SD card or
   // server shows where the time goes.
   step(tr("Preparing the image cache"), 0.2f, "images");
-  images_ = std::make_unique<Images>(paint_.renderer);
+  images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
   images_->source(
       {}, {},
       imageCacheFolder(),
       fixture_);
-  step(tr("Reading patches and download history on the SD card"), 0.4f, "sd");
+  // From here nothing touches the screen, the fonts or the renderer: the
+  // language it may set again is applied to the fonts once it is done.
+  background(tr("Reading patches and download history on the SD card"), 0.4f, "sd");
+  loading_ = true;
+  std::atomic<bool> loaded{false};
+  std::thread loader([&] {
+    guarded("startup", [&] {
 #ifdef __SWITCH__
-  usePatchFolder("sdmc:");
+      usePatchFolder("sdmc:");
 #else
-  if (!statePath_.empty())
-    usePatchFolder(std::filesystem::path(statePath_).parent_path().string() + "/sd");
+      if (!statePath_.empty())
+        usePatchFolder(std::filesystem::path(statePath_).parent_path().string() + "/sd");
 #endif
-  if (!configPath_.empty()) {
-    step(tr("Reading the server settings"), 0.65f, "config");
-    reload();
-  }
+      if (!configPath_.empty()) {
+        background(tr("Reading the server settings"), 0.65f, "config");
+        reload();
+      }
 #ifdef __SWITCH__
-  step(tr("Reading the games on this console"), 0.85f, "installed");
-  refreshInstalled();
-  // Album (applet mode) gets a few hundred MB and no title rights: say so
-  // before something big fails, and how to open it properly.
-  if (!platform::applicationMode()) {
-    alertTitle_ = tr("Running in applet mode");
-    alert_ = tr("Opened from the Album there is little memory, so big installs can be slow or fail. Launch a game while holding R to open in application mode.");
-  }
+      background(tr("Reading the games on this console"), 0.85f, "installed");
+      refreshInstalled();
+      // Album (applet mode) gets a few hundred MB and no title rights: say so
+      // before something big fails, and how to open it properly.
+      if (!platform::applicationMode()) {
+        alertTitle_ = tr("Running in applet mode");
+        alert_ = tr("Opened from the Album there is little memory, so big installs can be slow or fail. Launch a game while holding R to open in application mode.");
+      }
 #endif
+    });
+    loaded = true;
+  });
+  // The bar eases toward each step rather than jumping to it.
+  while (!loaded) {
+    std::string text;
+    float to = 0;
+    {
+      std::lock_guard<std::mutex> lock(shownLock);
+      text = caption;
+      to = progress;
+    }
+    progressShown += (to - progressShown) * 0.12f;
+    const uint32_t frameAt = SDL_GetTicks();
+    paint_.splash(text, progressShown, seconds());
+    if (!platform::serviceApplet())
+      exitRequested_ = true; // asked to close: it does once loading ends
+    const uint32_t spent = SDL_GetTicks() - frameAt;
+    if (spent < 16) SDL_Delay(16 - spent); // no vsync (the host preview): about 60 a second
+  }
+  loader.join();
+  loading_ = false;
+  paint_.fonts.preferChinese(language() == Language::Chinese);
   took();
   logLine("startup " + steps);
   // The bar runs on to its end before the app shows, rather than the app
@@ -238,14 +290,17 @@ bool Application::open() {
   for (;;) {
     const uint32_t gone = SDL_GetTicks() - fillFrom;
     const float t = std::min(1.f, gone / float(FillMs)), eased = 1 - (1 - t) * (1 - t);
-    paint_.splash(tr("Ready."), from + (1 - from) * eased);
+    paint_.splash(tr("Ready."), from + (1 - from) * eased, seconds());
     if (!platform::serviceApplet()) {
       exitRequested_ = true;
       break;
     }
     if (gone >= FillMs + HoldMs)
       break;
+    const uint32_t spent = SDL_GetTicks() - fillFrom - gone;
+    if (spent < 16) SDL_Delay(16 - spent);
   }
+  paint_.splashDone();
   return true;
 }
 // Patches live on the SD card: a store under switch/cookingfoil and the
@@ -283,7 +338,8 @@ void Application::applyStartupLanguage() {
   if (code.empty())
     code = config_.language;
   setLanguage(languageFromCode(code, Language::Korean));
-  paint_.fonts.preferChinese(language() == Language::Chinese);
+  if (!loading_) // open() applies it to the fonts on its own thread
+    paint_.fonts.preferChinese(language() == Language::Chinese);
 }
 void Application::toggleInstallCheck(bool &skip) {
   skip = !skip;
@@ -354,7 +410,7 @@ void Application::setSession(std::unique_ptr<net::Session> session) {
   pairPollAt_ = pairingPending_ ? SDL_GetTicks() : 0;
   if (!pairingPending_) pairSince_ = 0;
   else if (!pairSince_) pairSince_ = SDL_GetTicks();
-  images_ = std::make_unique<Images>(paint_.renderer);
+  images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
   images_->source(
       session_->server(), state_,
       imageCacheFolder(),
@@ -624,7 +680,7 @@ void Application::connect(size_t index) {
                                             statePath_, &stop_);
   session_->setConfigPath(configPath_);
   connected_ = false;
-  images_ = std::make_unique<Images>(paint_.renderer);
+  images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
   images_->source(config_.servers[index], state_, imageCacheFolder(), fixture_);
   renewTokensWith(config_.servers[index]);
   refresh();

@@ -275,25 +275,56 @@ void Painter::logo(float x, float y) {
     SDL_RenderCopyF(renderer, wordmark_, nullptr, &dest);
   }
 }
-void Painter::splash(const std::string &caption, float progress) {
+namespace {
+// The butter's hop, once a second: squashed on the ground, stretched as it
+// leaves, up 34 at the top, a little squash as it lands. Rising slows,
+// falling speeds up.
+struct Hop {
+  float rise, wide, tall;
+};
+Hop hop(float seconds) {
+  struct Key {
+    float at, rise, wide, tall;
+  };
+  static constexpr Key Keys[] = {{0, 0, 1.12f, .86f}, {.12f, 0, .94f, 1.08f}, {.5f, 34, 1, 1},
+                                 {.88f, 0, 1.04f, .96f}, {1, 0, 1.12f, .86f}};
+  const float t = seconds - std::floor(seconds);
+  for (int i = 0; i + 1 < int(std::size(Keys)); ++i) {
+    const auto &a = Keys[i], &b = Keys[i + 1];
+    if (t > b.at) continue;
+    float u = (t - a.at) / (b.at - a.at);
+    u = i == 1 ? 1 - (1 - u) * (1 - u) : i == 2 ? u * u : u * u * (3 - 2 * u);
+    return {a.rise + (b.rise - a.rise) * u, a.wide + (b.wide - a.wide) * u, a.tall + (b.tall - a.tall) * u};
+  }
+  return {0, Keys[0].wide, Keys[0].tall};
+}
+} // namespace
+void Painter::splash(const std::string &caption, float progress, float seconds) {
   SDL_SetRenderDrawColor(renderer, Ground.r, Ground.g, Ground.b, 255);
   SDL_RenderClear(renderer);
   // Drawn larger than the header logo, from textures made for this screen
-  // only and freed right after.
+  // only: kept while it shows, freed by splashDone().
   constexpr int Mark = 120, Word = 44;
   float sx = 1, sy = 1;
   SDL_RenderGetScale(renderer, &sx, &sy);
-  if (auto *mark = renderMark(Mark)) {
-    const SDL_FRect dest{640 - Mark / 2.f, 214, float(Mark), float(Mark)};
-    SDL_RenderCopyF(renderer, mark, nullptr, &dest);
-    SDL_DestroyTexture(mark);
+  if (!splashMark_) splashMark_ = renderMark(Mark);
+  if (!splashWord_) splashWord_ = renderWordmark(Word);
+  if (splashMark_) {
+    // The butter fills rows 11..31 of the mark's 40: it stands on y 307.
+    constexpr float Floor = 307, Bottom = Mark * 31 / 40.f;
+    const auto h = hop(seconds);
+    const float lift = h.rise / 34, shadow = 1.1f - .5f * lift;
+    rect(640 - 50 * shadow, Floor + 7 - 5 * shadow, 100 * shadow, 10 * shadow,
+         {Ink.r, Ink.g, Ink.b, Uint8(36 - 22 * lift)}, int(5 * shadow));
+    const float w = Mark * h.wide, tall = Mark * h.tall;
+    const SDL_FRect dest{640 - w / 2, Floor - h.rise - Bottom * h.tall, w, tall};
+    SDL_RenderCopyF(renderer, splashMark_, nullptr, &dest);
   }
-  if (auto *word = renderWordmark(Word)) {
+  if (splashWord_) {
     int w = 0, h = 0;
-    SDL_QueryTexture(word, nullptr, nullptr, &w, &h);
+    SDL_QueryTexture(splashWord_, nullptr, nullptr, &w, &h);
     const SDL_FRect dest{640 - w / sx / 2, 340, w / sx, h / sy};
-    SDL_RenderCopyF(renderer, word, nullptr, &dest);
-    SDL_DestroyTexture(word);
+    SDL_RenderCopyF(renderer, splashWord_, nullptr, &dest);
   }
   // A thin bar under the wordmark, filled by how far startup has come.
   constexpr float BarWidth = 280, BarTop = 420;
@@ -358,7 +389,13 @@ static const char *IconPaths[] = {
 const char *iconStroke(int kind) {
   return kind == 8 ? "3.2" : kind == 7 || kind == 9 ? "2.6" : "2.2";
 }
+void Painter::splashDone() {
+  if (splashMark_) SDL_DestroyTexture(splashMark_);
+  if (splashWord_) SDL_DestroyTexture(splashWord_);
+  splashMark_ = splashWord_ = nullptr;
+}
 Painter::~Painter() {
+  splashDone();
   if (logo_)
     SDL_DestroyTexture(logo_);
   if (wordmark_)

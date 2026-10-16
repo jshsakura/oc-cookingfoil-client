@@ -26,6 +26,10 @@ void clearImageCache(const std::string &folder);
 class Images {
 public:
   explicit Images(SDL_Renderer *renderer);
+  // With the screen's scale already known: makes no call on the renderer,
+  // so it can be made off the screen's thread (startup reads the server
+  // settings on its own thread).
+  Images(SDL_Renderer *renderer, float scale) : renderer_(renderer), scale_(scale) {}
   ~Images();
   void source(Server server, State state, std::string cache,
               std::string fixture = "");

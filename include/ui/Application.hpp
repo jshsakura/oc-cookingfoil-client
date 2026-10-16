@@ -1048,6 +1048,8 @@ private:
   void message(const std::string &text);
   Painter paint_;
   std::unique_ptr<Images> images_;
+  float outputScale_ = 1; // physical pixels per 1280 wide, read on the screen's thread
+  std::atomic<bool> loading_{false}; // open() is reading on its loading thread
   Sounds sounds_;
   bool alertHeard_ = false; // the error cue played for the alert on screen
   Config config_;
