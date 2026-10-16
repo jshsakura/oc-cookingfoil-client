@@ -153,6 +153,8 @@ const Translation rows[] = {
     {"Later", "나중에", "あとで", "稍后"},
     {"Game", "게임", "ゲーム", "游戏"},
     {"Took {0} off the queue.", "{0}을(를) 대기열에서 뺐습니다.", "{0}を順番待ちから外しました。", "已将 {0} 移出队列。"},
+    {"Added {0} games to the download queue.", "{0}개 게임을 다운로드 대기열에 추가했습니다.", "{0}本のゲームをダウンロードの順番待ちに追加しました。", "已将 {0} 个游戏加入下载队列。"},
+    {"Install finished.", "설치를 마쳤습니다.", "インストールが完了しました。", "安装完成。"},
     {"Added to the download queue.", "다운로드 대기열에 추가했습니다.", "ダウンロードの順番待ちに追加しました。", "已加入下载队列。"},
     {"It did not install, so the rest picked with it was taken off the queue.", "설치하지 못해 함께 고른 항목을 대기열에서 뺐습니다.", "インストールできなかったため、一緒に選んだ項目を順番待ちから外しました。", "安装失败，已将一起选择的项目移出队列。"},
     {"Installed. You can launch it from the HOME Menu.", "설치했습니다. 홈 메뉴에서 실행할 수 있습니다.", "インストールしました。HOMEメニューから起動できます。", "已安装。可从 HOME 菜单启动。"},

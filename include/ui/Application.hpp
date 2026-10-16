@@ -511,6 +511,7 @@ private:
   // label whose count is above 0.
   float headerTabs(const std::vector<std::string> &labels, int current, const std::function<void(int)> &pick,
                    float right = 1252, float leftLimit = 0, const std::vector<int> &counts = {});
+  std::string updatesFocus_; // the file the cursor is on in 업데이트/DLC, kept as rows leave
   int updatesTab_ = 1; // 1 업데이트, 2 DLC (내 게임's tabs after 설치됨)
   void showMyGamesTab(int tab);
   float myGamesTabs(float right = 1252);
@@ -1320,6 +1321,9 @@ private:
   // `first`: ahead of what waits (a shortcut for what just came down).
   Error startInstall(const std::vector<Item> &files, const std::string &name, const std::string &icon,
                      const std::string &target, std::vector<UserPatch> patches = {}, bool first = false);
+  Error enqueueInstall(const std::vector<Item> &files, const std::string &name, const std::string &icon,
+                       const std::string &target, std::vector<UserPatch> patches, bool first, bool &added);
+  Error launchAdded(int picks);
   // Everything that downloads waits its turn in one queue and runs alone:
   // a game's files, its patches, homebrew, retro games, RetroArch and
   // shortcuts. `kind` is "" for an install, else the history row's kind.

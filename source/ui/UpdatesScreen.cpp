@@ -1,4 +1,5 @@
 #include "ui/Application.hpp"
+#include "core/Log.hpp"
 #include <algorithm>
 #include <limits>
 #include <map>
@@ -13,6 +14,7 @@ void Application::showMyGamesTab(int tab) {
   screen_ = tab == 0 ? Screen::Installed : Screen::Updates;
   if (tab) updatesTab_ = tab;
   selected_ = 0;
+  updatesFocus_.clear();
   if (onTabs) headerFocus_ = "tab" + std::to_string(tab);
   else if (!sidebar_ && !hasFocusable()) headerFocus_ = "tab" + std::to_string(tab);
 }
@@ -67,6 +69,14 @@ std::vector<UpdateCandidate> Application::updateRows() const {
 }
 void Application::updates() {
   const auto rows = updateRows();
+  // Rows leave as they are queued and installed: the cursor stays on the
+  // game it was on, and only when that one left does it take the row there.
+  if (!rows.empty()) {
+    const auto at = std::find_if(rows.begin(), rows.end(), [&](const UpdateCandidate &r) { return r.item.url == updatesFocus_; });
+    if (at != rows.end()) selected_ = int(at - rows.begin());
+    selected_ = std::clamp(selected_, 0, int(rows.size()) - 1);
+    updatesFocus_ = rows[selected_].item.url;
+  }
   uint64_t bytes = 0;
   for (const auto &row : rows) bytes += std::min(row.item.size, std::numeric_limits<uint64_t>::max() - bytes);
 
@@ -166,17 +176,26 @@ void Application::installUpdates(bool all) {
     if (!files.count(row.baseId)) order.push_back(row.baseId);
     files[row.baseId].push_back(row.item);
   }
+  // All in at once: queued together, saved and started once, one word.
+  int picks = 0;
   for (const auto &base : order) {
     const auto *group = findGroup(base);
     const auto &first = files[base].front();
     const auto name = group ? group->representative.name : first.name;
     const auto icon = group ? group->representative.icon : first.icon;
-    if (const auto result = startInstall(files[base], name, icon, installTarget())) {
-      message(result.message);
-      return;
-    }
+    bool added = false;
+    if (const auto refused = enqueueInstall(files[base], name, icon, installTarget(), {}, false, added))
+      logLine("update all: " + name + ": " + refused.message); // that one stays out; the rest go in
+    picks += added;
   }
+  if (!picks) {
+    message(tr("Already in the download queue."));
+    return;
+  }
+  if (const auto result = launchAdded(picks))
+    message(result.message);
   // The list stays (what was queued leaves it); 다운로드 shows the queue.
   selected_ = 0;
+  updatesFocus_.clear();
 }
 } // namespace foil::ui

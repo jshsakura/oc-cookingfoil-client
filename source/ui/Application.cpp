@@ -847,7 +847,14 @@ void Application::poll() {
     // in 완료 or 실패.
     if (installStatus == install::Status::Succeeded) {
       sounds_.play(Cue::Done);
-      message(installer_.progress().name + " · " + tr("Installed. You can launch it from the HOME Menu."));
+      // Only what puts a new entry on the HOME Menu (a base game, an app
+      // installed as a title) points there; an update or DLC just finished.
+      const auto &parts = installer_.progress().parts;
+      const bool addon = !parts.empty() && std::all_of(parts.begin(), parts.end(), [](const Item &f) {
+        return f.type == "dlc" || f.type == "update";
+      });
+      message(installer_.progress().name + " · " +
+              (addon ? tr("Install finished.") : tr("Installed. You can launch it from the HOME Menu.")));
     } else if (installStatus == install::Status::Failed) {
       sounds_.play(Cue::Error);
       message(installer_.progress().name + " · " + installer_.progress().error);
@@ -1588,6 +1595,7 @@ void Application::action(Action a) {
     if (a == Action::Up) selected_ = std::max(0, selected_ - 1);
     if (a == Action::Down) selected_ = std::min(int(rows.size()) - 1, selected_ + 1);
     selected_ = std::max(0, selected_);
+    if (!rows.empty()) updatesFocus_ = rows[std::min(selected_, int(rows.size()) - 1)].item.url;
     if (a == Action::Accept) installUpdates(false);
     if (a == Action::Queue && installed_.installed.complete) installUpdates(true);
     if (a == Action::Left) sidebar_ = true;
@@ -2315,6 +2323,33 @@ void Application::installSelected() {
 void Application::saveStateQuietly() { saveOwnState(); }
 Error Application::startInstall(const std::vector<Item> &files, const std::string &name, const std::string &icon,
                                 const std::string &target, std::vector<UserPatch> patches, bool first) {
+  bool added = false;
+  if (auto error = enqueueInstall(files, name, icon, target, std::move(patches), first, added))
+    return error;
+  if (!added) {
+    if (!files.empty())
+      message(tr("Already in the download queue."));
+    return {};
+  }
+  return launchAdded(1);
+}
+// Saved once and started once for however many picks went in together.
+Error Application::launchAdded(int picks) {
+  saveHistory();
+  rebuildQueue();
+  const bool waits = downloadRunning();
+  if (auto error = launchQueued())
+    return error;
+  sounds_.play(Cue::Add);
+  message(picks > 1 ? trf("Added {0} games to the download queue.", {std::to_string(picks)})
+          : waits   ? tr("Added to the download queue.")
+                    : tr("Download started."));
+  return {};
+}
+// Puts a pick's files in the queue; nothing is saved or started yet.
+Error Application::enqueueInstall(const std::vector<Item> &files, const std::string &name, const std::string &icon,
+                                  const std::string &target, std::vector<UserPatch> patches, bool first, bool &added) {
+  added = false;
   // A file already queued or installing is not added twice; one that failed
   // or was canceled before leaves 실패 and 취소 as it goes in again.
   for (const auto &f : files)
@@ -2333,11 +2368,8 @@ Error Application::startInstall(const std::vector<Item> &files, const std::strin
     if (!waiting)
       fresh.push_back(f);
   }
-  if (fresh.empty()) {
-    if (!files.empty())
-      message(tr("Already in the download queue."));
+  if (fresh.empty())
     return {};
-  }
   history_.erase(std::remove_if(history_.begin(), history_.end(),
                                 [&](const history::Entry &e) {
                                   return e.kind.empty() &&
@@ -2365,13 +2397,7 @@ Error Application::startInstall(const std::vector<Item> &files, const std::strin
   // first turn, so they end up in front in the order picked.
   if (first)
     for (auto it = ids.rbegin(); it != ids.rend(); ++it) history::takeFirstTurn(history_, *it);
-  saveHistory();
-  rebuildQueue();
-  const bool waits = downloadRunning();
-  if (auto error = launchQueued())
-    return error;
-  sounds_.play(Cue::Add);
-  message(waits ? tr("Added to the download queue.") : tr("Download started."));
+  added = true;
   return {};
 }
 // The rows of 다운로드 that wait, in their turn, as the queue the screens and
