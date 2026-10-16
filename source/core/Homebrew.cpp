@@ -3,6 +3,7 @@
 #include <set>
 #include "core/HomebrewCard.hpp"
 #include "core/Json.hpp"
+#include "core/TitleGuard.hpp"
 #include <algorithm>
 #include <sys/stat.h>
 #include <cctype>
@@ -71,6 +72,20 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
     a.forwarderSize = uint64_t(std::max<int64_t>(0, integerField(o, "forwarder_size")));
     if (!forwarder::serverShortcutId(a.forwarderTitleId))
       a.forwarderUrl.clear(), a.forwarderTitleId.clear();
+    a.kind = stringField(o, "kind") == "port" ? Kind::Port : Kind::Tool;
+    if (stringField(o, "install_type") == "title") {
+      // Installed as a game is: nothing on the SD card but the title. One
+      // naming a system title is never offered.
+      a.title = true;
+      a.titleId = stringField(o, "title_id");
+      std::transform(a.titleId.begin(), a.titleId.end(), a.titleId.begin(), ::toupper);
+      a.forwarderUrl.clear(), a.forwarderTitleId.clear(), a.forwarderSize = 0;
+      if (!idAllowed(a.id) || a.name.empty() || a.downloadUrl.empty() || a.titleId.size() != 16 ||
+          a.titleId.find_first_not_of("0123456789ABCDEF") != std::string::npos || !catalogTitleAllowed(a.titleId))
+        continue;
+      out.push_back(std::move(a));
+      continue;
+    }
     if (!idAllowed(a.id) || a.name.empty() || a.hash.empty() || !fileNameAllowed(a.fileName) ||
         a.downloadUrl.empty())
       continue;
@@ -123,7 +138,6 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
         }
       if (entriesOk && zip.usable()) a.archive = std::move(zip);
     }
-    a.kind = stringField(o, "kind") == "port" ? Kind::Port : Kind::Tool;
     a.app = stringField(o, "app");
     if (!appFolderAllowed(a.app)) a.app = appFolder(a.installPath).substr(7);
     out.push_back(std::move(a));
@@ -146,6 +160,10 @@ std::string serialize(const App &a) {
   add("install_path", a.installPath);
   add("kind", a.kind == Kind::Port ? "port" : "tool");
   add("app", a.app);
+  if (a.title) {
+    add("install_type", "title");
+    add("title_id", a.titleId);
+  }
   if (!a.files.empty()) {
     auto *files = json_object_new_array();
     for (const auto &f : a.files) {

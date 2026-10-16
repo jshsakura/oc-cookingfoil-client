@@ -1,6 +1,7 @@
 #include "Test.hpp"
 #include "core/ClientUpdate.hpp"
 #include "core/Homebrew.hpp"
+#include "core/HomebrewCard.hpp"
 #include "core/Sha256.hpp"
 using namespace foil::homebrew;
 int runHomebrewTests() {
@@ -34,6 +35,31 @@ int runHomebrewTests() {
   CHECK(bad(R"("id":"gh-9c9ef5794087")", R"("id":"a/b")"));
   CHECK(bad(R"("download_url":"/api)", R"("download_url":"ftp://x/api)"));
   CHECK(parse("nope", "https://s").empty());
+  // An app installed as a title: no SD path, files, zip or shortcut, and
+  // never one naming a system title.
+  {
+    const std::string title =
+        R"({"id":"tvswiki","name":"TVSWIKI","version":"1.0.9","install_type":"title","title_id":"053f13457f6b0000",)"
+        R"("size":66060288,"download_url":"/api/homebrew/tvswiki/download","install_path":null,"app":null,)"
+        R"("files":null,"archive":null,"forwarder_url":null})";
+    const auto got = parse(R"({"homebrew":[)" + title + "]}", "https://shop.example");
+    CHECK(got.size() == 1);
+    if (!got.empty()) {
+      const auto &a = got.front();
+      CHECK(a.title && a.titleId == "053F13457F6B0000" && a.installPath.empty() && a.files.empty());
+      CHECK(a.downloadUrl == "https://shop.example/api/homebrew/tvswiki/download" && a.forwarderUrl.empty());
+      const auto again = parse(R"({"homebrew":[)" + serialize(a) + "]}", "https://shop.example");
+      CHECK(again.size() == 1 && again.front().title && again.front().titleId == a.titleId);
+      // A card file never counts as a title app's.
+      CHECK(matchCard(got, "switch/tvswiki/tvswiki.nro") == nullptr);
+    }
+    auto system = title;
+    system.replace(system.find("053f13457f6b0000"), 16, "0100000000001000");
+    CHECK(parse(R"({"homebrew":[)" + system + "]}", "https://s").empty());
+    auto noId = title;
+    noId.replace(noId.find("053f13457f6b0000"), 16, "053f");
+    CHECK(parse(R"({"homebrew":[)" + noId + "]}", "https://s").empty());
+  }
   // A HOME Menu shortcut comes along when the server built one; a title ID
   // that is not 16 hex digits means none.
   {

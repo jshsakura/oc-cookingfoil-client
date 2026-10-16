@@ -50,6 +50,12 @@ struct App {
   // A file found on the SD card that no listed app owns: shown under 설치됨
   // with what the file says, never downloaded or updated, only removed.
   bool cardOnly = false;
+  // An app the console installs as a title (install_type "title", asked for
+  // with feature homebrew-titles): its NSP goes in as a game's does and the
+  // installed title is its HOME Menu entry. It has no SD path, files, zip or
+  // shortcut; titleId is 16 upper-case hex digits.
+  bool title = false;
+  std::string titleId;
 };
 // GET /api/homebrew's list; entries missing what is needed, or with a file
 // name that could leave its folder, are left out.

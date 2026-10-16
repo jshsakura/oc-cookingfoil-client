@@ -201,14 +201,15 @@ const App *matchCard(const std::vector<App> &apps, const std::string &path) {
   const auto at = lower(path);
   const auto folder = at.substr(0, at.rfind('/'));
   for (const auto &app : apps)
-    if (lower(app.installPath) == at) return &app;
+    if (!app.title && lower(app.installPath) == at) return &app;
   if (folder != "switch")
     for (const auto &app : apps) {
+      if (app.title) continue; // a title has nothing on the card
       const auto installFolder = lower(app.installPath.substr(0, app.installPath.rfind('/')));
       if ((!app.app.empty() && folder == "switch/" + lower(app.app)) || folder == installFolder) return &app;
     }
   for (const auto &app : apps)
-    if (!app.fileName.empty() && at == "switch/" + lower(app.fileName)) return &app;
+    if (!app.title && !app.fileName.empty() && at == "switch/" + lower(app.fileName)) return &app;
   return nullptr;
 }
 std::string tileIcon(const App &app, bool onCard, const std::string &cardKey) {

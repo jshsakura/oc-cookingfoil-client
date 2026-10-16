@@ -530,6 +530,7 @@ std::string serializePending(const PendingInstall& pending) {
         auto* file = json_object_new_object();
         add(file, "url", f.url); add(file, "name", f.name); add(file, "type", f.type);
         add(file, "titleId", f.titleId); add(file, "baseId", f.baseId); add(file, "versionName", f.versionName);
+        if (!f.format.empty()) add(file, "format", f.format);
         json_object_object_add(file, "size", json_object_new_int64(int64_t(f.size)));
         json_object_object_add(file, "version", json_object_new_int64(f.version));
         json_object_array_add(files, file);
@@ -559,6 +560,7 @@ std::optional<PendingInstall> parsePending(const std::string& queueJson) {
         item.titleId = stringField(file, "titleId");
         item.baseId = stringField(file, "baseId");
         item.versionName = stringField(file, "versionName");
+        if (stringField(file, "format") == "nsp") item.format = "nsp"; // the only one named so
         item.size = uint64_t(std::max<int64_t>(0, integerField(file, "size")));
         item.version = uint32_t(std::max<int64_t>(0, integerField(file, "version")));
         if (!item.url.empty()) pending.files.push_back(std::move(item));

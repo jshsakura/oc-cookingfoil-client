@@ -22,11 +22,12 @@ void Application::loadHomebrew() {
   const auto server = session_->server();
   const auto state = state_;
   auto etag = homebrewEtag_;
-  homebrewWorker_ = std::thread([this, server, state, etag]() mutable {
+  const bool titles = features_.count("homebrew-titles") > 0;
+  homebrewWorker_ = std::thread([this, server, state, etag, titles]() mutable {
     std::vector<homebrew::App> apps;
     bool unchanged = false;
     Error error;
-    if (!guarded("homebrew", [&] { net::homebrewList(server, state, etag, apps, unchanged, error, &stop_); }))
+    if (!guarded("homebrew", [&] { net::homebrewList(server, state, etag, apps, unchanged, error, &stop_, titles); }))
       error.message = tr("Something went wrong reading the homebrew list.");
     homebrewFinish_ = [this, apps = std::move(apps), unchanged, error, etag]() mutable {
       homebrewLoaded_ = true;
@@ -176,6 +177,11 @@ std::string Application::homebrewIcon(const homebrew::App &app) {
 }
 homebrew::Status Application::homebrewStatus(const homebrew::App &app) const {
   if (app.cardOnly) return homebrew::Status::Installed;
+  // A title: what the console has installed, by its version.
+  if (app.title) {
+    const auto *game = homebrewInstalledTitle(app);
+    return game ? homebrew::cardStatus(app.version, game->displayVersion) : homebrew::Status::Available;
+  }
   const auto card = homebrewCardOf_.find(app.id);
   return homebrew::status(app, homebrewLedger_, [this](const std::string &file) {
     const auto found = homebrewOnCard_.find(file);
@@ -222,8 +228,31 @@ void Application::saveHomebrewLedger() {
 }
 // Into 다운로드's queue; its turn runs it on the retro worker, so 다운로드
 // shows it running and keeps how it ended.
+const InstalledGame *Application::homebrewInstalledTitle(const homebrew::App &app) const {
+  if (!app.title) return nullptr;
+  const auto found = std::find_if(installed_.games.begin(), installed_.games.end(),
+                                  [&](const InstalledGame &g) { return g.titleId == app.titleId; });
+  return found == installed_.games.end() ? nullptr : &*found;
+}
 bool Application::getHomebrew(const homebrew::App &app) {
   if (app.cardOnly) return false; // nothing on the server to get
+  // A title goes in as a game's NSP does, where games go.
+  if (app.title) {
+    Item file;
+    file.url = app.downloadUrl;
+    file.name = app.name;
+    file.icon = app.iconUrl;
+    file.titleId = file.baseId = app.titleId;
+    file.size = app.size;
+    file.versionName = app.version;
+    file.format = "nsp"; // its address ends in /download
+    if (auto error = startInstall({file}, app.name, app.iconUrl, installTarget())) {
+      alertTitle_ = tr("Cannot download this app");
+      alert_ = error.message;
+      return false;
+    }
+    return true;
+  }
   uint64_t bytes = app.files.empty() ? app.size : 0;
   for (const auto &file : app.files) bytes += file.size;
   // A bundle's bytes are the tar's (headers and padding too), a zip's its own.
@@ -317,6 +346,23 @@ void Application::settleHomebrew(const homebrew::App &app, const std::optional<h
 // and its ledger entry; files the ledger does not list stay. An app with no
 // ledger entry loses the one file the card scan found, nothing else.
 void Application::removeHomebrew(const homebrew::App &picked) {
+  // A title is taken off the console as a game is; 다운로드's list of
+  // installed titles follows.
+  if (picked.title) {
+    const auto *game = homebrewInstalledTitle(picked);
+    if (!game) return;
+    if (deviceBusy_) {
+      message(tr("Try again in a moment."));
+      return;
+    }
+    RemovalRequest request;
+    request.applicationId = game->applicationId;
+    removal_ = request;
+    removalAt_ = SDL_GetTicks();
+    performRemoval();
+    if (!deviceBusy_) removal_.reset(); // refused (an install is running)
+    return;
+  }
   const auto app = picked; // a card row goes away with its file
   const auto file = homebrewFile(app);
   const auto found = homebrewLedger_.find(app.id);
@@ -548,8 +594,9 @@ void Application::homebrewRemoveDialog() {
                           tr("Delete"), 37);
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(app.name, x, y, 21, Ink, true, body.w - 64);
-  paint_.fonts.text(trf("Removes {0} from the SD card.", {homebrewFile(app)}), x, y + 38, 19, Secondary,
-                    false, body.w - 64);
+  paint_.fonts.text(app.title ? std::string(tr("Removes it from the console and the HOME Menu. User saves are kept."))
+                              : trf("Removes {0} from the SD card.", {homebrewFile(app)}),
+                    x, y + 38, 19, Secondary, false, body.w - 64);
   if (shortcut)
     paint_.fonts.text(tr("Its HOME Menu shortcut is deleted too."), x, y + 68, 19, Secondary, false, body.w - 64);
 }

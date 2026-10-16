@@ -178,6 +178,7 @@ public:
   bool previewPaused() const { return installer_.paused(); }
   void previewPause(bool paused) { installer_.setPaused(paused); }
   bool previewGetHomebrew(const homebrew::App &app) { return getHomebrew(app); }
+  homebrew::Status previewHomebrewStatus(const homebrew::App &app) const { return homebrewStatus(app); }
   // The queue's rows in their turn, by name; what runs now; how a row ended.
   std::vector<std::string> queuedNames() const {
     std::vector<std::string> out;
@@ -470,6 +471,8 @@ private:
   void considerSelfShortcut();
   void checkHomebrewCard();
   homebrew::Status homebrewStatus(const homebrew::App &app) const;
+  // The installed title a title app (homebrew::App::title) is, or nullptr.
+  const InstalledGame *homebrewInstalledTitle(const homebrew::App &app) const;
   std::vector<int> homebrewRows() const; // homebrewAt() indexes in this tab and search
   bool getHomebrew(const homebrew::App &app);
   bool runHomebrew(const homebrew::App &app);

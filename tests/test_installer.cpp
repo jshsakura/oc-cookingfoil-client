@@ -17,6 +17,14 @@ int runInstallerTests() {
   CHECK(foil::install::preflight({item}, 3ULL * 1024 * 1024 * 1024));
   CHECK(foil::install::preflight({item}, std::nullopt));
   CHECK(foil::install::preflight({}, 10ULL * 1024 * 1024 * 1024));
+  {
+    // A homebrew title's address ends in /download: its format is named.
+    auto title = item;
+    title.url = "https://host/api/homebrew/tv/download";
+    CHECK(foil::install::preflight({title}, 10ULL * 1024 * 1024 * 1024));
+    title.format = "nsp";
+    CHECK(!foil::install::preflight({title}, 10ULL * 1024 * 1024 * 1024));
+  }
   auto unsupported = item;
   unsupported.url = "https://host/app.nro";
   CHECK(foil::install::preflight({unsupported},

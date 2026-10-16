@@ -847,6 +847,34 @@ int runUiTests(SDL_Renderer *renderer) {
     };
     using foil::history::Outcome;
     foil::platform::setHostSpace(64ull << 30);
+    {
+      // An app installed as a title (homebrew-titles) goes in as a game's
+      // NSP does, and the console's installed titles say whether it is there.
+      foil::ui::Application titles(renderer, "", "", "host/fixtures/art");
+      CHECK(titles.open());
+      titles.previewQueueOpen();
+      foil::homebrew::App tv;
+      tv.id = "tvswiki";
+      tv.name = "TVSWIKI";
+      tv.version = "1.0.9";
+      tv.title = true;
+      tv.titleId = "053F13457F6B0000";
+      tv.downloadUrl = "https://shop.example/api/homebrew/tvswiki/download";
+      tv.size = 63ull << 20;
+      titles.previewHomebrew({tv});
+      CHECK(titles.previewHomebrewStatus(tv) == foil::homebrew::Status::Available);
+      foil::InstalledGame game;
+      game.titleId = tv.titleId;
+      game.applicationId = 0x053F13457F6B0000ULL;
+      game.displayVersion = "1.0.8";
+      titles.previewInstalled({{true, {}}, {game}});
+      CHECK(titles.previewHomebrewStatus(tv) == foil::homebrew::Status::Update);
+      game.displayVersion = "1.0.9";
+      titles.previewInstalled({{true, {}}, {game}});
+      CHECK(titles.previewHomebrewStatus(tv) == foil::homebrew::Status::Installed);
+      CHECK(titles.previewGetHomebrew(tv));
+      CHECK(titles.installingName() == "TVSWIKI");
+    }
     foil::ui::Application queue(renderer, "", "", "host/fixtures/art");
     CHECK(queue.open());
     queue.previewQueueOpen();

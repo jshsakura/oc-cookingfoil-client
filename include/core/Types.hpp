@@ -8,6 +8,9 @@ struct Item {
     std::string url, name, titleId, baseId, icon;
     // Words many games share, kept once for the catalog (core/Tags.hpp).
     Word type{"base"}, publisher, region, versionName;
+    // The package's kind ("nsp") when its address does not end in one, as a
+    // homebrew title's download does not; empty: the address's extension.
+    Word format;
     uint64_t size = 0;
     uint32_t version = 0;
     int64_t addedAt = 0;

@@ -22,9 +22,9 @@
 #include <memory>
 namespace foil::net {
 bool homebrewList(const Server &server, const State &state, std::string &etag, std::vector<homebrew::App> &apps,
-                  bool &unchanged, Error &error, const std::atomic<bool> *cancel) {
+                  bool &unchanged, Error &error, const std::atomic<bool> *cancel, bool titles) {
   // Descriptions come in the app's language (Korean, else English).
-  const auto url = server.url + "/api/homebrew?lang=" + languageCode();
+  const auto url = server.url + "/api/homebrew?lang=" + languageCode() + (titles ? "&with=titles" : "");
   const auto response = get(url, authHeaders(server, state, url), etag, cancel);
   unchanged = response.status == 304;
   if (unchanged) return true;

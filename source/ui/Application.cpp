@@ -751,6 +751,19 @@ void Application::poll() {
         message(why);
     }
     runningGroup_ = -1;
+    // A title app whose file changed on the server after the list was made
+    // is refused (503); the list is read again, so a next try takes the new
+    // file.
+    if (installStatus == install::Status::Failed) {
+      const auto parts = installer_.progress().parts;
+      const bool titleApp = std::any_of(homebrew_.begin(), homebrew_.end(), [&](const homebrew::App &app) {
+        return app.title && std::any_of(parts.begin(), parts.end(), [&](const Item &f) { return f.url == app.downloadUrl; });
+      });
+      if (titleApp) {
+        homebrewEtag_.clear();
+        loadHomebrew();
+      }
+    }
     // The card leaves 진행 중 at once; how it ended is said here and kept
     // in 완료 or 실패.
     if (installStatus == install::Status::Succeeded)

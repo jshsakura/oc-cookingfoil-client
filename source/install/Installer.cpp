@@ -48,7 +48,7 @@ Error preflight(const std::vector<Item> &files,
   for (const auto &file : files) {
     auto url = file.url.substr(0, file.url.find_first_of("?#"));
     auto dot = url.find_last_of('.');
-    auto ext = dot == std::string::npos ? "" : url.substr(dot);
+    auto ext = !file.format.empty() ? "." + file.format : dot == std::string::npos ? "" : url.substr(dot);
     for (auto &c : ext)
       c = std::tolower(static_cast<unsigned char>(c));
     if (ext != ".nsp" && ext != ".nsz" && ext != ".xci" && ext != ".xcz") {

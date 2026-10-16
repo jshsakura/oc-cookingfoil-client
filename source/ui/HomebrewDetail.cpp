@@ -19,6 +19,10 @@ std::string dayLabel(const std::string &at) {
 } // namespace
 // The version on the card: the ledger's, else the one the card scan read.
 std::string Application::homebrewCardVersion(const homebrew::App &app) const {
+  if (app.title) {
+    const auto *game = homebrewInstalledTitle(app);
+    return game ? game->displayVersion : "";
+  }
   if (const auto found = homebrewLedger_.find(app.id); found != homebrewLedger_.end() && !found->second.version.empty())
     return found->second.version;
   if (const auto card = homebrewCardOf_.find(app.id); card != homebrewCardOf_.end())
@@ -28,6 +32,13 @@ std::string Application::homebrewCardVersion(const homebrew::App &app) const {
 // 2 while it downloads (percent filled in), 1 while it waits its turn, else 0.
 int Application::homebrewOnTheWay(const homebrew::App &app, double &percent) const {
   percent = 0;
+  if (app.title && installer_.running()) {
+    const auto p = installer_.progress();
+    if (std::any_of(p.parts.begin(), p.parts.end(), [&](const Item &f) { return f.url == app.downloadUrl; })) {
+      percent = p.percent;
+      return 2;
+    }
+  }
   if (retroBusy_ == "homebrew:" + app.id) {
     if (retroBytes_) percent = std::min(100.0, 100.0 * double(retroReceived_.load()) / double(retroBytes_));
     return 2;
@@ -36,7 +47,8 @@ int Application::homebrewOnTheWay(const homebrew::App &app, double &percent) con
 }
 int Application::homebrewQueuedAt(const homebrew::App &app) const {
   for (size_t i = 0; i < installQueue_.size(); ++i)
-    if (installQueue_[i].kind == "homebrew" && !app.downloadUrl.empty() && installQueue_[i].file.url == app.downloadUrl)
+    if (installQueue_[i].kind == (app.title ? "" : "homebrew") && !app.downloadUrl.empty() &&
+        installQueue_[i].file.url == app.downloadUrl)
       return int(i);
   return -1;
 }
@@ -50,7 +62,7 @@ void Application::homebrewButton(const homebrew::App &app) {
   if (const int onTheWay = homebrewOnTheWay(app, percent)) {
     dialogFocus_ = 0;
     if (onTheWay == 2) {
-      cancelRetro_ = true;
+      cancelRetro_ = !app.title; // a title installs as a game does
       confirmCancel_ = true;
       confirmExit_ = false;
     } else {
@@ -99,6 +111,7 @@ void Application::homebrewDetail() {
   else if (status == homebrew::Status::Installed)
     pill(tr("Installed"));
   pill(app.kind == homebrew::Kind::Port ? tr("Ports") : tr("Tools"));
+  if (app.title) pill(tr("Installed as a title"));
   if (app.size) pill(formatBytes(app.size));
   // The left column scrolls in the band, as a game's description does.
   constexpr int BandTop = 212, BandBottom = 660, Pad = 14;
@@ -132,6 +145,7 @@ void Application::homebrewDetail() {
   if (app.size) facts.push_back({14, tr("Size|info"), formatBytes(app.size)});
   if (!app.releasedAt.empty()) facts.push_back({11, tr("Released"), dayLabel(app.releasedAt)});
   facts.push_back({16, tr("Type|homebrew"), app.kind == homebrew::Kind::Port ? tr("Ports") : tr("Tools")});
+  if (app.title) facts.push_back({26, tr("Title ID"), app.titleId});
   constexpr float Left = 40, Width = 750, Cell = Width / 3, RowHeight = 66;
   const int rows = int((facts.size() + 2) / 3);
   const auto file = homebrewFile(app);
@@ -172,7 +186,8 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
   paint_.fonts.middle(tr("Manage|app"), X, 194, 22, Ink, true);
   paint_.rect(818, 216, 430, 1, Line);
   if (extras.empty())
-    paint_.fonts.wrapped(tr("Once it is on the card, its patches, saves and HOME Menu shortcut are managed here."), X,
+    paint_.fonts.wrapped(app.title ? tr("Opens from the HOME Menu once installed.")
+                                   : tr("Once it is on the card, its patches, saves and HOME Menu shortcut are managed here."), X,
                          RowTop + 6, 17, Secondary, W, 3);
   for (int i = 0; i < int(extras.size()) && i < 6; ++i) {
     const float rowY = RowTop + i * (Row + Gap);

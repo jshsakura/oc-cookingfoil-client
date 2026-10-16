@@ -174,6 +174,12 @@ int runConfigTests() {
     CHECK(back->files[0].url == "https://x/a.nsp" && back->files[0].type == "update" && back->files[0].size == 1234 &&
           back->files[0].version == 65536);
     CHECK(!foil::parsePending("[]") && !foil::parsePending("garbage"));
+    // A homebrew title keeps the format its address does not say.
+    file.url = "https://x/api/homebrew/tv/download";
+    file.format = "nsp";
+    pending.files = {file};
+    const auto title = foil::parsePending(foil::serializePending(pending));
+    CHECK(title && title->files.size() == 1 && title->files[0].format == "nsp");
   }
   return failures;
 }
