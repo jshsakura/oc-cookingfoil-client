@@ -197,14 +197,17 @@ bool Application::open() {
   // What the loading thread is on, for the frames drawn meanwhile.
   std::mutex shownLock;
   std::string caption;
-  float progress = 0;
-  const auto background = [&](const std::string &text, float to, const char *name) {
+  float progress = 0, upTo = 0;
+  // `to` is where the step starts, `next` where the one after it does: a
+  // long step (the server settings can take seconds) creeps on toward it.
+  const auto background = [&](const std::string &text, float to, float next, const char *name) {
     std::lock_guard<std::mutex> lock(shownLock);
     took();
     stepAt = SDL_GetTicks();
     stepName = name;
     caption = text;
     progress = to;
+    upTo = next;
   };
   step("", 0.05f, "fonts");
   if (!paint_.fonts.open())
@@ -232,7 +235,7 @@ bool Application::open() {
       fixture_);
   // From here nothing touches the screen, the fonts or the renderer: the
   // language it may set again is applied to the fonts once it is done.
-  background(tr("Reading patches and download history on the SD card"), 0.4f, "sd");
+  background(tr("Reading patches and download history on the SD card"), 0.4f, 0.65f, "sd");
   loading_ = true;
   std::atomic<bool> loaded{false};
   std::thread loader([&] {
@@ -244,11 +247,15 @@ bool Application::open() {
         usePatchFolder(std::filesystem::path(statePath_).parent_path().string() + "/sd");
 #endif
       if (!configPath_.empty()) {
-        background(tr("Reading the server settings"), 0.65f, "config");
+        #ifdef __SWITCH__
+        background(tr("Reading the server settings"), 0.65f, 0.85f, "config");
+#else
+        background(tr("Reading the server settings"), 0.65f, 1, "config");
+#endif
         reload();
       }
 #ifdef __SWITCH__
-      background(tr("Reading the games on this console"), 0.85f, "installed");
+      background(tr("Reading the games on this console"), 0.85f, 1, "installed");
       refreshInstalled();
       // Album (applet mode) gets a few hundred MB and no title rights: say so
       // before something big fails, and how to open it properly.
@@ -267,7 +274,10 @@ bool Application::open() {
     {
       std::lock_guard<std::mutex> lock(shownLock);
       text = caption;
-      to = progress;
+      // Most of the way to the next step over the first seconds, slower
+      // the longer it takes, never reaching it.
+      const float waited = (SDL_GetTicks() - stepAt) / 1000.f;
+      to = progress + (upTo - progress) * 0.85f * (1 - std::exp(-waited / 4));
     }
     progressShown += (to - progressShown) * 0.12f;
     const uint32_t frameAt = SDL_GetTicks();
