@@ -74,4 +74,22 @@ std::vector<CardPatch> scanCardPatches(const std::string &sdRoot, const std::map
   }
   return out;
 }
+const UserPatch *guessCardPatch(const CardPatch &card, const std::vector<UserPatch> &server) {
+  const UserPatch *only = nullptr, *sameFiles = nullptr;
+  int games = 0, files = 0;
+  for (const auto &patch : server) {
+    if (!patch.homebrewApp.empty() || patch.titleId.size() != card.titleId.size() ||
+        !std::equal(patch.titleId.begin(), patch.titleId.end(), card.titleId.begin(),
+                    [](char a, char b) { return std::toupper(static_cast<unsigned char>(a)) == std::toupper(static_cast<unsigned char>(b)); }))
+      continue;
+    only = &patch;
+    ++games;
+    if (patch.files > 0 && size_t(patch.files) == card.files) {
+      sameFiles = &patch;
+      ++files;
+    }
+  }
+  if (files == 1) return sameFiles;
+  return games == 1 ? only : nullptr;
+}
 } // namespace foil

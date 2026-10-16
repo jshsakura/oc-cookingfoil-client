@@ -135,11 +135,11 @@ void Application::settings() {
           : platform::canMakeShortcuts() ? tr("Creates a shortcut when a retro game or homebrew app downloads")
                                          : tr("Only for items the server has a shortcut for"));
   // The app's sounds: the start, cursor steps, the queue, done and errors.
-  option(9, 44, tr("Sound effects"), "", Ink, true, state_.sounds ? 1 : 0);
-  note(9, tr("Plays sounds at start, on cursor moves and as downloads come and go"));
+  option(8, 44, tr("Sound effects"), "", Ink, true, state_.sounds ? 1 : 0);
+  note(8, tr("Plays sounds at start, on cursor moves and as downloads come and go"));
   // The log's tail to the server, only when pressed: what went wrong reaches
   // whoever runs it.
-  option(8, 33, tr("Send a bug report"),
+  option(9, 33, tr("Send a bug report"),
          bugWorker_.joinable() ? std::string(tr("Sending")) : std::string(tr("Sends the end of the app's log to your server")),
          Secondary, false);
   // Leftover cleanup: content no installed game uses, found first and only

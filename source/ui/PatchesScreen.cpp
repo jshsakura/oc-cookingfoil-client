@@ -119,12 +119,19 @@ std::vector<Application::PatchRow> Application::allPatchRows() const {
     rows.push_back(std::move(row));
   }
   // Patches on the card put there another way: the game and what they
-  // change are known, the patch itself is not.
+  // change are known; the patch is named when the server's list says which
+  // one it must be (put there by this app before its records were lost).
   for (const auto &card : cardPatches_) {
     PatchRow row;
     row.patch.id = "card:" + card.titleId;
     row.patch.titleId = card.titleId;
-    row.patch.name = tr("Unknown patch");
+    if (const auto *guess = guessCardPatch(card, serverPatches_)) {
+      row.patch.name = guess->name;
+      row.patch.version = guess->version;
+      row.patch.iconUrl = guess->iconUrl;
+    } else {
+      row.patch.name = tr("Unknown patch");
+    }
     row.patch.kinds = card.kinds;
     row.patch.size = card.bytes;
     row.patch.files = int(card.files);
@@ -645,7 +652,11 @@ void Application::patchesScreen() {
                  int(patchFilter_), [this](int n) {
                    patchFilter_ = PatchFilter(n);
                    selected_ = 0;
-                 }, searchX - 16);
+                 }, searchX - 16, 0,
+                 // As on 내 게임: how many have an update, by its tab.
+                 {0, 0, int(std::count_if(all.begin(), all.end(), [this](const PatchRow &row) {
+                    return patchFilterMatches(PatchFilter::Updates, row);
+                  }))});
   const float titleEnd =
       pageTitle(tr("Mods"), !patchQuery_.empty() ? countLabel(rows.size(), patchQuery_) : on ? trf("{0} · {1} on", {std::to_string(rows.size()), std::to_string(on)}) : std::to_string(rows.size()), tabsLeft);
   // The background file check says it is running, quietly: a pulsing dot

@@ -184,16 +184,7 @@ bool Application::open() {
   const auto took = [&] {
     steps += (steps.empty() ? "" : ", ") + stepName + " " + std::to_string(SDL_GetTicks() - stepAt) + "ms";
   };
-  float progressShown = 0;
-  const auto step = [&](const std::string &caption, float progress, const char *name) {
-    took();
-    progressShown = progress;
-    stepAt = SDL_GetTicks();
-    stepName = name;
-    paint_.splash(caption, progress, seconds());
-    if (!platform::serviceApplet())
-      exitRequested_ = true;
-  };
+  float progressShown = 0.05f;
   // What the loading thread is on, for the frames drawn meanwhile.
   std::mutex shownLock;
   std::string caption;
@@ -209,37 +200,40 @@ bool Application::open() {
     progress = to;
     upTo = next;
   };
-  step("", 0.05f, "fonts");
-  if (!paint_.fonts.open())
-    return false;
-  // The saved language is read now so the captions are already in it;
-  // reload() sets it again with the config as the last fallback.
-  step(tr("Reading the app's records on the SD card."), 0.12f, "records");
-  if (!statePath_.empty()) {
-    const auto saved = loadState(statePath_).value;
-    state_.language = saved.language;
-    state_.sounds = saved.sounds;
-  }
-  applyStartupLanguage();
-  // The cues are made and the start cue played on their own thread while
-  // the steps below go on.
-  sounds_.setOn(state_.sounds);
+  // The first frame makes the mark and wordmark (the loading thread never
+  // touches the renderer); the cues are made on their own thread meanwhile.
+  paint_.splash("", progressShown, seconds());
   sounds_.open();
-  // Each step says what it is doing under the logo, so a slow SD card or
-  // server shows where the time goes.
-  step(tr("Preparing the image cache"), 0.2f, "images");
-  images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
-  images_->source(
-      {}, {},
-      imageCacheFolder(),
-      fixture_);
-  // From here nothing touches the screen, the fonts or the renderer: the
-  // language it may set again is applied to the fonts once it is done.
-  background(tr("Reading patches and download history on the SD card"), 0.4f, 0.65f, "sd");
+  // Everything after this is read on the loading thread. It never draws:
+  // the fonts are the screen's once open, and the language it sets is
+  // applied to them when it is done.
+  background("", 0.05f, 0.12f, "fonts");
   loading_ = true;
-  std::atomic<bool> loaded{false};
+  std::atomic<bool> loaded{false}, fontsOpen{false}, fontsFailed{false};
   std::thread loader([&] {
     guarded("startup", [&] {
+      if (!paint_.fonts.open()) {
+        fontsFailed = true;
+        return;
+      }
+      fontsOpen = true;
+      // The saved language is read now so the captions are already in it;
+      // reload() sets it again with the config as the last fallback.
+      background(tr("Reading the app's records on the SD card."), 0.12f, 0.2f, "records");
+      if (!statePath_.empty()) {
+        const auto saved = loadState(statePath_).value;
+        state_.language = saved.language;
+        state_.sounds = saved.sounds;
+      }
+      applyStartupLanguage();
+      sounds_.setOn(state_.sounds);
+      sounds_.playStart(); // as soon as it is made, if sounds are on
+      // Each step says what it is doing under the logo, so a slow SD card or
+      // server shows where the time goes.
+      background(tr("Preparing the image cache"), 0.2f, 0.4f, "images");
+      images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
+      images_->source({}, {}, imageCacheFolder(), fixture_);
+      background(tr("Reading patches and download history on the SD card"), 0.4f, 0.65f, "sd");
 #ifdef __SWITCH__
       usePatchFolder("sdmc:");
 #else
@@ -247,7 +241,7 @@ bool Application::open() {
         usePatchFolder(std::filesystem::path(statePath_).parent_path().string() + "/sd");
 #endif
       if (!configPath_.empty()) {
-        #ifdef __SWITCH__
+#ifdef __SWITCH__
         background(tr("Reading the server settings"), 0.65f, 0.85f, "config");
 #else
         background(tr("Reading the server settings"), 0.65f, 1, "config");
@@ -281,7 +275,7 @@ bool Application::open() {
     }
     progressShown += (to - progressShown) * 0.12f;
     const uint32_t frameAt = SDL_GetTicks();
-    paint_.splash(text, progressShown, seconds());
+    paint_.splash(fontsOpen ? text : std::string(), progressShown, seconds());
     if (!platform::serviceApplet())
       exitRequested_ = true; // asked to close: it does once loading ends
     const uint32_t spent = SDL_GetTicks() - frameAt;
@@ -289,6 +283,8 @@ bool Application::open() {
   }
   loader.join();
   loading_ = false;
+  if (fontsFailed)
+    return false;
   paint_.fonts.preferChinese(language() == Language::Chinese);
   took();
   logLine("startup " + steps);
@@ -1617,12 +1613,12 @@ void Application::action(Action a) {
       case 5: toggleInstallCheck(state_.skipSignatureCheck); break;
       case 6: toggleInstallCheck(state_.skipFirmwareCheck); break;
       case 7: toggleInstallCheck(state_.makeShortcuts); break;
-      case 9:
+      case 8:
         toggleInstallCheck(state_.sounds);
         sounds_.setOn(state_.sounds);
         sounds_.play(Cue::Add); // turned on: heard at once
         break;
-      case 8:
+      case 9:
         bugAsk_ = true;
         bugMessage_.clear();
         dialogFocus_ = 0;

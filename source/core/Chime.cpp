@@ -37,10 +37,10 @@ float sample(Wave wave, float f, float t) {
 }
 Score score(Cue cue) {
   switch (cue) {
-  case Cue::Start: { // 8비트 출발: a short fanfare, softly, the last note ringing on
-    Score s{2.2f, 0.16f, 0.25f, 0.26f, {}};
+  case Cue::Start: { // 부드러운 8비트: the 8-bit run on a triangle, the last note ringing on
+    Score s{3.f, 0.18f, 0.28f, 0.3f, {}};
     const int run[] = {E5, G5, E6, C6, D6, G6};
-    for (int i = 0; i < 6; ++i) s.notes.push_back({i * 0.12f, run[i], 0.1f, i < 5 ? 0.1f : 0.55f, Wave::Pulse, 0.5f});
+    for (int i = 0; i < 6; ++i) s.notes.push_back({i * 0.15f, run[i], 0.12f, i < 5 ? 0.12f : 0.75f, Wave::Triangle, 0.8f});
     return s;
   }
   case Cue::Move: // 틱: a high, very short sine per step

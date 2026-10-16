@@ -20,4 +20,9 @@ struct CardPatch {
 // system module's folder), leaving out each file a record lists. One entry
 // per game, by Title ID.
 std::vector<CardPatch> scanCardPatches(const std::string &sdRoot, const std::map<std::string, PatchRecord> &records);
+// The server's patch a card patch most likely is (one this app put there
+// before its records were lost): the only one for the game with as many
+// files, or the game's only patch. Several that fit, or none: nullptr, and
+// it stays unknown rather than misnamed.
+const UserPatch *guessCardPatch(const CardPatch &card, const std::vector<UserPatch> &server);
 } // namespace foil

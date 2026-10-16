@@ -39,11 +39,20 @@ bool Sounds::open() {
       auto samples = chime(Cue(i), Rate);
       SDL_LockAudioDevice(device_);
       cues_[i] = std::move(samples);
+      const bool start = Cue(i) == Cue::Start && startWanted_;
       SDL_UnlockAudioDevice(device_);
-      if (Cue(i) == Cue::Start) play(Cue::Start);
+      if (start) play(Cue::Start);
     }
   });
   return true;
+}
+void Sounds::playStart() {
+  if (!device_) return;
+  SDL_LockAudioDevice(device_);
+  const bool ready = !cues_[int(Cue::Start)].empty();
+  if (!ready) startWanted_ = true;
+  SDL_UnlockAudioDevice(device_);
+  if (ready) play(Cue::Start);
 }
 void Sounds::play(Cue cue) {
   if (!device_ || !on_) return;
@@ -56,6 +65,12 @@ void Sounds::play(Cue cue) {
     return;
   }
   last = now;
+  // The start cue plays once a launch: once it has, its samples (the
+  // longest, about 200 KB) go.
+  if (cue != Cue::Start && startPlayed_ && !cues_[int(Cue::Start)].empty() &&
+      std::none_of(voices_.begin(), voices_.end(), [&](const Voice &v) { return v.samples == &cues_[int(Cue::Start)]; }))
+    std::vector<int16_t>().swap(cues_[int(Cue::Start)]);
+  if (cue == Cue::Start) startPlayed_ = true;
   if (voices_.size() >= MostVoices) voices_.erase(voices_.begin()); // the oldest gives way
   voices_.push_back({&cues_[int(cue)], 0});
   SDL_UnlockAudioDevice(device_);

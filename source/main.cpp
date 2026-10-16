@@ -114,13 +114,18 @@ int main(int argc, char **argv) {
       auto shownScreen = ui.current();
       float touchX = 0, touchY = 0, lastX = 0, lastY = 0;
       bool dragging = false;
-      // Up and drawing for a few seconds: a build just updated to is kept.
-      constexpr uint32_t UpdateConfirmMs = 8000;
+      // Past its startup and running a moment: a build just updated to is
+      // kept, on screen or not (closing from HOME soon after is common).
+      constexpr uint32_t UpdateConfirmMs = 2000;
       const uint32_t startedAt = SDL_GetTicks();
       bool confirmed = false;
       // Under the HOME Menu the downloads go on (as an application).
       foil::platform::keepRunningInBackground();
       while (appletMainLoop()) {
+        if (!confirmed && SDL_GetTicks() - startedAt >= UpdateConfirmMs) {
+          confirmed = true;
+          foil::platform::confirmUpdate(self);
+        }
         // Not on screen: nothing is drawn or read from the pads; the queue
         // still moves on (the next download starts when one ends).
         if (!foil::platform::onScreen()) {
@@ -129,10 +134,6 @@ int main(int argc, char **argv) {
             break;
           svcSleepThread(50'000'000);
           continue;
-        }
-        if (!confirmed && SDL_GetTicks() - startedAt >= UpdateConfirmMs) {
-          confirmed = true;
-          foil::platform::confirmUpdate(self);
         }
         padUpdate(&pad);
         if ((padGetButtonsDown(&pad) & HidNpadButton_Plus) && ui.requestQuit())

@@ -56,6 +56,23 @@ int runCardPatchTests() {
   put(sd / "atmosphere/contents" / game / ".DS_Store", 6);
   put(sd / "atmosphere/contents" / game / "cheats/._1234567890ABCDEF.txt", 4);
   CHECK(foil::scanCardPatches(sd.string(), {{"p1", record}}).empty());
+  {
+    // Named after the server's patch when only one can be it.
+    foil::CardPatch card{"0100A00000001000", {"romfs"}, 3, 10};
+    foil::UserPatch a, b, other, app;
+    a.id = "a"; a.titleId = "0100a00000001000"; a.files = 3;
+    b.id = "b"; b.titleId = "0100A00000001000"; b.files = 5;
+    other.id = "o"; other.titleId = "0100B00000001000"; other.files = 3;
+    app.id = "h"; app.homebrewApp = "tool"; app.files = 3;
+    const std::vector<foil::UserPatch> all{a, b, other, app}, one{b, other};
+    const auto *guess = foil::guessCardPatch(card, all);
+    CHECK(guess && guess->id == "a"); // same files, any case
+    guess = foil::guessCardPatch(card, one);
+    CHECK(guess && guess->id == "b"); // the game's only one
+    a.files = 5;
+    CHECK(!foil::guessCardPatch(card, {a, b})); // two could be it
+    CHECK(!foil::guessCardPatch(card, {other, app})); // none for the game
+  }
   // No card folders at all: nothing, and no error.
   CHECK(foil::scanCardPatches((sd / "missing").string(), {}).empty());
   std::filesystem::remove_all(sd);
