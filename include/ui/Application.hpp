@@ -142,6 +142,8 @@ public:
   }
   // - on any screen: the shop, the console's games and free space again.
   void refreshAll();
+  // The right stick pressed in: the list's first row, the view following.
+  void scrollToTop();
   bool shouldQuit() const {
     return exitRequested_ || (exitAfterCancel_ && !installer_.running()) ||
            (exitAfterDevice_ && !deviceBusy_);
@@ -567,7 +569,7 @@ private:
   bool getRetroGame(const retro::Game &game, bool again = false);
   // Its turn in the queue came: the download itself, on the retro worker.
   bool runRetroGame(const retro::Game &game);
-  bool finishRetroEntry(const std::string &kind, history::Outcome outcome, const std::string &error, uint64_t bytes);
+  bool finishRetroEntry(const std::string &kind, history::Outcome outcome, const std::string &error, uint64_t bytes, uint64_t kept = 0);
   // A retro game or RetroArch downloading (not a list loading).
   bool retroDownloading() const { return !retroBusy_.empty(); }
   int signal_ = 3;          // net::signalStrength(), refreshed by statusBar
@@ -744,6 +746,7 @@ private:
   struct TopCard {
     std::string key, name, icon, phase;
     double percent = 0;
+    double skipped = 0; // of percent, what was already on the card (drawn lighter)
     uint64_t bytes = 0, left = 0; // a running byte count (for the speed) and what is left
     bool paused = false, measure = true;
     std::vector<std::pair<std::string, int>> chips; // label, 0 waits / 1 now / 2 done
@@ -1194,6 +1197,7 @@ private:
   uint32_t retroRetryAt_ = 0;
   std::string retroBusy_;              // a game id, "pack", "homebrew:<id>" or "" when idle
   std::atomic<uint64_t> retroReceived_{0};
+  std::atomic<uint64_t> retroKept_{0}; // of retroReceived_, files already on the card (not the network)
   std::atomic<uint64_t> retroBytes_{0}; // what the running download expects
   std::thread retroWorker_;
   std::atomic<bool> retroDone_{false};

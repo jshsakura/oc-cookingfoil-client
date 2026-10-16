@@ -107,13 +107,21 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
                       : kind == "homebrew"         ? std::string(tr("Homebrew"))
                       : held && kind.empty()       ? std::string(tr("Game")) // a game held at start
                                                    : std::string(tr("Retro game"));
-    const uint64_t got = retroReceived_, total = retroBytes_;
-    card.percent = total ? std::min(100.0, 100.0 * double(got) / double(total)) : 0;
+    // What is left to get, not the whole app: files already on the card are
+    // counted apart (they would read as gigabits a second, and a few changed
+    // files as a 900 MB download).
+    // The bar is the whole app; the part already on the card shows lighter.
+    const uint64_t kept = retroKept_, all = retroReceived_, whole = retroBytes_;
+    const uint64_t got = all - std::min(kept, all), total = whole - std::min(kept, whole);
+    card.percent = whole ? std::min(100.0, 100.0 * double(all) / double(whole)) : 0;
+    card.skipped = whole ? std::min(card.percent, 100.0 * double(kept) / double(whole)) : 0;
     card.bytes = got;
     card.left = total > got ? total - got : 0;
     card.paused = held;
     card.phase = held ? std::string(tr("Paused.")) : total ? formatBytes(got) + " / " + formatBytes(total)
                                                          : std::string(tr("Checking which files to get"));
+    // Why it is less than the app's size: what the card has is not got again.
+    if (!held && total && kept) card.phase += " · " + trf("{0} already on the card is skipped", {formatBytes(kept)});
     card.chips.push_back({what, 1});
     card.onPause = [this, held] { pauseSmallDownload(!held); };
     if (!held) card.onDetails = runningDetails();
@@ -194,6 +202,10 @@ void Application::topCard(const TopCard &c) {
   paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 26, true), 114, 26, Ink, true);
   paint_.rect(418, 154, 810, 14, Line, 7);
   paint_.rect(418, 154, 810 * shownPercent_ / 100., 14, Butter, 7);
+  // Files already on the card, passed rather than fetched: the bar's start
+  // in a paler butter, so a quick finish reads as what it is.
+  if (c.skipped > 0)
+    paint_.rect(418, 154, 810 * std::min(c.skipped, shownPercent_) / 100., 14, SDL_Color{255, 226, 150, 255}, 7);
   std::string status = c.phase;
   const double now = SDL_GetTicks() / 1000.;
   downloadSeen_ = now;
@@ -225,7 +237,8 @@ void Application::topCard(const TopCard &c) {
   } else if (!c.paused && c.measure) {
     downloadSpeed_.add(now, c.bytes);
     const double steady = downloadSpeed_.speed(now);
-    if (steady < 0) {
+    // Nothing measured yet, or nothing came this moment: no "0 bps".
+    if (steady <= 0) {
       status += std::string(" · ") + tr("Measuring speed");
     } else {
       // In the unit its size calls for, and in bits as speed test apps
@@ -503,7 +516,7 @@ void Application::downloadsHistory() {
         meta += " · " + std::string(tr("HOME Menu shortcut made"));
     }
     // What a finished install took: average speed, the download, the install.
-    if (e.outcome == history::Outcome::Done && e.downloadSeconds > 0) {
+    if (e.outcome == history::Outcome::Done && e.downloadSeconds > 0 && e.bytes > 0) {
       meta += " · " + trf("Average {0}|speed", {formatSpeed(double(e.bytes) / e.downloadSeconds)}) + " · " + trf("Download time {0}", {durationText(e.downloadSeconds)});
       if (e.installSeconds > 0)
         meta += " · " + trf("Install time {0}", {durationText(e.installSeconds)});

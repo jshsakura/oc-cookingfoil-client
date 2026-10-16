@@ -297,7 +297,11 @@ bool homebrewArchive(const Server &server, const State &state, homebrew::App app
 }
 } // namespace
 bool homebrewDownload(const Server &server, const State &state, const homebrew::App &app, const std::string &sd,
-                      std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel) {
+                      std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel,
+                      std::atomic<uint64_t> *keptBytes) {
+  const auto passed = [keptBytes](uint64_t bytes) {
+    if (keptBytes) *keptBytes += bytes;
+  };
   if (app.archive.usable()) return homebrewArchive(server, state, app, sd, received, error, cancel);
   if (app.files.empty())
     return fetchFile(server, state, app.downloadUrl, sd, app.installPath, "", 0, received, error, cancel);
@@ -318,8 +322,10 @@ bool homebrewDownload(const Server &server, const State &state, const homebrew::
   }
   if (!missingFiles) {
     received += total;
+    passed(total);
     return true;
   }
+
   // Most of it there: only what is missing, a file at a time. Otherwise the
   // whole bundle in one stream, the files already there read past.
   constexpr uint64_t FewFiles = 200;
@@ -335,6 +341,11 @@ bool homebrewDownload(const Server &server, const State &state, const homebrew::
     received = before;
     error = {};
   }
+  // What the card has is counted at once, so what is left to get is known
+  // from the start (the screen shows that, not the whole app). Only here: a
+  // bundle streams those files too, so there they count as they come.
+  received += total - missing;
+  passed(total - missing);
   // A folder install: thousands of small files, each its own request, so
   // most of the time is the round trip; eight at a time, each checked. One
   // already on the card as the server lists it (found above, or written by
@@ -350,8 +361,10 @@ bool homebrewDownload(const Server &server, const State &state, const homebrew::
       const size_t i = next++;
       if (i >= app.files.size()) return;
       const auto &file = app.files[i];
-      if (have[i] || alreadyThere(sd + "/" + file.path, file.size, file.sha256)) {
+      if (have[i]) continue; // counted above
+      if (alreadyThere(sd + "/" + file.path, file.size, file.sha256)) { // the bundle wrote it before it gave out
         received += file.size;
+        passed(file.size);
         continue;
       }
       Error mine;

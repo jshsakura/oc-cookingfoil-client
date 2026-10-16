@@ -120,6 +120,17 @@ bool Application::contentAtTop() const {
     return false;
   }
 }
+void Application::scrollToTop() {
+  if (sidebar_ || !headerFocus_.empty() || popupOpen() || fullPage()) return;
+  const bool list = screen_ == Screen::Home || screen_ == Screen::Library || screen_ == Screen::Installed ||
+                    screen_ == Screen::Homebrew || screen_ == Screen::Updates || screen_ == Screen::Patches ||
+                    screen_ == Screen::Downloads || screen_ == Screen::Retro || screen_ == Screen::Saves;
+  if (!list) return;
+  // Up row by row, as the pad would, so every screen's own rules hold;
+  // it stops on the first row, short of the header.
+  const auto top = [this] { return screen_ == Screen::Home ? row_ <= 0 : contentAtTop(); };
+  for (int n = 0; n < 4000 && !top(); ++n) action(Action::Up);
+}
 bool Application::popupOpen() const {
   return !alert_.empty() || clockModal() || unqueueAsk_ >= 0 || bugAsk_ || cacheClearAsk_ || appUpdateAsk_ || appUpdate_ == AppUpdate::Downloading || viewPopup_ || confirmInstall_ || confirmCancel_ || languagePopup_ ||
          confirmCleanup_ || cleanupBusy_ || confirmPatchRemove_ || managingPatch_ || pickingPatch_ || serverForm_ || homebrewRemoveAsk_ || (homebrewAsk_ && homebrewExtras_) || shortcutRemoveAsk_ || selfShortcutAsk_ ||

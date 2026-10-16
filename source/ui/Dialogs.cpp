@@ -207,17 +207,24 @@ void Application::dialogs() {
   } else if (selfShortcutAsk_ && alert_.empty()) {
     selfShortcutDialog();
   } else if (resumeAsked() && alert_.empty()) {
-    // A long name, or a language that runs long, takes a second line; the
-    // popup grows to fit rather than cutting it off.
-    constexpr float Width = 700, Text = Width - 64;
-    const auto ask = trf("Continue {0} from where it stopped?", {installQueue_.front().name});
-    const std::string later = tr("Later, it waits in Downloads, paused.");
-    const float askH = paint_.fonts.measure(ask, 20, true) > Text ? 56 : 28;
-    const float laterH = paint_.fonts.measure(later, 18) > Text ? 50 : 25;
-    const auto body = modal(Width, 24 + askH + 12 + laterH + 16, tr("A download was left unfinished"), tr("Later"), "",
+    // The game's name in bold on as many lines as it takes, then in plain
+    // text what A does and what Later does; the popup grows to fit them.
+    constexpr float Width = 720, Text = Width - 64, Gap = 10;
+    const auto &name = installQueue_.front().name;
+    constexpr int NameLines = 6; // more than any name the shop has
+    const std::string ask = tr("The download resumes from where it stopped.");
+    const std::string later = tr("To continue later, resume it from the Downloads menu.");
+    const float nameH = paint_.fonts.lineCount(name, 22, Text, NameLines, true) * 22 * 1.3f;
+    const float askH = paint_.fonts.lineCount(ask, 19, Text, 2) * 19 * 1.3f;
+    const float laterH = paint_.fonts.lineCount(later, 18, Text, 2) * 18 * 1.3f;
+    const auto body = modal(Width, 22 + nameH + Gap + askH + Gap + laterH + 18, tr("A download was in progress"), tr("Later"), "",
                             tr("Resume|download"), 25);
-    paint_.fonts.wrapped(ask, body.x + 32, body.y + 24, 20, Ink, Text, 2, true);
-    paint_.fonts.wrapped(later, body.x + 32, body.y + 24 + askH + 12, 18, Secondary, Text, 2);
+    float y = body.y + 22;
+    paint_.fonts.wrapped(name, body.x + 32, y, 22, Ink, Text, NameLines, true);
+    y += nameH + Gap;
+    paint_.fonts.wrapped(ask, body.x + 32, y, 19, Ink, Text, 2);
+    y += askH + Gap;
+    paint_.fonts.wrapped(later, body.x + 32, y, 18, Secondary, Text, 2);
   } else if (viewPopup_) {
     viewPopup();
   } else if (languagePopup_) {

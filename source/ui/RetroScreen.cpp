@@ -1,4 +1,5 @@
 #include "ui/Application.hpp"
+#include "platform/Cores.hpp"
 #include "core/Log.hpp"
 #include "net/RetroApi.hpp"
 #include "core/Json.hpp"
@@ -83,8 +84,11 @@ bool Application::runRetroJob(const std::string &busy, std::function<std::functi
   }
   if (retroWorker_.joinable()) return false;
   retroBusy_ = busy;
-  retroReceived_ = 0;
+  retroReceived_ = retroKept_ = 0;
   retroWorker_ = std::thread([this, job = std::move(job)] {
+    // Off the drawing core: checking the files already on the card (their
+    // hashes) and writing them took frames from the screen.
+    const platform::OnCore off(platform::WriterCore);
     std::function<void()> finish;
     if (!guarded("retro", [&] { finish = job(); }))
       finish = [this] { message(tr("Something went wrong with the retro task. Check log.txt.")); };
@@ -439,7 +443,7 @@ bool Application::runRetroGame(const retro::Game &game) {
 }
 // True when it stopped for a pause: it waits at the front of the queue.
 bool Application::finishRetroEntry(const std::string &kind, history::Outcome outcome, const std::string &error,
-                                   uint64_t bytes) {
+                                   uint64_t bytes, uint64_t kept) {
   const bool pausing = std::exchange(retroPausing_, false);
   const auto running = std::find_if(history_.begin(), history_.end(), [&](const history::Entry &e) {
     return e.kind == kind && e.outcome == history::Outcome::Running;
@@ -459,7 +463,9 @@ bool Application::finishRetroEntry(const std::string &kind, history::Outcome out
     if (bytes && !running->install.files.empty()) running->install.files.front().size = bytes;
     // What it took, for 완료 (nothing to install after: no install time).
     if (outcome == history::Outcome::Done && bytes) {
-      running->bytes = bytes;
+      // What came over the network, for its average speed: files already
+      // on the card were not fetched.
+      running->bytes = bytes - std::min(kept, bytes);
       running->startedAt = jobStartedAt_;
       running->downloadSeconds = (SDL_GetTicks() - jobStartMs_) / 1000.0;
     }

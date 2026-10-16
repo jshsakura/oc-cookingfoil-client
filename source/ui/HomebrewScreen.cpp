@@ -249,16 +249,16 @@ bool Application::runHomebrew(const homebrew::App &app) {
   retroCancel_ = false;
   if (!runRetroJob("homebrew:" + app.id, [this, server, state, sd, app]() -> std::function<void()> {
         Error error;
-        const bool ok = net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_);
+        const bool ok = net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_);
         const bool cancelled = retroCancel_;
-        const uint64_t received = retroReceived_;
+        const uint64_t received = retroReceived_, kept = retroKept_;
         // The new file as written, so the next card check needs no hash.
         const auto seen = ok ? homebrew::cardFile(sd + "/" + app.installPath) : std::nullopt;
         const auto fileSha = seen ? sha256File(sd + "/" + app.installPath) : std::string();
-        return [this, ok, error, app, cancelled, received, seen, fileSha] {
+        return [this, ok, error, app, cancelled, received, kept, seen, fileSha] {
           cardChanged();
           if (finishRetroEntry("homebrew", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
-                           ok || cancelled ? "" : error.message, received))
+                           ok || cancelled ? "" : error.message, received, kept))
             return;
           if (cancelled && !ok) {
             message(trf("Cancelled the download of {0}.", {app.name}));
@@ -271,7 +271,9 @@ bool Application::runHomebrew(const homebrew::App &app) {
           }
           settleHomebrew(app, seen, fileSha);
           if (autoHomebrewShortcut(app)) return;
-          message(trf("Downloaded {0}. Open it from hbmenu.", {app.name}));
+          // Why it ended so soon: only the changed files came.
+          message(trf("Downloaded {0}. Open it from hbmenu.", {app.name}) +
+                  (kept ? " " + trf("{0} already on the card was kept.", {formatBytes(kept)}) : std::string()));
         };
       }))
     return false;

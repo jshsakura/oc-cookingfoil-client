@@ -23,6 +23,10 @@ public:
                 SDL_Color color, float width, int lines, bool bold = false,
                 float lineHeight = 1.3f);
   bool supports(uint32_t codepoint, int size = 18);
+  // How many lines wrapped() would take for `text` (at most `lines`).
+  int lineCount(const std::string &text, int size, float width, int lines, bool bold = false) {
+    return int(layout(text, size, bold, width, lines).size());
+  }
   // Top y that puts the text's ink (not its line box) on centerY.
   float centerTop(const std::string &text, int size, bool bold, float centerY);
   // Draws text whose ink is vertically centered on centerY (labels in shapes).

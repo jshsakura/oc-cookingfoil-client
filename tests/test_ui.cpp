@@ -460,6 +460,11 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(app.headerFocus().empty() && app.dropboxOnAccount());
     app.action(foil::ui::Action::Down);
     CHECK(!app.dropboxOnAccount());
+    // The right stick pressed in goes to the first row, not past it.
+    app.scrollToTop();
+    CHECK(app.dropboxOnAccount() && app.headerFocus().empty());
+    app.action(foil::ui::Action::Down);
+    CHECK(!app.dropboxOnAccount());
     app.action(foil::ui::Action::Accept);
     CHECK(app.dropboxPopupOpen());
     app.render();

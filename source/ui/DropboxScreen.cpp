@@ -479,12 +479,12 @@ void Application::dropboxTab() {
                                : dropboxError_         ? dropboxError_.message
                                                        : trf("{0} backups on Dropbox", {std::to_string(uploaded)});
     paint_.fonts.text(status, 360, y + 46, 16, dropboxError_ && dropboxBusy_.empty() ? Bad : Secondary, false, 560);
-    // The button says what A does here; it shows its key once the row is picked.
+    // The button says what A does here (the footer names the key); it turns
+    // butter once the row is picked.
     const std::string unlink = tr("Disconnect");
-    const float bw = (focused ? paint_.keyLabelWidth("A", unlink, 17, true) : paint_.fonts.measure(unlink, 17, true)) + 36;
+    const float bw = paint_.fonts.measure(unlink, 17, true) + 36;
     paint_.rect(1230 - bw, y + 22, bw, 40, focused ? Butter : Ground, 12);
-    if (focused) paint_.keyLabel("A", unlink, 1230 - bw + 18, y + 42, 17, Ink, true);
-    else paint_.fonts.middle(unlink, 1230 - bw + 18, y + 42, 17, Ink, true);
+    paint_.fonts.middle(unlink, 1230 - bw + 18, y + 42, 17, Ink, true);
   }
   // Nothing at all to list yet: the console may still be reading its games.
   if (rows.empty()) {

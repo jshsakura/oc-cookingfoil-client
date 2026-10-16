@@ -291,6 +291,20 @@ int main(int argc, char **argv) {
       ui.render();
       if (!app.screenshot(shot + "/04-downloads.png"))
         return 1;
+      // The question at start about a download left unfinished, with a name
+      // as long as the shop has them.
+      foil::ui::Application asked(app.renderer(), "", "", "host/fixtures/art");
+      if (asked.open()) {
+        foil::Item item;
+        item.name = "FANTASY LIFE i : 빙글빙글 용과 시간을 훔치는 소녀 Nintendo Switch 2 Edition (FANTASY LIFE i: The Girl Who Steals Time)";
+        item.url = "https://shop.example/fantasy.nsp";
+        item.titleId = item.baseId = "0100000000020000";
+        asked.previewQueued(item, item.name, "");
+        asked.previewOfferResume();
+        asked.screen(foil::ui::Screen::Home);
+        asked.render();
+        if (!app.screenshot(shot + "/04-resume.png")) return 1;
+      }
     }
     if (!fixture.empty()) {
       auto [library, save] = fixtureInstalled(fixture);

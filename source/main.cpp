@@ -169,6 +169,7 @@ int main(int argc, char **argv) {
         if (quit && ui.requestQuit())
           break;
         auto keys = padGetButtonsDown(&pad);
+        if (keys & HidNpadButton_StickR) ui.scrollToTop(); // the right stick pressed in: to the top
         const u64 up = HidNpadButton_Up | HidNpadButton_StickLUp,
                   down = HidNpadButton_Down | HidNpadButton_StickLDown,
                   left = HidNpadButton_Left | HidNpadButton_StickLLeft,

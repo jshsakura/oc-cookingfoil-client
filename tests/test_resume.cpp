@@ -642,13 +642,16 @@ int runResumeTests() {
     app.files.push_back({"switch/kept/new.dat", hash(small), mock.url + "/f/small", small.size()});
     foil::Server server;
     server.url = mock.url;
-    std::atomic<uint64_t> received{0};
+    std::atomic<uint64_t> received{0}, kept{0};
     foil::Error error;
-    CHECK(foil::net::homebrewDownload(server, foil::State{}, app, sd.string(), received, error, nullptr));
+    CHECK(foil::net::homebrewDownload(server, foil::State{}, app, sd.string(), received, error, nullptr, &kept));
     mock.thread.join();
     CHECK(mock.requests.size() == 1 && mock.requests[0].find("/f/small") != std::string::npos);
     CHECK(foil::readFile((sd / "switch/kept/new.dat").string()) == small);
     CHECK(received == big.size() + small.size());
+    // The file already there counts to the progress, and apart: a speed
+    // leaves it out (it came off the card, not the network).
+    CHECK(kept == big.size());
     // Most of it missing: the bundle, with the file already there left as it is.
     const auto before = fs::last_write_time(sd / "switch/kept/kept.nro");
     const std::vector<File> files{{"switch/kept/kept.nro", big}, {"switch/kept/more.dat", body(400000, 'm')}};
