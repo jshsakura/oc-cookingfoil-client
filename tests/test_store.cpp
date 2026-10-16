@@ -1,5 +1,6 @@
 #include "Test.hpp"
 #include "core/DownloadStore.hpp"
+#include "core/Json.hpp"
 #include <sqlite3.h>
 #include <fcntl.h>
 #include <sys/wait.h>
@@ -146,9 +147,37 @@ int runStoreTests() {
     CHECK(store.save(again, error));                // the rows as they are
     CHECK(store.forgetResumePoint("nca:never"));    // nothing there to forget
     CHECK(stamp() == earlier);
-    CHECK(store.saveResumePoint("nca:abc", point)); // a real change is written
-    CHECK(stamp() != earlier && store.resumePoint("nca:abc"));
+    // Resume points (every 30 s while a file downloads) go to their own small
+    // file: the database, with the whole history, is not rewritten for them.
+    CHECK(store.saveResumePoint("nca:abc", point));
+    CHECK(stamp() == earlier && store.resumePoint("nca:abc"));
+    const auto points = (dir / "cookingfoil.resume.json").string();
+    CHECK(foil::readFile(points).find("nca:abc") != std::string::npos);
     store.forgetResumePoint("nca:abc");
+    CHECK(!store.resumePoint("nca:abc") && foil::readFile(points).find("nca:abc") == std::string::npos);
+    CHECK(stamp() == earlier);
+    // A point an older build kept in the database moves to that file when
+    // the store opens, and leaves the database.
+    {
+      sqlite3 *raw = nullptr;
+      CHECK(sqlite3_open(path.c_str(), &raw) == SQLITE_OK);
+      CHECK(sqlite3_exec(raw, "INSERT INTO resume_points(key, url, etag, total, plan, updated_at)"
+                              " VALUES('nca:old','https://shop.example/f/old','e',9,'0-9',1)",
+                         nullptr, nullptr, nullptr) == SQLITE_OK);
+      sqlite3_close(raw);
+      DownloadStore reopened;
+      CHECK(reopened.open(path, error));
+      CHECK(foil::readFile(points).find("nca:old") != std::string::npos);
+      const auto moved = reopened.resumePoint("nca:old");
+      CHECK(moved && moved->total == 9 && moved->plan == "0-9");
+      CHECK(sqlite3_open(path.c_str(), &raw) == SQLITE_OK);
+      sqlite3_stmt *count = nullptr;
+      sqlite3_prepare_v2(raw, "SELECT COUNT(*) FROM resume_points", -1, &count, nullptr);
+      CHECK(sqlite3_step(count) == SQLITE_ROW && sqlite3_column_int(count, 0) == 0);
+      sqlite3_finalize(count);
+      sqlite3_close(raw);
+      reopened.forgetResumePoint("nca:old");
+    }
   }
   {
     // Not a database: the file is put aside as .broken (an older one replaced)

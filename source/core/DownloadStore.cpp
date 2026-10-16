@@ -11,6 +11,7 @@
 #include <cstring>
 #include <ctime>
 #include <atomic>
+#include <filesystem>
 #include <thread>
 namespace foil {
 namespace {
@@ -376,6 +377,44 @@ DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&
   }
   return Opened::Ok;
 }
+namespace {
+using Points = std::map<std::string, DownloadStore::ResumePoint>;
+Points parsePoints(const std::string &text) {
+  Points out;
+  Error error;
+  const auto root = parseJson(text, error);
+  if (error || !json_object_is_type(root.get(), json_type_object))
+    return out;
+  json_object_object_foreach(root.get(), key, value) {
+    if (!json_object_is_type(value, json_type_object))
+      continue;
+    out[key] = {stringField(value, "url"), stringField(value, "etag"), uint64_t(integerField(value, "total")),
+                stringField(value, "plan")};
+  }
+  return out;
+}
+std::string serializePoints(const Points &points) {
+  Json root(json_object_new_object());
+  for (const auto &[key, point] : points) {
+    auto *one = json_object_new_object();
+    json_object_object_add(one, "url", json_object_new_string(point.url.c_str()));
+    json_object_object_add(one, "etag", json_object_new_string(point.etag.c_str()));
+    json_object_object_add(one, "total", json_object_new_int64(int64_t(point.total)));
+    json_object_object_add(one, "plan", json_object_new_string(point.plan.c_str()));
+    json_object_object_add(root.get(), key.c_str(), one);
+  }
+  return json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PLAIN);
+}
+Points legacyPoints(sqlite3 *db) {
+  Points out;
+  Statement read(db, "SELECT key, url, etag, total, plan FROM resume_points");
+  if (!read)
+    return out;
+  while (read.step() == SQLITE_ROW)
+    out[read.column(0)] = {read.column(1), read.column(2), uint64_t(sqlite3_column_int64(read.get(), 3)), read.column(4)};
+  return out;
+}
+} // namespace
 bool DownloadStore::open(const std::string &path, std::string &error) {
   std::lock_guard<std::mutex> held(lock_);
   file_.clear();
@@ -388,6 +427,21 @@ bool DownloadStore::open(const std::string &path, std::string &error) {
   sqlite3 *db = nullptr;
   bool newer = false;
   const auto first = connect(file, db, true, newer, error);
+  // Resume points kept in the database by older builds move to their own
+  // file (resumeFile, <name>.resume.json), then leave the database: written here once.
+  if (first == Opened::Ok && !newer) {
+    file_ = file;
+    auto points = legacyPoints(db);
+    if (!points.empty()) {
+      for (auto &[key, point] : parsePoints(readFile(resumeFile())))
+        points[key] = std::move(point);
+      std::string failure;
+      if (atomicWrite(resumeFile(), serializePoints(points), failure) &&
+          exec(db, "DELETE FROM resume_points;", failure))
+        persist(db, file, failure);
+    }
+    file_.clear();
+  }
   closeDb(db);
   if (first == Opened::Failed)
     return false; // an error of the moment leaves the file alone
@@ -569,65 +623,63 @@ bool DownloadStore::save(const std::vector<history::Entry> &entries, std::string
     known_ = std::move(now);
   return ok;
 }
-std::optional<DownloadStore::ResumePoint> DownloadStore::resumePoint(const std::string &key) {
-  std::lock_guard<std::mutex> held(lock_);
-  std::optional<ResumePoint> out;
-  std::string error;
-  run(false, error, [&](sqlite3 *db, std::string &) {
-    Statement read(db, "SELECT url, etag, total, plan FROM resume_points WHERE key=?");
-    if (!read)
-      return false;
-    read.text(1, key);
-    const int rc = read.step();
-    if (rc == SQLITE_ROW)
-      out = ResumePoint{read.column(0), read.column(1), uint64_t(sqlite3_column_int64(read.get(), 2)), read.column(3)};
-    return rc == SQLITE_ROW || rc == SQLITE_DONE;
-  });
-  return out;
+// Where a cut-off file stands is written every 30 s while it downloads, so
+// it has a small file of its own (cookingfoil.resume.json): rewriting the whole database (the whole
+// download history) that often only wore the card. The database's
+// resume_points table is what builds before 0.3.97 kept; open() moves its
+// rows here, and it is still read in case that could not be done.
+std::string DownloadStore::resumeFile() const {
+  return std::filesystem::path(file_).replace_extension(".resume.json").string(); // cookingfoil.resume.json
 }
 std::map<std::string, DownloadStore::ResumePoint> DownloadStore::resumePoints() {
   std::lock_guard<std::mutex> held(lock_);
-  std::map<std::string, ResumePoint> out;
+  if (file_.empty())
+    return {};
+  Points out;
   std::string error;
-  const bool ok = run(false, error, [&](sqlite3 *db, std::string &) {
-    Statement read(db, "SELECT key, url, etag, total, plan FROM resume_points");
-    if (!read)
-      return false;
-    int rc;
-    while ((rc = read.step()) == SQLITE_ROW)
-      out[read.column(0)] = {read.column(1), read.column(2), uint64_t(sqlite3_column_int64(read.get(), 3)), read.column(4)};
-    return rc == SQLITE_DONE;
+  run(false, error, [&](sqlite3 *db, std::string &) {
+    out = legacyPoints(db);
+    return true;
   });
-  return ok ? out : std::map<std::string, ResumePoint>{};
+  for (auto &[key, point] : parsePoints(readFile(resumeFile())))
+    out[key] = std::move(point);
+  return out;
+}
+std::optional<DownloadStore::ResumePoint> DownloadStore::resumePoint(const std::string &key) {
+  const auto all = resumePoints();
+  const auto found = all.find(key);
+  if (found == all.end())
+    return std::nullopt;
+  return found->second;
+}
+bool DownloadStore::changeResumePoints(const std::function<void(std::map<std::string, ResumePoint> &)> &change) {
+  std::lock_guard<std::mutex> held(lock_);
+  if (file_.empty() || readOnly_)
+    return false;
+  std::string error;
+  FileLock lock(file_ + ".lock");
+  if (!lock.acquire(error))
+    return false;
+  auto points = parsePoints(readFile(resumeFile()));
+  change(points);
+  return atomicWrite(resumeFile(), serializePoints(points), error);
 }
 bool DownloadStore::saveResumePoint(const std::string &key, const ResumePoint &point) {
-  std::lock_guard<std::mutex> held(lock_);
-  std::string error;
-  return run(true, error, [&](sqlite3 *db, std::string &) {
-    Statement write(db, "INSERT INTO resume_points(key, url, etag, total, plan, updated_at) VALUES(?,?,?,?,?,?)"
-                        " ON CONFLICT(key) DO UPDATE SET url=excluded.url, etag=excluded.etag, total=excluded.total,"
-                        " plan=excluded.plan, updated_at=excluded.updated_at");
-    if (!write)
-      return false;
-    write.text(1, key);
-    write.text(2, point.url);
-    write.text(3, point.etag);
-    write.integer(4, int64_t(point.total));
-    write.text(5, point.plan);
-    write.integer(6, int64_t(std::time(nullptr)));
-    return write.step() == SQLITE_DONE;
-  });
+  return changeResumePoints([&](Points &points) { points[key] = point; });
 }
 bool DownloadStore::forgetResumePoint(const std::string &key) {
+  const bool ok = changeResumePoints([&](Points &points) { points.erase(key); });
+  // One the database still holds (its move here could not be made) goes too.
   std::lock_guard<std::mutex> held(lock_);
   std::string error;
-  return run(true, error, [&](sqlite3 *db, std::string &) {
+  run(true, error, [&](sqlite3 *db, std::string &) {
     Statement remove(db, "DELETE FROM resume_points WHERE key=?");
     if (!remove)
       return false;
     remove.text(1, key);
     return remove.step() == SQLITE_DONE;
   });
+  return ok;
 }
 bool DownloadStore::takeSetAside() { return setAside.exchange(false); }
 std::optional<DownloadStore::StateRows> DownloadStore::stateRows(std::string &error) {

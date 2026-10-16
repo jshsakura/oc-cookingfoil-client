@@ -61,6 +61,8 @@ public:
   std::map<std::string, ResumePoint> resumePoints();
   bool saveResumePoint(const std::string &key, const ResumePoint &point);
   bool forgetResumePoint(const std::string &key);
+  // <name>.resume.json beside the database file.
+  std::string resumeFile() const;
   // The app's state as rows, unchecked: settings by name, approval notes by
   // server, and credentials by (kind, server).
   struct StateRows {
@@ -84,6 +86,8 @@ private:
                  std::string *read = nullptr);
   // One call's work: lock, open, one transaction, close, unlock.
   bool run(bool writes, std::string &error, const std::function<bool(sqlite3 *, std::string &)> &work);
+  // Reads resume-points.json, lets `change` edit it and writes it back, under the lock.
+  bool changeResumePoints(const std::function<void(std::map<std::string, ResumePoint> &)> &change);
   mutable std::mutex lock_;
   std::string file_; // empty while closed
   bool readOnly_ = false;
