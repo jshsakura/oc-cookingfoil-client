@@ -2,6 +2,12 @@
 #include "core/TitleGuard.hpp"
 #include "install/Installer.hpp"
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <thread>
+namespace foil::install {
+void setHostInstall(std::function<void(const Item &)> run);
+}
 int runInstallerTests() {
   int failures = 0;
   foil::Item item;
@@ -52,6 +58,23 @@ int runInstallerTests() {
   CHECK(installer.progress().percent == 50);
   installer.cancel();
   CHECK(installer.cancellationRequested());
+  {
+    // Going on from an earlier try: the bar starts at what its saved points
+    // say is on the card (this file's, on this target), not at 0.
+    foil::install::Installer resumed;
+    foil::Item game;
+    game.url = "https://host/resumed.nsp";
+    game.size = 4000;
+    resumed.loadResumePoints({{"sd:aaaa", {game.url, "", 2000, "0-1000-600;1000-2000-1300"}},
+                              {"sd:bbbb", {"https://host/other.nsp", "", 2000, "0-2000-2000"}},
+                              {"nand:cccc", {game.url, "", 2000, "0-2000-2000"}}});
+    std::atomic<uint64_t> seen{UINT64_MAX};
+    foil::install::setHostInstall([&](const foil::Item &) { seen = resumed.progress().received; });
+    CHECK(!resumed.start({game}, "Resumed", "", "sd", {}, {}, UINT64_MAX / 2));
+    for (int i = 0; i < 300 && resumed.running(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    CHECK(seen == 900);
+    foil::install::setHostInstall(nullptr);
+  }
   {
     // A paused install says so, and the engine's own progress lines do not
     // cover it until it resumes; it comes back to downloading.

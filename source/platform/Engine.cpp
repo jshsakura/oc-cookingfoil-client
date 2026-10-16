@@ -361,13 +361,20 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
     savedTick = svcGetSystemTick();
     unsaved = false;
   };
+  uint64_t asked = foil::net::checkpointsAsked();
   if (sink)
     options.checkpoint = [&](const std::string &etag, uint64_t total, const std::string &plan) {
-      if (latest.etag == etag && latest.total == total && latest.plan == plan)
+      // Paused, stopping, or the app leaving the screen (checkpointSoon):
+      // kept at once, whatever the cadence, so nothing is lost.
+      const bool urgent = sink->paused() || sink->stopping() || foil::net::checkpointsAsked() != asked;
+      asked = foil::net::checkpointsAsked();
+      if (latest.etag == etag && latest.total == total && latest.plan == plan) {
+        if (urgent && unsaved) save();
         return; // nothing moved
+      }
       latest = {current.url, etag, total, plan};
       unsaved = true;
-      if (!savedTick || svcGetSystemTick() - savedTick >= 10ull * 19200000)
+      if (urgent || !savedTick || svcGetSystemTick() - savedTick >= 10ull * 19200000)
         save();
     };
   const auto result = foil::net::segmentedFetch(

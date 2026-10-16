@@ -1,4 +1,5 @@
 #include "net/Socket.hpp"
+#include "net/Segments.hpp"
 #include "core/Log.hpp"
 #include <atomic>
 #include <cstdlib>
@@ -85,6 +86,13 @@ void heardHeader(const char *data, size_t bytes) {
       std::lock_guard<std::mutex> held(tokenLock);
       tokenOrigin = value;
     }
+    return;
+  }
+  // How many connections the server takes from a console now; the next
+  // download opens that many (as /api/shop/info's download.maxConnections).
+  if (key == "x-cookingfoil-max-connections") {
+    const long most = std::strtol(trimmed().c_str(), nullptr, 10);
+    if (most > 0 && most <= 64) recommendConnections(int(most));
     return;
   }
   if (key == "x-cookingfoil-session") { // the session token refused: expired | revoked | invalid

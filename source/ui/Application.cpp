@@ -1,6 +1,8 @@
 #include "ui/Application.hpp"
 #include "net/Socket.hpp"
 #include "net/Direct.hpp"
+#include "net/Segmented.hpp"
+#include "platform/Focus.hpp"
 #include "core/Config.hpp"
 #include "platform/Storage.hpp"
 #include "platform/Installed.hpp"
@@ -12,6 +14,8 @@
 #include "core/TitleGuard.hpp"
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <thread>
 #include <filesystem>
 namespace foil::ui {
 // Server names are the user's own, except the stock ones config files ship
@@ -39,8 +43,11 @@ int menuIndex(Screen screen) {
 Application::Application(SDL_Renderer *renderer, std::string configPath,
                          std::string statePath, std::string fixture)
     : paint_(renderer), configPath_(std::move(configPath)),
-      statePath_(std::move(statePath)), fixture_(std::move(fixture)) {}
+      statePath_(std::move(statePath)), fixture_(std::move(fixture)) {
+  platform::onLeavingScreen([this] { keepDownloadPlace(); });
+}
 Application::~Application() {
+  platform::stopWatchingScreen();
   stop_ = true;
   retroCancel_ = true;
   updateCancel_ = true;
@@ -118,22 +125,38 @@ void Application::serverRestartNotice() {
   if (notice_ == tr("The server is restarting. Downloads go on shortly.")) notice_.clear();
 }
 // Where a cut-off file stands, from the install thread to the card.
-void Application::keepResumeChanges() {
+bool Application::keepResumeChanges() {
   auto changes = installer_.takeResumeChanges();
   if (changes.empty() || !store_.isOpen())
-    return;
+    return false;
   {
     std::lock_guard<std::mutex> held(historyMutex_);
     if (historyClosing_) {
       // Closing: the writer is gone, so straight to the card.
       for (const auto &[key, point] : changes)
         point ? store_.saveResumePoint(key, *point) : store_.forgetResumePoint(key);
-      return;
+      return true;
     }
     for (auto &[key, point] : changes)
       resumePending_[key] = std::move(point);
   }
   wakeHistoryWriter();
+  return true;
+}
+void Application::keepDownloadPlace() {
+  if (!installer_.running())
+    return;
+  using namespace std::chrono_literals;
+  constexpr int Steps = 40; // 10 ms each: the system waits on this before it suspends the app
+  const auto served = net::checkpointsServed();
+  net::checkpointSoon();
+  for (int i = 0; i < Steps && net::checkpointsServed() == served; ++i)
+    std::this_thread::sleep_for(10ms);
+  const auto written = resumeWritten_.load();
+  if (!keepResumeChanges())
+    return;
+  for (int i = 0; i < Steps && resumeWritten_.load() == written; ++i)
+    std::this_thread::sleep_for(10ms);
 }
 bool Application::open() {
   // Startup runs on the main thread, so each step also lets the console
@@ -1847,7 +1870,8 @@ void Application::render() {
     else if (downloadsTab_ == 0 || sidebar_ || downloadsList().empty())
       footer({{"B", tr("Back")}});
     else
-      footer(Hints{{"A", tr("Details")}, {"X", tr("Remove")}, {"Y", tr("Clear all")}, {"B", tr("Back")}});
+      footer(Hints{{"A", downloadsTab_ == 3 ? tr("Details") : tr("Download again")}, {"X", tr("Remove")},
+                   {"Y", tr("Clear all")}, {"B", tr("Back")}});
   }
   else if (screen_ == Screen::Settings)
     footer({{"A", tr("Select")}, {"B", tr("Back")}}); // Y still rereads config.json; - shows as 새로고침
@@ -2563,6 +2587,8 @@ void Application::wakeHistoryWriter() {
         logLine("downloads: " + error);
       for (const auto &[key, point] : points)
         point ? store_.saveResumePoint(key, *point) : store_.forgetResumePoint(key);
+      if (!points.empty())
+        ++resumeWritten_;
     }
   });
 }

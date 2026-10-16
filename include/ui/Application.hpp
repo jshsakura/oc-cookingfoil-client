@@ -322,7 +322,11 @@ public:
   static constexpr int PatchFilters = 3;
 
 private:
-  void keepResumeChanges();
+  // False when there was nothing new to write.
+  bool keepResumeChanges();
+  // Leaving the screen (HOME, sleep): a running download's place goes to
+  // the card now rather than at its next save; waits a moment for it.
+  void keepDownloadPlace();
   void requestRetroDetail(const std::string &id);
   void startRetroDetail();
   void moveRetroVariant(int step);
@@ -1240,6 +1244,8 @@ private:
   // 다운로드's history rows open what they were: the game's page, the app,
   // the retro game; or say the server has it no longer.
   void openHistoryRow(const history::Entry &entry);
+  // A 실패 or 취소 row in again, first in line, and the queue goes at once.
+  void retryHistoryRow(history::Entry entry);
   // An app's page by its id; false when the list does not have it. Before
   // the list has come, it opens once it does.
   bool openHomebrewPage(const std::string &id);
@@ -1299,6 +1305,7 @@ private:
   // Writes the waiting settings now; reload() does, before it reads them.
   void writePendingState();
   bool historyClosing_ = false;
+  std::atomic<uint64_t> resumeWritten_{0}; // resume points the writer put on the card, in rounds
   void wakeHistoryWriter();
   // 다운로드's tabs: 0 진행 중, 1 완료, 2 실패 (and cancelled).
   int downloadsTab_ = 0, downloadsRow_ = 0;

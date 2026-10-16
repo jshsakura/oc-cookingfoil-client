@@ -27,6 +27,10 @@ constexpr auto RetryGap = std::chrono::seconds(2);
 constexpr auto LimitCalm = std::chrono::seconds(60);
 constexpr auto ProgressEvery = std::chrono::milliseconds(250);
 constexpr auto CheckpointEvery = std::chrono::seconds(2);
+// A turn of the loop this long after the last one: the console slept (or
+// the app was in the background), and no part had a chance to try.
+constexpr auto SleepGap = std::chrono::seconds(10);
+std::atomic<uint64_t> checkpointAsked{0}, checkpointGiven{0};
 
 // How long the download stood still because the card (or the install
 // behind it) had not taken what came: the log tells a slow card from a slow
@@ -293,6 +297,9 @@ std::string rangeOf(uint64_t from, uint64_t end, bool openEnded) {
 } // namespace
 
 double cardHeldSeconds() { return double(heldMicros.load()) / 1e6; }
+void checkpointSoon() { ++checkpointAsked; }
+uint64_t checkpointsAsked() { return checkpointAsked.load(); }
+uint64_t checkpointsServed() { return checkpointGiven.load(); }
 SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(uint64_t total)> &prepare,
                                const std::function<bool(uint64_t offset, const char *data, size_t size)> &write,
                                const SegmentedOptions &options) {
@@ -501,22 +508,60 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
     std::string failure;
     long lastStatus = 0;
     bool fileChanged = false, fallBack = false;
-    auto lastProgress = Clock::now(), lastCheckpoint = Clock::now();
+    auto lastProgress = Clock::now(), lastCheckpoint = Clock::now(), lastTurn = Clock::now();
+    uint64_t checkpointSeen = checkpointAsked.load();
+    bool offlineSaid = false;
+    // Where every part stands, by the bytes actually written, to the caller.
+    const auto checkpointNow = [&] {
+      if (!options.checkpoint || !s.known || !s.ranged || !s.prepared) return;
+      std::lock_guard<std::mutex> held(planLock);
+      auto saved = plan.segments();
+      for (size_t i = 0; i < saved.size() && i < written.size(); ++i)
+        saved[i].next = std::clamp(written[i], saved[i].start, saved[i].end);
+      options.checkpoint(s.etag, s.total, SegmentPlan(saved).save());
+    };
     while (true) {
       if (cancelled()) {
         result.cancelled = true;
         break;
       }
       if (paused()) {
-        // Every connection goes; each part keeps what it got.
+        // Every connection goes; each part keeps what it got, and where they
+        // stand is handed over before the wait.
         for (auto &c : conns)
           if (c->curl) {
             hand(s, *c);
             close(*c);
           }
+        if (writer.drain()) checkpointNow();
         while (paused() && !cancelled())
           std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        s.lastData = lastTurn = Clock::now(); // the pause is no silence
         continue;
+      }
+      // Back from sleep (or the background): the parts get their full window
+      // again rather than failing on the first try after the gap.
+      if (const auto now = Clock::now(); now - lastTurn > SleepGap) {
+        log("download went on after " + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(now - lastTurn).count()) +
+            " s away");
+        s.lastData = now;
+      }
+      lastTurn = Clock::now();
+      // No network on the console: nothing is asked for and nothing counts
+      // against the parts; they go on from where they stood once it is back.
+      const bool offline = linkDown();
+      if (offline) {
+        s.lastData = Clock::now();
+        if (!offlineSaid) log("download waits for the network");
+        offlineSaid = true;
+      } else if (offlineSaid) {
+        log("network back; download goes on");
+        offlineSaid = false;
+      }
+      if (const auto asked = checkpointAsked.load(); asked != checkpointSeen) {
+        checkpointSeen = asked;
+        checkpointNow();
+        ++checkpointGiven;
       }
       // The size arrived on the first reply: plan the parts and open the rest.
       if (s.known && !started) {
@@ -553,7 +598,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         failure = "write";
         break;
       }
-      if (started) {
+      if (started && !offline) {
         // Parts whose wait is over, then more parts while there is room.
         const auto now = Clock::now();
         if (limit < wanted && now - limitedAt >= LimitCalm) {
@@ -676,13 +721,9 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         std::lock_guard<std::mutex> held(planLock);
         options.progress(plan.received(), s.total);
       }
-      if (options.checkpoint && s.known && s.ranged && now - lastCheckpoint >= CheckpointEvery) {
+      if (now - lastCheckpoint >= CheckpointEvery) {
         lastCheckpoint = now;
-        std::lock_guard<std::mutex> held(planLock);
-        auto saved = plan.segments();
-        for (size_t i = 0; i < saved.size() && i < written.size(); ++i)
-          saved[i].next = std::clamp(written[i], saved[i].start, saved[i].end);
-        options.checkpoint(s.etag, s.total, SegmentPlan(saved).save());
+        checkpointNow();
       }
       if (started && s.known) {
         std::lock_guard<std::mutex> held(planLock);

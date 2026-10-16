@@ -49,6 +49,15 @@ struct SegmentedResult {
 // any order. Either returning false stops the download.
 // Seconds, all told, that downloads waited on the card to take their bytes.
 double cardHeldSeconds();
+// Asks every running download to hand its parts to its checkpoint on its
+// next turn (within a tenth of a second) instead of at its usual cadence:
+// the app is about to leave the screen or the console to sleep.
+void checkpointSoon();
+// How many were asked for, and how many a download has handed over since
+// (a checkpoint compares the first with what it saw last to tell one asked
+// for; a caller waits on the second).
+uint64_t checkpointsAsked();
+uint64_t checkpointsServed();
 SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(uint64_t total)> &prepare,
                                const std::function<bool(uint64_t offset, const char *data, size_t size)> &write,
                                const SegmentedOptions &options);

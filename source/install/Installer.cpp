@@ -7,6 +7,8 @@
 #include "core/I18n.hpp"
 #include "net/Api.hpp"
 #include "net/Socket.hpp"
+#include "net/Segments.hpp"
+#include "core/NczPoint.hpp"
 #include "platform/Cores.hpp"
 #include "platform/Storage.hpp"
 #include <algorithm>
@@ -275,10 +277,30 @@ void Installer::stagePercent(double value) {
   if (progress_.total == 0)
     progress_.percent = std::clamp(value, 0., 99.);
 }
+namespace {
+// A content file by its id ("0123abcd" of "0123ABCD.nca" or of the resume
+// key "sd:0123abcd"), so the engine's reports and the saved points meet.
+std::string contentId(std::string name) {
+  name = name.substr(name.rfind(':') == std::string::npos ? 0 : name.rfind(':') + 1);
+  name = name.substr(0, name.find('.'));
+  for (auto &c : name) c = char(std::tolower(static_cast<unsigned char>(c)));
+  return name;
+}
+// Bytes an earlier try left in place by its saved point: the parts of a
+// plain file, or how far into its compressed stream an NCZ got.
+uint64_t keptBytes(const Installer::ResumePoint &point) {
+  if (NczPoint::isNcz(point.plan)) {
+    NczPoint at;
+    return NczPoint::decode(point.plan, at) ? at.zstdStart + at.consumed : 0;
+  }
+  std::vector<net::Segment> parts;
+  return net::SegmentPlan::load(point.plan, parts) ? net::SegmentPlan(parts).received() : 0;
+}
+} // namespace
 void Installer::bytes(const std::string &content, uint64_t received,
                       double speed) {
   std::lock_guard<std::mutex> lock(mutex_);
-  contents_[content] = received;
+  contents_[contentId(content)] = received;
   uint64_t total = completed_;
   for (const auto &entry : contents_)
     total += entry.second;
@@ -307,6 +329,18 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
         progress_.phase = tr("Checking files.");
         contents_.clear();
         target = progress_.target;
+      }
+      // Going on from an earlier try: the bar starts where it stopped, not
+      // at 0 until the first new byte.
+      {
+        std::lock_guard<std::mutex> held(resumeLock_);
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto &[key, point] : resume_)
+          if (point.url == files[i].url && key.rfind(target + ":", 0) == 0) contents_[contentId(key)] = keptBytes(point);
+        uint64_t total = completed_;
+        for (const auto &entry : contents_) total += entry.second;
+        progress_.received = std::min(progress_.total, total);
+        if (progress_.total) progress_.percent = std::min(99., 100. * progress_.received / progress_.total);
       }
       // A failed item is tried again from the start: the engine skips the
       // content files it already finished, so this picks up where it broke.

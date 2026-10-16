@@ -526,9 +526,13 @@ void Application::downloadsAction(Action a) {
   if (a == Action::Up) downloadsRow_ = std::max(0, downloadsRow_ - 1);
   if (a == Action::Down) downloadsRow_ = std::min(count - 1, downloadsRow_ + 1);
   const int index = list[std::clamp(downloadsRow_, 0, count - 1)];
-  // A row opens what it was; from there it can be got again.
+  // A failed or canceled row goes again at once, first in line, from where
+  // it stopped; a finished one opens what it was.
   if (a == Action::Accept) {
-    openHistoryRow(history_[index]);
+    if (history_[index].outcome == history::Outcome::Done)
+      openHistoryRow(history_[index]);
+    else
+      retryHistoryRow(history_[index]);
     return;
   }
   if (a == Action::Search) {
@@ -544,6 +548,24 @@ void Application::downloadsAction(Action a) {
 }
 } // namespace foil::ui
 namespace foil::ui {
+void Application::retryHistoryRow(history::Entry entry) {
+  if (!connected_) {
+    message(tr("Not connected to a server."));
+    return;
+  }
+  if (entry.install.files.empty())
+    return;
+  const auto &file = entry.install.files.front();
+  // The row it was gives way to the new one (startInstall and queueJob take
+  // out an older failed or canceled row of the same file).
+  if (entry.kind.empty()) {
+    if (auto error = startInstall(entry.install.files, entry.install.name, entry.install.icon, entry.install.target, {}, true))
+      alert_ = error.message;
+  } else {
+    queueJob(entry.kind, entry.install.name, entry.install.icon, file.url, file.size, entry.payload, 0, true);
+  }
+  downloadsRow_ = std::min(downloadsRow_, std::max(0, int(downloadsList().size()) - 1));
+}
 // A row of 실패, 취소 or 완료 opens what it was: the game's page (from there
 // it installs again), the app's card, the retro game. One the server no
 // longer lists says so instead.
