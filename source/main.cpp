@@ -254,6 +254,7 @@ int main(int argc, char **argv) {
       if (!confirmed) foil::platform::confirmUpdate(self); // closed on purpose: it ran
     }
   }
+  foil::net::endConnections();
   curl_global_cleanup();
   romfsExit();
   if (csrng)

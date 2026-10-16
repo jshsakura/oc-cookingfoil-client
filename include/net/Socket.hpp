@@ -62,9 +62,12 @@ uint64_t restartSerial();
 // For a curl handle with no header callback of its own (the engine's).
 void watchRestart(void *curl);
 uint64_t receivedBytes();
-// Puts a curl handle on the app's one pool of open connections, TLS
-// sessions and DNS answers, so a request reuses a connection already warm.
+// Puts a curl handle on its thread's pool of open connections, TLS sessions
+// and DNS answers, so a request reuses a connection already warm.
 void shareConnections(void *curl);
+// Before curl_global_cleanup: the caches threads still hold are left to the
+// process's end instead of closed after curl is gone.
+void endConnections();
 // The session token (a server offering "session-token"): asked for with the
 // server's sign-in (Basic, access key), then sent to the server's own
 // address in its place, so the password goes out once in 12 hours instead

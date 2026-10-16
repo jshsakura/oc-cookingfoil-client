@@ -231,28 +231,35 @@ int tuneSocket(void *, int socket, int) {
   return 0; // CURL_SOCKOPT_OK
 }
 namespace {
-// One cache of open connections (with their TLS sessions and DNS answers)
-// for every request: the next file asks on a connection already open
+// A cache of open connections (with their TLS sessions and DNS answers)
+// for each thread: its next request asks on a connection already open
 // instead of a new TCP and TLS handshake through the edge. A folder app of
 // thousands of small files was mostly handshakes; a game's next NCA, and
 // the next download in the queue, go on the connections the last one used.
-std::mutex shareLocks[CURL_LOCK_DATA_LAST];
+// One cache for every thread is what came before, and curl does not
+// support connections shared by threads at once: two of them matching
+// the same pool (the picture workers beside a download) read a connection
+// the other had just closed, and the app crashed (Data Abort in
+// url_match_destination).
+std::atomic<bool> sharing{true};
+struct ThreadShare {
+  CURLSH *share = nullptr;
+  ~ThreadShare() {
+    // At the app's end curl itself is gone first: the main thread's is left.
+    if (share && sharing) curl_share_cleanup(share);
+  }
+};
 CURLSH *sharedConnections() {
-  static CURLSH *share = [] {
-    CURLSH *s = curl_share_init();
-    if (!s)
-      return s;
-    curl_share_setopt(s, CURLSHOPT_LOCKFUNC,
-                      +[](CURL *, curl_lock_data data, curl_lock_access, void *) { shareLocks[data].lock(); });
-    curl_share_setopt(s, CURLSHOPT_UNLOCKFUNC, +[](CURL *, curl_lock_data data, void *) { shareLocks[data].unlock(); });
-    curl_share_setopt(s, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
-    curl_share_setopt(s, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
-    curl_share_setopt(s, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
-    return s;
-  }();
-  return share;
+  thread_local ThreadShare mine;
+  if (!mine.share && sharing && (mine.share = curl_share_init())) {
+    curl_share_setopt(mine.share, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
+    curl_share_setopt(mine.share, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
+    curl_share_setopt(mine.share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+  }
+  return mine.share;
 }
 } // namespace
+void endConnections() { sharing = false; }
 void shareConnections(void *curl) {
   if (auto *share = sharedConnections()) {
     curl_easy_setopt(static_cast<CURL *>(curl), CURLOPT_SHARE, share);

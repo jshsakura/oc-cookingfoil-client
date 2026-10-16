@@ -492,5 +492,6 @@ int main(int argc, char **argv) {
       running = false;
     SDL_Delay(16);
   }
+  foil::net::endConnections();
   curl_global_cleanup();
 }
