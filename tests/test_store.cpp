@@ -138,6 +138,17 @@ int runStoreTests() {
     CHECK(read && read->url == point.url && read->etag == point.etag && read->total == 1000 && read->plan == point.plan);
     store.forgetResumePoint("nca:abc");
     CHECK(!store.resumePoint("nca:abc"));
+    // A write that changes nothing leaves the file alone: each write rewrites
+    // it whole on the card. Told by the file itself, put back a day earlier.
+    const auto stamp = [&] { return std::filesystem::last_write_time(path); };
+    const auto earlier = stamp() - std::chrono::hours(24);
+    std::filesystem::last_write_time(path, earlier);
+    CHECK(store.save(again, error));                // the rows as they are
+    CHECK(store.forgetResumePoint("nca:never"));    // nothing there to forget
+    CHECK(stamp() == earlier);
+    CHECK(store.saveResumePoint("nca:abc", point)); // a real change is written
+    CHECK(stamp() != earlier && store.resumePoint("nca:abc"));
+    store.forgetResumePoint("nca:abc");
   }
   {
     // Not a database: the file is put aside as .broken (an older one replaced)
@@ -422,14 +433,16 @@ int runStoreTests() {
     int status = 0;
     CHECK(child > 0 && waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
     CHECK(exists(killed + ".lock"));
-    CHECK(store.load().empty()); // its lock is fresh: not taken yet
-    heldLock(killed, 60);         // ...and later it is stale
+    // A read takes no lock (making and removing one is a write to the
+    // card): it reads the last whole file even while the lock is fresh.
     const auto back = store.load();
     CHECK(back.size() == committed.size());
     if (back.size() == committed.size())
       CHECK(back.front().install.name == committed.front().install.name);
-    CHECK(healthy(killed) && !exists(killed + ".lock"));
-    CHECK(store.save(many(4, "after"), error) && healthy(killed));
+    CHECK(exists(killed + ".lock")); // fresh: a read leaves it
+    heldLock(killed, 60);             // ...and later it is stale
+    // The next write takes the stale lock over.
+    CHECK(store.save(many(4, "after"), error) && healthy(killed) && !exists(killed + ".lock"));
   }
   {
     // The console's "sdmc:/" names the SD card's root, which is "/" to SQLite.

@@ -267,12 +267,20 @@ void DownloadStore::close() {
   known_.clear();
 }
 // The database in memory, written to `file` whole.
-bool persist(sqlite3 *db, const std::string &file, std::string &error) {
+// `was`: the file as it was read for this change. A change that left every
+// byte the same (a row written as it already was, one forgotten that was
+// never there) writes nothing: each write rewrites the whole file on the
+// card, so one that changes nothing only wears it.
+bool persist(sqlite3 *db, const std::string &file, std::string &error, const std::string *was = nullptr) {
   sqlite3_int64 size = 0;
   unsigned char *bytes = sqlite3_serialize(db, "main", &size, 0);
   if (!bytes) {
     error = "could not serialize the database";
     return false;
+  }
+  if (was && was->size() == size_t(size) && std::memcmp(was->data(), bytes, size_t(size)) == 0) {
+    sqlite3_free(bytes);
+    return true;
   }
   const bool ok = atomicWrite(file, std::string(reinterpret_cast<const char *>(bytes), size_t(size)), error);
   sqlite3_free(bytes);
@@ -280,7 +288,7 @@ bool persist(sqlite3 *db, const std::string &file, std::string &error) {
 }
 // Opens the file and brings it up to date; `check` also runs quick_check.
 DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&db, bool check, bool &newer,
-                                             std::string &error) {
+                                             std::string &error, std::string *read) {
   auto failed = [&](int rc) {
     if (error.empty())
       error = db ? sqlite3_errmsg(db) : sqlite3_errstr(rc);
@@ -300,6 +308,8 @@ DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&
   sqlite3_extended_result_codes(db, 1);
   {
     std::string bytes = readFile(file);
+    if (read)
+      *read = bytes;
     if (bytes.empty())
       bytes = readFile(file + ".old"); // a write cut off between its two renames
     if (!bytes.empty()) {
@@ -412,12 +422,16 @@ bool DownloadStore::run(bool writes, std::string &error, const std::function<boo
     error = "closed";
     return false;
   }
+  // Only a write takes the lock: a read sees the file whole either way (a
+  // write replaces it by rename, and a read between the two renames takes
+  // the .old), and making and removing the lock file is a write itself.
   FileLock lock(file_ + ".lock");
-  if (!lock.acquire(error))
+  if (writes && !lock.acquire(error))
     return false;
   sqlite3 *db = nullptr;
   bool newer = false;
-  if (connect(file_, db, false, newer, error) != Opened::Ok)
+  std::string was;
+  if (connect(file_, db, false, newer, error, &was) != Opened::Ok)
     return false;
   // Another instance may have put a newer build's file here since.
   readOnly_ = newer;
@@ -429,7 +443,7 @@ bool DownloadStore::run(bool writes, std::string &error, const std::function<boo
   bool ok = exec(db, writes ? "BEGIN IMMEDIATE;" : "BEGIN;", error) && work(db, error);
   // Suspended so long that another instance took the lock over: what this
   // one holds is no longer the file, so it rolls back instead of committing.
-  if (ok && !lock.owned()) {
+  if (ok && writes && !lock.owned()) {
     error = "lost the lock to another CookingFoil";
     ok = false;
   }
@@ -437,7 +451,7 @@ bool DownloadStore::run(bool writes, std::string &error, const std::function<boo
   // Committed in memory: the file takes it whole, or the change is lost
   // (and reported) with the file as it was.
   if (ok && writes)
-    ok = persist(db, file_, error);
+    ok = persist(db, file_, error, &was);
   if (!ok && error.empty())
     error = sqlite3_errmsg(db);
   closeDb(db); // rolls back whatever did not commit

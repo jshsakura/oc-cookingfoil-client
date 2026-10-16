@@ -79,7 +79,9 @@ public:
 
 private:
   enum class Opened { Ok, Broken, Failed };
-  Opened connect(const std::string &file, sqlite3 *&db, bool check, bool &newer, std::string &error);
+  // `read`: the file's bytes as they were read (empty when it had none).
+  Opened connect(const std::string &file, sqlite3 *&db, bool check, bool &newer, std::string &error,
+                 std::string *read = nullptr);
   // One call's work: lock, open, one transaction, close, unlock.
   bool run(bool writes, std::string &error, const std::function<bool(sqlite3 *, std::string &)> &work);
   mutable std::mutex lock_;

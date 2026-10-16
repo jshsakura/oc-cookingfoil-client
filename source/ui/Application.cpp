@@ -164,11 +164,15 @@ void Application::keepDownloadPlace() {
 }
 bool Application::open() {
   // Startup runs on the main thread, so each step also lets the console
-  // handle HOME, and logs how long the one before it took.
+  // handle HOME, and says how long the one before it took: all in one line
+  // at the end (a "start" with no "startup" after it stopped on the way).
   auto stepAt = SDL_GetTicks();
-  std::string stepName = "window";
+  std::string stepName = "window", steps;
+  const auto took = [&] {
+    steps += (steps.empty() ? "" : ", ") + stepName + " " + std::to_string(SDL_GetTicks() - stepAt) + "ms";
+  };
   const auto step = [&](const std::string &caption, float progress, const char *name) {
-    logLine("startup " + stepName + " " + std::to_string(SDL_GetTicks() - stepAt) + "ms");
+    took();
     stepAt = SDL_GetTicks();
     stepName = name;
     paint_.splash(caption, progress);
@@ -212,7 +216,8 @@ bool Application::open() {
     alert_ = tr("Opened from the Album there is little memory, so big installs can be slow or fail. Launch a game while holding R to open in application mode.");
   }
 #endif
-  logLine("startup " + stepName + " " + std::to_string(SDL_GetTicks() - stepAt) + "ms");
+  took();
+  logLine("startup " + steps);
   return true;
 }
 // Patches live on the SD card: a store under switch/cookingfoil and the

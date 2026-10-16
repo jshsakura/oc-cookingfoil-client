@@ -101,7 +101,23 @@ bool makeDirectories(const std::string& path) {
         return false;
     return ::mkdir(path.c_str(), 0777) == 0 || errno == EEXIST;
 }
+namespace {
+// The file already holds exactly these bytes (read, which costs the card
+// nothing, against a rewrite that wears it).
+bool holds(const std::string& path, const std::string& contents) {
+    struct stat st {};
+    if (::stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode) || uint64_t(st.st_size) != contents.size()) return false;
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return false;
+    std::string have(contents.size(), '\0');
+    input.read(have.data(), std::streamsize(have.size()));
+    return input.gcount() == std::streamsize(have.size()) && have == contents;
+}
+}
 bool atomicWrite(const std::string& path, const std::string& contents, std::string& error) {
+    // Unchanged: nothing to write. Every caller (ledgers, records, settings,
+    // the database) saves whole files, often with nothing new in them.
+    if (holds(path, contents)) return true;
     const auto parent = std::filesystem::path(path).parent_path().string();
     if (!parent.empty() && !makeDirectories(parent)) { error = std::strerror(errno); return false; }
     const std::string temp = path + ".tmp";

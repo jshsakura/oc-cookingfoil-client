@@ -1,3 +1,5 @@
+#include <chrono>
+#include <algorithm>
 #include "Test.hpp"
 #include "core/State.hpp"
 #include "core/Config.hpp"
@@ -121,6 +123,22 @@ int runConfigTests() {
         std::filesystem::remove_all(root);
     }
     {
+    // A file saved with what it already holds is left alone (nothing new
+    // to wear the card with); anything else is written.
+    char folder[] = "/tmp/cookingfoil-same-XXXXXX";
+    if (const char* dir = mkdtemp(folder)) {
+      const std::string path = std::string(dir) + "/ledger.json";
+      std::string error;
+      CHECK(foil::atomicWrite(path, "{\"a\":1}", error));
+      const auto earlier = std::filesystem::last_write_time(path) - std::chrono::hours(24);
+      std::filesystem::last_write_time(path, earlier);
+      CHECK(foil::atomicWrite(path, "{\"a\":1}", error) && std::filesystem::last_write_time(path) == earlier);
+      CHECK(foil::atomicWrite(path, "{\"a\":2}", error) && foil::readFile(path) == "{\"a\":2}");
+      CHECK(foil::atomicWrite(path, "{\"a\":20}", error) && foil::readFile(path) == "{\"a\":20}");
+      std::filesystem::remove_all(dir);
+    }
+    }
+    {
     // A long session's log is cut back as it goes, not only at the next
     // start: it never grows past twice its cap, and the newest lines stay.
     char folder[] = "/tmp/cookingfoil-log-XXXXXX";
@@ -131,6 +149,16 @@ int runConfigTests() {
       for (int i = 0; i < 8000; ++i) foil::logLine("line " + std::to_string(i) + " " + filler);
       CHECK(std::filesystem::file_size(path) <= 2 * 512 * 1024 + 4096);
       CHECK(foil::readFile(path).find("line 7999 ") != std::string::npos);
+      // A line repeated (a poll failing every few seconds) is written once,
+      // then how many more times when another line comes.
+      std::filesystem::remove(path);
+      foil::openLog(path);
+      for (int i = 0; i < 5; ++i) foil::logLine("GET /api/pair/status status=404");
+      CHECK(foil::logTail(4096).find("4 more times so far") != std::string::npos);
+      foil::logLine("paired");
+      const auto text = foil::readFile(path);
+      CHECK(std::count(text.begin(), text.end(), '\n') == 3);
+      CHECK(text.find("(the line before 4 more times)") != std::string::npos && text.find("paired") != std::string::npos);
       foil::openLog(""); // later tests log nowhere, as before
       std::filesystem::remove_all(dir);
     }
