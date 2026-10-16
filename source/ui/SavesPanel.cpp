@@ -64,7 +64,7 @@ void Application::pollSaveJob() {
   deviceBusy_ = false;
   if (managedGame_) {
     backups_ = saves::listBackups(saves::keeperRoot(sdRoot_), managedGame_->applicationId);
-    backupCounts_.erase(managedGame_->applicationId);
+    readBackupSummary();
   }
   // After a backup the cursor stays on "back up"; the new one is listed first.
   saveRow_ = std::clamp(saveRow_, 0, int(backups_.size()) + 1);
@@ -77,7 +77,7 @@ void Application::pollSaveJob() {
       alert_ = saveResult_.message;
     } else {
       message(trf("Applied {0}. The game starts with it next time.", {applying_ ? applying_->name : ""}));
-      if (managedGame_) backupCounts_.erase(managedGame_->applicationId);
+      if (managedGame_) readBackupSummary();
       applying_.reset();
       managedGame_.reset();
       saves_.clear();
@@ -102,7 +102,7 @@ void Application::saveAction(Action a) {
       message(error.message);
     else
       message(tr("Moved the backup to the trash."));
-    backupCounts_.erase(managedGame_->applicationId);
+    readBackupSummary();
     backups_ = saves::listBackups(saves::keeperRoot(sdRoot_), managedGame_->applicationId);
     saveRow_ = std::clamp(saveRow_, 0, int(backups_.size()) + 1);
     return;

@@ -459,6 +459,38 @@ int runUiTests(SDL_Renderer *renderer) {
     app.render();
   }
   {
+    // 세이브 > 이 기기: latest backup first by default, Y for the next order,
+    // and A opens the game drawn under the cursor, whatever the order.
+    foil::ui::Application saves(renderer, "", "", "host/fixtures/art");
+    CHECK(saves.open());
+    std::vector<foil::InstalledGame> games(3);
+    const char *names[] = {"가 게임", "나 게임", "다 게임"};
+    for (int i = 0; i < 3; ++i) {
+      games[i].applicationId = 0x0100000000010000ULL + uint64_t(i) * 0x10000;
+      games[i].titleId = foil::saves::titleHex(games[i].applicationId);
+      games[i].name = names[i];
+      games[i].lastUpdated = uint64_t(10 - i);
+    }
+    saves.previewInstalled({{true, {}}, games});
+    saves.screen(foil::ui::Screen::Saves);
+    saves.previewBackups({{games[2].applicationId, {1, "20260301_000000"}},
+                          {games[1].applicationId, {5, "20260101_000000"}}});
+    CHECK(saves.saveRowName(0) == "다 게임" && saves.saveRowName(1) == "나 게임" && saves.saveRowName(2) == "가 게임");
+    saves.render();
+    saves.action(foil::ui::Action::Right);
+    saves.action(foil::ui::Action::Accept);
+    CHECK(saves.managedName() == "다 게임");
+    saves.action(foil::ui::Action::Back);
+    saves.action(foil::ui::Action::Queue); // 이름순
+    CHECK(saves.saveRowName(0) == "가 게임");
+    saves.action(foil::ui::Action::Queue); // 업데이트순
+    CHECK(saves.saveRowName(0) == "가 게임" && saves.saveRowName(2) == "다 게임");
+    saves.action(foil::ui::Action::Queue); // 백업 많은순
+    CHECK(saves.saveRowName(0) == "나 게임");
+    saves.action(foil::ui::Action::Queue); // back to the first
+    CHECK(saves.saveRowName(0) == "다 게임");
+  }
+  {
     // 세이브 > 드롭박스: 연결하기 when not linked, the QR code while the phone
     // signs in (B gives up), then the games with their Dropbox backups.
     app.screen(foil::ui::Screen::Saves);

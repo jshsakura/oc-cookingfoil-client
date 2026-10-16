@@ -240,6 +240,17 @@ public:
     deviceFixture_ = true;
     deviceError_ = {};
   }
+  // 세이브's backups on the card without a card (a read running is dropped).
+  void previewBackups(std::map<uint64_t, saves::BackupSummary> summary) {
+    if (backupSummaryWorker_.joinable()) backupSummaryWorker_.join();
+    backupSummaryDone_ = false;
+    backupSummary_ = std::move(summary);
+  }
+  std::string saveRowName(size_t i) const {
+    const auto rows = saveGameRows();
+    return i < rows.size() ? installed_.games[size_t(rows[i])].name : "";
+  }
+  std::string managedName() const { return managedGame_ ? managedGame_->name : ""; }
   // 세이브 > 드롭박스 without Dropbox: linked with `remote`, or not linked;
   // a `signIn` address shows the QR code waiting for the phone.
   void previewDropbox(bool linked, net::DropboxRevisions remote = {}, const std::string &signIn = "") {
@@ -482,7 +493,15 @@ private:
   std::string savesQuery_, patchQuery_, installedQuery_, updatesQuery_;
   std::string *listQuery(); // this screen's, or nullptr (모든 게임 and 레트로 have their own)
   std::vector<int> gameRows(const std::string &query) const; // installed_.games matching
-  std::vector<int> saveGameRows() const { return gameRows(savesQuery_); }
+  // 이 기기's games in the order Y picks (savesSort_[0]).
+  std::vector<int> saveGameRows() const;
+  // Y on 이 기기 and 서버: the order (and on 서버 "installed only"), each tab
+  // its own. 이 기기: latest backup, name, updated, most backups. 서버:
+  // installed first, installed only, name, recently added.
+  int savesSort_[2] = {0, 0};
+  static constexpr int SavesSorts = 4;
+  std::string savesSortLabel() const;
+  void cycleSavesSort();
   // The labels shrink (down to 14pt) when the strip would start left of
   // leftLimit. `counts`, when given, puts a small grey label after a
   // label whose count is above 0.
@@ -1253,7 +1272,18 @@ private:
   std::function<void()> retroListFinish_;
   std::function<void()> retroFinish_;  // set by the worker, run by pollRetro
   std::map<std::string, bool> retroOnCard_; // rom paths checked this visit
-  std::map<uint64_t, int> backupCounts_;    // 세이브: backups per game, this visit
+  // Every game's backups on the card (count, newest), read on a worker when
+  // 세이브 opens or a backup comes or goes; the rows and their order use it.
+  std::map<uint64_t, saves::BackupSummary> backupSummary_, incomingSummary_;
+  std::thread backupSummaryWorker_;
+  std::atomic<bool> backupSummaryDone_{false};
+  bool backupSummaryAgain_ = false; // asked again while a read ran
+  void readBackupSummary();
+  void pollBackupSummary();
+  int backupsOf(uint64_t id) const {
+    const auto found = backupSummary_.find(id);
+    return found == backupSummary_.end() ? 0 : found->second.count;
+  }
   std::optional<int> saveOpen_;          // index into saves_
   std::vector<saves::LocalBackup> backups_;
   int saveRow_ = 0;                      // 0 back up, 1..n backups, n+1 delete

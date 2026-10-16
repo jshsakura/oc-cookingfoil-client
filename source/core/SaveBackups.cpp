@@ -166,6 +166,25 @@ int countBackups(const std::string &root, uint64_t titleId) {
     if (name[0] != '.' && isDirectory(folder + "/" + name)) ++count;
   return count;
 }
+std::map<uint64_t, BackupSummary> summarizeBackups(const std::string &root) {
+  std::map<uint64_t, BackupSummary> out;
+  const auto backups = root + "/backups";
+  for (const auto &title : entries(backups)) {
+    if (title.size() != 16 || title.find_first_not_of("0123456789ABCDEFabcdef") != std::string::npos) continue;
+    const uint64_t id = std::strtoull(title.c_str(), nullptr, 16);
+    BackupSummary summary;
+    for (const auto &name : entries(backups + "/" + title)) {
+      if (name[0] == '.' || !isDirectory(backups + "/" + title + "/" + name)) continue;
+      ++summary.count;
+      // A stamp (YYYYMMDD_HHMMSS, maybe _2 after it) sorts by time as text.
+      const bool stamp = name.size() >= 15 && name[8] == '_' &&
+                         name.find_first_not_of("0123456789") == 8;
+      if (stamp && name > summary.newest) summary.newest = name;
+    }
+    if (summary.count) out[id] = std::move(summary);
+  }
+  return out;
+}
 std::string freshBackupName(const std::string &root, uint64_t titleId, std::time_t when) {
   // One past the highest count already used in that second, so a name freed
   // by the trash is never reused (it would sort as the oldest).

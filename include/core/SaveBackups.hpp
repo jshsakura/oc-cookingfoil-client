@@ -6,6 +6,7 @@
 #include "core/SaveMeta.hpp"
 #include <array>
 #include <functional>
+#include <map>
 #include <optional>
 namespace foil::saves {
 // save-keeper keeps 5 versions per game. Rollback copies made before a
@@ -40,6 +41,13 @@ Error restoreMismatch(const LocalBackup &backup, bool deviceTarget);
 std::vector<LocalBackup> listBackups(const std::string &root, uint64_t titleId);
 // Just how many backup folders there are, without reading them.
 int countBackups(const std::string &root, uint64_t titleId);
+// Every game's backups at once, by Title ID: how many (as countBackups) and
+// the newest stamp ("20260102_000000", empty when no folder is named so).
+struct BackupSummary {
+  int count = 0;
+  std::string newest;
+};
+std::map<uint64_t, BackupSummary> summarizeBackups(const std::string &root);
 // The stamp, or the stamp with _2, _3 ... when that folder already exists
 // (two backups in one second would otherwise share a folder).
 std::string freshBackupName(const std::string &root, uint64_t titleId, std::time_t when);

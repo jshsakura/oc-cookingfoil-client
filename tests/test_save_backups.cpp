@@ -57,6 +57,14 @@ int runSaveBackupTests() {
     keeperBackup(root, Title, "20260102_000000", 300);
     write(root + "/backups/" + titleHex(Title) + "/stray/file", "x");
     write(root + "/backups/" + titleHex(Title) + "/20260103_000000.zip", "not a folder");
+    // Every game at once: the count (the stray folder too, as countBackups)
+    // and the newest stamp (never the stray one).
+    const auto summary = summarizeBackups(root);
+    CHECK(summary.size() == 1 && summary.count(Title));
+    if (summary.count(Title)) {
+      CHECK(summary.at(Title).count == countBackups(root, Title));
+      CHECK(summary.at(Title).newest == "20260102_000000");
+    }
     const auto list = listBackups(root, Title);
     CHECK(list.size() == 3);
     if (list.size() == 3) {

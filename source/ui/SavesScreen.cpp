@@ -58,10 +58,18 @@ void Application::savesAction(Action a) {
     if (savesTab_ == 2) dropboxEnter();
     return;
   }
+  // Y: the order of 이 기기 or 서버 (as 내 게임's); - reads the list again.
+  if (a == Action::Queue && savesTab_ != 2) {
+    cycleSavesSort();
+    return;
+  }
   if (a == Action::Queue || a == Action::Reload) {
     if (savesTab_ == 2) dropboxAction(a);
     else if (savesTab_ == 1) loadShopSaves();
-    else if (savesTab_ == 0) refreshInstalled();
+    else if (savesTab_ == 0) {
+      refreshInstalled();
+      readBackupSummary();
+    }
     return;
   }
   if (a == Action::Left) {
@@ -96,11 +104,23 @@ void Application::savesScreen() {
   // Search at the right end, as on every list; the tabs left of it.
   const float searchX = SearchX;
   searchBar(savesQuery_, searchX);
+  // The order (Y) left of the search on 이 기기 and 서버, as on 내 게임.
+  float tabsRight = searchX - 16;
+  if (savesTab_ != 2) {
+    const auto sort = savesSortLabel();
+    const float sortW = myGamesButtonWidth(sort), sortX = tabsRight - sortW;
+    headerItem("sort", sortX, 24, sortW, 48, [this] { cycleSavesSort(); });
+    paint_.rect(sortX, 24, sortW, 48, Surface, 12);
+    paint_.key("Y", sortX + 18, 48);
+    paint_.icon(10, sortX + 60, 38, Ink, 20);
+    paint_.fonts.middle(sort, sortX + 88, 48, 18, Ink, true, sortW - 106);
+    tabsRight = sortX - 16;
+  }
   const float tabsLeft = headerTabs({tr("This console|mine"), tr("Server"), tr("Dropbox")}, savesTab_, [this](int n) {
     savesTab_ = n;
     if (n == 1 && !shopSavesLoaded_) loadShopSaves();
     if (n == 2) dropboxEnter();
-  }, searchX - 16);
+  }, tabsRight);
   pageTitle(tr("Saves"),
             shop ? (shopSavesLoaded_ ? countLabel(shopSaveGroups().size(), savesQuery_) : std::string())
             : savesTab_ == 0 && installed_.installed.complete ? countLabel(saveGameRows().size(), savesQuery_)
@@ -139,7 +159,6 @@ void Application::savesScreen() {
                           float((count) - (Visible)), RowStep);
   const int first = int(top);
   paint_.scrollbar(1266, Top, RowStep * Visible - 12, top, Visible, float(count));
-  const auto backupsRoot = saves::keeperRoot(sdRoot_);
   clipTo(232, Top - 8, 1048, 660 - Top + 8);
   for (int i = first; i < count && i <= first + Visible + 1; ++i) {
     const auto &g = installed_.games[rows[i]];
@@ -156,12 +175,9 @@ void Application::savesScreen() {
     if (inContent() && i == selected_ && !managedGame_) marquee(g.name, 360, y + 12, 21, 640);
     else paint_.fonts.text(g.name, 360, y + 12, 21, Ink, true, 640);
     paint_.fonts.text(g.titleId, 360, y + 46, 16, Secondary);
-    // How many backups the SD card already holds (save-keeper's included),
-    // counted once per visit rather than every frame.
-    auto counted = backupCounts_.find(g.applicationId);
-    if (counted == backupCounts_.end())
-      counted = backupCounts_.emplace(g.applicationId, saves::countBackups(backupsRoot, g.applicationId)).first;
-    const int backups = counted->second;
+    // How many backups the SD card holds (save-keeper's included), read
+    // on a worker when 세이브 opens.
+    const int backups = backupsOf(g.applicationId);
     const std::string state = backups ? trf("{0} backups", {std::to_string(backups)}) : std::string(tr("No backups"));
     const float w = paint_.fonts.measure(state, 16, true) + 20;
     paint_.rect(1230 - w, y + 28, w, 28, backups ? Good : Line, 8);
@@ -217,13 +233,98 @@ bool Application::shopSaveTargetHere(const shopsaves::ShopSave &save) const {
   return std::any_of(installed_.games.begin(), installed_.games.end(),
                      [&](const auto &g) { return g.titleId == save.titleId; });
 }
+std::vector<int> Application::saveGameRows() const {
+  auto rows = gameRows(savesQuery_);
+  const int sort = savesSort_[0];
+  const auto newest = [this](uint64_t id) -> std::string {
+    const auto found = backupSummary_.find(id);
+    return found == backupSummary_.end() ? std::string() : found->second.newest;
+  };
+  std::stable_sort(rows.begin(), rows.end(), [&](int a, int b) {
+    const auto &ga = installed_.games[size_t(a)], &gb = installed_.games[size_t(b)];
+    if (sort == 0) { // latest backup first; games without one after, by name
+      const auto na = newest(ga.applicationId), nb = newest(gb.applicationId);
+      if (na != nb) return na > nb;
+    } else if (sort == 2) { // installed or updated most recently first
+      if (ga.lastUpdated != gb.lastUpdated) return ga.lastUpdated > gb.lastUpdated;
+    } else if (sort == 3) { // most backups first
+      const int ca = backupsOf(ga.applicationId), cb = backupsOf(gb.applicationId);
+      if (ca != cb) return ca > cb;
+    }
+    return ga.name < gb.name;
+  });
+  return rows;
+}
+std::string Application::savesSortLabel() const {
+  static const char *const Console[SavesSorts] = {"Latest backup|sort", "Name|sort", "Recently updated|sort",
+                                                  "Most backups|sort"};
+  static const char *const Server[SavesSorts] = {"Installed first|sort", "Installed only|sort", "Name|sort",
+                                                 "Recently added|sort"};
+  return tr(savesTab_ == 1 ? Server[savesSort_[1]] : Console[savesSort_[0]]);
+}
+void Application::cycleSavesSort() {
+  if (savesTab_ == 2) return;
+  if (savesTab_ == 1) {
+    // The cursor stays on the game it was on, when that one is still listed.
+    const auto groups = shopSaveGroups();
+    std::string on;
+    if (!groups.empty()) {
+      const auto &head = shopSaves_[size_t(groups[size_t(std::clamp(shopSaveRow_, 0, int(groups.size()) - 1))].first)];
+      on = homebrew::ownerKey(head.titleId, head.homebrewApp);
+    }
+    savesSort_[1] = (savesSort_[1] + 1) % SavesSorts;
+    sortShopSaves();
+    const auto now = shopSaveGroups();
+    shopSaveRow_ = 0;
+    for (size_t i = 0; i < now.size(); ++i) {
+      const auto &head = shopSaves_[size_t(now[i].first)];
+      if (homebrew::ownerKey(head.titleId, head.homebrewApp) == on) shopSaveRow_ = int(i);
+    }
+    return;
+  }
+  const auto rows = saveGameRows();
+  const uint64_t on = rows.empty() ? 0 : installed_.games[size_t(rows[size_t(std::clamp(selected_, 0, int(rows.size()) - 1))])].applicationId;
+  savesSort_[0] = (savesSort_[0] + 1) % SavesSorts;
+  const auto now = saveGameRows();
+  selected_ = 0;
+  for (size_t i = 0; i < now.size(); ++i)
+    if (installed_.games[size_t(now[i])].applicationId == on) selected_ = int(i);
+}
+void Application::readBackupSummary() {
+  if (backupSummaryWorker_.joinable()) {
+    backupSummaryAgain_ = true; // one more read once this one is back
+    return;
+  }
+  backupSummaryWorker_ = std::thread([this, root = saves::keeperRoot(sdRoot_)] {
+    guarded("backup summary", [&] { incomingSummary_ = saves::summarizeBackups(root); });
+    backupSummaryDone_ = true;
+  });
+}
+void Application::pollBackupSummary() {
+  if (!backupSummaryDone_.exchange(false)) return;
+  backupSummaryWorker_.join();
+  backupSummary_ = std::move(incomingSummary_);
+  if (std::exchange(backupSummaryAgain_, false)) readBackupSummary();
+}
 void Application::sortShopSaves() {
   // A popup holds a save by its place in the list: the order waits for it.
   if (savePicking_ || saveNeedsGame_ || shopAppSaveAsk_) return;
-  // Games and apps on this console first, then by name.
-  std::stable_sort(shopSaves_.begin(), shopSaves_.end(), [this](const auto &a, const auto &b) {
-    const bool ha = shopSaveTargetHere(a), hb = shopSaveTargetHere(b);
-    if (ha != hb) return ha;
+  // By the order picked (Y): games and apps on this console first (and,
+  // for "installed only", only those listed: shopSaveGroups), by name, or
+  // newest first by the group's latest save. One owner's saves stay together.
+  const int sort = savesSort_[1];
+  std::map<std::string, int64_t> latest;
+  for (const auto &save : shopSaves_) {
+    auto &at = latest[homebrew::ownerKey(save.titleId, save.homebrewApp)];
+    at = std::max(at, save.updatedAt);
+  }
+  std::stable_sort(shopSaves_.begin(), shopSaves_.end(), [this, sort, &latest](const auto &a, const auto &b) {
+    const auto ka = homebrew::ownerKey(a.titleId, a.homebrewApp), kb = homebrew::ownerKey(b.titleId, b.homebrewApp);
+    if (sort == 3 && latest[ka] != latest[kb]) return latest[ka] > latest[kb];
+    if (sort <= 1) {
+      const bool ha = shopSaveTargetHere(a), hb = shopSaveTargetHere(b);
+      if (ha != hb) return ha;
+    }
     const auto na = shopSaveTitle(a), nb = shopSaveTitle(b);
     if (na != nb) return na < nb;
     // One game's or app's saves side by side, for the groups.
@@ -241,9 +342,11 @@ std::vector<std::pair<int, int>> Application::shopSaveGroups() const {
     if (!out.empty() && owner == last) ++out.back().second;
     else out.push_back({i, 1}), last = std::move(owner);
   }
-  // The search keeps a game or app when its name or any of its saves matches.
+  // "Installed only" keeps what can go on this console; the search keeps a
+  // game or app when its name or any of its saves matches.
   out.erase(std::remove_if(out.begin(), out.end(),
                            [&](const std::pair<int, int> &group) {
+                             if (savesSort_[1] == 1 && !shopSaveTargetHere(shopSaves_[group.first])) return true;
                              if (savesQuery_.empty()) return false;
                              const auto &head = shopSaves_[group.first];
                              if (textMatches({shopSaveTitle(head), head.homebrewApp}, savesQuery_)) return false;

@@ -57,8 +57,9 @@ void Application::cycleInstalledSort(int step) {
 void Application::openManagement() {
   if (deviceBusy_ || !installed_.installed.complete || installed_.games.empty()) return;
   if (installer_.running()) { message(tr("Manage games after the install finishes.")); return; }
-  // The list may be a search: its rows point into the games.
-  const auto rows = gameRows(screen_ == Screen::Saves ? savesQuery_ : installedQuery_);
+  // The list may be a search, and 세이브's has its own order: its rows
+  // point into the games as they are drawn.
+  const auto rows = screen_ == Screen::Saves ? saveGameRows() : gameRows(installedQuery_);
   if (rows.empty()) return;
   managedGame_ = installed_.games[rows[std::clamp(selected_, 0, int(rows.size()) - 1)]];
   manageRow_ = screen_ == Screen::Saves ? 1 : 0; // 세이브 has no game deletion row

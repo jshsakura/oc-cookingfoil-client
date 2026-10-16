@@ -233,7 +233,7 @@ void Application::dropboxTransfer() {
         alert_ = got.error.message;
         return;
       }
-      backupCounts_.erase(id);
+      readBackupSummary();
       dropboxLocal_ = saves::listBackups(root, id);
       message(installed ? tr("Downloaded to the console. Restore it from the This console tab.")
                         : tr("Downloaded to the console. Install the game, then restore it from the This console tab."));
@@ -528,9 +528,7 @@ void Application::dropboxTab() {
     if (onGame && n == focus) marquee(g.name, 360, named ? y + 12 : y + 28, 21, 500);
     else paint_.fonts.text(g.name, 360, named ? y + 12 : y + 28, 21, Ink, true, 500);
     if (named) paint_.fonts.text(g.titleId, 360, y + 46, 16, Secondary);
-    auto counted = backupCounts_.find(id);
-    if (counted == backupCounts_.end()) counted = backupCounts_.emplace(id, saves::countBackups(root, id)).first;
-    const int local = counted->second;
+    const int local = backupsOf(id);
     // Right to left: what Dropbox holds, what the console holds, and a game
     // that is not installed says so.
     float right = 1230;

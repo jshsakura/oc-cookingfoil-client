@@ -91,6 +91,8 @@ Application::~Application() {
     shopSavesWorker_.join();
   if (stateWorker_.joinable())
     stateWorker_.join();
+  if (backupSummaryWorker_.joinable())
+    backupSummaryWorker_.join();
   if (dropboxWorker_.joinable())
     dropboxWorker_.join();
   flushHistory();
@@ -492,7 +494,7 @@ void Application::screen(Screen screen) {
   // Dropbox's popups belong to the visit that opened them.
   dropboxOpen_ = dropboxUnlinkAsk_ = dropboxChoosing_ = false;
   if (screen == Screen::Saves) {
-    backupCounts_.clear();
+    readBackupSummary();
     refreshInstalled();
   }
   // 레트로 게임 asks the card again which ROMs are there, and an empty list
@@ -670,6 +672,7 @@ void Application::poll() {
   pollSaveJob();
   pollRetro();
   pollShopSaves();
+  pollBackupSummary();
   pollDropbox();
   pollPatches();
   pollPatchCheck();
