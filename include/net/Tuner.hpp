@@ -53,15 +53,19 @@ private:
   double settled_ = 0; // the speed when the count was last decided
   std::string reason_ = "start";
 };
-// The one running download's tuner. startTuning() begins one under the
-// server's `ceiling` for a download from `place` (its address' origin):
-// a download from a place seen before in this run goes on with what was
-// found there instead of measuring from 2 again (each place keeps its own;
-// one too small to measure changes nothing). tunedConnections() is 0 while none runs (a caller keeps its own
-// count then), else the count now, closing a span when one is due by the
-// bytes the downloads counted (countReceived).
-void startTuning(int ceiling, const std::string &place);
-void stopTuning();
+// The running download's tuner. startTuning() begins one under the
+// server's `ceiling` for a download from `place` (its address' origin) and
+// returns its id for stopTuning(): a download from a place seen before in
+// this run goes on with what was found there instead of measuring from 2
+// again (each place keeps its own; one too small to measure changes
+// nothing). Two at once (an app update during an install): the first
+// started leads, and no span is judged while they share the line, since
+// the bytes counted are both of theirs; once one is left it goes on with
+// its own place. tunedConnections() is 0 while none runs (a caller keeps
+// its own count then), else the count now, closing a span when one is due
+// by the bytes the downloads counted (countReceived).
+int startTuning(int ceiling, const std::string &place);
+void stopTuning(int id);
 int tunedConnections();
 void tuneTrouble();
 std::string tuningSummary();

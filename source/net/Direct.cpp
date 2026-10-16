@@ -31,19 +31,21 @@ void setShopOrigin(const std::string &origin) {
   shop = origin.empty() ? std::string() : originOf(origin);
 }
 bool isDirect(const std::string &url) {
-  const auto direct = downloadTokenOrigin();
-  return !direct.empty() && originOf(url) == direct;
+  const auto to = downloadTokenOrigin();
+  return !to.empty() && originOf(url) == to;
 }
+// Named, the direct address is the only way, token or not yet: without one
+// the request goes with no key, and its 401 asks for one (afterDirectFailure).
 std::string routeDownload(const std::string &url) {
-  const auto direct = downloadTokenOrigin();
-  if (direct.empty() || downloadToken().empty()) return url;
+  const auto to = downloadTokenOrigin();
+  if (to.empty()) return url;
   {
     std::lock_guard<std::mutex> held(lock);
-    if (shop.empty() || shop == direct) return url;
+    if (shop.empty() || shop == to) return url;
     if (originOf(url) != shop) return url;
   }
   const auto path = pathOf(url);
-  return path.empty() ? url : direct + path;
+  return path.empty() ? url : to + path;
 }
 std::vector<std::string> headersFor(const std::string &requestUrl, const std::vector<std::string> &headers) {
   if (!isDirect(requestUrl)) return headers;

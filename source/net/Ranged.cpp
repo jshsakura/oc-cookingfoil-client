@@ -183,10 +183,10 @@ bool fetchParallel(const std::string &url, const std::vector<std::string> &heade
   options.headers = headers;
   options.batchBytes = 1u << 20;
   // Found as it goes under the server's ceiling, for this file only.
-  startTuning(options.connections, originOf(routeDownload(url)));
   struct Tuning {
-    ~Tuning() { stopTuning(); }
-  } tuning;
+    int id;
+    ~Tuning() { stopTuning(id); }
+  } tuning{startTuning(options.connections, originOf(routeDownload(url)))};
   options.bufferBytes = 16ull << 20;
   options.cancelled = [cancel] { return cancel && cancel->load(); };
   options.log = [](const std::string &line) { logLine(line); };

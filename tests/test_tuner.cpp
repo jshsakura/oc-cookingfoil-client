@@ -79,19 +79,34 @@ int runTunerTests() {
   }
   {
     // The running tuner: 0 while none runs, the start count once begun.
-    foil::net::stopTuning();
     CHECK(foil::net::tunedConnections() == 0);
-    foil::net::startTuning(4, "https://first.example");
+    int id = foil::net::startTuning(4, "https://first.example");
     CHECK(foil::net::tunedConnections() == 2);
-    foil::net::stopTuning();
+    foil::net::stopTuning(id);
     CHECK(foil::net::tunedConnections() == 0);
+    foil::net::stopTuning(id); // twice: nothing
     // Each place keeps its own: one elsewhere in between leaves it be.
-    foil::net::startTuning(2, "https://second.example");
+    id = foil::net::startTuning(2, "https://second.example");
     CHECK(foil::net::tunedConnections() == 2);
-    foil::net::stopTuning();
-    foil::net::startTuning(1, "https://first.example");
+    foil::net::stopTuning(id);
+    id = foil::net::startTuning(1, "https://first.example");
     CHECK(foil::net::tunedConnections() == 1); // the first place's, under its new ceiling
-    foil::net::stopTuning();
+    foil::net::stopTuning(id);
+  }
+  {
+    // Two at once (an app update during an install): the first leads, the
+    // second ending leaves it running, and the first ending hands over to
+    // the one left with its own place.
+    const int install = foil::net::startTuning(1, "https://install.example");
+    const int update = foil::net::startTuning(8, "https://update.example");
+    CHECK(foil::net::tunedConnections() == 1);
+    foil::net::stopTuning(update);
+    CHECK(foil::net::tunedConnections() == 1); // still the install's
+    const int later = foil::net::startTuning(8, "https://update.example");
+    foil::net::stopTuning(install);
+    CHECK(foil::net::tunedConnections() == 2); // the update's own, from 2
+    foil::net::stopTuning(later);
+    CHECK(foil::net::tunedConnections() == 0);
   }
   {
     // What one download found, the next from the same place keeps: no

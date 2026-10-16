@@ -33,6 +33,7 @@ constexpr auto CheckpointEvery = std::chrono::seconds(2);
 // the app was in the background), and no part had a chance to try.
 constexpr auto SleepGap = std::chrono::seconds(10);
 std::atomic<uint64_t> checkpointAsked{0}, checkpointGiven{0};
+std::atomic<int> live{0}; // segmentedFetch calls under way
 
 // How long the download stood still because the card (or the install
 // behind it) had not taken what came: the log tells a slow card from a slow
@@ -302,11 +303,16 @@ double cardHeldSeconds() { return double(heldMicros.load()) / 1e6; }
 void checkpointSoon() { ++checkpointAsked; }
 uint64_t checkpointsAsked() { return checkpointAsked.load(); }
 uint64_t checkpointsServed() { return checkpointGiven.load(); }
+int segmentedRunning() { return live.load(); }
 SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(uint64_t total)> &prepare,
                                const std::function<bool(uint64_t offset, const char *data, size_t size)> &write,
                                const SegmentedOptions &options) {
   // Every connection's TLS runs on this thread.
   const platform::OnCore off(platform::NetworkCore);
+  ++live;
+  struct Live {
+    ~Live() { --live; }
+  } counted;
   SegmentedResult result;
   const auto log = [&](const std::string &line) {
     if (options.log)
@@ -611,6 +617,20 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         failure = "write";
         break;
       }
+      // More reading than the limit now (the tuner stepped back, a 429): the
+      // newest go at once rather than when their parts end, which may be
+      // half the file away; each part keeps its place for the rest to take.
+      if (started && s.ranged)
+        for (auto at = conns.rbegin(); at != conns.rend() && active() > limit; ++at) {
+          if (!(*at)->curl) continue;
+          if (!hand(s, **at)) {
+            failure = "write";
+            break;
+          }
+          close(**at);
+        }
+      if (!failure.empty())
+        break;
       if (started && !offline) {
         // Parts whose wait is over, then more parts while there is room.
         const auto now = Clock::now();

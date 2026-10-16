@@ -104,7 +104,10 @@ int runDirectTests() {
     CHECK(routeDownload(game) == game);
     CHECK(routeName(game) == "server");
     hear("X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
-    CHECK(routeDownload(game) == game); // no token yet
+    // Named, it is the only way even before a token comes: asked with no
+    // key at all (its 401 asks for one), never the server's keys.
+    CHECK(routeDownload(game) == "https://dl.example:8443/api/get/Game%20One.nsz?v=3");
+    CHECK(headersFor(routeDownload(game), {"X-Access-Key: k"}).empty());
     hear("X-CookingFoil-Download-Token: first\r\n");
     // Both: the same path and query on the direct address.
     CHECK(routeDownload(game) == "https://dl.example:8443/api/get/Game%20One.nsz?v=3");
@@ -123,6 +126,13 @@ int runDirectTests() {
     CHECK(afterDirectFailure(direct, 0, "first") == DirectStep::Other);
     CHECK(afterDirectFailure(game, 401, "first") == DirectStep::Other);
     CHECK(routeName(game) == "direct");
+    // Named in another form of the same place: one place, and the keys
+    // never go there.
+    hear("X-CookingFoil-Download-Origin: https://DL.Example:443\r\n");
+    CHECK(routeDownload(game) == "https://dl.example/api/get/Game%20One.nsz?v=3");
+    CHECK(isDirect("https://dl.example/x") && isDirect("https://DL.EXAMPLE:443/x"));
+    CHECK(headersFor("https://dl.example:443/x", keys) == std::vector<std::string>{"Authorization: Bearer first"});
+    hear("X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
   }
   {
     // 401: a fresh token once; refused with it too, the caller's (a failure).

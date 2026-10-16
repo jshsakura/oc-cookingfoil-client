@@ -1,6 +1,7 @@
 #include "net/Socket.hpp"
 #include "net/Segments.hpp"
 #include "net/Tuner.hpp"
+#include "core/Config.hpp"
 #include "core/Log.hpp"
 #include <atomic>
 #include <cstdlib>
@@ -83,9 +84,15 @@ void heardHeader(const char *data, size_t bytes) {
   }
   if (key == "x-cookingfoil-download-origin") {
     const auto value = trimmed();
-    if (value.rfind("https://", 0) == 0 && value.find_first_of(" \t\r\n/", 8) == std::string::npos) {
+    // Kept in the one form originOf gives ("https://Host:443" is
+    // "https://host"): every check compares with originOf(url), and one
+    // that missed would send the server's own keys there.
+    const auto origin = value.rfind("https://", 0) == 0 && value.find_first_of(" \t\r\n/", 8) == std::string::npos
+                            ? originOf(value)
+                            : std::string();
+    if (!origin.empty()) {
       std::lock_guard<std::mutex> held(tokenLock);
-      tokenOrigin = value;
+      tokenOrigin = origin;
     }
     return;
   }

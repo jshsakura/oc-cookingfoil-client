@@ -15,8 +15,8 @@ namespace foil::net {
 // The server whose files may go direct ("https://host[:port]"); "" for none.
 void setShopOrigin(const std::string &origin);
 // Where a download of `url` is asked for now: its direct twin when the
-// server named a direct address and gave a token, `url` is on the server's
-// own address; else `url` itself.
+// server named a direct address (with its token or, until one comes, none)
+// and `url` is on the server's own address; else `url` itself.
 std::string routeDownload(const std::string &url);
 // Whether `url` is on the direct address.
 bool isDirect(const std::string &url);

@@ -26,10 +26,10 @@ void benchmark(const Item &item, const std::vector<std::string> &headers) {
   net::SegmentedOptions options;
   options.connections = net::connectionsFor(from, 0);
   options.headers = headers;
-  net::startTuning(options.connections, originOf(net::routeDownload(from)));
   struct Tuning {
-    ~Tuning() { net::stopTuning(); }
-  } tuning;
+    int id;
+    ~Tuning() { net::stopTuning(id); }
+  } tuning{net::startTuning(options.connections, originOf(net::routeDownload(from)))};
   options.paused = [sink] { return sink && sink->paused(); };
   options.cancelled = [sink] { return sink && sink->cancellationRequested(); };
   const auto started = std::chrono::steady_clock::now();

@@ -58,6 +58,8 @@ void checkpointSoon();
 // for; a caller waits on the second).
 uint64_t checkpointsAsked();
 uint64_t checkpointsServed();
+// Downloads running now that answer checkpointSoon (0: nothing to wait on).
+int segmentedRunning();
 SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(uint64_t total)> &prepare,
                                const std::function<bool(uint64_t offset, const char *data, size_t size)> &write,
                                const SegmentedOptions &options);

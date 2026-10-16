@@ -148,9 +148,11 @@ void Application::keepDownloadPlace() {
     return;
   using namespace std::chrono_literals;
   constexpr int Steps = 40; // 10 ms each: the system waits on this before it suspends the app
+  // Each download that answers is waited on, and only those (one between
+  // files, or in a stream with no place to keep, would hold HOME for nothing).
   const auto served = net::checkpointsServed();
   net::checkpointSoon();
-  for (int i = 0; i < Steps && net::checkpointsServed() == served; ++i)
+  for (int i = 0; i < Steps && net::checkpointsServed() - served < uint64_t(net::segmentedRunning()); ++i)
     std::this_thread::sleep_for(10ms);
   const auto written = resumeWritten_.load();
   if (!keepResumeChanges())
