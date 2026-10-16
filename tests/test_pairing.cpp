@@ -39,6 +39,12 @@ int runPairingTests() {
   CHECK(foil::net::pairRequestBody(key, "", secret) == "{\"deviceKey\":\"" + key + "\",\"pairSecret\":\"" + secret + "\"}");
   CHECK(foil::net::pairRequestBody(key, "거실", secret) ==
         "{\"deviceKey\":\"" + key + "\",\"message\":\"거실\",\"pairSecret\":\"" + secret + "\"}");
+  // A download's enroll token not yet spent rides along, so the server can
+  // approve under that account; alone it is a body too.
+  const std::string token = "cfe_" + std::string(43, 'a');
+  CHECK(foil::net::pairRequestBody(key, "", secret, token) ==
+        "{\"deviceKey\":\"" + key + "\",\"pairSecret\":\"" + secret + "\",\"enrollToken\":\"" + token + "\"}");
+  CHECK(foil::net::pairRequestBody(key, "", "", token) == "{\"deviceKey\":\"" + key + "\",\"enrollToken\":\"" + token + "\"}");
   // Trimmed, line breaks and tabs read as spaces, a run of spaces as one.
   CHECK(foil::net::cleanPairMessage("  철수\n거실 기기\r\n ") == "철수 거실 기기");
   CHECK(foil::net::cleanPairMessage("철수\t\t거실   기기") == "철수 거실 기기");

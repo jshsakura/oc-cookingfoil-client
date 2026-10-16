@@ -99,6 +99,7 @@ int runEnrollTests() {
   using namespace foil;
   Mock mock;
   int enrollStatus = 200;
+  std::string pairStatus = "approved";
   mock.answer = [&](const std::string &request) -> Reply {
     if (request.rfind("POST /api/pair/enroll", 0) == 0) {
       if (enrollStatus == 401) return {401, "X-CookingFoil-Enroll: invalid\r\n", R"({"error":"x"})"};
@@ -106,7 +107,7 @@ int runEnrollTests() {
       return {200, "", R"({"status":"approved","accessKey":"enrolled-key","shopUrl":null})"};
     }
     if (request.rfind("GET /api/shop/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
-    if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":"approved"})"};
+    if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
     if (request.rfind("GET /api/shop/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
     return {200, "", "{}"};
   };
@@ -160,6 +161,25 @@ int runEnrollTests() {
     CHECK(again.refresh(error));
     CHECK(count(mock.take(), "/api/pair/enroll") == 0);
   }
+  {
+    // A key kept from before that the server no longer approves (the console
+    // was removed): the token approves it again in place of a new request.
+    auto state = loadState(db).value;
+    state.accessKeys[url] = "removed-key";
+    CHECK(saveState(db, state, error));
+    writeConfig();
+    net::Session::forgetEnrollAttempts();
+    pairStatus = "pending";
+    net::Session session(server(), loadState(db).value, db);
+    session.setConfigPath(configPath);
+    CHECK(session.refresh(error));
+    const auto sent = mock.take();
+    CHECK(count(sent, "POST /api/pair/enroll") == 1 && count(sent, "/api/pair/request") == 0);
+    CHECK(count(sent, "/api/shop/sections") == 1 && !session.pairingPending());
+    CHECK(loadState(db).value.accessKeys.at(url) == "enrolled-key");
+    CHECK(server().enrollToken.empty());
+    pairStatus = "approved";
+  }
   const auto withoutKey = [&] {
     auto state = loadState(db).value;
     state.accessKeys.clear();
@@ -168,20 +188,22 @@ int runEnrollTests() {
     net::Session::forgetEnrollAttempts();
   };
   {
-    // 401 (expired, spent, unknown alike): says to download again, keeps
-    // the token, and is not asked again this run.
+    // 401 (expired, spent, unknown alike): the token is out of config.json
+    // and the console asks for approval (the QR code) without it.
     withoutKey();
     enrollStatus = 401;
+    pairStatus = "pending";
     net::Session session(server(), loadState(db).value, db);
     session.setConfigPath(configPath);
-    Error refused;
-    CHECK(!session.refresh(refused));
-    CHECK(refused.message == tr("The link key has expired or is not registered. Download the client again from the website."));
-    CHECK(server().enrollToken == token && loadState(db).value.accessKeys.empty());
-    CHECK(count(mock.take(), "/api/pair/enroll") == 1);
-    Error again;
-    CHECK(!session.refresh(again) && again.message == refused.message);
-    CHECK(count(mock.take(), "/api/pair/enroll") == 0);
+    Error waiting;
+    CHECK(!session.refresh(waiting) && session.pairingPending());
+    CHECK(server().enrollToken.empty() && loadState(db).value.accessKeys.empty());
+    const auto sent = mock.take();
+    CHECK(count(sent, "/api/pair/enroll") == 1 && count(sent, "POST /api/pair/request") == 1);
+    for (const auto &request : sent)
+      if (request.rfind("POST /api/pair/enroll", 0) != 0) CHECK(!has(request, token));
+    CHECK(!session.refresh(waiting) && count(mock.take(), "/api/pair/enroll") == 0);
+    pairStatus = "approved";
   }
   {
     // 409: another account's console.
@@ -206,6 +228,16 @@ int runEnrollTests() {
     const auto sent = mock.take();
     CHECK(count(sent, "/api/pair/enroll") == 1 && count(sent, "/api/shop/sections") == 1);
     CHECK(server().enrollToken == token);
+    // Still pending there: the request carries the token, so the server
+    // can approve it under the download's account.
+    pairStatus = "pending";
+    Error waiting;
+    CHECK(!session.refresh(waiting) && session.pairingPending());
+    bool carried = false;
+    for (const auto &request : mock.take())
+      if (request.rfind("POST /api/pair/request", 0) == 0) carried = has(request, "\"enrollToken\":\"" + token + "\"");
+    CHECK(carried);
+    pairStatus = "approved";
   }
   {
     // A username still signs in with Basic, as before; none sends none.

@@ -133,7 +133,10 @@ std::string cleanPairMessage(const std::string& text);
 // POST /api/pair/request's JSON body, {"deviceKey": ..., "message": ...,
 // "pairSecret": ...}, each of the last two only when there is one; empty
 // when there is neither, and then nothing is sent.
-std::string pairRequestBody(const std::string& deviceKey, const std::string& message, const std::string& secret = "");
+// enrollToken: a download's token not yet spent, so the server can approve
+// the request under that download's account.
+std::string pairRequestBody(const std::string& deviceKey, const std::string& message, const std::string& secret = "",
+                            const std::string& enrollToken = "");
 // /api/shop/info's "features": what this server offers beyond the catalog
 // (retro, homebrew, ...). Empty for a reply without them.
 std::set<std::string> parseFeatures(const std::string& json);
@@ -176,7 +179,8 @@ public:
 private:
     // The enroll token from the website's download, spent for this server's
     // access key before anything else; false (with the reason) when refused.
-    bool enroll(Error& error);
+    // replacing: spent even with a key kept, which the server no longer approves.
+    bool enroll(Error& error, bool replacing = false);
     bool pair(Error& error);
     void rebind();
     void sendPairMessage();

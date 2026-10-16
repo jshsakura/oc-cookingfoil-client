@@ -959,13 +959,15 @@ std::string cleanPairMessage(const std::string& text) {
     line.resize(end);
     return line.substr(0, line.find_last_not_of(' ') + 1);
 }
-std::string pairRequestBody(const std::string& deviceKey, const std::string& message, const std::string& secret) {
+std::string pairRequestBody(const std::string& deviceKey, const std::string& message, const std::string& secret,
+                            const std::string& enrollToken) {
     const auto note = cleanPairMessage(message);
-    if (note.empty() && secret.empty()) return "";
+    if (note.empty() && secret.empty() && enrollToken.empty()) return "";
     Json body(json_object_new_object());
     json_object_object_add(body.get(), "deviceKey", json_object_new_string(deviceKey.c_str()));
     if (!note.empty()) json_object_object_add(body.get(), "message", json_object_new_string(note.c_str()));
     if (!secret.empty()) json_object_object_add(body.get(), "pairSecret", json_object_new_string(secret.c_str()));
+    if (!enrollToken.empty()) json_object_object_add(body.get(), "enrollToken", json_object_new_string(enrollToken.c_str()));
     return json_object_to_json_string_ext(body.get(), JSON_C_TO_STRING_PLAIN | JSON_C_TO_STRING_NOSLASHESCAPE);
 }
 void Session::setPairMessage(const std::string& message) {
@@ -998,6 +1000,13 @@ bool Session::pair(Error& error) {
     if (!response.error.empty() || response.status != 200) { error.message = response.error.empty() ? tr("Could not check the device approval status.") : response.error; return false; }
     auto root = parseJson(response.body, error); if (error) return false;
     const auto status = stringField(root.get(), "status");
+    // A key kept from before that the server no longer approves (the console
+    // was removed): the download's token approves it again, not a new request.
+    const auto kept = state_.accessKeys.find(server_.url);
+    if (status != "approved" && !server_.enrollToken.empty() && kept != state_.accessKeys.end() && !kept->second.empty()) {
+        if (!enroll(error, true)) return false;
+        if (server_.enrollToken.empty()) { pairingPending_ = false; pairingInfo_ = {}; return true; }
+    }
     if (status == "pending") {
         sendPairMessage();
         if (pairMismatch_) {
@@ -1027,7 +1036,7 @@ void Session::sendPairMessage() {
     const auto note = state_.pairMessages.find(server_.url);
     const auto secret = state_.pairSecrets.find(server_.url);
     const auto body = pairRequestBody(deviceKeyFor(state_, server_.url), note == state_.pairMessages.end() ? "" : note->second,
-                                      secret == state_.pairSecrets.end() ? "" : secret->second);
+                                      secret == state_.pairSecrets.end() ? "" : secret->second, server_.enrollToken);
     if (body.empty()) { pairMessageSent_.clear(); pairMismatch_ = false; return; }
     if (body == pairMessageSent_) return;
     const auto url = server_.url + "/api/pair/request";
@@ -1122,10 +1131,10 @@ void Session::forgetEnrollAttempts() {
     std::lock_guard<std::mutex> held(enrollLock);
     enrollRefused.clear();
 }
-bool Session::enroll(Error& error) {
+bool Session::enroll(Error& error, bool replacing) {
     const auto& token = server_.enrollToken;
     const auto key = state_.accessKeys.find(server_.url);
-    if (token.empty() || (key != state_.accessKeys.end() && !key->second.empty())) return true;
+    if (token.empty() || (!replacing && key != state_.accessKeys.end() && !key->second.empty())) return true;
     const auto tried = server_.url + '\n' + token;
     {
         // Refused once: said again, not asked again (the token is spent or gone).
@@ -1155,9 +1164,14 @@ bool Session::enroll(Error& error) {
     // A server that does not know enroll (before it, or with pairing off):
     // the token is not for it, and the console connects as before.
     if (sent.status == 404 || sent.status == 405) { logLine("enroll: the server does not offer it; token ignored"); return true; }
+    // Expired or spent: out of config.json, and the console asks for approval
+    // as any other does (the QR code), instead of stopping here.
     if (sent.status == 401) {
-        logLine("enroll: refused (" + (sent.enroll.empty() ? std::string("401") : sent.enroll) + ")");
-        return refuse("The link key has expired or is not registered. Download the client again from the website.");
+        logLine("enroll: refused (" + (sent.enroll.empty() ? std::string("401") : sent.enroll) + "); asking for approval");
+        std::string failure;
+        if (!dropEnrollToken(configPath_, server_.url, failure)) logLine("enroll: token not taken out of config.json: " + failure);
+        server_.enrollToken.clear();
+        return true;
     }
     if (sent.status == 409) {
         logLine("enroll: the console belongs to another account");
