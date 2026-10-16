@@ -55,9 +55,9 @@ private:
 };
 // The one running download's tuner. startTuning() begins one under the
 // server's `ceiling` for a download from `place` (its address' origin):
-// queued downloads from the same place one after another keep what the
-// last one found instead of measuring from 2 again; another place starts
-// over. tunedConnections() is 0 while none runs (a caller keeps its own
+// a download from a place seen before in this run goes on with what was
+// found there instead of measuring from 2 again (each place keeps its own;
+// one too small to measure changes nothing). tunedConnections() is 0 while none runs (a caller keeps its own
 // count then), else the count now, closing a span when one is due by the
 // bytes the downloads counted (countReceived).
 void startTuning(int ceiling, const std::string &place);

@@ -85,6 +85,13 @@ int runTunerTests() {
     CHECK(foil::net::tunedConnections() == 2);
     foil::net::stopTuning();
     CHECK(foil::net::tunedConnections() == 0);
+    // Each place keeps its own: one elsewhere in between leaves it be.
+    foil::net::startTuning(2, "https://second.example");
+    CHECK(foil::net::tunedConnections() == 2);
+    foil::net::stopTuning();
+    foil::net::startTuning(1, "https://first.example");
+    CHECK(foil::net::tunedConnections() == 1); // the first place's, under its new ceiling
+    foil::net::stopTuning();
   }
   {
     // What one download found, the next from the same place keeps: no

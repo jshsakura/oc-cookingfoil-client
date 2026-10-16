@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <map>
 #include <mutex>
 #include <utility>
 namespace foil::net {
@@ -89,19 +90,25 @@ namespace {
 using Clock = std::chrono::steady_clock;
 std::mutex lock;
 bool running = false;
-ConnectionTuner tuner;
-std::string tunedFor; // the place the tuner learned
+// What each place taught, kept for the run: a small download from elsewhere
+// in between (it ends before a span, learning nothing) leaves the rest as
+// they were.
+std::map<std::string, ConnectionTuner> learned;
+ConnectionTuner *tuner = nullptr;
+ConnectionTuner idle;
 Clock::time_point spanStart;
 uint64_t spanBytes = 0;
 std::atomic<int> active{0};
 } // namespace
 void startTuning(int ceiling, const std::string &place) {
   std::lock_guard<std::mutex> held(lock);
-  if (!place.empty() && place == tunedFor)
-    tuner.carryOn(ceiling);
-  else
-    tuner = ConnectionTuner(ceiling);
-  tunedFor = place;
+  const auto found = learned.find(place);
+  if (found != learned.end()) {
+    found->second.carryOn(ceiling);
+    tuner = &found->second;
+  } else {
+    tuner = &learned.emplace(place, ConnectionTuner(ceiling)).first->second;
+  }
   running = true;
   spanStart = Clock::now();
   spanBytes = receivedBytes();
@@ -117,19 +124,19 @@ int tunedConnections() {
   const double seconds = std::chrono::duration<double>(now - spanStart).count();
   if (seconds >= ConnectionTuner::SpanSeconds) {
     const uint64_t bytes = receivedBytes();
-    tuner.span(bytes - spanBytes, seconds, active.load());
+    tuner->span(bytes - spanBytes, seconds, active.load());
     spanStart = now;
     spanBytes = bytes;
   }
-  return tuner.connections();
+  return tuner->connections();
 }
 void tuneTrouble() {
   std::lock_guard<std::mutex> held(lock);
-  if (running) tuner.trouble();
+  if (running) tuner->trouble();
 }
 std::string tuningSummary() {
   std::lock_guard<std::mutex> held(lock);
-  return tuner.summary(active.load());
+  return (tuner ? *tuner : idle).summary(active.load());
 }
 void heardActiveDownloads(int count) { active = std::clamp(count, 0, 64); }
 int activeDownloads() { return active.load(); }
