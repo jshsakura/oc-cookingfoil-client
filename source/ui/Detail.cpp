@@ -136,6 +136,8 @@ void Application::detail() {
   };
   if (item.requiredPatches || (g.base && g.base->requiredPatches))
     pill(tr("Required patch"));
+  if (const int integrity = groupIntegrity(g))
+    pill(integrity == 2 ? tr("May be damaged") : tr("Modified file"));
   const auto &languages = item.languages;
   if (std::find(languages.begin(), languages.end(), "ko") != languages.end())
     pill(tr("Korean"));

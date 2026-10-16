@@ -3,7 +3,7 @@
 #include <cmath>
 namespace foil {
 namespace {
-enum class Wave { Marimba, Pulse, Triangle, Sine };
+enum class Wave { Marimba, Pulse, Triangle, Sine, Glock, Vibes };
 struct Note {
   float at;   // seconds from the start
   int pitch;  // MIDI note number (69 is A4)
@@ -16,7 +16,8 @@ struct Score {
   std::vector<Note> notes;
 };
 constexpr float Pi = 3.14159265f;
-constexpr int C4 = 60, E4 = 64, E5 = 76, G5 = 79, C6 = 84, D6 = 86, E6 = 88, G6 = 91, B6 = 95, C7 = 96;
+constexpr int C4 = 60, E4 = 64, G4 = 67, B4 = 71, C5 = 72, D5 = 74, E5 = 76, G5 = 79, A5 = 81, C6 = 84, D6 = 86, E6 = 88,
+              G6 = 91, B6 = 95, C7 = 96;
 float hertz(int pitch) { return 440.f * std::pow(2.f, (pitch - 69) / 12.f); }
 float sample(Wave wave, float f, float t) {
   switch (wave) {
@@ -28,6 +29,10 @@ float sample(Wave wave, float f, float t) {
   }
   case Wave::Sine:
     return std::sin(2 * Pi * f * t);
+  case Wave::Glock: // a small bell: the note and a quickly fading, slightly sharp sixth partial
+    return std::sin(2 * Pi * f * t) + 0.25f * std::exp(-t / 0.05f) * std::sin(2 * Pi * f * 2.76f * t);
+  case Wave::Vibes: // a metal bar with its tremolo
+    return std::sin(2 * Pi * f * t) * (1 - 0.35f * (0.5f + 0.5f * std::sin(2 * Pi * 5.5f * t)));
   case Wave::Triangle: {
     const float phase = f * t - std::floor(f * t);
     return 4 * std::fabs(phase - 0.5f) - 1;
@@ -37,10 +42,11 @@ float sample(Wave wave, float f, float t) {
 }
 Score score(Cue cue) {
   switch (cue) {
-  case Cue::Start: { // 부드러운 8비트: the 8-bit run on a triangle, the last note ringing on
-    Score s{3.f, 0.18f, 0.28f, 0.3f, {}};
-    const int run[] = {E5, G5, E6, C6, D6, G6};
-    for (int i = 0; i < 6; ++i) s.notes.push_back({i * 0.15f, run[i], 0.12f, i < 5 ? 0.12f : 0.75f, Wave::Triangle, 0.8f});
+  case Cue::Start: { // 윈드 차임: small bells run up, then a vibraphone chord rings on
+    Score s{3.f, 0.16f, 0.22f, 0.3f, {}};
+    const int run[] = {C5, D5, E5, G5, A5, C6, D6, E6};
+    for (int i = 0; i < 8; ++i) s.notes.push_back({i * 0.05f, run[i], 0.05f, 0.6f, Wave::Glock, 0.3f});
+    for (const int note : {C4, E4, G4, B4}) s.notes.push_back({0.55f, note, 0.2f, 1.5f, Wave::Vibes, 0.3f});
     return s;
   }
   case Cue::Move: // 틱: a high, very short sine per step

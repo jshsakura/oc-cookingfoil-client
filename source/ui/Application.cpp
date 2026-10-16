@@ -1713,6 +1713,8 @@ void Application::card(const Group &g, float x, float y, bool selected,
     std::vector<std::string> labels;
     if (g.representative.requiredPatches || (g.base && g.base->requiredPatches))
       labels.push_back(tr("Required patch")); // it does not run without one
+    if (const int integrity = groupIntegrity(g)) // said, never blocking
+      labels.push_back(integrity == 2 ? tr("May be damaged") : tr("Modified|file"));
     if (g.base && !g.base->priceDiscount.empty())
       labels.push_back(tr("eShop sale"));
     if (g.update)

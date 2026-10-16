@@ -468,4 +468,11 @@ std::string formatSpeed(double bytesPerSecond) {
   std::snprintf(buffer, sizeof(buffer), k > 0 && bits < 10 ? "%.1f %s" : "%.0f %s", bits, bitUnits[k]);
   return text + buffer;
 }
+int groupIntegrity(const Group &g) {
+  int worst = g.representative.integrity;
+  if (g.base) worst = std::max<int>(worst, g.base->integrity);
+  if (g.update) worst = std::max<int>(worst, g.update->integrity);
+  for (const auto &d : g.dlc) worst = std::max<int>(worst, d.integrity);
+  return worst;
+}
 } // namespace foil

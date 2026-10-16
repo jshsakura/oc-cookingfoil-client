@@ -16,6 +16,8 @@ struct Group {
   std::string search;
   int64_t addedAt = 0;
 };
+// The worst file check among a game's files (Item::integrity): 0, 1 or 2.
+int groupIntegrity(const Group &g);
 // Genre key (the server's English name) -> name shown on screen.
 using GenreNames = std::map<std::string, std::string>;
 std::string genreLabel(const GenreNames &names, const std::string &key);

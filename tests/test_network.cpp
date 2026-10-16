@@ -36,7 +36,7 @@ int runNetworkTests() {
             {"id": "new", "items": [
               {"url": "https://h/a.nsp", "name": "A \"quoted\" {brace} [x]", "icons": {"ko": "https://h/i.jpg"},
                "categories": ["Action"], "size": 10},
-              {"url": "https://h/b.nsp", "name": "B\\path", "size": 20, "required_patches": 2}
+              {"url": "https://h/b.nsp", "name": "B\\path", "size": 20, "required_patches": 2, "integrity": "damaged"}
             ]},
             {"id": "all", "items": [{"url": "https://h/a.nsp", "name": "again"}, {"url": "ftp://bad"}]}
           ],
@@ -50,6 +50,8 @@ int runNetworkTests() {
         CHECK(catalog.value.items[1].name == "B\\path");
         CHECK(catalog.value.items[1].size == 20);
         CHECK(catalog.value.items[0].requiredPatches == 0 && catalog.value.items[1].requiredPatches == 2);
+        // The file check is said, never blocking: unchecked is 0.
+        CHECK(catalog.value.items[0].integrity == 0 && catalog.value.items[1].integrity == 2);
         CHECK(catalog.value.genres.count("Action") && catalog.value.genres.at("Action").at("ko") == "액션");
         // Cut short, or no sections at all: the list's format error.
         CHECK(foil::net::parseCatalog(R"({"sections":[{"items":[{"url":"https://h/a.nsp")").error);

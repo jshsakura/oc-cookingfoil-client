@@ -646,6 +646,8 @@ bool parseItem(json_object* object, Item& item) {
     item.scoreSource = stringField(object, "score_source");
     item.patches = int(std::min<uint64_t>(positive(object, "patches"), 999));
     item.requiredPatches = int(std::min<uint64_t>(positive(object, "required_patches"), 999));
+    if (const auto integrity = stringField(object, "integrity"); integrity == "damaged") item.integrity = 2;
+    else if (integrity == "modified") item.integrity = 1;
     if (auto* icons = field(object, "icons"); json_object_is_type(icons, json_type_object)) {
         static const char* codes[] = {"ko", "en", "ja", "zh"};
         for (int k = 0; k < 4; ++k)

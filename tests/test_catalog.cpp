@@ -23,6 +23,17 @@ int runCatalogTests() {
     }
   }
   {
+    // A game warns of its worst file: a damaged DLC outranks a modified base.
+    foil::Group g;
+    CHECK(foil::groupIntegrity(g) == 0);
+    g.base = foil::Item{};
+    g.base->integrity = 1;
+    CHECK(foil::groupIntegrity(g) == 1);
+    g.dlc.push_back(foil::Item{});
+    g.dlc.back().integrity = 2;
+    CHECK(foil::groupIntegrity(g) == 2);
+  }
+  {
     // Shared words and lists: equal text is one copy, compared by content.
     foil::Item a, b;
     a.publisher = std::string("Butter Works");
