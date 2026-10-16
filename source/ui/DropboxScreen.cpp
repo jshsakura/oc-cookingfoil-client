@@ -6,8 +6,9 @@
 #include <algorithm>
 namespace foil::ui {
 namespace {
-constexpr float Top = 90, AccountHeight = 72, ListTop = Top + AccountHeight + 12, RowHeight = 84, RowStep = 96;
-constexpr int Visible = 5; // the account card above leaves room for five, down to the footer
+// The account is the list's first row, the games' height, and moves with it.
+constexpr float Top = 90, ListTop = Top, RowHeight = 84, RowStep = 96;
+constexpr int Visible = 6; // rows in view, down to the footer
 constexpr uint32_t DefaultRetryMs = 2000, SignInMs = 15 * 60 * 1000; // the bridge keeps a sign-in 15 minutes
 constexpr int PopupRows = 4;
 std::string when(std::time_t at) {
@@ -43,6 +44,9 @@ void Application::pollDropbox() {
     dropboxWorker_.join();
     dropboxBusy_.clear();
     if (dropboxFinish_) std::exchange(dropboxFinish_, nullptr)();
+    // A press made while the popup was still reading its backups' details
+    // goes now, instead of having been dropped.
+    if (dropboxAfter_ && !dropboxWorker_.joinable()) std::exchange(dropboxAfter_, nullptr)();
   }
   // A sign-in waiting for the phone is asked about while the tab is open,
   // as often as the server allows.
@@ -190,7 +194,12 @@ void Application::openDropboxGame() {
 }
 
 void Application::dropboxTransfer() {
-  if (!dropboxOpen_ || dropboxWorker_.joinable()) return;
+  if (!dropboxOpen_) return;
+  if (dropboxWorker_.joinable()) {
+    // Still reading the backups' details: this press goes right after.
+    if (dropboxBusy_ == "meta") dropboxAfter_ = [this] { dropboxTransfer(); };
+    return;
+  }
   const auto game = dropboxGame_;
   const auto root = saves::keeperRoot(sdRoot_);
   const auto &revisions = dropboxRevisions(game.applicationId);
@@ -233,7 +242,11 @@ void Application::dropboxTransfer() {
 
 void Application::uploadDropbox(const saves::LocalBackup &backup) {
   // Only an installed game's backups go up.
-  if (!dropboxOpen_ || !dropboxGame_.installed || dropboxWorker_.joinable()) return;
+  if (!dropboxOpen_ || !dropboxGame_.installed) return;
+  if (dropboxWorker_.joinable()) {
+    if (dropboxBusy_ == "meta") dropboxAfter_ = [this, backup] { uploadDropbox(backup); };
+    return;
+  }
   const auto game = dropboxGame_;
   const auto root = saves::keeperRoot(sdRoot_);
   runDropboxJob("upload", [this, root, game, backup]() -> std::function<void()> {
@@ -302,7 +315,10 @@ void Application::dropboxAction(Action a) {
     }
     const int last =
         std::max(0, int(dropboxRevisions(dropboxGame_.applicationId).size()) - (dropboxGame_.installed ? 0 : 1));
-    if (a == Action::Back) dropboxOpen_ = false;
+    if (a == Action::Back) {
+      dropboxOpen_ = false;
+      dropboxAfter_ = nullptr; // a press waiting on the details goes with it
+    }
     if (a == Action::Up) dropboxPick_ = std::max(0, dropboxPick_ - 1);
     if (a == Action::Down) dropboxPick_ = std::min(last, dropboxPick_ + 1);
     if (a == Action::Accept) dropboxTransfer();
@@ -324,21 +340,30 @@ void Application::dropboxAction(Action a) {
     if (a == Action::Accept && !dropboxWorker_.joinable() && !dropboxMissing_) startDropboxLink();
     return;
   }
-  // Y unlinks (it asks first); X searches as on the other tabs; A is only
-  // ever about a game's backups.
-  if (a == Action::Queue) {
-    dropboxUnlinkAsk_ = true;
-    return;
-  }
+  // X searches as on the other tabs. A on the account row disconnects (it
+  // asks first); on a game, its backups. No button disconnects from elsewhere.
   if (a == Action::Search) {
     requestSearch();
     return;
   }
   // The cursor is a game's application id, so it stays on that game when
-  // the list reorders; up and down walk the games the search keeps.
+  // the list reorders; up and down walk the account and the games the
+  // search keeps.
   const auto rows = dropboxGameRows();
-  if (rows.empty()) return;
+  if (dropboxOnAccount_ || rows.empty()) {
+    dropboxOnAccount_ = true;
+    if (a == Action::Down && !rows.empty()) {
+      dropboxOnAccount_ = false;
+      dropboxCursor_ = rows.front().applicationId;
+    }
+    if (a == Action::Accept) dropboxUnlinkAsk_ = true; // the question guards its own A
+    return;
+  }
   int pos = dropboxFocus(rows);
+  if (a == Action::Up && pos == 0) {
+    dropboxOnAccount_ = true;
+    return;
+  }
   if (a == Action::Up) pos = std::max(0, pos - 1);
   if (a == Action::Down) pos = std::min(int(rows.size()) - 1, pos + 1);
   dropboxCursor_ = rows[pos].applicationId;
@@ -357,8 +382,9 @@ int Application::dropboxFocus(const std::vector<DropboxRow> &rows) const {
 }
 std::string Application::dropboxPopupAccept() const {
   if (!dropboxOpen_) return "";
-  if (dropboxGame_.installed && dropboxPick_ == 0) return tr("Upload");
-  return dropboxRevisions(dropboxGame_.applicationId).empty() ? "" : tr("Get");
+  // Each row says which way it goes: up from the console, or down to it.
+  if (dropboxGame_.installed && dropboxPick_ == 0) return dropboxLocal_.empty() ? "" : tr("Back up|to Dropbox");
+  return dropboxRevisions(dropboxGame_.applicationId).empty() ? "" : tr("Download to this console");
 }
 void Application::dropboxTab() {
   dropboxEnter();
@@ -419,60 +445,79 @@ void Application::dropboxTab() {
       paint_.fonts.wrapped(dropboxError_.message, noteX, ButtonY + 6, 18, Bad, 1220 - noteX, 2);
     return;
   }
-  // The account; X (shown on the card) unlinks, after asking.
-  paint_.rect(260, Top, 992, AccountHeight, Surface, 16);
-  paint_.icon(36, 282, Top + 23, Ink, 26);
-  paint_.fonts.text(dropboxAccount_.empty() ? std::string(tr("Dropbox is connected.")) : dropboxAccount_, 324, Top + 10,
-                    20, Ink, true, 640);
-  int uploaded = 0;
-  for (const auto &[id, revisions] : dropboxRemote_) uploaded += int(revisions.size());
-  const std::string status = dropboxBusy_ == "list"  ? std::string(tr("Loading the Dropbox list."))
-                             : dropboxError_         ? dropboxError_.message
-                                                     : trf("{0} backups on Dropbox", {std::to_string(uploaded)});
-  paint_.fonts.text(status, 324, Top + 40, 16, dropboxError_ && dropboxBusy_.empty() ? Bad : Secondary, false, 640);
-  const std::string unlink = tr("Disconnect");
-  const float uw = paint_.keyLabelWidth("Y", unlink, 17, true);
-  paint_.keyLabel("Y", unlink, 1230 - uw, Top + AccountHeight / 2, 17, Secondary, true);
-  hit(1230 - uw - 8, Top + 8, uw + 16, AccountHeight - 16, [this] { action(Action::Queue); });
-  // Nothing at all to list yet: the console may still be reading its games.
-  if (installed_.games.empty() && dropboxRemote_.empty()) {
-    if (deviceBusy_)
-      for (int n = 0; n < Visible; ++n) paint_.skeleton(260, ListTop + n * RowStep, 992, RowHeight, 16);
-    else
-      paint_.fonts.text(tr("No games to manage saves for."), 290, ListTop + 20, 19, Secondary);
-    return;
-  }
+  // The list: the account first, then the games. The account row is the
+  // games' height and scrolls with them; A on it disconnects (after asking).
   const auto rows = dropboxGameRows();
-  if (rows.empty()) {
-    paint_.fonts.text(trf("No games match '{0}'.", {savesQuery_}), 290, ListTop + 20, 19, Secondary);
-    return;
-  }
-  const int count = int(rows.size());
-  const int focus = dropboxFocus(rows);
-  dropboxCursor_ = rows[focus].applicationId;
+  if (rows.empty()) dropboxOnAccount_ = true;
+  const int count = int(rows.size()) + 1;
+  const int focus = rows.empty() ? 0 : dropboxFocus(rows);
+  if (!rows.empty()) dropboxCursor_ = rows[focus].applicationId;
+  const int at = dropboxOnAccount_ ? 0 : focus + 1; // the cursor's row, the account counted
   // The row at the top follows the cursor, or the finger while it glides.
-  const float top = glide("dropbox", 232, ListTop, 1048, 660 - (ListTop), float(std::clamp(focus - Visible / 2, 0, std::max(0, count - Visible))),
+  const float top = glide("dropbox", 232, ListTop, 1048, 660 - (ListTop), float(std::clamp(at - Visible / 2, 0, std::max(0, count - Visible))),
                           float((count) - (Visible)), RowStep);
   const int first = int(top);
   paint_.scrollbar(1266, ListTop, RowStep * Visible - 12, top, Visible, float(count));
-  const auto root = saves::keeperRoot(sdRoot_);
   clipTo(232, ListTop - 8, 1048, 660 - ListTop + 8);
-  for (int n = first; n < count && n <= first + Visible + 1; ++n) {
+  {
+    const float y = ListTop - top * RowStep;
+    hit(260, y, 992, RowHeight, [this] {
+      if (inContent() && dropboxOnAccount_) action(Action::Accept);
+      sidebar_ = false;
+      dropboxOnAccount_ = true;
+    });
+    const bool focused = inContent() && dropboxOnAccount_ && !dropboxModal();
+    if (focused) paint_.ring(260, y, 992, RowHeight, 16);
+    paint_.rect(260, y, 992, RowHeight, Surface, 16);
+    paint_.rect(278, y + 10, 64, 64, Ground, 32);
+    paint_.icon(43, 278 + 18, y + 10 + 18, Ink, 28);
+    paint_.fonts.text(dropboxAccount_.empty() ? std::string(tr("Dropbox is connected.")) : dropboxAccount_, 360, y + 12,
+                      21, Ink, true, 560);
+    int uploaded = 0;
+    for (const auto &[id, revisions] : dropboxRemote_) uploaded += int(revisions.size());
+    const std::string status = dropboxBusy_ == "list"  ? std::string(tr("Loading the Dropbox list."))
+                               : dropboxError_         ? dropboxError_.message
+                                                       : trf("{0} backups on Dropbox", {std::to_string(uploaded)});
+    paint_.fonts.text(status, 360, y + 46, 16, dropboxError_ && dropboxBusy_.empty() ? Bad : Secondary, false, 560);
+    // The button says what A does here; it shows its key once the row is picked.
+    const std::string unlink = tr("Disconnect");
+    const float bw = (focused ? paint_.keyLabelWidth("A", unlink, 17, true) : paint_.fonts.measure(unlink, 17, true)) + 36;
+    paint_.rect(1230 - bw, y + 22, bw, 40, focused ? Butter : Ground, 12);
+    if (focused) paint_.keyLabel("A", unlink, 1230 - bw + 18, y + 42, 17, Ink, true);
+    else paint_.fonts.middle(unlink, 1230 - bw + 18, y + 42, 17, Ink, true);
+  }
+  // Nothing at all to list yet: the console may still be reading its games.
+  if (rows.empty()) {
+    const float y = ListTop + RowStep - top * RowStep;
+    if (installed_.games.empty() && dropboxRemote_.empty() && deviceBusy_)
+      for (int n = 0; n + 1 < Visible; ++n) paint_.skeleton(260, y + n * RowStep, 992, RowHeight, 16);
+    else if (installed_.games.empty() && dropboxRemote_.empty())
+      paint_.fonts.text(tr("No games to manage saves for."), 290, y + 20, 19, Secondary);
+    else
+      paint_.fonts.text(trf("No games match '{0}'.", {savesQuery_}), 290, y + 20, 19, Secondary);
+    unclip();
+    return;
+  }
+  const auto root = saves::keeperRoot(sdRoot_);
+  const bool onGame = inContent() && !dropboxOnAccount_ && !dropboxModal();
+  // Game n is the list's row n + 1, under the account.
+  for (int n = std::max(0, first - 1); n < int(rows.size()) && n + 1 <= first + Visible + 1; ++n) {
     const auto &g = rows[n];
     const auto id = g.applicationId;
-    const float y = ListTop + (n - top) * RowStep;
+    const float y = ListTop + (n + 1 - top) * RowStep;
     hit(260, y, 992, RowHeight, [this, id] {
-      if (inContent() && dropboxCursor_ == id) action(Action::Accept);
+      if (inContent() && !dropboxOnAccount_ && dropboxCursor_ == id) action(Action::Accept);
       sidebar_ = false;
+      dropboxOnAccount_ = false;
       dropboxCursor_ = id;
     });
-    if (inContent() && n == focus && !dropboxModal()) paint_.ring(260, y, 992, RowHeight, 16);
+    if (onGame && n == focus) paint_.ring(260, y, 992, RowHeight, 16);
     paint_.rect(260, y, 992, RowHeight, Surface, 16);
     const auto icon = g.installed ? installedIcon(installed_.games[g.game]) : g.icon;
     cover(icon, 278, y + 10, 64, false, g.name);
     // A game the shop does not know is named by its title id, shown once.
     const bool named = g.name != g.titleId;
-    if (inContent() && n == focus && !dropboxModal()) marquee(g.name, 360, named ? y + 12 : y + 28, 21, 500);
+    if (onGame && n == focus) marquee(g.name, 360, named ? y + 12 : y + 28, 21, 500);
     else paint_.fonts.text(g.name, 360, named ? y + 12 : y + 28, 21, Ink, true, 500);
     if (named) paint_.fonts.text(g.titleId, 360, y + 46, 16, Secondary);
     auto counted = backupCounts_.find(id);
@@ -538,8 +583,10 @@ void Application::dropboxDialog() {
     if (n == dropboxPick_) paint_.focusRow(x, y, w, Row, Ground, 12);
     else paint_.rect(x, y, w, Row, Ground, 12);
     if (n < upload) {
-      paint_.icon(36, x + 20, y + 23, Ink, 26);
-      paint_.fonts.text(tr("Pick a backup to upload to Dropbox"), x + 60, y + 10, 20, Ink, true, w - 80);
+      // Nothing on the console to send: shown faded, a note rather than a button.
+      const auto ink = dropboxLocal_.empty() ? Secondary : Ink;
+      paint_.icon(40, x + 20, y + 23, ink, 26);
+      paint_.fonts.text(tr("Back up a save on this console to Dropbox"), x + 60, y + 10, 20, ink, true, w - 80);
       const std::string detail = dropboxLocal_.empty()
                                      ? std::string(tr("No backups on the console. Back up first in the This console tab."))
                                      : trf("Console {0}|count", {std::to_string(dropboxLocal_.size())});
@@ -589,7 +636,10 @@ void Application::dropboxUploadList() {
   const int rows = std::min(total, PopupRows + 1);
   const bool working = dropboxBusy_ == "upload";
   dropboxUploadPick_ = std::clamp(dropboxUploadPick_, 0, total - 1);
-  const auto body = modal(860, 24 + rows * (Row + Gap) + 40, game.name, working ? "" : tr("Back"), "", tr("Upload"), 36);
+  // Its own title, so it does not read as the game's popup again: this is
+  // where the backup that goes up is chosen.
+  const auto body = modal(860, 24 + rows * (Row + Gap) + 40, tr("Choose the backup to upload"), working ? "" : tr("Back"), "",
+                          tr("Back up|to Dropbox"), 40);
   const float x = body.x + 32, w = body.w - 64;
   // The row at the top follows the cursor, or the finger while it glides.
   const float topRow = glide("dropboxUpload", x, body.y + 24, w, rows * (Row + Gap), float(std::clamp(dropboxUploadPick_ - rows / 2, 0, std::max(0, total - rows))),

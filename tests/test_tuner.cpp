@@ -78,6 +78,18 @@ int runTunerTests() {
     CHECK(half.summary(2) == "connections 2 (start), 1 other downloading");
   }
   {
+    // Found once a try went back or the ceiling is reached: before that the
+    // time left is not shown (its speed is still climbing).
+    ConnectionTuner fresh(4);
+    CHECK(!fresh.found());
+    ConnectionTuner flat(4);
+    run(flat, 4, 20 * MB); // more never helps: the try goes back
+    CHECK(flat.found() && flat.connections() == 2);
+    ConnectionTuner one(1);
+    run(one, 2, 20 * MB);
+    CHECK(one.found());
+  }
+  {
     // The running tuner: 0 while none runs, the start count once begun.
     CHECK(foil::net::tunedConnections() == 0);
     int id = foil::net::startTuning(4, "https://first.example");

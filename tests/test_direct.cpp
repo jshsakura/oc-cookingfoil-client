@@ -153,6 +153,29 @@ int runDirectTests() {
     CHECK(routeDownload(game) == direct); // still the only way
     setTokenRenewer(nullptr);
   }
+  {
+    // Named before its token came: asked with no key, the proxy in front
+    // answers 404 (it passes only a bearer on to the app); taken as a 401,
+    // a token is asked for and it goes again. With a token sent, a 404 is
+    // the file's own and stays a failure.
+    forgetDirect();
+    forgetDownloadToken();
+    setShopOrigin(shop);
+    hear("X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
+    int asked = 0;
+    setTokenRenewer([&] {
+      ++asked;
+      hear("X-CookingFoil-Download-Token: third\r\n");
+      return 200L;
+    });
+    const auto direct = routeDownload(game);
+    CHECK(headersFor(direct, {"X-Access-Key: k"}).empty());
+    CHECK(afterDirectFailure(direct, 404, "") == DirectStep::Again);
+    CHECK(asked == 1 && headersFor(direct, {}) == std::vector<std::string>{"Authorization: Bearer third"});
+    CHECK(afterDirectFailure(direct, 404, "third") == DirectStep::Other);
+    CHECK(afterDirectFailure(game, 404, "") == DirectStep::Other); // the server's own address: its 404
+    setTokenRenewer(nullptr);
+  }
   Files files;
   files.body.resize(3 << 20);
   for (size_t i = 0; i < files.body.size(); ++i) files.body[i] = char('a' + (i * 7) % 26);

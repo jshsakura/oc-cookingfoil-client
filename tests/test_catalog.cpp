@@ -271,6 +271,12 @@ int runCatalogTests() {
                             foil::Filter::Korean)
             .empty());
   CHECK(foil::formatBytes(4402341888ULL) == "4.1 GB");
+  // Speeds move up and down a unit with their size; bits count by 1000.
+  CHECK(foil::formatSpeed(850 * 1024.0) == "850 KB/s · 7.0 Mbps");
+  CHECK(foil::formatSpeed(13 * 1048576.0) == "13.0 MB/s · 109 Mbps");
+  CHECK(foil::formatSpeed(1.5 * 1073741824.0) == "1.5 GB/s · 13 Gbps");
+  CHECK(foil::formatSpeed(500) == "500 B/s · 4.0 Kbps");
+  CHECK(foil::formatSpeed(-1) == "0 B/s · 0 bps");
   {
     // Won and yen follow the interface language.
     foil::setLanguage(foil::Language::English);

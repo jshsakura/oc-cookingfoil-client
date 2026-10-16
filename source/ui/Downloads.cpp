@@ -1,5 +1,6 @@
 #include "ui/Application.hpp"
 #include "net/Socket.hpp"
+#include "net/Tuner.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -104,6 +105,7 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
     card.icon = held ? installQueue_.front().icon : running != history_.end() ? running->install.icon : "";
     const auto what = pack || kind == "retroarch" ? std::string("RetroArch")
                       : kind == "homebrew"         ? std::string(tr("Homebrew"))
+                      : held && kind.empty()       ? std::string(tr("Game")) // a game held at start
                                                    : std::string(tr("Retro game"));
     const uint64_t got = retroReceived_, total = retroBytes_;
     card.percent = total ? std::min(100.0, 100.0 * double(got) / double(total)) : 0;
@@ -226,14 +228,23 @@ void Application::topCard(const TopCard &c) {
     if (steady < 0) {
       status += std::string(" · ") + tr("Measuring speed");
     } else {
-      char speed[64];
-      std::snprintf(speed, sizeof(speed), " · %.1f MB/s", steady);
-      status += speed;
-      status += " · " + install::timeLeftText(timeLeft_.update(now, c.left, downloadSpeed_.average()));
+      // In the unit its size calls for, and in bits as speed test apps
+      // count them; steady is in 1024 x 1024 bytes a second.
+      status += " · " + formatSpeed(steady * 1048576.0);
+      // The time left waits for the connections to be found (or a minute):
+      // from the first, slower speed it read an hour, then jumped to minutes.
+      constexpr double TimeLeftWait = 60;
+      if (timeLeftFrom_ < 0) timeLeftFrom_ = now;
+      if (!timeLeftShown_ && (net::tuningFound() || now - timeLeftFrom_ >= TimeLeftWait)) timeLeftShown_ = true;
+      // Until then it says what it is doing rather than a number that will jump.
+      status += " · " + (timeLeftShown_ ? install::timeLeftText(timeLeft_.update(now, c.left, downloadSpeed_.average()))
+                                        : std::string(tr("Finding the best connection settings")));
     }
   } else {
     downloadSpeed_.reset();
     timeLeft_.reset();
+    timeLeftShown_ = false;
+    timeLeftFrom_ = -1;
   }
   paint_.fonts.text(status, 418, 181, 18, linkDown ? Bad : restarting ? Pending : Secondary, false, 810);
   float x = 418;
@@ -493,9 +504,7 @@ void Application::downloadsHistory() {
     }
     // What a finished install took: average speed, the download, the install.
     if (e.outcome == history::Outcome::Done && e.downloadSeconds > 0) {
-      char speed[32];
-      std::snprintf(speed, sizeof(speed), "%.1f", double(e.bytes) / (1024 * 1024) / e.downloadSeconds);
-      meta += " · " + trf("Average {0} MB/s", {speed}) + " · " + trf("Download time {0}", {durationText(e.downloadSeconds)});
+      meta += " · " + trf("Average {0}|speed", {formatSpeed(double(e.bytes) / e.downloadSeconds)}) + " · " + trf("Download time {0}", {durationText(e.downloadSeconds)});
       if (e.installSeconds > 0)
         meta += " · " + trf("Install time {0}", {durationText(e.installSeconds)});
     }

@@ -179,6 +179,11 @@ int runInstallerTests() {
     CHECK(foil::install::timeLeftText(3) == "1분 미만 남음");
     CHECK(foil::install::timeLeftText(200) == "약 4분 남음");
     CHECK(foil::install::timeLeftText(1500) == "약 25분 남음");
+    // Whole hours drop the "0분"; past a day it counts days.
+    CHECK(foil::install::timeLeftText(3600) == "약 1시간 남음");
+    CHECK(foil::install::timeLeftText(3900) == "약 1시간 5분 남음");
+    CHECK(foil::install::timeLeftText(26 * 3600) == "약 1일 2시간 남음");
+    CHECK(foil::install::timeLeftText(48 * 3600) == "약 2일 남음");
     CHECK(foil::install::timeLeftText(1501) == "약 26분 남음");
     CHECK(foil::install::timeLeftText(5100) == "약 1시간 25분 남음");
   }

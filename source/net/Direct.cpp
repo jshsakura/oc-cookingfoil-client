@@ -54,7 +54,10 @@ std::vector<std::string> headersFor(const std::string &requestUrl, const std::ve
   return {"Authorization: Bearer " + token};
 }
 DirectStep afterDirectFailure(const std::string &requestUrl, long status, const std::string &sent) {
-  if (status != 401 || !isDirect(requestUrl)) return DirectStep::Other;
+  // Sent with no key (no token had come yet), the proxy in front of the
+  // direct address ends it with a 404 before the app sees it: as a 401.
+  const bool refused = status == 401 || (status == 404 && sent.empty());
+  if (!refused || !isDirect(requestUrl)) return DirectStep::Other;
   const auto now = downloadToken();
   {
     std::lock_guard<std::mutex> held(lock);

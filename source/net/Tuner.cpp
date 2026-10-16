@@ -160,6 +160,10 @@ void tuneTrouble() {
   std::lock_guard<std::mutex> held(lock);
   if (runs.size() == 1 && tuner) tuner->trouble(); // shared, whose it was is not known
 }
+bool tuningFound() {
+  std::lock_guard<std::mutex> held(lock);
+  return runs.empty() || !tuner || tuner->found();
+}
 std::string tuningSummary() {
   std::lock_guard<std::mutex> held(lock);
   return (tuner ? *tuner : idle).summary(active.load());

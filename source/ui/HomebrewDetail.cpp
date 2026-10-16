@@ -169,7 +169,8 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
   const bool panelFocus = !descriptionFocus_ && !homebrewExtras_;
   constexpr float X = 840, W = 386, Row = 56, Gap = 8, RowTop = 226;
   paint_.rect(818, 172, 430, 484, Surface, 20);
-  paint_.fonts.text(tr("Manage|app"), X, 192, 22, Ink, true);
+  paint_.fonts.middle(tr("Manage|app"), X, 194, 22, Ink, true);
+  paint_.rect(818, 216, 430, 1, Line);
   if (extras.empty())
     paint_.fonts.wrapped(tr("Once it is on the card, its patches, saves and HOME Menu shortcut are managed here."), X,
                          RowTop + 6, 17, Secondary, W, 3);

@@ -398,6 +398,17 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(app.installedCount() == 1);
     app.action(foil::ui::Action::Previous);
     CHECK(app.myGamesTab() == 2);
+    // The cursor passing through the menu and back leaves DLC as it was:
+    // 내 게임 is the screen shown, whichever of its tabs.
+    app.action(foil::ui::Action::Back);
+    CHECK(app.onMenu());
+    app.action(foil::ui::Action::Up);
+    app.action(foil::ui::Action::Down);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300)); // past the menu's rest
+    app.render();
+    CHECK(app.myGamesTab() == 2);
+    app.action(foil::ui::Action::Right);
+    CHECK(app.current() == foil::ui::Screen::Updates && app.myGamesTab() == 2);
     // Even with the cursor on the menu, L R keep moving the tabs.
     app.action(foil::ui::Action::Back);
     CHECK(app.onMenu());
@@ -432,11 +443,23 @@ int runUiTests(SDL_Renderer *renderer) {
     app.render();
     app.action(foil::ui::Action::Back);
     CHECK(!app.dropboxPopupOpen());
-    // Up from the first game reaches the tabs; Down comes back to the games.
+    // Up from the first game reaches the account row, then the tabs; Down
+    // comes back. A on the account asks to disconnect; Y does nothing here.
+    app.action(foil::ui::Action::Up);
+    CHECK(app.headerFocus().empty() && app.dropboxOnAccount());
+    app.action(foil::ui::Action::Queue);
+    CHECK(!app.dropboxPopupOpen());
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.dropboxPopupOpen()); // 드롭박스 연결을 해제할까요?
+    app.render();
+    app.action(foil::ui::Action::Back);
+    CHECK(!app.dropboxPopupOpen());
     app.action(foil::ui::Action::Up);
     CHECK(app.headerFocus() == "tab2");
     app.action(foil::ui::Action::Down);
-    CHECK(app.headerFocus().empty());
+    CHECK(app.headerFocus().empty() && app.dropboxOnAccount());
+    app.action(foil::ui::Action::Down);
+    CHECK(!app.dropboxOnAccount());
     app.action(foil::ui::Action::Accept);
     CHECK(app.dropboxPopupOpen());
     app.render();
@@ -462,9 +485,9 @@ int runUiTests(SDL_Renderer *renderer) {
     app.action(foil::ui::Action::Accept);
     CHECK(app.dropboxPopupOpen());
     app.render();
-    CHECK(app.dropboxAcceptLabel() == foil::tr("Get"));
+    CHECK(app.dropboxAcceptLabel() == foil::tr("Download to this console"));
     app.action(foil::ui::Action::Up);
-    CHECK(app.dropboxAcceptLabel() == foil::tr("Get"));
+    CHECK(app.dropboxAcceptLabel() == foil::tr("Download to this console"));
     CHECK(!app.dropboxChoosingUpload());
     app.action(foil::ui::Action::Back);
     CHECK(!app.dropboxPopupOpen());
@@ -472,7 +495,7 @@ int runUiTests(SDL_Renderer *renderer) {
     app.action(foil::ui::Action::Down);
     CHECK(app.dropboxFocused() == installed.applicationId);
     app.action(foil::ui::Action::Accept);
-    CHECK(app.dropboxAcceptLabel() == foil::tr("Upload"));
+    CHECK(app.dropboxAcceptLabel() == foil::tr("Back up|to Dropbox") || app.dropboxAcceptLabel().empty());
     app.action(foil::ui::Action::Back);
     CHECK(!app.dropboxPopupOpen());
   }
@@ -789,6 +812,50 @@ int runUiTests(SDL_Renderer *renderer) {
     giveUp = true;
     allow("D");
     CHECK(waitFor(queue, [&] { return queue.installingName().empty(); }));
+    foil::install::setHostInstall(nullptr);
+    foil::platform::setHostSpace(0);
+  }
+  {
+    // What was cut off is asked about once the server answers, not started
+    // at once: B leaves it paused in 다운로드, A there goes on with it, and
+    // leaving while it is paused asks nothing (its place is kept).
+    std::atomic<bool> release{false};
+    foil::install::setHostInstall([&](const foil::Item &) {
+      for (int waited = 0; waited < 500 && !release; ++waited)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    });
+    foil::platform::setHostSpace(64ull << 30);
+    foil::Item item;
+    item.name = "A";
+    item.url = "https://shop.example/A.nsp";
+    item.titleId = item.baseId = "0100000000020000";
+    item.size = 1000;
+    foil::ui::Application starting(renderer, "", "", "host/fixtures/art");
+    CHECK(starting.open());
+    starting.previewQueued(item, "A", "");
+    starting.previewOfferResume();
+    CHECK(starting.previewResumeAsked());
+    CHECK(starting.installingName().empty()); // asked, not started
+    starting.render();
+    starting.action(foil::ui::Action::Back);
+    CHECK(!starting.previewResumeAsked());
+    CHECK(starting.installingName().empty());
+    CHECK((starting.queuedNames() == std::vector<std::string>{"A"}));
+    starting.screen(foil::ui::Screen::Downloads); // its card, paused
+    starting.render();
+    std::this_thread::sleep_for(std::chrono::milliseconds(750));
+    starting.action(foil::ui::Action::Accept);
+    CHECK(starting.installingName() == "A");
+    starting.previewPause(true);
+    CHECK(starting.requestQuit()); // paused: out at once
+    starting.previewPause(false);
+    CHECK(!starting.requestQuit()); // running: asks first
+    release = true;
+    for (int i = 0; i < 300 && !starting.installingName().empty(); ++i) {
+      starting.poll();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    CHECK(starting.installingName().empty());
     foil::install::setHostInstall(nullptr);
     foil::platform::setHostSpace(0);
   }

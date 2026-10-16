@@ -25,6 +25,10 @@ public:
   static constexpr int TrySpans = 2, RetryAfter = 6, MostWait = 24;
   explicit ConnectionTuner(int ceiling = 0);
   int connections() const { return now_; }
+  // The count is found: no try under way, and the last one went back (more
+  // did not help), it is at the ceiling, or it backed off or was shared.
+  // Before that the speed is still climbing and an estimate from it is high.
+  bool found() const { return !trying_ && (now_ >= ceiling_ || (reason_ != "start" && wait_ > 1)); }
   // The ceiling now: the server's, divided among `downloading` consoles
   // (this one included; 0 or 1 when it is alone).
   int ceiling(int downloading) const;
@@ -69,6 +73,8 @@ void stopTuning(int id);
 int tunedConnections();
 void tuneTrouble();
 std::string tuningSummary();
+// Whether the running download's count is found (true when none is tuned).
+bool tuningFound();
 // X-CookingFoil-Active-Downloads: consoles downloading from the server now,
 // this one included; 0 when the server does not say.
 void heardActiveDownloads(int count);

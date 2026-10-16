@@ -430,4 +430,27 @@ std::string formatBytes(uint64_t bytes) {
   std::snprintf(buffer, sizeof(buffer), decimal ? "%.1f %s" : "%.0f %s", n, units[i]);
   return buffer;
 }
+std::string formatSpeed(double bytesPerSecond) {
+  const double rate = std::max(0.0, bytesPerSecond);
+  const char *byteUnits[] = {"B/s", "KB/s", "MB/s", "GB/s"};
+  int b = 0;
+  double bytes = rate;
+  while (bytes >= 1024 && b < 3) {
+    bytes /= 1024;
+    ++b;
+  }
+  const char *bitUnits[] = {"bps", "Kbps", "Mbps", "Gbps"};
+  int k = 0;
+  double bits = rate * 8;
+  while (bits >= 1000 && k < 3) {
+    bits /= 1000;
+    ++k;
+  }
+  // Megabytes and up keep a tenth (13.0 MB/s); bits keep one under 10.
+  char buffer[64];
+  std::snprintf(buffer, sizeof(buffer), b >= 2 ? "%.1f %s · " : "%.0f %s · ", bytes, byteUnits[b]);
+  std::string text = buffer;
+  std::snprintf(buffer, sizeof(buffer), k > 0 && bits < 10 ? "%.1f %s" : "%.0f %s", bits, bitUnits[k]);
+  return text + buffer;
+}
 } // namespace foil

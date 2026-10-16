@@ -381,8 +381,9 @@ void Application::retroDetailPanel() {
   const bool panelFocus = !descriptionFocus_;
   paint_.rect(818, 172, 430, 484, Surface, 20);
   const std::string head = tr("Versions");
-  paint_.fonts.text(head, 840, 192, 22, Ink, true);
-  paint_.pill(std::to_string(rows), 840 + paint_.fonts.measure(head, 22, true) + 10, 191);
+  paint_.fonts.middle(head, 840, 194, 22, Ink, true);
+  paint_.pill(std::to_string(rows), 840 + paint_.fonts.measure(head, 22, true) + 10, 194 - 13);
+  paint_.rect(818, 216, 430, 1, Line);
   constexpr float RowTop = 226, RowPitch = 56, RowHeight = 52, W = 386;
   const int cursor = std::min(retroPart_, rows - 1);
   const float top = glide("retroVersions", 840, RowTop - 4, W, 4 * RowPitch, float(std::max(0, cursor - 3)),
@@ -431,10 +432,11 @@ void Application::retroDetailPanel() {
   }
   unclip();
   if (rows > 4) {
-    paint_.fonts.text(std::to_string(std::min(rows, cursor + 1)) + " / " + std::to_string(rows), 1148, 194, 15, Secondary);
+    const auto at = std::to_string(std::min(rows, cursor + 1)) + " / " + std::to_string(rows);
+    paint_.fonts.middle(at, 1226 - paint_.fonts.measure(at, 15), 194, 15, Secondary);
     paint_.scrollbar(1232, RowTop, 4 * RowPitch - 4, float(first), 4, float(rows));
   }
-  paint_.rect(840, 454, W, 1, Line);
+  paint_.rect(818, 454, 430, 1, Line);
   paint_.fonts.middle(tr("Total"), 852, 476, 18, Secondary);
   const auto total = formatBytes(retroCheckedBytes());
   paint_.fonts.middle(total, 1214 - paint_.fonts.measure(total, 24, true), 476, 24, Ink, true);

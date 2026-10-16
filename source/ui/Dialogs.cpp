@@ -184,7 +184,7 @@ void Application::dialogs() {
       !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !confirmCleanup_ &&
       !languagePopup_ && !cleanupBusy_ && !retroArchAsking_ && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
-      !homebrewRemoveAsk_ && !(homebrewAsk_ && homebrewExtras_) && !shortcutRemoveAsk_ && !selfShortcutAsk_ && unqueueAsk_ < 0 && !bugAsk_ && !cacheClearAsk_ && !clockModal())
+      !homebrewRemoveAsk_ && !(homebrewAsk_ && homebrewExtras_) && !shortcutRemoveAsk_ && !selfShortcutAsk_ && unqueueAsk_ < 0 && !bugAsk_ && !cacheClearAsk_ && !clockModal() && !resumeAsked())
     return;
   SDL_RenderSetClipRect(paint_.renderer, nullptr);
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 150});
@@ -195,7 +195,7 @@ void Application::dialogs() {
                     (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + shopAppSaveAsk_ * 2048 +
                     (serverForm_ && serverForm_->confirmDelete) * 4096 + shortcutRemoveAsk_ * 8192 +
                     selfShortcutAsk_ * 16384 + (unqueueAsk_ >= 0) * 32768 + bugAsk_ * 65536 + cacheClearAsk_ * 131072 +
-                    clockModal() * 262144;
+                    clockModal() * 262144 + resumeAsked() * 524288;
   if (which != popupKind_) {
     popupKind_ = which;
     popupAt_ = SDL_GetTicks();
@@ -206,6 +206,18 @@ void Application::dialogs() {
     clockDialog();
   } else if (selfShortcutAsk_ && alert_.empty()) {
     selfShortcutDialog();
+  } else if (resumeAsked() && alert_.empty()) {
+    // A long name, or a language that runs long, takes a second line; the
+    // popup grows to fit rather than cutting it off.
+    constexpr float Width = 700, Text = Width - 64;
+    const auto ask = trf("Continue {0} from where it stopped?", {installQueue_.front().name});
+    const std::string later = tr("Later, it waits in Downloads, paused.");
+    const float askH = paint_.fonts.measure(ask, 20, true) > Text ? 56 : 28;
+    const float laterH = paint_.fonts.measure(later, 18) > Text ? 50 : 25;
+    const auto body = modal(Width, 24 + askH + 12 + laterH + 16, tr("A download was left unfinished"), tr("Later"), "",
+                            tr("Resume|download"), 25);
+    paint_.fonts.wrapped(ask, body.x + 32, body.y + 24, 20, Ink, Text, 2, true);
+    paint_.fonts.wrapped(later, body.x + 32, body.y + 24 + askH + 12, 18, Secondary, Text, 2);
   } else if (viewPopup_) {
     viewPopup();
   } else if (languagePopup_) {

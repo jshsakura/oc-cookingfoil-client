@@ -165,6 +165,14 @@ public:
     resumeOffered_ = true;
     connected_ = true;
   }
+  // The start once the server answers: what was cut off is asked about.
+  void previewOfferResume() {
+    connected_ = true;
+    offerResume();
+  }
+  bool previewResumeAsked() const { return resumeAsked(); }
+  bool previewPaused() const { return installer_.paused(); }
+  void previewPause(bool paused) { installer_.setPaused(paused); }
   bool previewGetHomebrew(const homebrew::App &app) { return getHomebrew(app); }
   // The queue's rows in their turn, by name; what runs now; how a row ended.
   std::vector<std::string> queuedNames() const {
@@ -244,6 +252,7 @@ public:
     }
   }
   bool dropboxPopupOpen() const { return dropboxOpen_ || dropboxUnlinkAsk_; }
+  bool dropboxOnAccount() const { return dropboxOnAccount_; }
   bool dropboxChoosingUpload() const { return dropboxChoosing_; }
   std::string dropboxAcceptLabel() const { return dropboxPopupAccept(); }
   std::vector<DropboxRow> dropboxListed() const { return dropboxGameRows(); }
@@ -658,6 +667,8 @@ private:
   std::atomic<bool> dropboxDone_{false};
   std::function<void()> dropboxFinish_;
   uint64_t dropboxCursor_ = 0;      // the focused game's application id (0: the first)
+  bool dropboxOnAccount_ = false;  // the cursor on the account row above the games
+  std::function<void()> dropboxAfter_; // a press made while a game's backup details were read
   DropboxRow dropboxGame_;          // the game whose popup is open
   bool dropboxOpen_ = false, dropboxUnlinkAsk_ = false;
   int dropboxPick_ = 0;             // in the game popup: 0 upload (installed only), then Dropbox backups
@@ -1031,6 +1042,8 @@ private:
   // The download screen's speed and time left, timed by its own frames.
   install::SpeedWindow downloadSpeed_;
   install::TimeLeft timeLeft_;
+  bool timeLeftShown_ = false;  // once the connections are found (or a minute passed)
+  double timeLeftFrom_ = -1;    // when this download's speed was first measured
   double downloadSeen_ = -1;
   double shownPercent_ = -1, shownPercentAt_ = 0; // the bar as drawn, gliding
   std::optional<uint64_t> sdFree_, nandFree_, sdTotal_, nandTotal_;
@@ -1315,7 +1328,13 @@ private:
   void forgetInstall();
   void saveStateQuietly();
   void offerResume();
-  bool resumeOffered_ = false;
+  bool resumeOffered_ = false, confirmResume_ = false; // asked at start: go on with what was cut off
+  bool resumeAsked() const { return confirmResume_ && !installQueue_.empty(); }
+  // The menu's screen is the one shown: 내 게임 is its 업데이트 and DLC tabs too,
+  // so passing the cursor through the menu leaves the tab as it was.
+  bool showing(Screen menu) const {
+    return menu == screen_ || (menu == Screen::Installed && screen_ == Screen::Updates);
+  }
   // Home rows are built once per catalog load, not every frame.
   size_t hero_ = 0;
   // Home banner slides; the first is the admin's pick when featured has one.

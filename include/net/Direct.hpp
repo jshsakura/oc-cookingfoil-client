@@ -26,7 +26,8 @@ bool isDirect(const std::string &url);
 std::vector<std::string> headersFor(const std::string &requestUrl, const std::vector<std::string> &headers);
 // What to do after a request to `requestUrl`, sent with the download token
 // `sent`, ended with HTTP `status` (0 for none): Again for a 401 on the
-// direct address a fresh token answers (asked once, or one another request
+// direct address (or a 404 to a request sent with no token, which its
+// proxy gives instead) a fresh token answers (asked once, or one another request
 // already got), asked again at once without counting as a try; Other for
 // anything else, which the caller handles as it always has.
 enum class DirectStep { Other, Again };

@@ -256,7 +256,13 @@ std::string timeLeftText(double seconds) {
   const auto minutes = (s + 59) / 60;
   if (minutes < 60)
     return trf("About {0} min left", {std::to_string(minutes)});
-  return trf("About {0} h {1} min left", {std::to_string(minutes / 60), std::to_string(minutes % 60)});
+  // The unit its size calls for: no "0 min" after whole hours, days past a day.
+  const auto hours = minutes / 60;
+  if (hours >= 24)
+    return hours % 24 ? trf("About {0} d {1} h left", {std::to_string(hours / 24), std::to_string(hours % 24)})
+                      : trf("About {0} d left", {std::to_string(hours / 24)});
+  return minutes % 60 ? trf("About {0} h {1} min left", {std::to_string(hours), std::to_string(minutes % 60)})
+                      : trf("About {0} h left", {std::to_string(hours)});
 }
 void Installer::setPaused(bool paused) {
   pause_ = paused;

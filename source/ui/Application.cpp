@@ -1008,6 +1008,17 @@ void Application::action(Action a) {
     selfShortcutAction(a);
     return;
   }
+  if (resumeAsked()) {
+    if (a == Action::Accept && settled()) {
+      confirmResume_ = false;
+      if (auto error = launchQueued())
+        alert_ = error.message;
+    } else if (a == Action::Back) {
+      confirmResume_ = false;
+      queueHeld_ = true;
+    }
+    return;
+  }
   if (serverForm_) {
     serverFormAction(a);
     return;
@@ -1256,7 +1267,7 @@ void Application::action(Action a) {
       autoSidebar_ = false; // the user is choosing; do not pull focus away
       // The screen under the cursor shows once it rests (render), so
       // holding the stick through the menu reads nothing on the way.
-      menuPending_ = menuOpen(nav_) && MenuScreens[nav_] != screen_;
+      menuPending_ = menuOpen(nav_) && !showing(MenuScreens[nav_]);
       menuAt_ = SDL_GetTicks();
     }
     if ((a == Action::Accept || a == Action::Right) && menuOpen(nav_)) {
@@ -1264,7 +1275,7 @@ void Application::action(Action a) {
       const auto target = MenuScreens[nav_];
       // Into the screen already shown: the cursor moves in, nothing reloads
       // (설치된 게임 would read the console again).
-      if (target != screen_) openMenuScreen(target);
+      if (!showing(target)) openMenuScreen(target);
       // Its content first; with nothing there yet, its header buttons.
       sidebar_ = autoSidebar_ = !hasFocusable();
       if (sidebar_ && enterHeader()) autoSidebar_ = false;
@@ -1627,7 +1638,7 @@ void Application::shell() {
       // A touched item opens its screen and keeps the focus: what was
       // touched is what is selected, as on every other screen.
       hit(16, y, 200, height, [this, i] {
-        if (MenuScreens[i] != screen_)
+        if (!showing(MenuScreens[i]))
           openMenuScreen(MenuScreens[i]);
         nav_ = i;
         menuPending_ = false;
@@ -1747,7 +1758,7 @@ void Application::render() {
   constexpr uint32_t MenuRestMs = 250;
   if (menuPending_ && SDL_GetTicks() - menuAt_ >= MenuRestMs) {
     menuPending_ = false;
-    if (sidebar_ && menuOpen(nav_) && MenuScreens[nav_] != screen_) {
+    if (sidebar_ && menuOpen(nav_) && !showing(MenuScreens[nav_])) {
       openMenuScreen(MenuScreens[nav_]);
       sidebar_ = true;
       autoSidebar_ = false;
@@ -1926,7 +1937,8 @@ void Application::render() {
     if (dropboxSession_) footer({{"B", tr("Cancel")}});
     else if (sidebar_ || !dropboxFocusable()) footer({{"B", tr("Back")}});
     else if (!dropboxLinked_) footer(Hints{{"A", tr("Connect")}, {"B", tr("Back")}});
-    else footer(Hints{{"A", tr("Manage backups")}, {"Y", tr("Disconnect")}, {"B", savesQuery_.empty() ? tr("Back") : tr("Clear search")}});
+    else footer(Hints{{"A", dropboxOnAccount_ ? tr("Disconnect") : tr("Manage backups")},
+                      {"B", savesQuery_.empty() ? tr("Back") : tr("Clear search")}});
   }
   else if (screen_ == Screen::Saves)
     footer(managedGame_ ? std::vector<std::pair<std::string, std::string>>{{"A", tr("Select")}, {"B", tr("Back")}}
@@ -2023,7 +2035,8 @@ bool Application::requestQuit() {
     message(tr("Closing as soon as the console task finishes."));
     return false;
   }
-  if (!installer_.running())
+  // Paused, its place is already kept: nothing to stop, nothing to ask.
+  if (!installer_.running() || installer_.paused())
     return true;
   cancelRetro_ = false;
   confirmCancel_ = true;
@@ -2311,8 +2324,9 @@ void Application::unqueue(size_t index) {
   message(trf("Took {0} off the queue.", {gone.name}));
 }
 Error Application::launchQueued() {
-  // One download at a time, whatever it is; a paused one holds the rest.
-  if (installQueue_.empty() || downloadRunning() || queueHeld_)
+  // One download at a time, whatever it is; a paused one holds the rest, and
+  // so does the question at start until it is answered.
+  if (installQueue_.empty() || downloadRunning() || queueHeld_ || resumeAsked())
     return {};
   auto next = std::move(installQueue_.front());
   installQueue_.pop_front();
@@ -2623,10 +2637,9 @@ void Application::offerResume() {
   }
   if (installQueue_.empty())
     return;
-  // Said, not asked: the queue picks up where it stopped.
-  message(trf("Continuing {0} stopped downloads.", {std::to_string(installQueue_.size())}));
-  if (auto error = launchQueued())
-    alert_ = error.message;
+  // Asked, now that it can go on: A picks the queue up where it stopped;
+  // B leaves it paused in 다운로드, where A goes on with it.
+  confirmResume_ = true;
 }
 } // namespace foil::ui
 namespace foil::ui {

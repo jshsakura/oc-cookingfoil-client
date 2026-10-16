@@ -335,6 +335,9 @@ int main(int argc, char **argv) {
       ui.previewDropbox(true, std::move(remote));
       ui.render();
       if (!app.screenshot(shot + "/08-dropbox-linked.png")) return 1;
+      ui.action(foil::ui::Action::Up); ui.render(); // the account row, A disconnects
+      if (!app.screenshot(shot + "/08-dropbox-account.png")) return 1;
+      ui.action(foil::ui::Action::Down);
       ui.action(foil::ui::Action::Accept); ui.render();
       if (!app.screenshot(shot + "/08-dropbox-not-installed.png")) return 1;
       ui.action(foil::ui::Action::Back);

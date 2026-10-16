@@ -251,7 +251,9 @@ void Application::detail() {
   SDL_Rect full{0, 0, 1280, 660};
   SDL_RenderSetClipRect(paint_.renderer, &full);
   paint_.rect(818, 172, 430, 484, Surface, 20);
-  paint_.fonts.text(tr("To install"), 840, 192, 22, Ink, true);
+  // The heading in a band of its own, ruled off edge to edge.
+  paint_.fonts.middle(tr("To install"), 840, 194, 22, Ink, true);
+  paint_.rect(818, 216, 430, 1, Line);
   const auto &parts = selection_->parts();
   // Files, then the game's patches; the storage cards and the button follow.
   const int rows = int(selection_->rows());
@@ -313,11 +315,11 @@ void Application::detail() {
   }
   unclip();
   if (rows > 4) {
-    paint_.fonts.text(std::to_string(std::min(rows, part_ + 1)) + " / " + std::to_string(rows), 1148, 194, 15,
-                      Secondary);
+    const auto at = std::to_string(std::min(rows, part_ + 1)) + " / " + std::to_string(rows);
+    paint_.fonts.middle(at, 1226 - paint_.fonts.measure(at, 15), 194, 15, Secondary);
     paint_.scrollbar(1232, RowTop, 4 * RowPitch - 4, float(first), 4, float(rows));
   }
-  paint_.rect(840, 454, 386, 1, Line);
+  paint_.rect(818, 454, 430, 1, Line); // edge to edge, as under the heading
   paint_.fonts.middle(tr("Total"), 852, 476, 18, Secondary);
   const auto total = formatBytes(selection_->total());
   paint_.fonts.middle(total, 1214 - paint_.fonts.measure(total, 24, true), 476,
