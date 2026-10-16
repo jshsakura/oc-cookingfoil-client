@@ -1513,15 +1513,18 @@ void Application::cover(const std::string &url, float x, float y, int size,
 // A score in a small badge ending at `right`, tinted by band like the web
 // shop: five bands so 98 and 78 do not look alike (deep green, green,
 // olive, amber, red). Nothing for 0, a game without a score.
+SDL_Color scoreColor(int score) {
+  return score >= 90   ? SDL_Color{13, 110, 64, 255}
+         : score >= 80 ? SDL_Color{34, 150, 90, 255}
+         : score >= 70 ? SDL_Color{118, 140, 28, 255}
+         : score >= 50 ? SDL_Color{196, 124, 0, 255}
+                       : SDL_Color{204, 62, 52, 255};
+}
 void Application::scoreBadge(int score, float right, float y) {
   if (score <= 0) return;
   const auto label = std::to_string(score);
   const float w = paint_.fonts.measure(label, 13, true) + 10, h = 19;
-  const SDL_Color band = score >= 90   ? SDL_Color{13, 110, 64, 255}
-                         : score >= 80 ? SDL_Color{34, 150, 90, 255}
-                         : score >= 70 ? SDL_Color{118, 140, 28, 255}
-                         : score >= 50 ? SDL_Color{196, 124, 0, 255}
-                                       : SDL_Color{204, 62, 52, 255};
+  const SDL_Color band = scoreColor(score);
   paint_.rect(right - w, y, w, h, band, 5);
   paint_.fonts.middle(label, right - w + 5, y + h / 2, 13, Surface, true);
 }

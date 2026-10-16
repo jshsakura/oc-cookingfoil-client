@@ -398,6 +398,32 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(app.installedCount() == 1);
     app.action(foil::ui::Action::Previous);
     CHECK(app.myGamesTab() == 2);
+    {
+      // The banner's tags in the website's order (#218), a bare score named.
+      foil::Group g;
+      foil::Item base;
+      base.score = 81;
+      base.size = 4402341888ULL;
+      base.categories = {"rpg", "action", "puzzle"};
+      base.players = 2;
+      base.releaseDate = 20240715;
+      g.base = base;
+      g.representative = base;
+      g.representative.languages = {"ko", "en"};
+      g.update = base;
+      g.dlc = {base};
+      std::vector<std::string> texts;
+      for (const auto &tag : app.heroTags(g)) texts.push_back(tag.text);
+      CHECK((texts == std::vector<std::string>{foil::trf("Rated {0}", {"81"}), foil::tr("Korean"), "4.1 GB", "rpg",
+                                               "action", foil::trf("Up to {0}", {"2"}), foil::trf("Released {0}|tag", {"2024.07.15"}),
+                                               foil::tr("Update included"), "DLC 1"}));
+      CHECK(app.heroTags(g).front().score == 81);
+      base.players = 1; // one player says nothing
+      base.score = 0;   // no score, no tag
+      g.base = base;
+      CHECK(app.heroTags(g).front().text == foil::tr("Korean"));
+      CHECK(app.heroTags(g).size() == 7);
+    }
     // The cursor passing through the menu and back leaves DLC as it was:
     // 내 게임 is the screen shown, whichever of its tabs.
     app.action(foil::ui::Action::Back);

@@ -17,6 +17,34 @@ int themeIcon(const Theme &t) {
   if (t.sort == SortMode::Release) return 29;    // sparkle
   return 30;                                     // clock
 }
+std::vector<Application::HeroTag> Application::heroTags(const Group &g) const {
+  const auto &item = g.base ? *g.base : g.representative;
+  std::vector<HeroTag> tags;
+  if (item.score > 0) {
+    // A score with no label still says what it is: "평점 81", never a bare 81.
+    const auto label = genreLabel(scoreLabels_, item.scoreLabel);
+    tags.push_back({label.empty() ? trf("Rated {0}", {std::to_string(item.score)})
+                                  : std::to_string(item.score) + " · " + label,
+                    item.score});
+  }
+  if (!item.priceDiscount.empty()) tags.push_back({trf("eShop sale {0}", {priceText(item.priceDiscount)})});
+  const auto &languages = g.representative.languages;
+  if (std::find(languages.begin(), languages.end(), "ko") != languages.end()) tags.push_back({tr("Korean")});
+  if (item.size > 0) tags.push_back({formatBytes(item.size)});
+  int genres = 0;
+  for (const auto &key : item.categories) {
+    if (genres == 2) break;
+    const auto name = genreLabel(genreNames_, key);
+    if (name.empty()) continue;
+    tags.push_back({name});
+    ++genres;
+  }
+  if (item.players >= 2) tags.push_back({trf("Up to {0}", {std::to_string(item.players)})});
+  if (item.releaseDate > 0) tags.push_back({trf("Released {0}|tag", {dateText(item.releaseDate)})});
+  if (g.update) tags.push_back({tr("Update included")});
+  if (!g.dlc.empty()) tags.push_back({"DLC " + std::to_string(g.dlc.size())});
+  return tags;
+}
 void Application::home() {
   if (groups_.empty()) {
     if (!session_) {
@@ -111,18 +139,20 @@ void Application::home() {
                     700);
   paint_.fonts.text(g.representative.publisher, 512 + hx, 155 - scroll, 19,
                     {228, 228, 234, 255}, false, 680);
+  // The tags in the website's order; what does not fit goes whole, from the
+  // end (no tag is cut). The score's tag takes its card colour.
+  // Each tag whole on one line, never wrapped or cut: as many as fit show,
+  // the rest go from the end.
   float x = 512 + hx;
-  const auto &languages = g.representative.languages;
-  if (std::find(languages.begin(), languages.end(), "ko") != languages.end())
-    x += paint_.pill(tr("Korean"), x, 199 - scroll, true, 17) + 10;
-  if (g.update)
-    x += paint_.pill(tr("Update included"), x, 199 - scroll, true, 17) + 10;
-  if (!g.dlc.empty())
-    x += paint_.pill("DLC " + std::to_string(g.dlc.size()), x, 199 - scroll, true, 17) + 10;
-  if (g.base && !g.base->priceDiscount.empty())
-    paint_.pill(trf("eShop sale {0}", {priceText(g.base->priceDiscount)}), x, 199 - scroll, true, 17);
-  else if (g.base && !g.base->priceRegular.empty())
-    paint_.pill("eShop " + priceText(g.base->priceRegular), x, 199 - scroll, true, 17);
+  const float right = 1252 - 32 + hx;
+  for (const auto &tag : heroTags(g)) {
+    const bool bold = tag.score > 0;
+    const float w = paint_.fonts.measure(tag.text, 17, bold) + 28; // as pill(dark)
+    if (w > right - x) break;
+    paint_.rect(x, 199 - scroll, w, 35, bold ? scoreColor(tag.score) : SDL_Color{255, 255, 255, 41}, 17);
+    paint_.fonts.middle(tag.text, x + 14, 199 - scroll + 17.5f, 17, Surface, bold);
+    x += w + 10;
+  }
   unclip();
   // Slide dots, bottom right: the current one is a wide butter pill.
   if (heroes_.size() > 1) {

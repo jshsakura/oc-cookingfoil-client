@@ -19,6 +19,9 @@ struct Group {
 // Genre key (the server's English name) -> name shown on screen.
 using GenreNames = std::map<std::string, std::string>;
 std::string genreLabel(const GenreNames &names, const std::string &key);
+// 20240715 -> "2024.07.15"; only a year or a month known (2024, 202407,
+// 20240000, 20240700) -> "2024" or "2024.07"; anything else as it is.
+std::string dateText(int date);
 enum class Filter { All, Korean, Update, Dlc, Custom };
 std::vector<Group> groupCatalog(const std::vector<Item> &items);
 std::vector<size_t> selectCatalog(const std::vector<Group> &groups,

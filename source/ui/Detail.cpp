@@ -26,10 +26,7 @@ std::string countText(int count) {
     text.insert(size_t(at), ",");
   return text;
 }
-std::string dateLabel(int date) {
-  auto text = std::to_string(date);
-  return text.size() == 8 ? text.substr(0, 4) + "." + text.substr(4, 2) + "." + text.substr(6, 2) : text;
-}
+std::string dateLabel(int date) { return dateText(date); }
 } // namespace
 // Only that the game needs a patch to run, ahead of its description; what
 // it is shows in the install list, and the story belongs in the description.

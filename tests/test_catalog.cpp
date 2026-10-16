@@ -271,6 +271,10 @@ int runCatalogTests() {
                             foil::Filter::Korean)
             .empty());
   CHECK(foil::formatBytes(4402341888ULL) == "4.1 GB");
+  // Release dates: day, month or year only, as known.
+  CHECK(foil::dateText(20240715) == "2024.07.15");
+  CHECK(foil::dateText(20240700) == "2024.07" && foil::dateText(202407) == "2024.07");
+  CHECK(foil::dateText(20240000) == "2024" && foil::dateText(2024) == "2024");
   // Speeds move up and down a unit with their size; bits count by 1000.
   CHECK(foil::formatSpeed(850 * 1024.0) == "850 KB/s · 7.0 Mbps");
   CHECK(foil::formatSpeed(13 * 1048576.0) == "13.0 MB/s · 109 Mbps");

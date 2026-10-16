@@ -416,6 +416,15 @@ std::string priceText(const std::string &amount) {
                                     : "\xC2\xA5" + amount.substr(0, amount.size() - yen.size());    // ¥
   return amount;
 }
+std::string dateText(int date) {
+  const auto text = std::to_string(date);
+  if (text.size() == 4) return text;
+  if (text.size() == 6) return text.substr(4, 2) == "00" ? text.substr(0, 4) : text.substr(0, 4) + "." + text.substr(4, 2);
+  if (text.size() != 8) return text;
+  const auto year = text.substr(0, 4), month = text.substr(4, 2), day = text.substr(6, 2);
+  if (month == "00") return year;
+  return day == "00" ? year + "." + month : year + "." + month + "." + day;
+}
 std::string formatBytes(uint64_t bytes) {
   const char *units[] = {"B", "KB", "MB", "GB", "TB"};
   int i = 0;
