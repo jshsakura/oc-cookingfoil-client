@@ -1,5 +1,6 @@
-#include <filesystem>
 #include "ui/Application.hpp"
+#include <cstdlib>
+#include <filesystem>
 #include <algorithm>
 #include <strings.h>
 #include "core/Log.hpp"
@@ -128,6 +129,26 @@ void Application::installAppUpdate() {
     updateDone_ = true;
   });
 }
+// The newest crash report Atmosphere wrote in the last day
+// (atmosphere/crash_reports/<unix time>_<program id>.log), its start up to
+// `room` bytes (the backtrace is near the top), or nothing.
+std::string Application::recentCrashReport(size_t room) const {
+  const std::string dir = sdRoot_ + "/atmosphere/crash_reports";
+  std::error_code ec;
+  std::string newest;
+  long long newestAt = 0;
+  for (const auto &entry : std::filesystem::directory_iterator(dir, ec)) {
+    const auto name = entry.path().filename().string();
+    if (entry.path().extension() != ".log") continue;
+    const long long at = std::atoll(name.c_str());
+    if (at > newestAt) newestAt = at, newest = entry.path().string();
+  }
+  if (newest.empty() || newestAt < (long long)std::time(nullptr) - 24 * 3600) return {};
+  auto text = readFile(newest);
+  const std::string head = "\n# crash report " + std::filesystem::path(newest).filename().string() + "\n";
+  if (text.size() + head.size() > room) text.resize(room > head.size() ? room - head.size() : 0);
+  return head + text;
+}
 void Application::sendBugReport(const std::string &said) {
   if (bugWorker_.joinable()) return;
   if (!session_ || !connected_) {
@@ -138,13 +159,19 @@ void Application::sendBugReport(const std::string &said) {
   const auto server = session_->server();
   const auto state = state_;
   // The server takes 64 KB at most; the end of the log is what tells.
-  // What the player wrote comes first, then the log.
+  // What the player wrote comes first, then the log, then the console's
+  // report of the app's last crash when one is from the last day (it says
+  // where the app stopped, which the log cannot).
   const auto note = said.empty() ? std::string() : "message: " + said + "\n\n";
-  const auto log = note + logTail(60 * 1024 - std::min<size_t>(note.size(), 8 * 1024));
-  bugWorker_ = std::thread([this, server, state, log] {
+  bugWorker_ = std::thread([this, server, state, note] {
     Error error;
     bool ok = false;
-    guarded("bug report", [&] { ok = net::sendBugReport(server, state, log, error, &stop_); });
+    guarded("bug report", [&] {
+      constexpr size_t Limit = 60 * 1024, CrashRoom = 20 * 1024;
+      const auto crash = recentCrashReport(CrashRoom);
+      const auto log = note + logTail(Limit - std::min<size_t>(note.size(), 8 * 1024) - crash.size()) + crash;
+      ok = net::sendBugReport(server, state, log, error, &stop_);
+    });
     incomingBugStatus_ = ok ? std::string(tr("Sent. Thank you.")) : error.message;
     bugDone_ = true;
   });

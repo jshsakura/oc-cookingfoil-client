@@ -103,6 +103,7 @@ void Application::dropboxEnter() {
       const bool linked = dropbox_->load();
       const auto account = dropbox_->account();
       return [this, linked, account] {
+        dropboxRead_ = true;
         dropboxLinked_ = linked;
         dropboxAccount_ = account;
         if (linked && !dropboxListed_) listDropbox();
@@ -281,6 +282,7 @@ void Application::uploadDropbox(const saves::LocalBackup &backup) {
 }
 
 bool Application::dropboxFocusable() const {
+  if (dropboxReading()) return false;
   if (dropboxLinked_) return true;
   return connected_ && !dropboxMissing_ && !dropboxSession_;
 }
@@ -388,6 +390,12 @@ std::string Application::dropboxPopupAccept() const {
 }
 void Application::dropboxTab() {
   dropboxEnter();
+  // Still reading whether it is linked: the account row and the list,
+  // loading, rather than 연결하기 for a moment before the account shows.
+  if (dropboxReading()) {
+    for (int n = 0; n < Visible; ++n) paint_.skeleton(260, ListTop + n * RowStep, 992, RowHeight, 16);
+    return;
+  }
   if (!dropboxLinked_) {
     if (dropboxMissing_) {
       notice(tr("This server has no Dropbox set up."),

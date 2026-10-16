@@ -244,6 +244,7 @@ public:
   // a `signIn` address shows the QR code waiting for the phone.
   void previewDropbox(bool linked, net::DropboxRevisions remote = {}, const std::string &signIn = "") {
     dropbox_ = std::make_unique<net::Dropbox>("", &stop_);
+    dropboxRead_ = true;
     dropboxLinked_ = dropboxListed_ = linked;
     dropboxAccount_ = linked ? "player@example.com" : "";
     dropboxRemote_ = std::move(remote);
@@ -671,6 +672,11 @@ private:
   bool runDropboxJob(const std::string &busy, std::function<std::function<void()>()> job);
   std::unique_ptr<net::Dropbox> dropbox_; // the worker's while one runs
   bool dropboxLinked_ = false, dropboxMissing_ = false, dropboxListed_ = false;
+  // The link read from cookingfoil.db (dropboxEnter): until then neither
+  // 연결하기 nor the account shows, only the rows loading.
+  bool dropboxRead_ = false;
+  // Reading it now (a read that failed shows 연결하기 with its error).
+  bool dropboxReading() const { return !dropboxRead_ && dropboxWorker_.joinable() && dropboxBusy_ == "list"; }
   std::string dropboxAccount_, dropboxBusy_; // busy: "start", "status", "finish", "list", "upload", "download"
   std::optional<net::dropbox::BridgeSession> dropboxSession_; // a sign-in waiting for the phone
   uint32_t dropboxPollAt_ = 0, dropboxExpiresAt_ = 0;
@@ -833,6 +839,7 @@ private:
   // the log's tail goes to the server (data/client/logs) to be read there.
   void pollLog();
   // 설정 > 버그 리포트 보내기: the log's tail to the server, on request.
+  std::string recentCrashReport(size_t room) const;
   void sendBugReport(const std::string &said);
   bool bugAsk_ = false, bugMessageField_ = false; // the report's popup, and its note being typed
   std::string bugMessage_;
@@ -1230,6 +1237,7 @@ private:
   std::atomic<uint64_t> retroReceived_{0};
   std::atomic<uint64_t> retroKept_{0}; // of retroReceived_, files already on the card (not the network)
   std::atomic<uint64_t> retroBytes_{0}; // what the running download expects
+  std::atomic<int> retroCheckDone_{0}, retroToCheck_{0}; // RetroArch's files on the card checked before it downloads
   std::thread retroWorker_;
   std::atomic<bool> retroDone_{false};
   // Paused: a homebrew or retro download stops with its part kept and goes

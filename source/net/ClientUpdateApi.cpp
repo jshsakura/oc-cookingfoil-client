@@ -87,8 +87,7 @@ bool sendBugReport(const Server &server, const State &state, const std::string &
   const auto url = server.url + "/api/client/log";
   auto headers = authHeaders(server, state, url);
   headers.push_back("Content-Type: text/plain; charset=utf-8");
-  headers.push_back("X-Log-Reason: bug%20report");
-  headers.push_back(std::string("Version: ") + COOKINGFOIL_VERSION);
+  headers.push_back("X-Log-Reason: bug%20report"); // the version rides on every request (authHeaders)
   PostOptions options;
   options.body = log;
   options.timeout = 30;

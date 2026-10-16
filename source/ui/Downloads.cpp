@@ -118,19 +118,37 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
     card.bytes = got;
     card.left = total > got ? total - got : 0;
     card.paused = held;
-    card.phase = held ? std::string(tr("Paused.")) : total ? formatBytes(got) + " / " + formatBytes(total)
-                                                         : std::string(tr("Checking which files to get"));
+    const int checking = retroToCheck_;
+    card.phase = held        ? std::string(tr("Paused."))
+                 : checking  ? trf("Checking the files already on the card ({0} / {1})",
+                                   {std::to_string(retroCheckDone_.load()), std::to_string(checking)})
+                 : total     ? formatBytes(got) + " / " + formatBytes(total)
+                             : std::string(tr("Checking which files to get"));
+    // Nothing comes in while it checks: no speed to measure yet.
+    card.measure = !held && total && !checking;
     // Why it is less than the app's size: what the card has is not got again.
     if (!held && total && kept) card.phase += " · " + trf("{0} already on the card is skipped", {formatBytes(kept)});
     card.chips.push_back({what, 1});
+    // Asked to stop, it says so at once and takes no more presses until the
+    // task has wound down (the file being checked or written finishes).
+    if (!held && retroCancel_) {
+      card.phase = retroPausing_ ? tr("Pausing. What came so far is kept.") : tr("Cancelling.");
+      card.measure = false;
+      return true;
+    }
     card.onPause = [this, held] { pauseSmallDownload(!held); };
     if (!held) card.onDetails = runningDetails();
-    if (!held)
-      card.onCancel = [this] {
-        cancelRetro_ = true;
-        confirmExit_ = false;
-        confirmCancel_ = true;
-      };
+    card.onCancel = [this, held] {
+      dialogFocus_ = 0;
+      if (held) { // paused before it began: taken off the queue, after asking
+        unqueueAsk_ = 0;
+        unqueuePick_ = false;
+        return;
+      }
+      cancelRetro_ = true;
+      confirmExit_ = false;
+      confirmCancel_ = true;
+    };
     return true;
   }
   if (patchDownloading()) {

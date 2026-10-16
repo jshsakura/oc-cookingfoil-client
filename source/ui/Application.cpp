@@ -171,8 +171,10 @@ bool Application::open() {
   const auto took = [&] {
     steps += (steps.empty() ? "" : ", ") + stepName + " " + std::to_string(SDL_GetTicks() - stepAt) + "ms";
   };
+  float progressShown = 0;
   const auto step = [&](const std::string &caption, float progress, const char *name) {
     took();
+    progressShown = progress;
     stepAt = SDL_GetTicks();
     stepName = name;
     paint_.splash(caption, progress);
@@ -182,8 +184,9 @@ bool Application::open() {
   step("", 0.05f, "fonts");
   if (!paint_.fonts.open())
     return false;
-  // The saved language is read now so the caption is already in it;
+  // The saved language is read now so the captions are already in it;
   // reload() sets it again with the config as the last fallback.
+  step(tr("Reading the app's records on the SD card."), 0.12f, "records");
   if (!statePath_.empty())
     state_.language = loadState(statePath_).value.language;
   applyStartupLanguage();
@@ -218,6 +221,22 @@ bool Application::open() {
 #endif
   took();
   logLine("startup " + steps);
+  // The bar runs on to its end before the app shows, rather than the app
+  // popping up from part way: a short fill, then a moment full.
+  constexpr uint32_t FillMs = 450, HoldMs = 250;
+  const float from = progressShown;
+  const uint32_t fillFrom = SDL_GetTicks();
+  for (;;) {
+    const uint32_t gone = SDL_GetTicks() - fillFrom;
+    const float t = std::min(1.f, gone / float(FillMs)), eased = 1 - (1 - t) * (1 - t);
+    paint_.splash(tr("Ready."), from + (1 - from) * eased);
+    if (!platform::serviceApplet()) {
+      exitRequested_ = true;
+      break;
+    }
+    if (gone >= FillMs + HoldMs)
+      break;
+  }
   return true;
 }
 // Patches live on the SD card: a store under switch/cookingfoil and the
@@ -1525,6 +1544,12 @@ void Application::cover(const std::string &url, float x, float y, int size,
   const auto thumb = exact ? url : thumbnailUrl(url);
   if (!thumb.empty() && !images_->failed(thumb) && !images_->loaded(thumb)) {
     paint_.skeleton(x, y, size, size, 14, dark);
+  } else if (thumb.empty() && name == "RetroArch") {
+    // RetroArch has no art of its own: the retro menu's mark on a dark tile.
+    paint_.rect(x, y, size, size, {38, 38, 44, 255}, 14);
+    const int mark = size / 2;
+    paint_.icon(35 /* the retro menu icon */, x + (size - mark) / 2.f, y + (size - mark) / 2.f, Butter, mark);
+    return;
   } else if (thumb.empty() || images_->failed(thumb)) {
     // No art: a tinted tile with the title's first letter.
     static const SDL_Color tints[] = {{226, 221, 207, 255}, {214, 223, 216, 255},
@@ -2329,8 +2354,16 @@ void Application::runningAction(Action a) {
   }
   if (a == Action::Accept && installer_.running())
     installer_.setPaused(!installer_.paused());
-  else if (a == Action::Accept)
+  else if (a == Action::Accept && !(retroDownloading() && retroCancel_)) // stopping: one press is enough
     pauseSmallDownload(!queueHeld_);
+  // Paused before it began (held at start): Y takes it off, after asking.
+  if (a == Action::Queue && queueHeld_ && !installer_.running() && !retroDownloading() && !installQueue_.empty()) {
+    unqueueAsk_ = 0;
+    unqueuePick_ = false;
+    dialogFocus_ = 0;
+    return;
+  }
+  if (a == Action::Queue && retroDownloading() && retroCancel_) return; // already stopping
   if (a == Action::Queue && (installer_.running() || retroDownloading())) {
     cancelRetro_ = !installer_.running();
     confirmCancel_ = true;

@@ -3,6 +3,7 @@
 // of being held in memory.
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 #include <string>
 namespace foil {
 class Sha256 {
@@ -19,7 +20,9 @@ private:
   uint64_t total_ = 0;
 };
 // A file's SHA-256 as 64 lowercase hex digits; "" when it cannot be read.
-std::string sha256File(const std::string &path);
+// Empty when it cannot be read, or when `stop` turns true part way (checked
+// between 1 MB reads, so a big file does not hold up a cancel).
+std::string sha256File(const std::string &path, const std::atomic<bool> *stop = nullptr);
 // The bytes a lowercase or uppercase hex string spells; empty when it is not
 // hex of whole bytes.
 std::string hexBytes(const std::string &hex);

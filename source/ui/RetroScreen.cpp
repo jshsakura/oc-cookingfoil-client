@@ -546,12 +546,20 @@ bool Application::runRetroArch(bool full) {
         // are the server's, which spares fetching the whole pack again.
         if (!full) {
           int adopted = 0;
+          // Counted for the card ("checking 120 / 1800"): no bytes come in
+          // while it runs, and on a slow card it takes a while.
+          int toCheck = 0;
+          for (const auto &file : pack.value.files)
+            toCheck += !record.files.count(file.path) && !file.sha256.empty();
+          retroCheckDone_ = 0;
+          retroToCheck_ = toCheck;
           for (const auto &file : pack.value.files) {
             if (retroCancel_ || stop_) break;
             if (record.files.count(file.path) || file.sha256.empty()) continue;
+            ++retroCheckDone_;
             const auto local = sd + "/" + file.path;
             if (!fileExists(local) || fileSize(local) != file.size) continue;
-            if (sha256File(local) == file.sha256) {
+            if (sha256File(local, &retroCancel_) == file.sha256) {
               record.files[file.path] = file.sha256;
               ++adopted;
             }
@@ -562,7 +570,9 @@ bool Application::runRetroArch(bool full) {
             atomicWrite(sd + PackRecordPath, retro::serializePackRecord(record), kept);
           }
         }
-        const auto plan = retro::planPack(pack.value, record, fileExists, fileSize, sd);
+        retroToCheck_ = 0;
+        // Stopped while checking: nothing is planned or asked for.
+        const auto plan = retroCancel_ || stop_ ? retro::PackPlan{} : retro::planPack(pack.value, record, fileExists, fileSize, sd);
         retroBytes_ = plan.bytes;
         Error error;
         int done = 0;

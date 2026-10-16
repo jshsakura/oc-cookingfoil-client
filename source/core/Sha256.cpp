@@ -105,12 +105,15 @@ std::string hmacSha256(const std::string &key, const std::string &message) {
   second.update(innerHash.data(), innerHash.size());
   return second.hex();
 }
-std::string sha256File(const std::string &path) {
+std::string sha256File(const std::string &path, const std::atomic<bool> *stop) {
   std::unique_ptr<FILE, int (*)(FILE *)> in(std::fopen(path.c_str(), "rb"), std::fclose);
   if (!in) return "";
   Sha256 sha;
   std::vector<char> buffer(1 << 20);
-  for (size_t n; (n = std::fread(buffer.data(), 1, buffer.size(), in.get())) > 0;) sha.update(buffer.data(), n);
+  for (size_t n; (n = std::fread(buffer.data(), 1, buffer.size(), in.get())) > 0;) {
+    if (stop && *stop) return "";
+    sha.update(buffer.data(), n);
+  }
   return std::ferror(in.get()) ? "" : sha.hex();
 }
 } // namespace foil

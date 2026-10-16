@@ -7,6 +7,9 @@
 #include "core/I18n.hpp"
 #include "platform/Identity.hpp"
 #include "platform/Focus.hpp"
+// Included for the build's version stamp: a new version rebuilds the files
+// that include it, so "start <version>" and the update marker say this build.
+#include "core/Version.hpp"
 #include <cmath>
 #include <vector>
 #include <curl/curl.h>
