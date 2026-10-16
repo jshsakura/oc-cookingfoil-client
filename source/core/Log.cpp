@@ -13,7 +13,7 @@
 namespace foil {
 namespace {
 // Past this the log keeps only its newest part, so it never grows for good.
-constexpr uintmax_t MaxLogBytes = 512 * 1024, KeptLogBytes = 128 * 1024;
+constexpr uintmax_t MaxLogBytes = 256 * 1024, KeptLogBytes = 64 * 1024;
 std::mutex mutex;
 std::string logPath;
 // What malloc hands out of what it holds. The process figure is left out:

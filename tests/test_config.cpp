@@ -147,7 +147,7 @@ int runConfigTests() {
       foil::openLog(path);
       const std::string filler(200, 'x');
       for (int i = 0; i < 8000; ++i) foil::logLine("line " + std::to_string(i) + " " + filler);
-      CHECK(std::filesystem::file_size(path) <= 2 * 512 * 1024 + 4096);
+      CHECK(std::filesystem::file_size(path) <= 2 * 256 * 1024 + 4096);
       CHECK(foil::readFile(path).find("line 7999 ") != std::string::npos);
       // A line repeated (a poll failing every few seconds) is written once,
       // then how many more times when another line comes.
