@@ -407,6 +407,7 @@ int runUiTests(SDL_Renderer *renderer) {
       base.categories = {"rpg", "action", "puzzle"};
       base.players = 2;
       base.releaseDate = 20240715;
+      base.priceRegular = "10,000원"; // no sale: the regular price takes its place
       g.base = base;
       g.representative = base;
       g.representative.languages = {"ko", "en"};
@@ -414,15 +415,16 @@ int runUiTests(SDL_Renderer *renderer) {
       g.dlc = {base};
       std::vector<std::string> texts;
       for (const auto &tag : app.heroTags(g)) texts.push_back(tag.text);
-      CHECK((texts == std::vector<std::string>{foil::trf("Rated {0}", {"81"}), foil::tr("Korean"), "4.1 GB", "rpg",
+      CHECK((texts == std::vector<std::string>{foil::trf("Rated {0}", {"81"}), "eShop " + foil::priceText("10,000원"),
+                                               foil::tr("Korean"), "4.1 GB", "rpg",
                                                "action", foil::trf("Up to {0}", {"2"}), foil::trf("Released {0}|tag", {"2024.07.15"}),
                                                foil::tr("Update included"), "DLC 1"}));
       CHECK(app.heroTags(g).front().score == 81);
       base.players = 1; // one player says nothing
       base.score = 0;   // no score, no tag
       g.base = base;
-      CHECK(app.heroTags(g).front().text == foil::tr("Korean"));
-      CHECK(app.heroTags(g).size() == 7);
+      CHECK(app.heroTags(g).front().text == "eShop " + foil::priceText("10,000원"));
+      CHECK(app.heroTags(g).size() == 8); // the price stays
     }
     // The cursor passing through the menu and back leaves DLC as it was:
     // 내 게임 is the screen shown, whichever of its tabs.

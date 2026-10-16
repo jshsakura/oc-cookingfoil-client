@@ -27,7 +27,10 @@ std::vector<Application::HeroTag> Application::heroTags(const Group &g) const {
                                   : std::to_string(item.score) + " · " + label,
                     item.score});
   }
+  // The price in the sale's place: the sale when there is one, else the
+  // regular price (both from the server's eShop prices).
   if (!item.priceDiscount.empty()) tags.push_back({trf("eShop sale {0}", {priceText(item.priceDiscount)})});
+  else if (!item.priceRegular.empty()) tags.push_back({"eShop " + priceText(item.priceRegular)});
   const auto &languages = g.representative.languages;
   if (std::find(languages.begin(), languages.end(), "ko") != languages.end()) tags.push_back({tr("Korean")});
   if (item.size > 0) tags.push_back({formatBytes(item.size)});

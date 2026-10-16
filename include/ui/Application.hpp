@@ -859,7 +859,8 @@ private:
   // is set up, 다시 시도 when the one set up did not answer.
   bool homeOffersSettings() const { return groups_.empty() && !session_; }
 public:
-  // The banner's tags, as the website's (#218): score, sale, Korean, size,
+  // The banner's tags, as the website's (#218): score, sale (else the
+  // regular price), Korean, size,
   // two genres, players (2 or more), release, update, DLC, in that order;
   // `score` is set on the score's own tag (its card colour).
   struct HeroTag {
