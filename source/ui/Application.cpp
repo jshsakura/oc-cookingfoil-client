@@ -376,7 +376,7 @@ void Application::localizeNames() {
 }
 void Application::setItems(std::vector<Item> items) {
   const auto started = SDL_GetTicks();
-  groups_ = groupCatalog(items);
+  groups_ = groupCatalog(std::move(items));
   groupIndex_.clear();
   groupIndex_.reserve(groups_.size());
   for (size_t i = 0; i < groups_.size(); ++i)

@@ -656,16 +656,17 @@ bool parseItem(json_object* object, Item& item) {
     }
     item.icon = stringField(object, "icon_url"); if (!isHttp(item.icon)) item.icon.clear();
     item.publisher = stringField(object, "publisher"); item.region = stringField(object, "region"); item.versionName = stringField(object, "version_name", stringField(object, "display_version"));
-    auto* categories = field(object, "categories");
-    if (json_object_is_type(categories, json_type_array)) for (size_t k = 0; k < json_object_array_length(categories); ++k) {
-        auto* genre = json_object_array_get_idx(categories, k);
-        if (json_object_is_type(genre, json_type_string)) item.categories.emplace_back(json_object_get_string(genre));
-    }
-    auto* languages = field(object, "languages");
-    if (json_object_is_type(languages, json_type_array)) for (size_t k = 0; k < json_object_array_length(languages); ++k) {
-        auto* code = json_object_array_get_idx(languages, k);
-        if (json_object_is_type(code, json_type_string)) item.languages.emplace_back(json_object_get_string(code));
-    }
+    const auto words = [&](const char* key) {
+        Tags::List list;
+        auto* array = field(object, key);
+        if (json_object_is_type(array, json_type_array)) for (size_t k = 0; k < json_object_array_length(array); ++k) {
+            auto* word = json_object_array_get_idx(array, k);
+            if (json_object_is_type(word, json_type_string)) list.emplace_back(json_object_get_string(word));
+        }
+        return Tags(list);
+    };
+    item.categories = words("categories");
+    item.languages = words("languages");
     return true;
 }
 // A small scanner over the catalog's text, so each game is parsed into a

@@ -44,16 +44,20 @@ private:
   struct Label {
     SDL_Texture *texture;
     float width, height;
+    float top; // from the layout baseline to the texture's top
+    size_t bytes;
     uint64_t used = 0;
   };
   uint64_t tick_ = 0;
-  struct Faces {
-    std::vector<TTF_Font *> fonts; // per source, opened on first use
-    std::vector<bool> tried;
-  };
+  size_t labelBytes_ = 0;
   int family(int source) const;
   TTF_Font *load(int source, int pixels, bool bold);
+  // One open face per source and weight, set to the size asked each time it
+  // is used: a face per text size held dozens of copies of each font.
+  TTF_Font *opened(int source, bool bold);
   TTF_Font *face(int size, bool bold, int source);
+  TTF_Font *at(TTF_Font *font, int size);
+  void makeRoomForLabel(size_t adding);
   bool covers(int source, uint32_t codepoint);
   const std::vector<char> *bundled(int family, bool bold);
   const std::vector<Run> &runs(const std::string &text, int size, bool bold);
@@ -66,17 +70,20 @@ private:
   // Bundled subsets, family * 2 + bold: Korean/Latin, Japanese, Chinese.
   std::array<std::vector<char>, 6> embedded_;
   std::array<bool, 6> unpacked_{};
-  std::vector<TTF_Font *> probes_;
-  std::vector<bool> probed_;
   bool chinese_ = false;
   void clear();
-  std::map<std::pair<int, bool>, Faces> fonts_;
-  std::map<std::string, Label> labels_;
+  std::vector<TTF_Font *> faces_; // source * 2 + bold
+  std::vector<bool> tried_;
+  std::unordered_map<TTF_Font *, int> pixels_; // the size each face is set to
+  std::unordered_map<std::string, Label> labels_;
   // Layout is recomputed every frame, so TTF measurements are memoized.
   std::unordered_map<std::string, std::vector<Run>> runs_;
   std::unordered_map<std::string, float> widths_;
   std::unordered_map<std::string, std::string> fitted_;
   std::unordered_map<std::string, std::vector<std::string>> layouts_;
+  std::unordered_map<std::string, float> inks_; // centerTop's ink middle
+  // Bytes each memo above holds, roughly; past its share it starts over.
+  std::array<size_t, 5> memoBytes_{};
 };
 std::vector<std::string> utf8Characters(const std::string &text);
 } // namespace foil::ui

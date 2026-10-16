@@ -3,6 +3,7 @@
 #include <cmath>
 #include <filesystem>
 #include "core/Json.hpp"
+#include "platform/Storage.hpp"
 #ifdef __SWITCH__
 #include <switch.h>
 #include <zstd.h>
@@ -33,9 +34,6 @@ Fonts::Fonts(SDL_Renderer *renderer) : renderer_(renderer) {
 }
 Fonts::~Fonts() {
   clear();
-  for (auto *f : probes_)
-    if (f)
-      TTF_CloseFont(f);
 #ifdef __SWITCH__
   if (shared_)
     plExit();
@@ -109,26 +107,34 @@ TTF_Font *Fonts::load(int source, int pixels, bool bold) {
   return std::filesystem::exists(path) ? TTF_OpenFont(path.c_str(), pixels) : nullptr;
 #endif
 }
-// One small regular face per source answers "does it have this glyph";
-// coverage is the same at every size and weight.
-bool Fonts::covers(int source, uint32_t cp) {
-  if (probes_.empty())
-    probes_.assign(Sources, nullptr), probed_.assign(Sources, false);
-  if (!probed_[source]) {
-    probed_[source] = true;
-    probes_[source] = load(source, 12, false);
+TTF_Font *Fonts::opened(int source, bool bold) {
+  if (faces_.empty())
+    faces_.assign(Sources * 2, nullptr), tried_.assign(Sources * 2, false);
+  const int slot = source * 2 + (bold ? 1 : 0);
+  if (!tried_[slot]) {
+    tried_[slot] = true;
+    const int pixels = std::lround(18 * scale_);
+    if ((faces_[slot] = load(source, pixels, bold)))
+      pixels_[faces_[slot]] = pixels;
   }
-  return probes_[source] && TTF_GlyphIsProvided32(probes_[source], cp);
+  return faces_[slot];
+}
+TTF_Font *Fonts::at(TTF_Font *font, int size) {
+  const int pixels = std::lround(size * scale_);
+  auto &now = pixels_[font];
+  if (font && now != pixels && TTF_SetFontSize(font, pixels) == 0)
+    now = pixels;
+  return font;
+}
+// The regular face answers "does it have this glyph"; coverage is the same
+// at every size and weight.
+bool Fonts::covers(int source, uint32_t cp) {
+  auto *font = opened(source, false);
+  return font && TTF_GlyphIsProvided32(font, cp);
 }
 TTF_Font *Fonts::face(int size, bool bold, int source) {
-  auto &slots = fonts_[{size, bold}];
-  if (slots.fonts.empty())
-    slots.fonts.assign(Sources, nullptr), slots.tried.assign(Sources, false);
-  if (!slots.tried[source]) {
-    slots.tried[source] = true;
-    slots.fonts[source] = load(source, std::lround(size * scale_), bold);
-  }
-  return slots.fonts[source];
+  auto *font = opened(source, bold);
+  return font ? at(font, size) : nullptr;
 }
 bool Fonts::open() {
 #ifdef __SWITCH__
@@ -142,34 +148,47 @@ void Fonts::clear() {
   for (const auto &pair : labels_)
     SDL_DestroyTexture(pair.second.texture);
   labels_.clear();
-  for (auto &pair : fonts_)
-    for (auto *f : pair.second.fonts)
-      if (f)
-        TTF_CloseFont(f);
-  fonts_.clear();
+  labelBytes_ = 0;
+  for (auto *f : faces_)
+    if (f)
+      TTF_CloseFont(f);
+  faces_.clear();
+  tried_.clear();
+  pixels_.clear();
   runs_.clear();
   widths_.clear();
   fitted_.clear();
   layouts_.clear();
+  inks_.clear();
+  memoBytes_ = {};
 }
 void Fonts::preferChinese(bool chinese) {
   if (chinese == chinese_)
     return;
   chinese_ = chinese;
-  clear();
-  // Probes follow source order too: sources 1 and 2 swap families.
-  for (auto *f : probes_)
-    if (f)
-      TTF_CloseFont(f);
-  probes_.clear();
-  probed_.clear();
+  clear(); // sources 1 and 2 swap families
 }
 // Layout coordinates were tuned with IBM Plex Sans KR, whose ascent is 1.085em.
 // Every run sits on that baseline, whatever font draws it.
 constexpr float LayoutAscentEm = 1.085f;
-template <typename Map> static void bound(Map &map) {
-  if (map.size() > 4096)
+// Measurements are kept up to a share of the heap, smaller from the album,
+// then forgotten together and measured again as they are drawn.
+static size_t memoShare() {
+  static const size_t share = platform::applicationMode() ? (2u << 20) : (512u << 10);
+  return share;
+}
+template <typename Map> static void bound(Map &map, size_t &bytes, size_t adding) {
+  if (map.size() > 4096 || bytes + adding > memoShare()) {
     map.clear();
+    bytes = 0;
+  }
+  bytes += adding + 64; // the node and the key's own allocation
+}
+static size_t bytesOf(const std::vector<std::string> &list) {
+  size_t total = list.size() * sizeof(std::string);
+  for (const auto &s : list)
+    total += s.size();
+  return total;
 }
 static std::string cacheKey(const std::string &text, int size, bool bold,
                             float extra = 0, int lines = 0) {
@@ -209,7 +228,10 @@ const std::vector<Fonts::Run> &Fonts::runs(const std::string &text, int size,
       result.push_back({font, {}});
     result.back().text += s;
   }
-  bound(runs_);
+  size_t bytes = key.size() + result.size() * sizeof(Run);
+  for (const auto &r : result)
+    bytes += r.text.size();
+  bound(runs_, memoBytes_[0], bytes);
   return runs_.emplace(key, std::move(result)).first->second;
 }
 bool Fonts::supports(uint32_t cp, int size) {
@@ -222,22 +244,28 @@ bool Fonts::supports(uint32_t cp, int size) {
 }
 float Fonts::centerTop(const std::string &text, int size, bool bold,
                        float centerY) {
-  const auto &list = runs(text, size, bold);
-  if (list.empty())
-    return centerY;
-  int top = 0, bottom = 0;
-  bool any = false;
-  for (const auto &s : utf8Characters(text)) {
-    int minx, maxx, miny, maxy, advance;
-    if (TTF_GlyphMetrics32(list.front().font, codepoint(s), &minx, &maxx, &miny, &maxy, &advance) != 0)
-      continue;
-    top = any ? std::max(top, maxy) : maxy;
-    bottom = any ? std::min(bottom, miny) : miny;
-    any = true;
+  const auto key = cacheKey(text, size, bold);
+  auto found = inks_.find(key);
+  if (found == inks_.end()) {
+    const auto &list = runs(text, size, bold);
+    if (list.empty())
+      return centerY;
+    auto *font = at(list.front().font, size);
+    int top = 0, bottom = 0;
+    bool any = false;
+    for (const auto &s : utf8Characters(text)) {
+      int minx, maxx, miny, maxy, advance;
+      if (TTF_GlyphMetrics32(font, codepoint(s), &minx, &maxx, &miny, &maxy, &advance) != 0)
+        continue;
+      top = any ? std::max(top, maxy) : maxy;
+      bottom = any ? std::min(bottom, miny) : miny;
+      any = true;
+    }
+    bound(inks_, memoBytes_[4], key.size() + sizeof(float));
+    found = inks_.emplace(key, any ? (top + bottom) / 2.f / scale_ : size * 0.35f).first;
   }
   // text() puts the baseline at y + size * LayoutAscentEm.
-  const float ink = any ? (top + bottom) / 2.f / scale_ : size * 0.35f;
-  return centerY + ink - size * LayoutAscentEm;
+  return centerY + found->second - size * LayoutAscentEm;
 }
 float Fonts::middle(const std::string &text, float x, float centerY, int size,
                      SDL_Color color, bool bold, float maxWidth) {
@@ -252,10 +280,10 @@ float Fonts::measure(const std::string &text, int size, bool bold) {
   float width = 0;
   for (const auto &r : runs(text, size, bold)) {
     int w = 0;
-    TTF_SizeUTF8(r.font, r.text.c_str(), &w, nullptr);
+    TTF_SizeUTF8(at(r.font, size), r.text.c_str(), &w, nullptr);
     width += w / scale_;
   }
-  bound(widths_);
+  bound(widths_, memoBytes_[1], key.size() + sizeof(float));
   widths_.emplace(key, width);
   return width;
 }
@@ -274,46 +302,57 @@ std::string Fonts::fit(const std::string &text, int size, bool bold,
     result += c;
   }
   result += "…";
-  bound(fitted_);
+  bound(fitted_, memoBytes_[2], key.size() + result.size());
   fitted_.emplace(key, result);
   return result;
+}
+// Text textures are the biggest cache of drawn things. Past the count or the
+// bytes allowed (less from the album) the least recently drawn go until half
+// of either is left, so what is on screen is not rebuilt.
+void Fonts::makeRoomForLabel(size_t adding) {
+  constexpr size_t MaxLabels = 256;
+  static const size_t budget = platform::applicationMode() ? (24u << 20) : (8u << 20);
+  if (labels_.size() < MaxLabels && labelBytes_ + adding <= budget)
+    return;
+  std::vector<std::pair<uint64_t, std::string>> byAge;
+  for (const auto &pair : labels_)
+    byAge.push_back({pair.second.used, pair.first});
+  std::sort(byAge.begin(), byAge.end());
+  for (const auto &old : byAge) {
+    if (labels_.size() <= MaxLabels / 2 && labelBytes_ + adding <= budget / 2)
+      break;
+    const auto it = labels_.find(old.second);
+    labelBytes_ -= it->second.bytes;
+    SDL_DestroyTexture(it->second.texture);
+    labels_.erase(it);
+  }
 }
 float Fonts::text(const std::string &original, float x, float y, int size,
                   SDL_Color color, bool bold, float maxWidth) {
   const auto text = fit(original, size, bold, maxWidth);
   for (const auto &r : runs(text, size, bold)) {
-    const auto key = std::to_string(reinterpret_cast<uintptr_t>(r.font)) + ":" +
+    const auto key = std::to_string(reinterpret_cast<uintptr_t>(r.font)) + ":" + std::to_string(size) + ":" +
                      r.text + ":" + std::to_string(color.r) + "," +
                      std::to_string(color.g) + "," + std::to_string(color.b) +
                      "," + std::to_string(color.a);
     auto found = labels_.find(key);
     if (found == labels_.end()) {
-      // Text textures are the biggest GPU-side cache; past the cap the least
-      // recently drawn half goes, so what is on screen is never rebuilt.
-      constexpr size_t MaxLabels = 256;
-      if (labels_.size() >= MaxLabels) {
-        std::vector<std::pair<uint64_t, std::string>> byAge;
-        for (const auto &pair : labels_)
-          byAge.push_back({pair.second.used, pair.first});
-        std::sort(byAge.begin(), byAge.end());
-        for (size_t n = 0; n < byAge.size() / 2; ++n) {
-          const auto old = labels_.find(byAge[n].second);
-          SDL_DestroyTexture(old->second.texture);
-          labels_.erase(old);
-        }
-      }
-      auto *surface = TTF_RenderUTF8_Blended(r.font, r.text.c_str(), color);
+      auto *font = at(r.font, size);
+      auto *surface = TTF_RenderUTF8_Blended(font, r.text.c_str(), color);
       if (!surface)
         continue;
+      const size_t bytes = size_t(surface->w) * surface->h * 4;
+      makeRoomForLabel(bytes);
       auto *texture = SDL_CreateTextureFromSurface(renderer_, surface);
-      Label label{texture, surface->w / scale_, surface->h / scale_, 0};
+      Label label{texture, surface->w / scale_, surface->h / scale_,
+                  size * LayoutAscentEm - TTF_FontAscent(font) / scale_, bytes, 0};
       SDL_FreeSurface(surface);
+      labelBytes_ += bytes;
       found = labels_.emplace(key, label).first;
     }
     found->second.used = ++tick_;
     const auto &label = found->second;
-    const float top =
-        y + size * LayoutAscentEm - TTF_FontAscent(r.font) / scale_;
+    const float top = y + label.top;
     // Nearest sampling at a fractional pixel drops or doubles glyph columns.
     const SDL_FRect dest{std::round(x * scale_) / scale_,
                          std::round(top * scale_) / scale_, label.width,
@@ -357,7 +396,7 @@ const std::vector<std::string> &Fonts::layout(const std::string &text,
     result.push_back(line);
   if (result.empty())
     result.push_back("");
-  bound(layouts_);
+  bound(layouts_, memoBytes_[3], key.size() + bytesOf(result));
   return layouts_.emplace(key, std::move(result)).first->second;
 }
 float Fonts::centered(const std::string &text, float cx, float y, int size,

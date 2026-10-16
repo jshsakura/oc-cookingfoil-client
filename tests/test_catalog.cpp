@@ -10,6 +10,31 @@ int runCatalogTests() {
   CHECK(foil::thumbnailUrl("installed:0100") == "installed:0100");
   CHECK(foil::thumbnailUrl("").empty());
   {
+    // Shared words and lists: equal text is one copy, compared by content.
+    foil::Item a, b;
+    a.publisher = std::string("Butter Works");
+    b.publisher = "Butter Works";
+    a.languages = {"ko", "en"};
+    b.languages = {"ko", "en"};
+    CHECK(a.publisher == b.publisher && a.publisher == "Butter Works" && &a.publisher.str() == &b.publisher.str());
+    CHECK(a.languages == b.languages && a.languages.size() == 2 && a.languages[1] == "en");
+    CHECK(foil::Item().type == "base" && foil::Item().languages.empty());
+    b.languages.clear();
+    CHECK(b.languages.empty() && !(a.languages == b.languages));
+  }
+  {
+    // A game without a base: its first file stands for it, though the files
+    // are moved apart as they are grouped.
+    std::vector<foil::Item> files(2);
+    files[0].url = "https://shop/u.nsp", files[0].name = "Update", files[0].type = "update", files[0].titleId = "0100000000A00800";
+    files[0].baseId = "0100000000A00000";
+    files[1].url = "https://shop/d.nsp", files[1].name = "DLC", files[1].type = "dlc", files[1].titleId = "0100000000A01001";
+    files[1].baseId = "0100000000A00000";
+    const auto groups = foil::groupCatalog(files);
+    CHECK(groups.size() == 1 && groups[0].representative.name == "Update" && groups[0].representative.url == files[0].url);
+    CHECK(groups.size() == 1 && groups[0].update && groups[0].update->name == "Update" && groups[0].dlc.size() == 1);
+  }
+  {
     std::vector<foil::Group> groups(16);
     for (size_t i = 0; i < groups.size(); ++i) {
       groups[i].addedAt = int64_t(i + 1);

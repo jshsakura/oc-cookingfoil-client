@@ -19,6 +19,10 @@ bool roomy() {
 int maxImageSide() { return roomy() ? 1280 : 960; }
 size_t keptSurfaces() { return roomy() ? 24 : 10; } // decoded, beyond those on screen
 size_t keptTextures() { return roomy() ? 48 : 24; } // about two screens of covers
+// Decoded pictures in bytes too: a few screenshots at full size weigh as
+// much as a screen of covers.
+size_t keptSurfaceBytes() { return roomy() ? (48u << 20) : (16u << 20); }
+size_t bytesOf(const SDL_Surface *surface) { return surface ? size_t(surface->pitch) * surface->h : 0; }
 constexpr int Workers = 4;
 constexpr size_t MaxQueuedJobs = 64;
 // Pictures kept on the SD card: every cover of a full catalog (about 15 KB
@@ -376,11 +380,11 @@ void Images::decode(int budget) {
     e.failed = !e.surface;
     --budget;
   }
-  size_t count = 0;
+  size_t count = 0, bytes = 0;
   for (const auto &pair : entries_)
     if (pair.second.surface)
-      ++count;
-  while (count > keptSurfaces()) { // decoded pictures kept for quick redraw
+      ++count, bytes += bytesOf(pair.second.surface);
+  while (count > keptSurfaces() || bytes > keptSurfaceBytes()) { // decoded pictures kept for quick redraw
     auto oldest = entries_.end();
     for (auto it = entries_.begin(); it != entries_.end(); ++it)
       if (it->second.surface && it->second.frame + 2 < frame_ &&
@@ -388,6 +392,7 @@ void Images::decode(int budget) {
         oldest = it;
     if (oldest == entries_.end())
       break;
+    bytes -= bytesOf(oldest->second.surface);
     SDL_FreeSurface(oldest->second.surface);
     entries_.erase(oldest);
     --count;

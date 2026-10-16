@@ -29,12 +29,12 @@ std::string lower(std::string text) {
   return text;
 }
 } // namespace
-std::vector<Group> groupCatalog(const std::vector<Item> &items) {
+std::vector<Group> groupCatalog(std::vector<Item> items) {
   std::vector<Group> result;
   std::vector<std::vector<Item>> filesOf; // per group, only while grouping
   std::map<std::string, size_t> byId;
   std::set<std::string> urls;
-  for (const auto &item : items) {
+  for (auto &item : items) {
     if (item.url.empty() || !urls.insert(item.url).second)
       continue;
     const auto id = !item.baseId.empty()    ? item.baseId
@@ -48,39 +48,45 @@ std::vector<Group> groupCatalog(const std::vector<Item> &items) {
       filesOf.emplace_back();
     }
     const auto at = byId[id];
-    filesOf[at].push_back(item);
     result[at].addedAt = std::max(result[at].addedAt, item.addedAt);
+    filesOf[at].push_back(std::move(item)); // moved, not copied: the list goes as it is grouped
   }
+  std::vector<Item>().swap(items);
   for (size_t n = 0; n < result.size(); ++n) {
     auto &g = result[n];
-    const auto &files = filesOf[n];
+    auto &files = filesOf[n];
     std::vector<Item> bases, updates;
     std::map<std::string, Item> dlc;
-    for (const auto &file : files) {
+    // Without a base the first file stands for the game: copied before the
+    // files are moved apart.
+    if (std::none_of(files.begin(), files.end(), [](const Item &f) { return f.type == "base"; }))
+      g.representative = files.front();
+    for (auto &file : files) {
       const auto line = lower(file.name + " " + file.titleId + " " + file.publisher);
       if (g.search.find(line) == std::string::npos) g.search += line + "\n";
       if (file.type == "base")
-        bases.push_back(file);
+        bases.push_back(std::move(file));
       else if (file.type == "update")
-        updates.push_back(file);
+        updates.push_back(std::move(file));
       else if (file.type == "dlc") {
         const auto key = file.titleId.empty() ? file.url : file.titleId;
         const auto found = dlc.find(key);
         if (found == dlc.end() || newer(file, found->second))
-          dlc[key] = file;
+          dlc[key] = std::move(file);
       }
     }
     std::sort(bases.begin(), bases.end(), smaller);
     std::sort(updates.begin(), updates.end(), newer);
     if (!bases.empty()) {
-      g.base = bases.front();
-      g.alternatives.assign(bases.begin() + 1, bases.end());
+      g.base = std::move(bases.front());
+      g.alternatives.assign(std::make_move_iterator(bases.begin() + 1), std::make_move_iterator(bases.end()));
     }
     if (!updates.empty())
-      g.update = updates.front();
-    for (const auto &pair : dlc)
-      g.dlc.push_back(pair.second);
-    g.representative = g.base ? *g.base : files.front();
+      g.update = std::move(updates.front());
+    for (auto &pair : dlc)
+      g.dlc.push_back(std::move(pair.second));
+    if (g.base)
+      g.representative = *g.base;
     std::vector<Item>().swap(filesOf[n]); // free as it goes
   }
   return result;
@@ -394,7 +400,7 @@ std::vector<size_t> selectCatalog(const std::vector<Group> &groups,
 }
 std::string versionLabel(const Item &item) {
   return item.versionName.empty()          ? "v" + std::to_string(item.version)
-         : item.versionName.front() == 'v' ? item.versionName
+         : item.versionName.str().front() == 'v' ? item.versionName.str()
                                            : "v" + item.versionName;
 }
 // The server formats eShop prices the Korean way ("42,000원", "4,950円",
