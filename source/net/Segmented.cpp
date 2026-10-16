@@ -2,6 +2,7 @@
 #include "net/Direct.hpp"
 #include "net/Tuner.hpp"
 #include "net/Socket.hpp"
+#include "core/Version.hpp"
 #include "platform/Cores.hpp"
 #include <curl/curl.h>
 #include <algorithm>
@@ -369,7 +370,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
       curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
       curl_easy_setopt(curl, CURLOPT_HTTPHEADER, c->headers);
-      curl_easy_setopt(curl, CURLOPT_USERAGENT, "CookingFoil/" COOKINGFOIL_VERSION);
+      curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent().c_str());
       curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
       curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
       curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);

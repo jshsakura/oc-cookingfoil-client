@@ -10,48 +10,55 @@ ConnectionTuner::ConnectionTuner(int ceiling) : ceiling_(std::max(1, ceiling)), 
 int ConnectionTuner::ceiling(int downloading) const {
   return downloading > 1 ? std::max(1, ceiling_ / downloading) : ceiling_;
 }
+void ConnectionTuner::settle(int wait, const char *reason) {
+  trying_ = false;
+  here_ = tried_ = 0;
+  trySum_ = 0;
+  wait_ = wait;
+  reason_ = reason;
+}
 int ConnectionTuner::span(uint64_t bytes, double seconds, int downloading) {
   const int most = ceiling(downloading);
-  const bool hadTrouble = std::exchange(trouble_, false);
+  troubled_ = std::exchange(trouble_, false) ? troubled_ + 1 : 0;
   if (now_ > most) {
     now_ = most;
-    probing_ = false;
-    before_ = 0;
-    reason_ = "shared";
-    return now_;
-  }
-  if (hadTrouble) {
-    if (now_ > 1) --now_;
-    probing_ = false;
-    before_ = 0;
-    reason_ = "backed off";
+    speed_ = 0;
+    settle(RetryAfter, "shared");
     return now_;
   }
   if (bytes == 0 || seconds <= 0)
     return now_; // paused or offline: nothing to tell
   const double speed = double(bytes) / seconds;
-  if (probing_) {
-    if (speed > before_ * Gain) {
-      before_ = speed;
-      reason_ = "tuned";
-      if (now_ < most) ++now_;
-      else probing_ = false;
-    } else if (speed < before_) {
-      --now_; // the step up made it slower
-      probing_ = false;
-      reason_ = "tuned";
+  if (troubled_ >= 2 && now_ > 1) {
+    --now_;
+    troubled_ = 0;
+    speed_ = 0;
+    settle(std::min(MostWait, std::max(RetryAfter, wait_ * 2)), "backed off");
+    return now_;
+  }
+  if (trying_) {
+    trySum_ += speed;
+    if (++tried_ < TrySpans)
+      return now_;
+    const double tried = trySum_ / TrySpans;
+    if (tried > before_ * Gain) {
+      speed_ = tried;
+      settle(1, "tuned"); // worth it: the next one soon
     } else {
-      probing_ = false; // no better: stays
-      reason_ = "tuned";
+      --now_; // no better (or worse): the count before, for fewer connections
+      speed_ = before_;
+      settle(std::min(MostWait, std::max(RetryAfter, wait_ * 2)), "tuned");
     }
     return now_;
   }
-  // The first span (or the first after a change): a step up is tried while
-  // there is room.
-  if (before_ == 0 && now_ < most) {
-    before_ = speed;
+  speed_ = speed_ > 0 ? speed_ * 0.5 + speed * 0.5 : speed;
+  ++here_;
+  if (here_ >= wait_ && now_ < most && troubled_ == 0) {
+    trying_ = true;
+    before_ = speed_;
+    tried_ = 0;
+    trySum_ = 0;
     ++now_;
-    probing_ = true;
   }
   return now_;
 }

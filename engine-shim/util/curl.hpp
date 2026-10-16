@@ -1,8 +1,7 @@
 #pragma once
+#include "core/Version.hpp"
 #include <string>
 namespace inst::curl {
-inline const std::string &getUserAgent() {
-  static const std::string userAgent = "CookingFoil/0.1.0";
-  return userAgent;
-}
+// The app's own User-Agent, with its real version (core/Version.hpp).
+inline const std::string &getUserAgent() { return foil::userAgent(); }
 } // namespace inst::curl

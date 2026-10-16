@@ -1,55 +1,80 @@
 #include "Test.hpp"
 #include "net/Tuner.hpp"
-// The connections a download uses: from 2, a step up kept while it brings
-// more than a tenth more, back on a drop or trouble, under a ceiling shared
-// among the consoles downloading.
+// The connections a download uses: from 2, a step up kept only when two
+// spans show it more than a tenth faster, back to the better count
+// otherwise and a longer wait before the next try; trouble steps down only
+// when it lasts; the ceiling is shared among the consoles downloading.
 int runTunerTests() {
   int failures = 0;
   using foil::net::ConnectionTuner;
   const uint64_t MB = 1 << 20;
+  const auto run = [](ConnectionTuner &t, int spans, uint64_t bytes, int downloading = 0) {
+    for (int i = 0; i < spans; ++i) t.span(bytes, 7, downloading);
+    return t.connections();
+  };
   {
+    // Faster with each one: it climbs to the ceiling, a try at a time.
     ConnectionTuner tuner(4);
     CHECK(tuner.connections() == 2);
-    CHECK(tuner.span(20 * MB, 7, 0) == 3); // a step up is tried
-    CHECK(tuner.span(30 * MB, 7, 0) == 4); // +50%: up again
-    CHECK(tuner.span(31 * MB, 7, 0) == 4); // at the ceiling, little gain: stays
-    CHECK(tuner.span(31 * MB, 7, 0) == 4);
-    CHECK(tuner.summary(0) == "connections 4 (tuned)");
-    tuner.trouble();
-    CHECK(tuner.span(31 * MB, 7, 0) == 3); // trouble: one fewer
-    CHECK(tuner.summary(0) == "connections 3 (backed off)");
+    CHECK(tuner.span(20 * MB, 7, 0) == 3); // after a span to know its speed, one more is tried
+    CHECK(tuner.span(30 * MB, 7, 0) == 3); // judged over two spans
+    CHECK(tuner.span(30 * MB, 7, 0) == 3); // +50%: kept
+    CHECK(tuner.summary(0) == "connections 3 (tuned)");
+    CHECK(tuner.span(40 * MB, 7, 0) == 4); // the next try soon
+    CHECK(run(tuner, 2, 40 * MB) == 4);
+    CHECK(run(tuner, 20, 40 * MB) == 4); // at the ceiling it stays
   }
   {
-    // A step up that brings nothing stays; one that makes it slower goes back.
+    // A try that brings nothing goes back, and the next try waits longer:
+    // the count does not swing every few seconds.
     ConnectionTuner flat(4);
     CHECK(flat.span(20 * MB, 7, 0) == 3);
-    CHECK(flat.span(21 * MB, 7, 0) == 3);
-    CHECK(flat.span(25 * MB, 7, 0) == 3); // decided: no more probing
+    CHECK(run(flat, 2, 21 * MB) == 2); // +5%: back to 2
+    CHECK(run(flat, 5, 20 * MB) == 2); // waits 6 spans
+    CHECK(flat.span(20 * MB, 7, 0) == 3); // then tries again
+    CHECK(run(flat, 2, 20 * MB) == 2);
+    CHECK(run(flat, 11, 20 * MB) == 2); // now 12 spans
+    CHECK(flat.span(20 * MB, 7, 0) == 3);
+    // Slower with one more: back as well.
     ConnectionTuner worse(4);
     CHECK(worse.span(20 * MB, 7, 0) == 3);
-    CHECK(worse.span(15 * MB, 7, 0) == 2);
+    CHECK(run(worse, 2, 15 * MB) == 2);
+  }
+  {
+    // One blip changes nothing; trouble two spans in a row steps down.
+    ConnectionTuner steady(2);
+    CHECK(steady.span(20 * MB, 7, 0) == 2);
+    steady.trouble();
+    CHECK(steady.span(20 * MB, 7, 0) == 2);
+    CHECK(steady.span(20 * MB, 7, 0) == 2); // a span without: the count stays
+    steady.trouble();
+    CHECK(steady.span(20 * MB, 7, 0) == 2);
+    steady.trouble();
+    CHECK(steady.span(20 * MB, 7, 0) == 1);
+    CHECK(steady.summary(0) == "connections 1 (backed off)");
+    // Never below 1.
+    steady.trouble();
+    steady.span(20 * MB, 7, 0);
+    steady.trouble();
+    CHECK(steady.span(20 * MB, 7, 0) == 1);
   }
   {
     // Paused or offline (no bytes): nothing is decided.
     ConnectionTuner idle(4);
     CHECK(idle.span(0, 7, 0) == 2 && idle.span(0, 7, 0) == 2);
-    // Never below 1, never above the ceiling; a ceiling of 1 starts there.
     ConnectionTuner one(1);
-    CHECK(one.connections() == 1 && one.span(10 * MB, 7, 0) == 1);
-    one.trouble();
-    CHECK(one.span(10 * MB, 7, 0) == 1);
+    CHECK(one.connections() == 1 && run(one, 5, 10 * MB) == 1);
   }
   {
-    // Two other consoles downloading: the ceiling of 4 is shared, 4 / 3 = 1.
+    // Two other consoles downloading: the ceiling of 4 is shared, 4 / 3 = 1,
+    // at once.
     ConnectionTuner shared(4);
     CHECK(shared.ceiling(3) == 1 && shared.ceiling(0) == 4 && shared.ceiling(1) == 4);
     CHECK(shared.span(20 * MB, 7, 3) == 1);
     CHECK(shared.summary(3) == "connections 1 (shared), 2 others downloading");
-    // Alone again: it tries its way back up.
-    CHECK(shared.span(10 * MB, 7, 1) == 2);
-    // One other: 4 / 2 = 2.
+    // One other: 4 / 2 = 2, and no try above it.
     ConnectionTuner half(4);
-    CHECK(half.span(20 * MB, 7, 2) == 2 && half.span(30 * MB, 7, 2) == 2);
+    CHECK(run(half, 10, 20 * MB, 2) == 2);
     CHECK(half.summary(2) == "connections 2 (start), 1 other downloading");
   }
   {

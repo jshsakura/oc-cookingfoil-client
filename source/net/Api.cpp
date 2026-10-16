@@ -258,7 +258,7 @@ Response getOnce(const std::string& url, const std::vector<std::string>& headers
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
     shareConnections(curl);
     curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "CookingFoil/" COOKINGFOIL_VERSION);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent().c_str());
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
@@ -339,7 +339,7 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
 #endif
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
     shareConnections(curl);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "CookingFoil/" COOKINGFOIL_VERSION);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent().c_str());
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 512L * 1024); // fewer, larger writes on the way to the card
     curl_easy_setopt(curl, CURLOPT_SOCKOPTFUNCTION, &tuneSocket);
@@ -427,7 +427,7 @@ Response postOnce(const std::string& url, const std::vector<std::string>& header
     curl_easy_setopt(curl, CURLOPT_CAINFO, "romfs:/cacert.pem");
 #endif
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "CookingFoil/" COOKINGFOIL_VERSION);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent().c_str());
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
     if (in) {
         curl_easy_setopt(curl, CURLOPT_READFUNCTION, readUpload);
