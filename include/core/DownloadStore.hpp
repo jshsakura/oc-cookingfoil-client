@@ -63,6 +63,12 @@ public:
   bool forgetResumePoint(const std::string &key);
   // <name>.resume.json beside the database file.
   std::string resumeFile() const;
+  // Every key a point was saved for (kept in the same file, after its point
+  // goes): the console placeholders this app made, so one left without a
+  // point can be cleared and the console's own downloads (eShop) are never
+  // touched. A key goes once its placeholder is gone (dropMadePlaceholder).
+  std::vector<std::string> madePlaceholders();
+  void dropMadePlaceholder(const std::string &key);
   // The app's state as rows, unchecked: settings by name, approval notes by
   // server, and credentials by (kind, server).
   struct StateRows {
@@ -86,8 +92,9 @@ private:
                  std::string *read = nullptr);
   // One call's work: lock, open, one transaction, close, unlock.
   bool run(bool writes, std::string &error, const std::function<bool(sqlite3 *, std::string &)> &work);
-  // Reads resume-points.json, lets `change` edit it and writes it back, under the lock.
-  bool changeResumePoints(const std::function<void(std::map<std::string, ResumePoint> &)> &change);
+  // Reads the resume file, lets `change` edit its points and made keys, and
+  // writes it back (only when it changed), under the lock.
+  bool changeResume(const std::function<void(std::map<std::string, ResumePoint> &, std::vector<std::string> &)> &change);
   mutable std::mutex lock_;
   std::string file_; // empty while closed
   bool readOnly_ = false;

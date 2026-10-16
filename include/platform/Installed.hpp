@@ -17,6 +17,13 @@ Error removeInstalled(const RemovalRequest &request);
 // For each "sd:0123…" or "nand:0123…" key, whether its install placeholder
 // is there; a key whose storage could not be opened is left out.
 std::map<std::string, bool> placeholdersThere(const std::vector<std::string> &keys);
+// Deletes the install placeholder of each key that has one: the keys whose
+// placeholder is gone now (deleted, or not there at all) and the bytes freed.
+struct DroppedPlaceholders {
+  std::vector<std::string> gone;
+  uint64_t bytes = 0;
+};
+DroppedPlaceholders dropPlaceholders(const std::vector<std::string> &keys);
 Parsed<CleanupReport> cleanOrphans(bool remove, CleanupProgress *progress = nullptr,
                                    const std::function<bool(const std::string &key)> &keep = nullptr);
 } // namespace foil::platform

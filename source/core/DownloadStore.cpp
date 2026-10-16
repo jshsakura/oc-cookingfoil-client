@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <algorithm>
 #include <atomic>
 #include <filesystem>
 #include <thread>
@@ -379,30 +380,56 @@ DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&
 }
 namespace {
 using Points = std::map<std::string, DownloadStore::ResumePoint>;
-Points parsePoints(const std::string &text) {
-  Points out;
+// The file: {"points": {key: point}, "made": [key]}. "made" is every key a
+// point was saved for, the console placeholders this app made; it outlives
+// the point, so a placeholder whose point was dropped is still known as ours
+// and is cleared, and the console's own downloads (eShop) are never touched.
+// 0.3.97 wrote the points alone, as the whole object.
+struct ResumeFile {
+  Points points;
+  std::vector<std::string> made;
+};
+DownloadStore::ResumePoint pointOf(json_object *value) {
+  return {stringField(value, "url"), stringField(value, "etag"), uint64_t(integerField(value, "total")),
+          stringField(value, "plan")};
+}
+ResumeFile parseResume(const std::string &text) {
+  ResumeFile out;
   Error error;
   const auto root = parseJson(text, error);
   if (error || !json_object_is_type(root.get(), json_type_object))
     return out;
-  json_object_object_foreach(root.get(), key, value) {
-    if (!json_object_is_type(value, json_type_object))
-      continue;
-    out[key] = {stringField(value, "url"), stringField(value, "etag"), uint64_t(integerField(value, "total")),
-                stringField(value, "plan")};
-  }
+  json_object *points = nullptr, *made = nullptr;
+  const bool split = json_object_object_get_ex(root.get(), "points", &points);
+  json_object_object_foreach(split ? points : root.get(), key, value)
+    if (json_object_is_type(value, json_type_object))
+      out.points[key] = pointOf(value);
+  if (json_object_object_get_ex(root.get(), "made", &made) && json_object_is_type(made, json_type_array))
+    for (size_t i = 0; i < json_object_array_length(made); ++i)
+      if (auto *one = json_object_array_get_idx(made, i); json_object_is_type(one, json_type_string))
+        out.made.push_back(json_object_get_string(one));
+  // Every point's placeholder is ours too (a 0.3.97 file has no list).
+  for (const auto &[key, point] : out.points)
+    if (std::find(out.made.begin(), out.made.end(), key) == out.made.end())
+      out.made.push_back(key);
   return out;
 }
-std::string serializePoints(const Points &points) {
+std::string serializeResume(const ResumeFile &file) {
   Json root(json_object_new_object());
-  for (const auto &[key, point] : points) {
+  auto *points = json_object_new_object();
+  for (const auto &[key, point] : file.points) {
     auto *one = json_object_new_object();
     json_object_object_add(one, "url", json_object_new_string(point.url.c_str()));
     json_object_object_add(one, "etag", json_object_new_string(point.etag.c_str()));
     json_object_object_add(one, "total", json_object_new_int64(int64_t(point.total)));
     json_object_object_add(one, "plan", json_object_new_string(point.plan.c_str()));
-    json_object_object_add(root.get(), key.c_str(), one);
+    json_object_object_add(points, key.c_str(), one);
   }
+  json_object_object_add(root.get(), "points", points);
+  auto *made = json_object_new_array();
+  for (const auto &key : file.made)
+    json_object_array_add(made, json_object_new_string(key.c_str()));
+  json_object_object_add(root.get(), "made", made);
   return json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PLAIN);
 }
 Points legacyPoints(sqlite3 *db) {
@@ -431,12 +458,15 @@ bool DownloadStore::open(const std::string &path, std::string &error) {
   // file (resumeFile, <name>.resume.json), then leave the database: written here once.
   if (first == Opened::Ok && !newer) {
     file_ = file;
-    auto points = legacyPoints(db);
-    if (!points.empty()) {
-      for (auto &[key, point] : parsePoints(readFile(resumeFile())))
-        points[key] = std::move(point);
+    const auto legacy = legacyPoints(db);
+    if (!legacy.empty()) {
+      auto resume = parseResume(readFile(resumeFile()));
+      for (const auto &[key, point] : legacy) {
+        resume.points.emplace(key, point); // the file's own, newer, wins
+        if (std::find(resume.made.begin(), resume.made.end(), key) == resume.made.end()) resume.made.push_back(key);
+      }
       std::string failure;
-      if (atomicWrite(resumeFile(), serializePoints(points), failure) &&
+      if (atomicWrite(resumeFile(), serializeResume(resume), failure) &&
           exec(db, "DELETE FROM resume_points;", failure))
         persist(db, file, failure);
     }
@@ -641,7 +671,7 @@ std::map<std::string, DownloadStore::ResumePoint> DownloadStore::resumePoints() 
     out = legacyPoints(db);
     return true;
   });
-  for (auto &[key, point] : parsePoints(readFile(resumeFile())))
+  for (auto &[key, point] : parseResume(readFile(resumeFile())).points)
     out[key] = std::move(point);
   return out;
 }
@@ -652,7 +682,7 @@ std::optional<DownloadStore::ResumePoint> DownloadStore::resumePoint(const std::
     return std::nullopt;
   return found->second;
 }
-bool DownloadStore::changeResumePoints(const std::function<void(std::map<std::string, ResumePoint> &)> &change) {
+bool DownloadStore::changeResume(const std::function<void(Points &, std::vector<std::string> &)> &change) {
   std::lock_guard<std::mutex> held(lock_);
   if (file_.empty() || readOnly_)
     return false;
@@ -660,15 +690,25 @@ bool DownloadStore::changeResumePoints(const std::function<void(std::map<std::st
   FileLock lock(file_ + ".lock");
   if (!lock.acquire(error))
     return false;
-  auto points = parsePoints(readFile(resumeFile()));
-  change(points);
-  return atomicWrite(resumeFile(), serializePoints(points), error);
+  auto resume = parseResume(readFile(resumeFile()));
+  change(resume.points, resume.made);
+  return atomicWrite(resumeFile(), serializeResume(resume), error); // unchanged: not written
+}
+std::vector<std::string> DownloadStore::madePlaceholders() {
+  std::lock_guard<std::mutex> held(lock_);
+  return file_.empty() ? std::vector<std::string>{} : parseResume(readFile(resumeFile())).made;
+}
+void DownloadStore::dropMadePlaceholder(const std::string &key) {
+  changeResume([&](Points &, std::vector<std::string> &made) { made.erase(std::remove(made.begin(), made.end(), key), made.end()); });
 }
 bool DownloadStore::saveResumePoint(const std::string &key, const ResumePoint &point) {
-  return changeResumePoints([&](Points &points) { points[key] = point; });
+  return changeResume([&](Points &points, std::vector<std::string> &made) {
+    points[key] = point;
+    if (std::find(made.begin(), made.end(), key) == made.end()) made.push_back(key);
+  });
 }
 bool DownloadStore::forgetResumePoint(const std::string &key) {
-  const bool ok = changeResumePoints([&](Points &points) { points.erase(key); });
+  const bool ok = changeResume([&](Points &points, std::vector<std::string> &) { points.erase(key); });
   // One the database still holds (its move here could not be made) goes too.
   std::lock_guard<std::mutex> held(lock_);
   std::string error;

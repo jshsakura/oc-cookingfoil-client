@@ -811,6 +811,7 @@ private:
   uint32_t clockCheckedAt_ = 0;       // the last comparison, at most one a minute
   std::thread clockWorker_;
   // Resume points checked against the console's placeholders once a run.
+  uint64_t resumeCleared_ = 0; // bytes the check freed, said once it is back
   std::thread resumeCheckWorker_;
   std::atomic<bool> resumeCheckDone_{false};
   std::map<std::string, DownloadStore::ResumePoint> resumeChecked_;

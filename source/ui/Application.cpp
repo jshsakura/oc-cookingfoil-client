@@ -2547,6 +2547,21 @@ void Application::checkResumePoints() {
       for (const auto &name : leftovers.windows) std::filesystem::remove(dir + "/" + name, ec);
       if (!leftovers.windows.empty())
         logLine("resume: removed " + std::to_string(leftovers.windows.size()) + " window file(s) no point owns");
+      // Placeholders this app made whose point is gone (its file deleted, a
+      // cut before the first one was kept) go, so nothing is left on the
+      // console for good; one with a point stays to be gone on from. Not
+      // while an install runs: it may be making one just now.
+      std::vector<std::string> orphans;
+      for (const auto &key : store_.madePlaceholders())
+        if (std::find(keys.begin(), keys.end(), key) == keys.end() && !installer_.resumePoint(key)) orphans.push_back(key);
+      if (!orphans.empty() && !installer_.running()) {
+        const auto dropped = platform::dropPlaceholders(orphans);
+        for (const auto &key : dropped.gone) store_.dropMadePlaceholder(key);
+        if (!dropped.gone.empty())
+          logLine("resume: cleared " + std::to_string(dropped.gone.size()) + " placeholder(s) no point owns, " +
+                  std::to_string(dropped.bytes >> 20) + " MB");
+        resumeCleared_ = dropped.bytes;
+      }
     });
     resumeStale_ = std::move(leftovers.points);
     resumeCheckDone_ = true;
@@ -2555,6 +2570,9 @@ void Application::checkResumePoints() {
 void Application::pollResumeCheck() {
   if (!resumeCheckDone_.exchange(false)) return;
   resumeCheckWorker_.join();
+  // Said only when something was there to clear.
+  if (const uint64_t freed = std::exchange(resumeCleared_, 0))
+    message(trf("Cleared {0} left by downloads that did not finish.", {formatBytes(freed)}));
   // An install that began meanwhile may have made the point again.
   for (const auto &key : std::exchange(resumeStale_, {})) {
     const auto now = installer_.resumePoint(key);

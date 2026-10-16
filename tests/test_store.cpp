@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <utime.h>
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
@@ -154,8 +155,23 @@ int runStoreTests() {
     const auto points = (dir / "cookingfoil.resume.json").string();
     CHECK(foil::readFile(points).find("nca:abc") != std::string::npos);
     store.forgetResumePoint("nca:abc");
-    CHECK(!store.resumePoint("nca:abc") && foil::readFile(points).find("nca:abc") == std::string::npos);
+    // The point goes; the key stays among the placeholders this app made.
+    CHECK(!store.resumePoint("nca:abc") && store.resumePoints().count("nca:abc") == 0);
+    const auto ours = store.madePlaceholders();
+    CHECK(std::find(ours.begin(), ours.end(), "nca:abc") != ours.end());
     CHECK(stamp() == earlier);
+    // The placeholders this app made are listed in the same file and outlive
+    // their points: one whose point was dropped is still known as ours.
+    CHECK(store.saveResumePoint("sd:made", point));
+    const auto made = store.madePlaceholders();
+    CHECK(std::find(made.begin(), made.end(), "sd:made") != made.end());
+    CHECK(store.forgetResumePoint("sd:made"));
+    CHECK(!store.resumePoint("sd:made"));
+    const auto still = store.madePlaceholders();
+    CHECK(std::find(still.begin(), still.end(), "sd:made") != still.end());
+    store.dropMadePlaceholder("sd:made");
+    const auto left = store.madePlaceholders();
+    CHECK(std::find(left.begin(), left.end(), "sd:made") == left.end());
     // A point an older build kept in the database moves to that file when
     // the store opens, and leaves the database.
     {

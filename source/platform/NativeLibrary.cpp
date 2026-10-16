@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #ifdef __SWITCH__
@@ -401,11 +402,14 @@ Parsed<std::vector<std::string>> referenced(Database &db) {
 }
 } // namespace
 #endif
-std::map<std::string, bool> placeholdersThere(const std::vector<std::string> &keys) {
-  std::map<std::string, bool> out;
 #ifdef __SWITCH__
+namespace {
+// Each key ("sd:0123…", "nand:0123…") with its storage open and its
+// placeholder id (the engine names a file's placeholder by its NCA id).
+void eachPlaceholder(const std::vector<std::string> &keys,
+                     const std::function<void(const std::string &, NcmContentStorage &, const NcmPlaceHolderId &)> &visit) {
   NcmSession ncm;
-  if (R_FAILED(ncm.rc) || keys.empty()) return out;
+  if (R_FAILED(ncm.rc) || keys.empty()) return;
   for (const auto &[prefix, id] : {std::pair<std::string, NcmStorageId>{"sd:", NcmStorageId_SdCard},
                                    std::pair<std::string, NcmStorageId>{"nand:", NcmStorageId_BuiltInUser}}) {
     Storage storage;
@@ -413,7 +417,6 @@ std::map<std::string, bool> placeholdersThere(const std::vector<std::string> &ke
     storage.opened = true;
     for (const auto &key : keys) {
       if (key.compare(0, prefix.size(), prefix) != 0 || key.size() != prefix.size() + 32) continue;
-      // The engine names a file's placeholder by its NCA id.
       NcmPlaceHolderId holder{};
       bool hex = true;
       for (int b = 0; b < 16 && hex; ++b) {
@@ -421,12 +424,38 @@ std::map<std::string, bool> placeholdersThere(const std::vector<std::string> &ke
         hex = std::sscanf(key.c_str() + prefix.size() + b * 2, "%2x", &value) == 1;
         holder.uuid.uuid[b] = u8(value);
       }
-      bool has = false;
-      if (hex && R_SUCCEEDED(ncmContentStorageHasPlaceHolder(&storage.cs, &has, &holder))) out[key] = has;
+      if (hex) visit(key, storage.cs, holder);
     }
   }
+}
+} // namespace
+#endif
+std::map<std::string, bool> placeholdersThere(const std::vector<std::string> &keys) {
+  std::map<std::string, bool> out;
+#ifdef __SWITCH__
+  eachPlaceholder(keys, [&](const std::string &key, NcmContentStorage &cs, const NcmPlaceHolderId &holder) {
+    bool has = false;
+    if (R_SUCCEEDED(ncmContentStorageHasPlaceHolder(&cs, &has, &holder))) out[key] = has;
+  });
 #else
   (void)keys;
+#endif
+  return out;
+}
+DroppedPlaceholders dropPlaceholders(const std::vector<std::string> &keys) {
+  DroppedPlaceholders out;
+#ifdef __SWITCH__
+  eachPlaceholder(keys, [&](const std::string &key, NcmContentStorage &cs, const NcmPlaceHolderId &holder) {
+    bool has = false;
+    if (R_FAILED(ncmContentStorageHasPlaceHolder(&cs, &has, &holder))) return;
+    s64 size = 0;
+    if (has) ncmContentStorageGetSizeFromPlaceHolderId(&cs, &size, &holder);
+    if (has && R_FAILED(ncmContentStorageDeletePlaceHolder(&cs, &holder))) return;
+    out.gone.push_back(key);
+    out.bytes += uint64_t(std::max<s64>(0, size));
+  });
+#else
+  out.gone = keys; // nothing on a PC holds them
 #endif
   return out;
 }
