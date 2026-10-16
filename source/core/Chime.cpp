@@ -3,7 +3,7 @@
 #include <cmath>
 namespace foil {
 namespace {
-enum class Wave { Marimba, Pulse, Triangle, Sine, Glock, Vibes };
+enum class Wave { Marimba, Pulse, Triangle, Sine, Glock, Vibes, Pluck };
 struct Note {
   float at;   // seconds from the start
   int pitch;  // MIDI note number (69 is A4)
@@ -16,7 +16,7 @@ struct Score {
   std::vector<Note> notes;
 };
 constexpr float Pi = 3.14159265f;
-constexpr int C4 = 60, E4 = 64, G4 = 67, B4 = 71, C5 = 72, D5 = 74, E5 = 76, G5 = 79, A5 = 81, C6 = 84, D6 = 86, E6 = 88,
+constexpr int F3 = 53, G3 = 55, A3 = 57, D4 = 62, F4 = 65, A4 = 69, C4 = 60, E4 = 64, G4 = 67, B4 = 71, C5 = 72, D5 = 74, E5 = 76, G5 = 79, A5 = 81, C6 = 84, D6 = 86, E6 = 88,
               G6 = 91, B6 = 95, C7 = 96;
 float hertz(int pitch) { return 440.f * std::pow(2.f, (pitch - 69) / 12.f); }
 float sample(Wave wave, float f, float t) {
@@ -42,11 +42,18 @@ float sample(Wave wave, float f, float t) {
 }
 Score score(Cue cue) {
   switch (cue) {
-  case Cue::Start: { // 윈드 차임: small bells run up, then a vibraphone chord rings on
+  case Cue::Start: { // 우쿨렐레: strummed C, C, Am, F, G and C ringing on
     Score s{3.f, 0.16f, 0.22f, 0.3f, {}};
-    const int run[] = {C5, D5, E5, G5, A5, C6, D6, E6};
-    for (int i = 0; i < 8; ++i) s.notes.push_back({i * 0.05f, run[i], 0.05f, 0.6f, Wave::Glock, 0.3f});
-    for (const int note : {C4, E4, G4, B4}) s.notes.push_back({0.55f, note, 0.2f, 1.5f, Wave::Vibes, 0.3f});
+    struct Strum {
+      float at, ring, volume, spread;
+      int notes[4];
+    };
+    static constexpr Strum Strums[] = {{0, 0.6f, 0.45f, 0.025f, {C4, E4, G4, C5}},   {0.4f, 0.4f, 0.35f, 0.02f, {C4, E4, G4, C5}},
+                                       {0.75f, 0.5f, 0.4f, 0.025f, {A3, C4, E4, A4}}, {1.15f, 0.5f, 0.4f, 0.025f, {F3, C4, F4, A4}},
+                                       {1.55f, 0.4f, 0.4f, 0.025f, {G3, D4, G4, B4}}, {1.9f, 1.6f, 0.45f, 0.03f, {C4, E4, G4, C5}}};
+    for (const auto &strum : Strums)
+      for (int k = 0; k < 4; ++k)
+        s.notes.push_back({strum.at + k * strum.spread, strum.notes[k], 0, strum.ring * 1.2f, Wave::Pluck, strum.volume});
     return s;
   }
   case Cue::Move: // 틱: a high, very short sine per step
@@ -73,6 +80,21 @@ std::vector<int16_t> chime(Cue cue, int rate) {
     const float f = hertz(n.pitch);
     constexpr float Attack = 0.004f;
     const size_t span = size_t((n.dur + n.decay * 3) * rate);
+    if (n.wave == Wave::Pluck) { // a plucked string (Karplus-Strong): a burst of noise, averaged as it circles
+      std::vector<float> ring(std::max(2, int(rate / f)));
+      uint32_t seed = uint32_t(f * 1000) | 1;
+      for (auto &v : ring) {
+        seed = seed * 1664525u + 1013904223u;
+        v = float(seed >> 8) / float(1 << 24) * 2 - 1;
+      }
+      for (size_t i = 0; i < span && start + i < out.size(); ++i) {
+        const float t = float(i) / rate;
+        auto &here = ring[i % ring.size()];
+        out[start + i] += here * std::min(1.f, t / 0.002f) * std::exp(-t / n.decay) * n.volume;
+        here = 0.4987f * (here + ring[(i + 1) % ring.size()]); // a little lost each turn
+      }
+      continue;
+    }
     for (size_t i = 0; i < span && start + i < out.size(); ++i) {
       const float t = float(i) / rate;
       out[start + i] += sample(n.wave, f, t) * std::min(1.f, t / Attack) * std::exp(-t / n.decay) * n.volume;

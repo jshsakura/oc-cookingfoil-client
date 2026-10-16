@@ -2,6 +2,7 @@
 #include "core/I18n.hpp"
 #include "core/Log.hpp"
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 namespace foil::ui {
 namespace {
@@ -448,9 +449,26 @@ void Application::patchAction(Action a) {
 }
 // The game a patch is for, as the shop, the console or (for games the shop
 // does not list) the server names it, and its cover.
-void Application::patchGame(const UserPatch &patch, std::string &name, std::string &icon) const {
+void Application::patchGame(const UserPatch &given, std::string &name, std::string &icon) const {
   name.clear();
   icon.clear();
+  // A patch kept on the card, or found there, carries no game of its own:
+  // the server's other patches for the same game do (a game not installed
+  // and not in the shop is then still named).
+  const auto sameTitle = [](const std::string &a, const std::string &b) {
+    return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+             return std::toupper(static_cast<unsigned char>(x)) == std::toupper(static_cast<unsigned char>(y));
+           });
+  };
+  const UserPatch *twin = &given;
+  if (given.gameName.empty() && given.gameNames.empty() && given.gameIcon.empty() && !given.titleId.empty())
+    for (const auto &other : serverPatches_)
+      if (other.homebrewApp.empty() && sameTitle(other.titleId, given.titleId) &&
+          (!other.gameName.empty() || !other.gameNames.empty())) {
+        twin = &other;
+        break;
+      }
+  const UserPatch &patch = *twin;
   if (const auto *group = findGroup(patch.titleId)) {
     name = group->representative.name;
     icon = group->representative.icon;

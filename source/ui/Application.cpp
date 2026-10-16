@@ -185,18 +185,22 @@ bool Application::open() {
   const auto took = [&] {
     steps += (steps.empty() ? "" : ", ") + stepName + " " + std::to_string(SDL_GetTicks() - stepAt) + "ms";
   };
-  float progressShown = 0.05f;
+  float progressShown = 0.03f;
   // What the loading thread is on, for the frames drawn meanwhile.
   std::mutex shownLock;
   std::string caption;
-  // Each step says what it is doing under the logo; the bar does not wait
-  // on the steps (it would jump at each one) but runs on the clock.
-  const auto background = [&](const std::string &text, const char *name) {
+  // Each step says what it is doing under the logo and owns a stretch of
+  // the bar sized to how long it takes on a console (the server settings
+  // about half): `from` where it starts, `to` where the next one does.
+  float stepFrom = 0.03f, stepTo = 0.06f;
+  const auto background = [&](const std::string &text, float from, float to, const char *name) {
     std::lock_guard<std::mutex> lock(shownLock);
     took();
     stepAt = SDL_GetTicks();
     stepName = name;
     caption = text;
+    stepFrom = from;
+    stepTo = to;
   };
   // The first frame makes the mark and wordmark (the loading thread never
   // touches the renderer); the cues are made on their own thread meanwhile.
@@ -205,7 +209,7 @@ bool Application::open() {
   // Everything after this is read on the loading thread. It never draws:
   // the fonts are the screen's once open, and the language it sets is
   // applied to them when it is done.
-  background("", "fonts");
+  background("", 0.03f, 0.06f, "fonts");
   loading_ = true;
   std::atomic<bool> loaded{false}, fontsOpen{false}, fontsFailed{false};
   std::thread loader([&] {
@@ -218,7 +222,7 @@ bool Application::open() {
       fontsOpen = true;
       // The saved language is read now so the captions are already in it;
       // reload() sets it again with the config as the last fallback.
-      background(tr("Reading the app's records on the SD card."), "records");
+      background(tr("Reading the app's records on the SD card."), 0.06f, 0.17f, "records");
       if (!statePath_.empty()) {
         const auto saved = loadState(statePath_).value;
         state_.language = saved.language;
@@ -229,10 +233,10 @@ bool Application::open() {
       sounds_.playStart(); // as soon as it is made, if sounds are on
       // Each step says what it is doing under the logo, so a slow SD card or
       // server shows where the time goes.
-      background(tr("Preparing the image cache"), "images");
+      background(tr("Preparing the image cache"), 0.17f, 0.19f, "images");
       images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
       images_->source({}, {}, imageCacheFolder(), fixture_);
-      background(tr("Reading patches and download history on the SD card"), "sd");
+      background(tr("Reading patches and download history on the SD card"), 0.19f, 0.45f, "sd");
 #ifdef __SWITCH__
       usePatchFolder("sdmc:");
 #else
@@ -240,11 +244,11 @@ bool Application::open() {
         usePatchFolder(std::filesystem::path(statePath_).parent_path().string() + "/sd");
 #endif
       if (!configPath_.empty()) {
-        background(tr("Reading the server settings"), "config");
+        background(tr("Reading the server settings"), 0.45f, 0.93f, "config");
         reload();
       }
 #ifdef __SWITCH__
-      background(tr("Reading the games on this console"), "installed");
+      background(tr("Reading the games on this console"), 0.93f, 0.97f, "installed");
       refreshInstalled();
       // Album (applet mode) gets a few hundred MB and no title rights: say so
       // before something big fails, and how to open it properly.
@@ -256,17 +260,23 @@ bool Application::open() {
     });
     loaded = true;
   });
-  // One smooth curve from the start: quick at first, slower as it goes,
-  // near nine tenths by 14 s (a console's usual start), never full until
-  // loading is done; then it fills the rest below.
-  constexpr float StartFill = 0.05f, CurveSeconds = 6;
+  // Within a step the bar's goal creeps toward the next step's start (most
+  // of the way over the first seconds, never reaching it); the bar follows
+  // at a limited speed, so a new step never makes it jump.
+  uint32_t lastFrame = SDL_GetTicks();
   while (!loaded) {
     std::string text;
+    float goal = 0;
     {
       std::lock_guard<std::mutex> lock(shownLock);
       text = caption;
+      const float waited = (SDL_GetTicks() - stepAt) / 1000.f;
+      goal = stepFrom + (stepTo - stepFrom) * 0.9f * (1 - std::exp(-waited / 2.5f));
     }
-    progressShown = StartFill + (0.95f - StartFill) * (1 - std::exp(-seconds() / CurveSeconds));
+    const float dt = std::min(0.05f, (SDL_GetTicks() - lastFrame) / 1000.f);
+    lastFrame = SDL_GetTicks();
+    if (const float gap = goal - progressShown; gap > 0)
+      progressShown += std::min(gap, std::max(0.04f, gap * 2) * dt); // 4% a second at least
     const uint32_t frameAt = SDL_GetTicks();
     paint_.splash(fontsOpen ? text : std::string(), progressShown, seconds());
     if (!platform::serviceApplet())
