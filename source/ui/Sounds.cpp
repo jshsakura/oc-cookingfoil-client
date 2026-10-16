@@ -5,9 +5,13 @@ namespace foil::ui {
 namespace {
 constexpr int Rate = 48000; // the console's own rate: nothing to convert
 constexpr size_t MostVoices = 6;
-constexpr uint32_t MoveGapMs = 35; // a held stick does not buzz
+// Mashed buttons do not pile one cue on itself: a held stick does not buzz
+// and a burst of presses does not stack loud enough to crackle.
+constexpr uint32_t MoveGapMs = 35;
+constexpr uint32_t OtherGapMs = 90;
 } // namespace
 Sounds::~Sounds() {
+  if (maker_.joinable()) maker_.join();
   if (device_) SDL_CloseAudioDevice(device_);
 }
 bool Sounds::open() {
@@ -28,18 +32,30 @@ bool Sounds::open() {
     logLine(std::string("sounds: no audio device (") + SDL_GetError() + ")");
     return false;
   }
-  for (int i = 0; i < CueCount; ++i) cues_[i] = chime(Cue(i), Rate);
+  voices_.reserve(MostVoices + 1);
   SDL_PauseAudioDevice(device_, 0);
+  maker_ = std::thread([this] {
+    for (int i = 0; i < CueCount; ++i) {
+      auto samples = chime(Cue(i), Rate);
+      SDL_LockAudioDevice(device_);
+      cues_[i] = std::move(samples);
+      SDL_UnlockAudioDevice(device_);
+      if (Cue(i) == Cue::Start) play(Cue::Start);
+    }
+  });
   return true;
 }
 void Sounds::play(Cue cue) {
   if (!device_ || !on_) return;
-  if (cue == Cue::Move) {
-    const auto now = SDL_GetTicks();
-    if (now - lastMove_ < MoveGapMs) return;
-    lastMove_ = now;
-  }
+  const auto now = SDL_GetTicks();
+  auto &last = lastAt_[int(cue)];
+  if (last && now - last < (cue == Cue::Move ? MoveGapMs : OtherGapMs)) return;
   SDL_LockAudioDevice(device_);
+  if (cues_[int(cue)].empty()) { // still being made
+    SDL_UnlockAudioDevice(device_);
+    return;
+  }
+  last = now;
   if (voices_.size() >= MostVoices) voices_.erase(voices_.begin()); // the oldest gives way
   voices_.push_back({&cues_[int(cue)], 0});
   SDL_UnlockAudioDevice(device_);

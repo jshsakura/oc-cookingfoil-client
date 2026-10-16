@@ -195,9 +195,10 @@ bool Application::open() {
     state_.sounds = saved.sounds;
   }
   applyStartupLanguage();
-  // The start cue plays on its own thread while the steps below go on.
+  // The cues are made and the start cue played on their own thread while
+  // the steps below go on.
   sounds_.setOn(state_.sounds);
-  if (sounds_.open()) sounds_.play(Cue::Start);
+  sounds_.open();
   // Each step says what it is doing under the logo, so a slow SD card or
   // server shows where the time goes.
   step(tr("Preparing the image cache"), 0.2f, "images");

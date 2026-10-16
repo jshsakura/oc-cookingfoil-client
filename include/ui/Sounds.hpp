@@ -5,7 +5,9 @@
 #include "core/Chime.hpp"
 #include <SDL2/SDL.h>
 #include <array>
+#include <atomic>
 #include <cstdint>
+#include <thread>
 #include <vector>
 namespace foil::ui {
 class Sounds {
@@ -14,9 +16,11 @@ public:
   Sounds(const Sounds &) = delete;
   Sounds &operator=(const Sounds &) = delete;
   ~Sounds();
+  // Opens the audio and makes the cues on a thread of their own, so the
+  // screen never waits; the start cue plays as soon as it is ready.
   bool open();
   void play(Cue cue);
-  void setOn(bool on) { on_ = on; }
+  void setOn(bool on) { on_.store(on); }
   bool on() const { return on_; }
 
 private:
@@ -26,9 +30,10 @@ private:
   };
   static void mix(void *self, Uint8 *stream, int bytes);
   SDL_AudioDeviceID device_ = 0;
-  std::array<std::vector<int16_t>, CueCount> cues_;
+  std::array<std::vector<int16_t>, CueCount> cues_; // filled under the lock
   std::vector<Voice> voices_; // under the device's lock
-  bool on_ = true;
-  uint32_t lastMove_ = 0;
+  std::atomic<bool> on_{true};
+  std::thread maker_;
+  std::array<uint32_t, CueCount> lastAt_{}; // when each cue last started
 };
 } // namespace foil::ui
