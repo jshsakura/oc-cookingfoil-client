@@ -152,17 +152,18 @@ bool Application::makeRetroShortcutHere(const retro::Game &game) {
 }
 // The server's shortcut did not come or would not install: made here
 // instead, so a broken one on the server never leaves the app without one.
-void Application::shortcutFailed(const std::string &titleId) {
+bool Application::shortcutFailed(const std::string &titleId) {
   for (const auto &app : homebrew_)
     if (!app.forwarderTitleId.empty() && app.forwarderTitleId == titleId && makeHomebrewShortcutHere(app)) {
       logLine("shortcut: the server's for " + app.name + " failed; made here");
-      return;
+      return true;
     }
   for (const auto &game : retroGames_)
     if (!game.forwarderTitleId.empty() && game.forwarderTitleId == titleId && makeRetroShortcutHere(game)) {
       logLine("shortcut: the server's for " + game.name + " failed; made here");
-      return;
+      return true;
     }
+  return false;
 }
 void Application::queueShortcut(const std::string &name, const std::string &icon, const std::string &payload) {
   queueJob("shortcut", trf("{0} shortcut", {name}), icon, "", 0, payload);
@@ -298,8 +299,11 @@ void Application::requestHomebrewShortcut(const homebrew::App &app) {
     shortcut.titleId = shortcut.baseId = app.forwarderTitleId;
     shortcut.size = app.forwarderSize;
     shortcut.icon = app.iconUrl;
+    shortcut.format = "nsp"; // its address ends in the server's route, not .nsp
     const bool waits = downloadRunning() || !installQueue_.empty();
     if (auto error = startInstall({shortcut}, trf("{0} shortcut", {app.name}), app.iconUrl, "sd")) {
+      logLine("shortcut: the server's for " + app.name + " refused: " + error.message);
+      if (makeHomebrewShortcutHere(app)) return;
       alertTitle_ = tr("Could not make the shortcut");
       alert_ = error.message;
     } else if (!waits)

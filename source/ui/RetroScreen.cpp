@@ -502,9 +502,13 @@ bool Application::installShortcut(const std::string &name, const std::string &ic
   shortcut.size = size;
   shortcut.icon = icon;
   shortcut.type = "shortcut"; // an extra of what came down: no row of its own in 다운로드
+  shortcut.format = "nsp";     // its address ends in the server's route, not .nsp
   // Next in the queue, ahead of what waits: it belongs to what just came down.
   const bool waits = downloadRunning();
   if (auto error = startInstall({shortcut}, trf("{0} shortcut", {name}), icon, "sd", {}, true)) {
+    // Refused before it began: made here instead, when it can be.
+    logLine("shortcut: the server's for " + name + " refused: " + error.message);
+    if (shortcutFailed(titleId)) return true;
     alertTitle_ = tr("Could not make the shortcut");
     alert_ = error.message;
     return true;

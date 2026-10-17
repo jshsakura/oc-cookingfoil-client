@@ -465,7 +465,7 @@ private:
   void queueShortcut(const std::string &name, const std::string &icon, const std::string &payload);
   bool makeHomebrewShortcutHere(const homebrew::App &app); // queued; false where none can be made
   bool makeRetroShortcutHere(const retro::Game &game);
-  void shortcutFailed(const std::string &titleId); // the server's would not come: made here
+  bool shortcutFailed(const std::string &titleId); // the server's would not come: made here (false: cannot)
   void removeHomebrewShortcut(const homebrew::App &app);
   void removeShortcuts(const std::vector<uint64_t> &ids, const std::string &name); // those the console has
   // After a download, when 설정 asks for shortcuts: made here when the
