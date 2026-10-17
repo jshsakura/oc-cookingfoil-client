@@ -13,6 +13,7 @@ struct ShortcutRequest {
   std::string extraArgs; // after the path in argv (a retro game's ROM)
   std::string name, author; // empty keeps the NACP's own
   std::string nacp, icon;   // the .nro's (forwarder::blankNacp() when it has none)
+  int cores = 3;            // 4 lets it use core 3 too (the server's forwarder_cores)
 };
 // Why shortcuts cannot be made here, judged once before anything is tried:
 // the loader missing from the app's RomFS, or a console not booted into

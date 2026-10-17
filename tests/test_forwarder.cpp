@@ -233,6 +233,13 @@ int runForwarderTests() {
       CHECK(patchNpdm(real, 0x0512345678901000ULL, true));
       CHECK(get(real, get(real, 0x70, 4) + 0x10, 8) == 0x0512345678901000ULL);
     }
+    // Four cores, as sphaira's CPU Cores 4 (and the server's forwarder_cores
+    // 4): cores 0 to 3, priorities 28 to 63, in ACI0 and ACID alike.
+    auto four = testNpdm();
+    CHECK(patchNpdm(four, 1, false, 4));
+    CHECK(get(four, 0x80 + 0x40, 4) == 0x030073F7 && get(four, 0x100 + 0x240, 4) == 0x030073F7);
+    auto three = testNpdm();
+    CHECK(patchNpdm(three, 1, false, 3) && get(three, 0x100 + 0x240, 4) == 0x020073B7);
     auto broken = testNpdm();
     broken.replace(0x300, 4, "XXXX");
     CHECK(!patchNpdm(broken, 1, false));

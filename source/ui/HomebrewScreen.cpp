@@ -505,8 +505,11 @@ void Application::homebrewAction(Action a) {
         homebrewAsk_ = false;
         homebrewRemoveAsk_ = true;
       } else if (homebrewAskRow_ >= 0 && kinds[homebrewAskRow_] == 4) {
-        // The shortcut row makes one, or asks before taking one away.
-        if (homebrewHasShortcut(*picked)) {
+        // The shortcut row makes one, installs it again when the server
+        // rebuilt it, or asks before taking one away.
+        if (homebrewShortcutStale(*picked))
+          requestHomebrewShortcut(*picked);
+        else if (homebrewHasShortcut(*picked)) {
           homebrewAsk_ = false;
           shortcutRemoveAsk_ = true;
         } else

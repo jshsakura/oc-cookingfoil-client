@@ -57,7 +57,8 @@ bool patchNacp(std::string &nacp, uint64_t id, const std::string &name = "", con
 // hbl's main.npdm set to run as `id`. `forceDebug` sets the debug flag
 // capability to Atmosphere 1.8.0's ForceDebug bit (sphaira's automatic
 // mode); false when the NPDM is not one (no META, ACI0, ACID or kernel flags).
-bool patchNpdm(std::string &npdm, uint64_t id, bool forceDebug);
+// `cores` 4 lets it run on core 3 too (sphaira's CPU Cores 4); else three.
+bool patchNpdm(std::string &npdm, uint64_t id, bool forceDebug, int cores = 3);
 
 struct File {
   std::string name; // RomFS: "/name" at the root; PFS0: "name"
@@ -93,6 +94,7 @@ struct Input {
   std::string icon;         // the .nro's JPEG
   std::string hblMain, hblNpdm;
   bool forceDebug = false;
+  int cores = 3; // 3, or 4 when the app asks for core 3 too
   uint8_t storageId = 5; // NcmStorageId_SdCard
 };
 struct Package {

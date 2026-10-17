@@ -38,6 +38,10 @@ struct App {
   // The HOME Menu shortcut the server built for it; empty when there is none.
   std::string forwarderUrl, forwarderTitleId;
   uint64_t forwarderSize = 0;
+  // Cores the shortcut runs on (3, or 4 to use core 3 too), and a key that
+  // changes whenever the server builds its shortcut again (icon, name, cores).
+  int forwarderCores = 3;
+  std::string forwarderKey;
   // Where the .nro goes from the SD card root (switch/<app>/<file>.nro), and
   // for a folder install every file of it, the .nro included; empty files
   // means the .nro alone from downloadUrl.
@@ -117,9 +121,10 @@ struct Record {
   std::vector<std::string> files;  // a folder install's other files, for removal
   CardFile seen;                   // size 0: never seen (a ledger from before)
   std::string fileSha;             // the .nro's own SHA-256, lowercase hex
+  std::string shortcutKey;         // the server's forwarder_key its HOME Menu shortcut was made at
   bool operator==(const Record &other) const {
     return hash == other.hash && version == other.version && file == other.file && files == other.files &&
-           seen == other.seen && fileSha == other.fileSha;
+           seen == other.seen && fileSha == other.fileSha && shortcutKey == other.shortcutKey;
   }
 };
 using Ledger = std::map<std::string, Record>; // by app id

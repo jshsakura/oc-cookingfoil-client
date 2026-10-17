@@ -166,6 +166,7 @@ Error makeShortcut(const ShortcutRequest &request, uint64_t &id) {
     return {tr("Could not derive the NCA header key on the console. Shortcuts can be made only when booted into Atmosphere. Restart into Atmosphere and try again.")};
   }
   input.forceDebug = atmosphereForceDebug();
+  input.cores = request.cores;
   input.storageId = NcmStorageId_SdCard;
   forwarder::Package package;
   std::string reason;

@@ -252,10 +252,11 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
         return (q.kind == "shortcut" && q.name == trf("{0} shortcut", {app.name})) ||
                (!app.forwarderUrl.empty() && q.file.url == app.forwarderUrl);
       });
-      const std::string state = hasShortcut ? tr("Installed") : queued ? tr("Queued") : blocked ? tr("Unavailable")
-                                : unsigned_ ? tr("Needs sig patches") : tr("Not installed");
+      const bool stale = !queued && homebrewShortcutStale(app);
+      const std::string state = queued ? tr("Queued") : stale ? tr("Update|item") : hasShortcut ? tr("Installed")
+                                : blocked ? tr("Unavailable") : unsigned_ ? tr("Needs sig patches") : tr("Not installed");
       paint_.fonts.middle(state, X + W - 16 - paint_.fonts.measure(state, 16, true), mid, 16,
-                          hasShortcut ? Good : unsigned_ ? Pending : Secondary, true);
+                          stale || unsigned_ ? Pending : hasShortcut ? Good : Secondary, true);
       continue;
     }
     if (extras[i] == Remove) {

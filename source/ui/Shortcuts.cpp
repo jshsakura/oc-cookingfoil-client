@@ -19,6 +19,8 @@ constexpr int HomeIcon = 0;
 struct Plan {
   std::string file, launch, extra, name, author, display, iconUrl;
   uint64_t replaces = 0; // the server's shortcut for it, which goes
+  int cores = 3;         // the server's forwarder_cores for the app
+  std::string app, key;  // the homebrew app it is for, and its forwarder_key then
 };
 std::string serializePlan(const Plan &plan) {
   Json body(json_object_new_object());
@@ -28,6 +30,7 @@ std::string serializePlan(const Plan &plan) {
   put("file", plan.file), put("launch", plan.launch), put("extra", plan.extra), put("name", plan.name);
   put("author", plan.author), put("display", plan.display), put("iconUrl", plan.iconUrl);
   put("replaces", std::to_string(plan.replaces));
+  put("cores", std::to_string(plan.cores)), put("app", plan.app), put("key", plan.key);
   return "plan:" + std::string(json_object_to_json_string_ext(body.get(), JSON_C_TO_STRING_PLAIN));
 }
 bool parsePlan(const std::string &payload, Plan &plan) {
@@ -40,6 +43,8 @@ bool parsePlan(const std::string &payload, Plan &plan) {
   plan.author = stringField(body.get(), "author"), plan.display = stringField(body.get(), "display");
   plan.iconUrl = stringField(body.get(), "iconUrl");
   plan.replaces = std::strtoull(stringField(body.get(), "replaces", "0").c_str(), nullptr, 10);
+  plan.cores = stringField(body.get(), "cores") == "4" ? 4 : 3;
+  plan.app = stringField(body.get(), "app"), plan.key = stringField(body.get(), "key");
   return !plan.file.empty();
 }
 } // namespace
@@ -52,6 +57,20 @@ uint64_t Application::homebrewShortcutId(const homebrew::App &app) const {
 }
 uint64_t Application::homebrewServerShortcut(const homebrew::App &app) const {
   return app.cardOnly ? 0 : forwarder::serverShortcutId(app.forwarderTitleId);
+}
+// The key the app's shortcut was made at, so a rebuild on the server shows.
+void Application::rememberShortcutKey(const std::string &appId, const std::string &key) {
+  const auto found = homebrewLedger_.find(appId);
+  if (appId.empty() || found == homebrewLedger_.end() || found->second.shortcutKey == key) return;
+  found->second.shortcutKey = key;
+  saveHomebrewLedger();
+}
+// The server built the shortcut again (icon, name, cores) since this one
+// was made: its row offers it again.
+bool Application::homebrewShortcutStale(const homebrew::App &app) const {
+  if (app.forwarderKey.empty() || !homebrewHasShortcut(app)) return false;
+  const auto found = homebrewLedger_.find(app.id);
+  return found != homebrewLedger_.end() && found->second.shortcutKey != app.forwarderKey;
 }
 bool Application::homebrewHasShortcut(const homebrew::App &app) const {
   const auto server = homebrewServerShortcut(app);
@@ -127,7 +146,8 @@ bool Application::autoHomebrewShortcut(const homebrew::App &app) {
 bool Application::makeHomebrewShortcutHere(const homebrew::App &app) {
   if (!platform::canMakeShortcuts() || !homebrew::cardNroPath(homebrewFile(app))) return false;
   queueShortcut(app.name, homebrewIcon(app),
-                serializePlan({homebrewFile(app), "", "", app.name, "", app.name, app.iconUrl, homebrewServerShortcut(app)}));
+                serializePlan({homebrewFile(app), "", "", app.name, "", app.name, app.iconUrl, homebrewServerShortcut(app),
+                               app.forwarderCores, app.id, app.forwarderKey}));
   return true;
 }
 // The server's shortcut first (its picture as set on the web); without one,
@@ -234,6 +254,7 @@ bool Application::startShortcut(const QueuedInstall &next) {
       request.nacp = info.nacp.empty() ? forwarder::blankNacp(info.name.empty() ? plan.display : info.name, info.author, info.version)
                                        : info.nacp;
       request.icon = icon.empty() ? info.icon : icon;
+      request.cores = plan.cores;
       error = platform::makeShortcut(request, id);
     }
     const bool patches = !error && forwarder::signaturePatchesFound(sd);
@@ -251,6 +272,7 @@ bool Application::startShortcut(const QueuedInstall &next) {
       }
       shortcuts_.insert(id);
       if (replaced) shortcuts_.erase(plan.replaces);
+      rememberShortcutKey(plan.app, plan.key);
       // Unsigned, the shortcut opens only with signature patches: said now,
       // not when the HOME Menu shows an error code.
       if (!patches) {

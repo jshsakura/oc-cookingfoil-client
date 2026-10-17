@@ -122,10 +122,25 @@ int runHomebrewTests() {
     CHECK(withShortcut.size() == 1 && withShortcut.front().forwarderTitleId == "05ABCDEF01234000" &&
           withShortcut.front().forwarderSize == 524288 &&
           withShortcut.front().forwarderUrl == "https://shop.example/api/homebrew/gh-9c9ef5794087/forwarder");
+    // No cores given: three; the key as given (none here).
+    CHECK(!withShortcut.empty() && withShortcut.front().forwarderCores == 3 && withShortcut.front().forwarderKey.empty());
     if (!withShortcut.empty()) {
       const auto again = parse(R"({"homebrew":[)" + serialize(withShortcut.front()) + "]}", "");
       CHECK(again.size() == 1 && again.front().forwarderTitleId == "05ABCDEF01234000");
     }
+    // Four cores and a key; any other count is three.
+    auto four = e;
+    four.insert(four.size() - 1, R"(,"forwarder_cores":4,"forwarder_key":"0123456789ab")");
+    const auto withFour = parse(R"({"homebrew":[)" + four + "]}", "https://shop.example");
+    CHECK(withFour.size() == 1 && withFour.front().forwarderCores == 4 && withFour.front().forwarderKey == "0123456789ab");
+    if (!withFour.empty()) {
+      const auto again = parse(R"({"homebrew":[)" + serialize(withFour.front()) + "]}", "");
+      CHECK(again.size() == 1 && again.front().forwarderCores == 4 && again.front().forwarderKey == "0123456789ab");
+    }
+    auto odd = e;
+    odd.insert(odd.size() - 1, R"(,"forwarder_cores":8)");
+    const auto withOdd = parse(R"({"homebrew":[)" + odd + "]}", "https://shop.example");
+    CHECK(withOdd.size() == 1 && withOdd.front().forwarderCores == 3);
     // A game's or a system title's id is never a shortcut's: none.
     for (const char *other : {"0100000000001000", "0100ABCDEF012000", "05ABCDEF01234001"}) {
       auto foreign = e;
@@ -240,6 +255,13 @@ int runHomebrewTests() {
   Ledger ledger{{"gh-9c9ef5794087", {"sha256:fb7d", "1.1.0", "switch/ytb-player/ytb-player.nro", {}, {}, {}}}};
   const auto read = parseLedger(serializeLedger(ledger));
   CHECK(read.size() == 1 && read.at("gh-9c9ef5794087").file == "switch/ytb-player/ytb-player.nro");
+  {
+    // The key a shortcut was made at stays with the app's record.
+    auto keyed = ledger;
+    keyed.begin()->second.shortcutKey = "0123456789ab";
+    const auto back = parseLedger(serializeLedger(keyed));
+    CHECK(back.size() == 1 && back.begin()->second.shortcutKey == "0123456789ab" && back == keyed);
+  }
   CHECK(parseLedger("garbage").empty());
   {
     Ledger folder{{"gh-1", {"h", "1", "switch/ytb/ytb.nro", {"switch/ytb/data/a.bin", "../escape"}, {}, {}}}};

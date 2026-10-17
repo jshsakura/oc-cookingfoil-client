@@ -70,6 +70,8 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
     a.forwarderUrl = urlField(o, "forwarder_url", base);
     a.forwarderTitleId = stringField(o, "forwarder_title_id");
     a.forwarderSize = uint64_t(std::max<int64_t>(0, integerField(o, "forwarder_size")));
+    a.forwarderCores = integerField(o, "forwarder_cores", 3) == 4 ? 4 : 3;
+    a.forwarderKey = stringField(o, "forwarder_key");
     if (!forwarder::serverShortcutId(a.forwarderTitleId))
       a.forwarderUrl.clear(), a.forwarderTitleId.clear();
     a.kind = stringField(o, "kind") == "port" ? Kind::Port : Kind::Tool;
@@ -169,6 +171,8 @@ std::string serialize(const App &a) {
   add("forwarder_url", a.forwarderUrl);
   add("forwarder_title_id", a.forwarderTitleId);
   json_object_object_add(o.get(), "forwarder_size", json_object_new_int64(int64_t(a.forwarderSize)));
+  json_object_object_add(o.get(), "forwarder_cores", json_object_new_int(a.forwarderCores));
+  add("forwarder_key", a.forwarderKey);
   add("install_path", a.installPath);
   add("kind", a.kind == Kind::Port ? "port" : "tool");
   add("app", a.app);
@@ -298,6 +302,7 @@ Ledger parseLedger(const std::string &json) {
     Record r{stringField(value, "hash"), stringField(value, "version"), stringField(value, "file"), {}, {}, {}};
     r.seen = {uint64_t(std::max<int64_t>(0, integerField(value, "size"))), integerField(value, "mtime")};
     r.fileSha = stringField(value, "fileSha");
+    r.shortcutKey = stringField(value, "shortcutKey");
     auto *files = field(value, "files");
     if (json_object_is_type(files, json_type_array))
       for (size_t f = 0; f < json_object_array_length(files); ++f) {
@@ -321,6 +326,7 @@ std::string serializeLedger(const Ledger &ledger) {
       json_object_object_add(o, "mtime", json_object_new_int64(r.seen.mtime));
     }
     if (!r.fileSha.empty()) json_object_object_add(o, "fileSha", json_object_new_string(r.fileSha.c_str()));
+    if (!r.shortcutKey.empty()) json_object_object_add(o, "shortcutKey", json_object_new_string(r.shortcutKey.c_str()));
     if (!r.files.empty()) {
       auto *files = json_object_new_array();
       for (const auto &f : r.files) json_object_array_add(files, json_object_new_string(f.c_str()));

@@ -254,7 +254,7 @@ bool patchNacp(std::string &nacp, uint64_t id, const std::string &name, const st
   nacp[0x3213] = 0;    // required_network_service_license_on_launch
   return true;
 }
-bool patchNpdm(std::string &npdm, uint64_t id, bool forceDebug) {
+bool patchNpdm(std::string &npdm, uint64_t id, bool forceDebug, int cores) {
   if (npdm.size() < 0x80 || npdm.compare(0, 4, "META") != 0) return false;
   const uint64_t aci0 = get(npdm, 0x70, 4), acid = get(npdm, 0x78, 4);
   if (aci0 + 0x40 > npdm.size() || acid + 0x240 > npdm.size() || npdm.compare(aci0, 4, "ACI0") != 0 ||
@@ -275,9 +275,13 @@ bool patchNpdm(std::string &npdm, uint64_t id, bool forceDebug) {
   // written again as sphaira does so a different NPDM still comes out right.
   constexpr uint32_t ThreeCores = ((((2u << 8) | 0u) << 6 | 28u) << 6 | 59u) << 4;
   static_assert((ThreeCores | 0x7) == 0x020073B7, "sphaira's three-core kernel flags");
+  // Four: cores 0 to 3, priorities 28 to 63, as sphaira's CPU Cores 4.
+  constexpr uint32_t FourCores = ((((3u << 8) | 0u) << 6 | 28u) << 6 | 63u) << 4;
+  static_assert((FourCores | 0x7) == 0x030073F7, "sphaira's four-core kernel flags");
+  const uint32_t flags = cores == 4 ? FourCores : ThreeCores;
   const uint64_t aci0Kc = aci0 + get(npdm, aci0 + 0x30, 4), aci0KcSize = get(npdm, aci0 + 0x34, 4);
   const uint64_t acidKc = acid + get(npdm, acid + 0x230, 4), acidKcSize = get(npdm, acid + 0x234, 4);
-  if (!patchKc(aci0Kc, aci0KcSize, 3, ThreeCores) || !patchKc(acidKc, acidKcSize, 3, ThreeCores)) return false;
+  if (!patchKc(aci0Kc, aci0KcSize, 3, flags) || !patchKc(acidKc, acidKcSize, 3, flags)) return false;
   if (forceDebug) {
     patchKc(aci0Kc, aci0KcSize, 16, 1u << 19);
     patchKc(acidKc, acidKcSize, 16, 1u << 19);
@@ -384,7 +388,7 @@ bool build(const Input &in, const HeaderCipher &cipher, Package &out, std::strin
   if (!error.empty()) return false;
   const uint64_t id = titleId(in.nroPath, in.extraArgs);
   auto npdm = in.hblNpdm;
-  if (!patchNpdm(npdm, id, in.forceDebug)) {
+  if (!patchNpdm(npdm, id, in.forceDebug, in.cores)) {
     error = "npdm";
     return false;
   }

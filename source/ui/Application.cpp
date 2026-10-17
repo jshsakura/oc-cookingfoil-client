@@ -831,6 +831,8 @@ void Application::poll() {
       shortcuts_.insert(id);
       // One made here before for the same app goes, so it shows once.
       for (const auto &app : homebrew_)
+        if (app.forwarderTitleId == part.titleId) rememberShortcutKey(app.id, app.forwarderKey);
+      for (const auto &app : homebrew_)
         if (app.forwarderTitleId == part.titleId)
           if (const auto local = homebrewShortcutId(app); local != id && shortcuts_.count(local)) {
             replaced.push_back(local);
