@@ -20,8 +20,9 @@ public:
   // screen never waits; the start cue plays as soon as it is ready.
   bool open();
   void play(Cue cue);
-  // The start cue, now or as soon as it is made.
-  void playStart();
+  // The start cue, now or as soon as it is made, on the splash's next
+  // landing: the butter lands every second from `beatAt` (SDL ticks).
+  void playStart(uint32_t beatAt);
   void setOn(bool on) { on_.store(on); }
   bool on() const { return on_; }
 
@@ -29,6 +30,7 @@ private:
   struct Voice {
     const std::vector<int16_t> *samples;
     size_t at;
+    size_t wait = 0; // samples of silence before it starts
   };
   static void mix(void *self, Uint8 *stream, int bytes);
   SDL_AudioDeviceID device_ = 0;
@@ -36,6 +38,7 @@ private:
   std::vector<Voice> voices_; // under the device's lock
   std::atomic<bool> on_{true};
   bool startWanted_ = false, startPlayed_ = false; // under the lock
+  uint32_t beatAt_ = 0;                            // under the lock
   std::thread maker_;
   std::array<uint32_t, CueCount> lastAt_{}; // when each cue last started
 };

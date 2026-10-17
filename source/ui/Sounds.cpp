@@ -50,9 +50,10 @@ bool Sounds::open() {
   });
   return true;
 }
-void Sounds::playStart() {
+void Sounds::playStart(uint32_t beatAt) {
   if (!device_) return;
   SDL_LockAudioDevice(device_);
+  beatAt_ = beatAt;
   const bool ready = !cues_[int(Cue::Start)].empty();
   if (!ready) startWanted_ = true;
   SDL_UnlockAudioDevice(device_);
@@ -76,7 +77,15 @@ void Sounds::play(Cue cue) {
     std::vector<int16_t>().swap(cues_[int(Cue::Start)]);
   if (cue == Cue::Start) startPlayed_ = true;
   if (voices_.size() >= MostVoices) voices_.erase(voices_.begin()); // the oldest gives way
-  voices_.push_back({&cues_[int(cue)], 0});
+  // The start waits for the butter's next landing, less what the device
+  // holds before it is heard (one buffer).
+  size_t wait = 0;
+  if (cue == Cue::Start && beatAt_) {
+    constexpr uint32_t BeatMs = 1000, BufferMs = 1024 * 1000 / Rate;
+    const uint32_t toBeat = (BeatMs - (now - beatAt_) % BeatMs) % BeatMs;
+    wait = size_t((toBeat + BeatMs - BufferMs % BeatMs) % BeatMs) * Rate / 1000;
+  }
+  voices_.push_back({&cues_[int(cue)], 0, wait});
   SDL_UnlockAudioDevice(device_);
 }
 // On SDL's audio thread, with the device locked.
@@ -86,9 +95,11 @@ void Sounds::mix(void *self, Uint8 *stream, int bytes) {
   const size_t count = size_t(bytes) / sizeof(int16_t);
   std::fill(out, out + count, int16_t(0));
   for (auto &v : me.voices_) {
-    const size_t n = std::min(count, v.samples->size() - v.at);
+    const size_t skip = std::min(count, v.wait);
+    v.wait -= skip;
+    const size_t n = std::min(count - skip, v.samples->size() - v.at);
     for (size_t i = 0; i < n; ++i)
-      out[i] = int16_t(std::clamp(int(out[i]) + int((*v.samples)[v.at + i]) * Gain / 256, -32768, 32767));
+      out[skip + i] = int16_t(std::clamp(int(out[skip + i]) + int((*v.samples)[v.at + i]) * Gain / 256, -32768, 32767));
     v.at += n;
   }
   me.voices_.erase(std::remove_if(me.voices_.begin(), me.voices_.end(),

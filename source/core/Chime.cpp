@@ -16,7 +16,7 @@ struct Score {
   std::vector<Note> notes;
 };
 constexpr float Pi = 3.14159265f;
-constexpr int C3 = 48, F3 = 53, G3 = 55, A3 = 57, D4 = 62, F4 = 65, A4 = 69, C4 = 60, E4 = 64, G4 = 67, B4 = 71, C5 = 72, D5 = 74, E5 = 76, G5 = 79, A5 = 81, C6 = 84, D6 = 86, E6 = 88,
+constexpr int C2 = 36, F2 = 41, G2 = 43, C3 = 48, F3 = 53, G3 = 55, A3 = 57, D4 = 62, F4 = 65, A4 = 69, C4 = 60, E4 = 64, G4 = 67, B4 = 71, C5 = 72, D5 = 74, E5 = 76, G5 = 79, A5 = 81, C6 = 84, D6 = 86, E6 = 88,
               G6 = 91, B5 = 83, B6 = 95, C7 = 96;
 float hertz(int pitch) { return 440.f * std::pow(2.f, (pitch - 69) / 12.f); }
 float sample(Wave wave, float f, float t) {
@@ -46,15 +46,21 @@ float sample(Wave wave, float f, float t) {
 }
 Score score(Cue cue) {
   switch (cue) {
-  case Cue::Start: { // 동전 두 개: two coin blips, then a short 8-bit fanfare over a bass
-    Score s{2.8f, 0.15f, 0.2f, 0.45f, {}};
-    for (const float at : {0.f, 0.45f}) {
+  case Cue::Start: { // 동전 두 개, on the butter's landings (every second from 0):
+    // a coin on the first two, the fanfare on the third, a bass bouncing
+    // with it between them, and the last chord left to ring and echo.
+    Score s{3.6f, 0.18f, 0.32f, 0.45f, {}};
+    for (const float at : {0.f, 1.f}) {
       s.notes.push_back({at, B5, 0.05f, 0.08f, Wave::Square, 0.4f});
       s.notes.push_back({at + 0.07f, E6, 0.05f, 0.25f, Wave::Square, 0.4f});
     }
     const int run[] = {G5, C6, E6, G6};
-    for (int i = 0; i < 4; ++i) s.notes.push_back({0.95f + i * 0.1f, run[i], 0.05f, i < 3 ? 0.1f : 0.8f, Wave::Square, 0.4f});
-    for (const float at : {0.95f, 1.25f}) s.notes.push_back({at, C3, 0.1f, 0.6f, Wave::Triangle, 0.6f});
+    for (int i = 0; i < 4; ++i) s.notes.push_back({2.f + i * 0.09f, run[i], 0.05f, i < 3 ? 0.1f : 0.9f, Wave::Square, 0.38f});
+    for (const int p : {C6, E6}) s.notes.push_back({2.27f, p, 0.3f, 0.9f, Wave::Square, 0.14f});
+    // The bass lands with the butter and answers at the top of each hop.
+    const struct { float at; int pitch; float volume; } bass[] = {{0, C2, 0.5f}, {0.5f, G2, 0.3f}, {1, F2, 0.5f}, {1.5f, G2, 0.3f}};
+    for (const auto &b : bass) s.notes.push_back({b.at, b.pitch, 0.08f, 0.2f, Wave::Triangle, b.volume});
+    s.notes.push_back({2.f, C2, 0.4f, 0.9f, Wave::Triangle, 0.55f});
     return s;
   }
   case Cue::Move: // 틱: a high, very short sine per step
@@ -105,8 +111,9 @@ std::vector<int16_t> chime(Cue cue, int rate) {
     for (size_t i = size_t(s.delay * rate); i < out.size(); ++i) out[i] += out[i - size_t(s.delay * rate)] * s.feedback;
   float peak = 1e-9f;
   for (const float v : out) peak = std::max(peak, std::fabs(v));
-  // The last 80 ms (a third of a short one) fade, so nothing ends on a click.
-  const size_t fade = std::min(size_t(0.08f * rate), out.size() / 3);
+  // The last 80 ms (a third of a short one) fade, so nothing ends on a click;
+  // the start's ringing tail fades over its last half second.
+  const size_t fade = std::min(size_t((cue == Cue::Start ? 0.5f : 0.08f) * rate), out.size() / 3);
   for (size_t i = 0; i < fade; ++i) out[out.size() - 1 - i] *= float(i) / fade;
   std::vector<int16_t> samples(out.size());
   for (size_t i = 0; i < out.size(); ++i)

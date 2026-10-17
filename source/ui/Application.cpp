@@ -232,7 +232,7 @@ bool Application::open() {
       }
       applyStartupLanguage();
       sounds_.setOn(state_.sounds);
-      sounds_.playStart(); // as soon as it is made, if sounds are on
+      sounds_.playStart(shownAt); // as soon as it is made, on a landing, if sounds are on
       // Each step says what it is doing under the logo, so a slow SD card or
       // server shows where the time goes.
       background(tr("Preparing the image cache"), 0.38f, 0.40f, "images");
