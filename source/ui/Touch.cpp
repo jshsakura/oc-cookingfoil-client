@@ -133,7 +133,7 @@ void Application::scrollToTop() {
 }
 bool Application::popupOpen() const {
   return !alert_.empty() || clockModal() || unqueueAsk_ >= 0 || bugAsk_ || appUpdateAsk_ || appUpdate_ == AppUpdate::Downloading || viewPopup_ || confirmInstall_ || confirmCancel_ || languagePopup_ ||
-         tidyOpen_ || confirmPatchRemove_ || managingPatch_ || pickingPatch_ || serverForm_ || homebrewRemoveAsk_ || (homebrewAsk_ && homebrewExtras_) || shortcutRemoveAsk_ || selfShortcutAsk_ ||
+         tidyOpen_ || homebrewSortAsk_ || confirmPatchRemove_ || managingPatch_ || pickingPatch_ || serverForm_ || homebrewRemoveAsk_ || (homebrewAsk_ && homebrewExtras_) || shortcutRemoveAsk_ || selfShortcutAsk_ ||
          retroArchAsking_ || saveNeedsGame_ || savePicking_ || shopAppSaveAsk_ || applyAsking_ || managedGame_ ||
          removal_ || galleryOpen_ || (screen_ == Screen::Saves && (dropboxModal() || dropboxSession_));
 }

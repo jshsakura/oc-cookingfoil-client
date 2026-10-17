@@ -857,6 +857,9 @@ void Application::poll() {
                          : installStatus == install::Status::Cancelled ? history::Outcome::Cancelled
                                                                        : history::Outcome::Failed;
     const auto error = outcome == history::Outcome::Failed ? failureText(installer_.progress().error) : installer_.progress().error;
+    // How it ended, with what the player was told: a report shows it.
+    logLine("install " + std::string(outcome == history::Outcome::Done ? "done" : outcome == history::Outcome::Cancelled ? "cancelled" : "failed") +
+            ": " + installer_.progress().name + (installer_.progress().error.empty() ? "" : " · " + installer_.progress().error));
     if (history::finish(history_, outcome, error, int64_t(std::time(nullptr)))) saveHistory();
   }
   pumpPatchQueue();
@@ -1355,6 +1358,10 @@ void Application::action(Action a) {
   }
   if (tidyOpen_) {
     fileCleanupAction(a);
+    return;
+  }
+  if (homebrewSortAsk_) {
+    homebrewSortAction(a);
     return;
   }
   if (homebrewRemoveAsk_ || homebrewAsk_ || shortcutRemoveAsk_ ||

@@ -358,6 +358,21 @@ LedgerCheck checkLedger(const Ledger &ledger, const std::function<std::optional<
   }
   return out;
 }
+void sortRows(const std::vector<App> &apps, std::vector<int> &rows, SortMode sort) {
+  const auto lowerAscii = [](std::string text) {
+    for (auto &c : text) c = char(std::tolower(static_cast<unsigned char>(c)));
+    return text;
+  };
+  const auto by = [&](auto less) {
+    std::stable_sort(rows.begin(), rows.end(), [&](int a, int b) { return less(apps[a], apps[b]); });
+  };
+  if (sort == SortMode::Name)
+    by([&](const App &a, const App &b) { return lowerAscii(a.name) < lowerAscii(b.name); });
+  else if (sort == SortMode::Popular) // GitHub stars; an app without them after
+    by([](const App &a, const App &b) { return a.stars > b.stars; });
+  else if (sort == SortMode::Largest)
+    by([](const App &a, const App &b) { return a.size > b.size; });
+}
 Status status(const App &app, const Ledger &ledger, const std::function<bool(const std::string &)> &exists,
               const std::string *cardVersion) {
   const auto found = ledger.find(app.id);

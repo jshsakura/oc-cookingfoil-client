@@ -1,6 +1,7 @@
 #pragma once
 // Homebrew apps the server offers (feature: homebrew), saved to the SD card
 // as sdmc:/switch/<name>/<name>.nro.
+#include "core/Catalog.hpp"
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -145,6 +146,11 @@ enum class Status { Available, Installed, Update };
 // `exists` checks a path from the SD card root. Without a ledger entry on
 // the card, `cardVersion` (the version of the app's file the card scan
 // found, nullptr when none) decides: see cardStatus().
+// The orders 홈브류 offers; Updated is the server's (most recently updated
+// first), so it leaves the rows as they came.
+inline constexpr SortMode Orders[] = {SortMode::Updated, SortMode::Name, SortMode::Popular, SortMode::Largest};
+// The rows (indexes into apps) in that order; ties keep the server's order.
+void sortRows(const std::vector<App> &apps, std::vector<int> &rows, SortMode sort);
 Status status(const App &app, const Ledger &ledger, const std::function<bool(const std::string &)> &exists,
               const std::string *cardVersion = nullptr);
 } // namespace foil::homebrew

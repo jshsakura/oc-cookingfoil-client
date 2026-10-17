@@ -449,6 +449,8 @@ bool Application::finishRetroEntry(const std::string &kind, history::Outcome out
     return e.kind == kind && e.outcome == history::Outcome::Running;
   });
   if (running == history_.end()) return false;
+  logLine(kind + " " + (outcome == history::Outcome::Done ? "done" : outcome == history::Outcome::Cancelled ? "cancelled" : "failed") + ": " +
+          running->install.name + (error.empty() ? "" : " · " + error));
   if (outcome == history::Outcome::Done) sounds_.play(Cue::Done);
   else if (outcome == history::Outcome::Failed) sounds_.play(Cue::Error);
   if (pausing && outcome == history::Outcome::Cancelled) {

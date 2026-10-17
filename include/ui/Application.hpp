@@ -416,6 +416,10 @@ private:
   std::string homebrewIcon(const homebrew::App &app); // the URL or the card icon's key
   std::string homebrewFile(const homebrew::App &app) const; // its file on the card, from the SD root
   std::string homebrewEtag_, homebrewQuery_;
+  // 홈브류's order: the server's (most recently updated) unless one is picked.
+  SortMode homebrewSort_ = SortMode::Updated;
+  bool homebrewSortAsk_ = false;
+  int homebrewSortRow_ = 0;
   Error homebrewError_;
   bool homebrewLoaded_ = false, homebrewRemoveAsk_ = false, homebrewAsk_ = false;
   int homebrewTab_ = 0; // 0 설치됨, 1 도구, 2 포트
@@ -444,6 +448,9 @@ private:
   void pollHomebrew();
   void homebrewScreen();
   void homebrewAction(Action a);
+  void openHomebrewSort();
+  void homebrewSortAction(Action a);
+  void homebrewSortDialog();
   void homebrewRemoveDialog();
   // HOME Menu shortcuts (platform/Shortcut): the ids the console has, as the
   // last card scan found them and as made or removed since.

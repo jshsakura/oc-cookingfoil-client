@@ -6,6 +6,23 @@
 using namespace foil::homebrew;
 int runHomebrewTests() {
   int failures = 0;
+  {
+    // 업데이트순 is the server's order; the others sort here, ties as they came.
+    std::vector<App> apps(4);
+    apps[0].name = "beta", apps[0].stars = 5, apps[0].size = 10;
+    apps[1].name = "Alpha", apps[1].stars = -1, apps[1].size = 30;
+    apps[2].name = "gamma", apps[2].stars = 40, apps[2].size = 10;
+    apps[3].name = "delta", apps[3].stars = 5, apps[3].size = 20;
+    const auto sorted = [&](foil::SortMode sort) {
+      std::vector<int> rows{0, 1, 2, 3};
+      sortRows(apps, rows, sort);
+      return rows;
+    };
+    CHECK((sorted(foil::SortMode::Updated) == std::vector<int>{0, 1, 2, 3}));
+    CHECK((sorted(foil::SortMode::Name) == std::vector<int>{1, 0, 3, 2}));
+    CHECK((sorted(foil::SortMode::Popular) == std::vector<int>{2, 0, 3, 1}));
+    CHECK((sorted(foil::SortMode::Largest) == std::vector<int>{1, 3, 0, 2}));
+  }
   const std::string entry =
       R"({"id":"gh-9c9ef5794087","name":"YTB Player","version":"1.1.0","author":"muratgokce","description":null,)"
       R"("size":33584861,"hash":"sha256:fb7d","file_name":"ytb-player.nro","icon_url":"/api/homebrew/gh-9c9ef5794087/icon",)"

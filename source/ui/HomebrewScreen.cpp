@@ -217,6 +217,7 @@ std::vector<int> Application::homebrewRows() const {
     if (!textMatches({app.name, app.author, app.fileName}, homebrewQuery_)) continue;
     rows.push_back(i);
   }
+  homebrew::sortRows(homebrew_, rows, homebrewSort_); // the server's order is the newest first
   for (int i = 0; homebrewTab_ == 0 && i < int(homebrewLocal_.size()); ++i) {
     const auto &app = homebrewLocal_[i];
     if (textMatches({app.name, app.author, app.fileName}, homebrewQuery_)) rows.push_back(int(homebrew_.size()) + i);
@@ -513,6 +514,10 @@ void Application::homebrewAction(Action a) {
     requestSearch();
     return;
   }
+  if (a == Action::Queue) {
+    openHomebrewSort();
+    return;
+  }
   // Rows of six, as on 내 게임.
   const int count = int(rows.size());
   if (a == Action::Up) selected_ = std::max(0, selected_ - 6);
@@ -533,6 +538,44 @@ void Application::homebrewAction(Action a) {
     homebrewAskRow_ = homebrewStatus(*picked) == homebrew::Status::Installed ? 0 : -1;
     homebrewExtras_ = 0;
     homebrewSaveAsk_ = false;
+  }
+}
+void Application::openHomebrewSort() {
+  homebrewSortAsk_ = true;
+  const auto at = std::find(std::begin(homebrew::Orders), std::end(homebrew::Orders), homebrewSort_);
+  homebrewSortRow_ = at == std::end(homebrew::Orders) ? 0 : int(at - std::begin(homebrew::Orders));
+}
+// A picks the order at once and closes, as the language popup does.
+void Application::homebrewSortAction(Action a) {
+  constexpr int Count = int(std::size(homebrew::Orders));
+  if (a == Action::Back || a == Action::Queue) homebrewSortAsk_ = false;
+  else if (a == Action::Up) homebrewSortRow_ = std::max(0, homebrewSortRow_ - 1);
+  else if (a == Action::Down) homebrewSortRow_ = std::min(Count - 1, homebrewSortRow_ + 1);
+  else if (a == Action::Accept) {
+    homebrewSort_ = homebrew::Orders[homebrewSortRow_];
+    homebrewSortAsk_ = false;
+    selected_ = 0;
+  }
+}
+void Application::homebrewSortDialog() {
+  constexpr float Width = 460, Row = 56, Gap = 6;
+  constexpr int Count = int(std::size(homebrew::Orders));
+  const auto body = modal(Width, 16 + Count * (Row + Gap) + 10, tr("Sort"), tr("Close"), "", tr("Select"), 10);
+  const float x = body.x + 24, w = body.w - 48;
+  for (int n = 0; n < Count; ++n) {
+    const float y = body.y + 16 + n * (Row + Gap), mid = y + Row / 2;
+    const bool on = homebrew::Orders[n] == homebrewSort_;
+    hit(x, y, w, Row, [this, n] {
+      homebrewSortRow_ = n;
+      action(Action::Accept);
+    });
+    if (n == homebrewSortRow_) paint_.focusRow(x, y, w, Row, Ground, 12);
+    else paint_.rect(x, y, w, Row, Surface, 12);
+    // A radio like the filter popup's sorts.
+    paint_.rect(x + 16, mid - 10, 20, 20, on ? Ink : SDL_Color{176, 174, 167, 255}, 10);
+    paint_.rect(x + 18, mid - 8, 16, 16, on ? Butter : Surface, 8);
+    if (on) paint_.rect(x + 22, mid - 4, 8, 8, Ink, 4);
+    paint_.fonts.middle(sortLabel(homebrew::Orders[n]), x + 50, mid, 20, Ink, on, w - 66);
   }
 }
 void Application::homebrewScreen() {
@@ -560,7 +603,15 @@ void Application::homebrewScreen() {
     homebrewTab_ = n;
     selected_ = 0;
   }, SearchX - 16, 0, {updates[0], updates[1], updates[2]});
-  pageTitle(tr("Homebrew"), homebrewLoaded_ ? countLabel(rows.size(), homebrewQuery_) : std::string(), tabsLeft);
+  // Left of the tabs, the order: Y or a tap picks another.
+  const std::string order = sortLabel(homebrewSort_);
+  const float sortW = paint_.keyLabelWidth("Y", order, 18, true) + 66, sortX = tabsLeft - 12 - sortW;
+  headerItem("sort", sortX, 24, sortW, 48, [this] { openHomebrewSort(); });
+  paint_.rect(sortX, 24, sortW, 48, Surface, 12);
+  paint_.key("Y", sortX + 18, 48);
+  paint_.icon(10, sortX + 60 - 4, 38, Ink, 20);
+  paint_.fonts.middle(order, sortX + 84, 48, 18, Ink, true, sortW - 100);
+  pageTitle(tr("Homebrew"), homebrewLoaded_ ? countLabel(rows.size(), homebrewQuery_) : std::string(), sortX);
   if (!connected_) {
     notice(tr("Not connected to a server."), tr("Connect to the server to see its homebrew."), 21);
     return;
