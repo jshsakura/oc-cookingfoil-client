@@ -42,7 +42,7 @@ namespace {
 // single .nro); `size` 0 skips that check.
 bool fetchFile(const Server &server, const State &state, const std::string &url, const std::string &sd,
                const std::string &path, std::string sha256, uint64_t size, std::atomic<uint64_t> &received,
-               Error &error, const std::atomic<bool> *cancel) {
+               Error &error, const std::atomic<bool> *cancel, int *busy = nullptr) {
   // The part file has a short plain name beside the target ("설치-스위치.md"
   // could not be created as "설치-스위치.md.part" on the console); the
   // finished file takes the listed name.
@@ -69,8 +69,11 @@ bool fetchFile(const Server &server, const State &state, const std::string &url,
   if (got.tooLong) return fail(tr("The downloaded file does not match the server's. Try again."));
   if (!got.failure.empty()) return fail(got.failure + " · " + path); // the listed name, not the part's
   if (!got.response.error.empty()) return fail(got.response.error);
-  if (!rangedOk(got.response))
+  if (!rangedOk(got.response)) {
+    // The file changed on the server since the list: it says how long to wait.
+    if (busy && got.response.status == 503) *busy = got.response.retryAfter > 0 ? got.response.retryAfter : 5;
     return fail(trf("Could not get the file. HTTP {0}", {std::to_string(got.response.status)}));
+  }
   if (sha256.empty()) sha256 = homebrew::etagSha256(got.response.etag); // without one the file is kept unchecked
   if ((size && got.size != size) || (!sha256.empty() && got.sha256 != sha256))
     return fail(tr("The downloaded file does not match the server's. Try again."));
@@ -295,16 +298,15 @@ bool homebrewArchive(const Server &server, const State &state, homebrew::App app
     return fetchFile(server, state, app.downloadUrl, sd, app.installPath, "", 0, received, error, cancel);
   }
 }
-} // namespace
-bool homebrewDownload(const Server &server, const State &state, const homebrew::App &app, const std::string &sd,
-                      std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel,
-                      std::atomic<uint64_t> *keptBytes) {
+// A folder install: each listed file the card does not have yet. `busy`:
+// a file changed on the server since the list (503), and how long to wait.
+bool homebrewFiles(const Server &server, const State &state, const homebrew::App &app, const std::string &sd,
+                   std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel,
+                   std::atomic<uint64_t> *keptBytes, int &busy) {
+  busy = 0;
   const auto passed = [keptBytes](uint64_t bytes) {
     if (keptBytes) *keptBytes += bytes;
   };
-  if (app.archive.usable()) return homebrewArchive(server, state, app, sd, received, error, cancel);
-  if (app.files.empty())
-    return fetchFile(server, state, app.downloadUrl, sd, app.installPath, "", 0, received, error, cancel);
   // What the card already has as listed (a cut install, or a new build that
   // kept most files): checked once, by size and then hash. A fresh install
   // has none of them and passes at once.
@@ -368,9 +370,11 @@ bool homebrewDownload(const Server &server, const State &state, const homebrew::
         continue;
       }
       Error mine;
-      if (!fetchFile(server, state, file.url, sd, file.path, file.sha256, file.size, received, mine, cancel)) {
+      int wait = 0;
+      if (!fetchFile(server, state, file.url, sd, file.path, file.sha256, file.size, received, mine, cancel, &wait)) {
         std::lock_guard<std::mutex> held(firstLock);
         if (!failed.exchange(true)) first = mine;
+        if (wait) busy = wait;
         return;
       }
     }
@@ -384,5 +388,37 @@ bool homebrewDownload(const Server &server, const State &state, const homebrew::
     return false;
   }
   return !(cancel && *cancel); // cancelled: the caller says so
+}
+} // namespace
+bool homebrewDownload(const Server &server, const State &state, const homebrew::App &listed, const std::string &sd,
+                      std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel,
+                      std::atomic<uint64_t> *keptBytes) {
+  if (listed.archive.usable()) return homebrewArchive(server, state, listed, sd, received, error, cancel);
+  if (listed.files.empty())
+    return fetchFile(server, state, listed.downloadUrl, sd, listed.installPath, "", 0, received, error, cancel);
+  // A file the server changed since the list (503): wait as it asks, read
+  // the list again and go on with the app as it is now; once.
+  auto app = listed;
+  const uint64_t before = received, keptBefore = keptBytes ? keptBytes->load() : 0;
+  for (int round = 0;; ++round) {
+    int busy = 0;
+    if (homebrewFiles(server, state, app, sd, received, error, cancel, keptBytes, busy)) return true;
+    if ((cancel && *cancel) || !busy || round > 0) return false;
+    logLine("homebrew " + app.id + ": a file changed on the server, listing again");
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(std::min(busy, 30));
+    while (std::chrono::steady_clock::now() < until && !(cancel && *cancel))
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::string etag;
+    std::vector<homebrew::App> apps;
+    bool unchanged = false;
+    Error listError;
+    if (!homebrewList(server, state, etag, apps, unchanged, listError, cancel)) return false;
+    const auto again = std::find_if(apps.begin(), apps.end(), [&](const homebrew::App &a) { return a.id == app.id; });
+    if (again == apps.end() || again->files.empty()) return false;
+    app = *again;
+    received = before;
+    if (keptBytes) *keptBytes = keptBefore;
+    error = {};
+  }
 }
 } // namespace foil::net
