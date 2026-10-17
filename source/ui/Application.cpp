@@ -213,6 +213,9 @@ bool Application::open() {
   std::atomic<bool> loaded{false}, fontsOpen{false}, fontsFailed{false};
   std::thread loader([&] {
     const platform::OnCore off(platform::WriterCore); // the drawing core keeps the splash moving
+    // The records file is read by several steps below: from the card once,
+    // from memory after, until the start is done.
+    const DownloadStore::KeepReads keep;
     guarded("startup", [&] {
       if (!paint_.fonts.open()) {
         fontsFailed = true;

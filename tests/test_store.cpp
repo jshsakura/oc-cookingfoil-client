@@ -115,6 +115,29 @@ int runStoreTests() {
     CHECK(store.save(list, error));
   }
   {
+    // Kept reads (the start): two stores on one file see each other's
+    // writes, and a file changed outside the process is read from the card.
+    DownloadStore::KeepReads keep;
+    DownloadStore first, second;
+    std::string error;
+    CHECK(first.open(path, error) && second.open(path, error));
+    CHECK(first.load().size() == 3);
+    auto more = second.load();
+    history::add(more, entry("added", history::Outcome::Queued));
+    CHECK(second.save(more, error));
+    CHECK(first.load().size() == 4);
+    const auto four = foil::readFile(path);
+    CHECK(first.save(list, error)); // back to the three
+    CHECK(second.load().size() == 3);
+    // Changed by someone else (another time on the card): read again.
+    { std::ofstream(path, std::ios::binary | std::ios::trunc) << four; }
+    struct utimbuf later {};
+    later.actime = later.modtime = std::time(nullptr) + 60;
+    CHECK(::utime(path.c_str(), &later) == 0);
+    CHECK(second.load().size() == 4);
+    CHECK(second.save(list, error));
+  }
+  {
     // A fresh open reads the list back in its order, with every field.
     DownloadStore store;
     std::string error;

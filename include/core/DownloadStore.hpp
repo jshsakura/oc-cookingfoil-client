@@ -81,6 +81,17 @@ public:
   // A damaged file was set aside and a fresh one made since the last call,
   // by any instance: whatever it held is gone, the keys too.
   static bool takeSetAside();
+  // While one is alive, a file read once is read from memory again (as long
+  // as its size and time on the card have not changed), and this process's
+  // writes keep that copy current: the start reads the records several
+  // times, the card only once. The copies go when the last one ends.
+  class KeepReads {
+  public:
+    KeepReads();
+    ~KeepReads();
+    KeepReads(const KeepReads &) = delete;
+    KeepReads &operator=(const KeepReads &) = delete;
+  };
   // The error a store gives while another instance (or this one) holds the
   // file for longer than it waits: a moment's, not the file's.
   static bool busy(const std::string &error);

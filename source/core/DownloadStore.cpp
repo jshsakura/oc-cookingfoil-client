@@ -282,6 +282,51 @@ void DownloadStore::close() {
 // so a change by another instance is always seen.
 std::mutex checkedLock;
 std::map<std::string, std::string> checkedFiles;
+// KeepReads: the bytes last read or written per file, with the size and
+// time the card gave for them then.
+struct Kept {
+  std::string bytes;
+  long long size = -1;
+  long long time = 0;
+};
+std::mutex keptLock;
+int keeping = 0;
+std::map<std::string, Kept> keptFiles;
+bool cardStamp(const std::string &file, long long &size, long long &time) {
+  struct stat info {};
+  if (::stat(file.c_str(), &info) != 0) return false;
+  size = (long long)info.st_size;
+  time = (long long)info.st_mtime;
+  return true;
+}
+void keepCopy(const std::string &file, std::string bytes) {
+  std::lock_guard<std::mutex> held(keptLock);
+  if (!keeping) return;
+  Kept kept;
+  if (!cardStamp(file, kept.size, kept.time)) {
+    keptFiles.erase(file);
+    return;
+  }
+  kept.bytes = std::move(bytes);
+  keptFiles[file] = std::move(kept);
+}
+// The kept copy, in memory SQLite owns, when the card still has that file.
+unsigned char *keptCopy(const std::string &file, size_t &size) {
+  std::lock_guard<std::mutex> held(keptLock);
+  const auto found = keptFiles.find(file);
+  if (!keeping || found == keptFiles.end()) return nullptr;
+  long long now = -1, time = 0;
+  if (!cardStamp(file, now, time) || now != found->second.size || time != found->second.time ||
+      found->second.bytes.empty()) {
+    keptFiles.erase(found);
+    return nullptr;
+  }
+  auto *out = static_cast<unsigned char *>(sqlite3_malloc64(found->second.bytes.size()));
+  if (!out) return nullptr;
+  std::memcpy(out, found->second.bytes.data(), found->second.bytes.size());
+  size = found->second.bytes.size();
+  return out;
+}
 std::string digest(const char *data, size_t size) {
   Sha256 hash;
   hash.update(data, size);
@@ -292,6 +337,7 @@ std::string digest(const std::string &bytes) { return digest(bytes.data(), bytes
 // with size 0 when there is none or it cannot be read.
 unsigned char *readWhole(const std::string &file, size_t &size) {
   size = 0;
+  if (auto *kept = keptCopy(file, size)) return kept;
   FILE *in = std::fopen(file.c_str(), "rb");
   if (!in) return nullptr;
   unsigned char *out = nullptr;
@@ -307,6 +353,7 @@ unsigned char *readWhole(const std::string &file, size_t &size) {
     }
   }
   std::fclose(in);
+  if (out) keepCopy(file, std::string(reinterpret_cast<const char *>(out), size));
   return out;
 }
 bool alreadyChecked(const std::string &file, const std::string &sum) {
@@ -334,6 +381,8 @@ bool persist(sqlite3 *db, const std::string &file, std::string &error, const std
   const bool ok = atomicWrite(file, written, error);
   // Made by the app from a database that was checked: no check again for it.
   rememberChecked(file, ok ? sum : std::string());
+  if (ok) keepCopy(file, std::move(written));
+  else keepCopy(file, {}); // unknown now: read from the card next time
   return ok;
 }
 // Opens the file and brings it up to date; `check` also runs quick_check.
@@ -828,5 +877,13 @@ bool DownloadStore::saveStateRows(const StateRows &rows, std::string &error) {
     }
     return true;
   });
+}
+DownloadStore::KeepReads::KeepReads() {
+  std::lock_guard<std::mutex> held(keptLock);
+  ++keeping;
+}
+DownloadStore::KeepReads::~KeepReads() {
+  std::lock_guard<std::mutex> held(keptLock);
+  if (--keeping == 0) keptFiles.clear();
 }
 } // namespace foil
