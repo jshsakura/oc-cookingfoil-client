@@ -152,6 +152,19 @@ bool Application::makeRetroShortcutHere(const retro::Game &game) {
 }
 // The server's shortcut did not come or would not install: made here
 // instead, so a broken one on the server never leaves the app without one.
+// The homebrew app a shortcut row is for: by its server shortcut id (a row
+// of the server's), or by the file a shortcut made here starts.
+std::string Application::shortcutApp(const history::Entry &entry) const {
+  const auto titleId = entry.install.files.empty() ? std::string() : entry.install.files.front().titleId;
+  Plan plan;
+  const bool planned = parsePlan(entry.payload, plan);
+  for (const auto &app : homebrew_) {
+    if (app.cardOnly) continue;
+    if (!titleId.empty() && app.forwarderTitleId == titleId) return app.id;
+    if (planned && plan.launch.empty() && homebrewFile(app) == plan.file) return app.id;
+  }
+  return {};
+}
 bool Application::shortcutFailed(const std::string &titleId) {
   for (const auto &app : homebrew_)
     if (!app.forwarderTitleId.empty() && app.forwarderTitleId == titleId && makeHomebrewShortcutHere(app)) {

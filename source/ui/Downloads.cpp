@@ -1,5 +1,6 @@
 #include <cctype>
 #include "ui/Application.hpp"
+#include "core/Forwarder.hpp"
 #include "net/Socket.hpp"
 #include "net/Tuner.hpp"
 #include "platform/Storage.hpp"
@@ -644,12 +645,22 @@ void Application::openHistoryRow(const history::Entry &entry) {
     if (!openHomebrewPage(apps.front().id))
       gone();
   };
+  // A shortcut's row opens the app it is for (the server's shortcut is not a
+  // game of the catalog, and one made here keeps no app in its row).
+  if (entry.kind == "shortcut" || (entry.kind.empty() && !entry.install.files.empty() &&
+                                   forwarder::shortcutId(forwarder::parseHexId(entry.install.files.front().titleId)))) {
+    const auto id = shortcutApp(entry);
+    if (!id.empty() && openHomebrewPage(id)) return;
+    if (entry.kind == "shortcut") openApp(entry.payload); // a row from before plans: the app's JSON
+    else gone();
+    return;
+  }
   if (entry.kind.empty()) {
     if (!openGame(history::catalogId(entry)))
       gone();
     return;
   }
-  if (entry.kind == "homebrew" || entry.kind == "shortcut") {
+  if (entry.kind == "homebrew") {
     openApp(entry.payload);
     return;
   }
