@@ -2259,7 +2259,10 @@ void Application::render() {
   dialogs();
   // What the finger is on, darker, as a pressed button on the web.
   if (pressing_) {
-    if ((pressedUntil_ && SDL_GetTicks() >= pressedUntil_) || pressedScreen_ != int(screen_)) pressing_ = false;
+    // A popup the tap opened (or closed) is on top now: the pressed card of
+    // what was under it would show over the popup, as if it were broken.
+    if ((pressedUntil_ && SDL_GetTicks() >= pressedUntil_) || pressedScreen_ != int(screen_) || pressedPopup_ != popupOpen())
+      pressing_ = false;
     else {
       // A card a little larger than what was touched, as on the web, not a
       // box drawn tight around it.

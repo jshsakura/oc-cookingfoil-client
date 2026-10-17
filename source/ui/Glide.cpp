@@ -55,6 +55,7 @@ void Application::fingerDown(float x, float y) {
       pressing_ = true;
       pressedUntil_ = 0;
       pressedScreen_ = int(screen_);
+      pressedPopup_ = popupOpen();
       return;
     }
 }

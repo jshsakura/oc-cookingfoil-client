@@ -1050,6 +1050,7 @@ private:
   uint32_t pressedUntil_ = 0; // 0 while held; else when the pressed look goes
   bool pressing_ = false;
   int pressedScreen_ = -1; // the screen it was pressed on: another one drops the look
+  bool pressedPopup_ = false; // pressed in a popup or under none: a popup opening or closing drops the look
   // Where other areas were left by the finger (a shelf swiped, then the
   // page scrolled): each keeps its place until a button is pressed.
   std::map<std::string, float> glideRest_;
