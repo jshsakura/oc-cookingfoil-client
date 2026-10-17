@@ -2788,15 +2788,27 @@ std::string Application::failureText(const std::string &error) {
 // 다운로드's records live in cookingfoil.db; the downloads.json of earlier
 // versions moves in once and goes.
 void Application::openDownloads(const std::string &sd) {
+  // At the start the log says which part of this step took the time.
+  uint32_t mark = SDL_GetTicks();
+  std::string parts;
+  const auto part = [&](const char *name) {
+    const uint32_t at = SDL_GetTicks();
+    parts += std::string(parts.empty() ? "" : ", ") + name + " " + std::to_string(at - mark) + "ms";
+    mark = at;
+  };
   makeDirectories(std::filesystem::path(sd + "/switch/cookingfoil").string());
   std::string error;
-  if (!store_.open(sd + "/switch/cookingfoil/cookingfoil.db", error)) {
+  const bool opened = store_.open(sd + "/switch/cookingfoil/cookingfoil.db", error);
+  part("open");
+  if (!opened) {
     logLine("downloads: " + error);
     history_.clear();
     return;
   }
   history_ = store_.load();
+  part("load");
   installer_.loadResumePoints(store_.resumePoints());
+  part("resume");
   checkResumePoints();
   const auto old = sd + "/switch/cookingfoil/downloads.json";
   if (history_.empty() && std::filesystem::exists(old)) {
@@ -2812,6 +2824,9 @@ void Application::openDownloads(const std::string &sd) {
   const auto read = history::serialize(history_);
   history::settle(history_);
   if (history::serialize(history_) != read) saveHistory();
+  part("settle");
+  if (loading_)
+    logLine("downloads " + std::to_string(history_.size()) + " rows: " + parts);
 }
 // The points were written beside the console's placeholders, which can go
 // without them (a system cleanup, another installer); a point with nothing

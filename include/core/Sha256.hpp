@@ -5,6 +5,11 @@
 #include <cstdint>
 #include <atomic>
 #include <string>
+#ifdef __SWITCH__
+extern "C" { // the header alone is not wrapped for C++ (switch.h is)
+#include <switch/crypto/sha256.h>
+}
+#endif
 namespace foil {
 class Sha256 {
 public:
@@ -12,6 +17,15 @@ public:
   // Lowercase hex of everything fed so far; finishes the hash.
   std::string hex();
 private:
+#ifdef __SWITCH__
+  // The CPU's SHA-256 instructions (libnx): the records file is hashed at
+  // each read, and every download as it arrives.
+  Sha256Context context_ = [] {
+    Sha256Context c;
+    sha256ContextCreate(&c);
+    return c;
+  }();
+#endif
   void block(const unsigned char *p);
   uint32_t h_[8] = {0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au,
                     0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u};

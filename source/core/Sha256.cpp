@@ -40,8 +40,15 @@ void Sha256::block(const unsigned char *p) {
   h_[0] += a; h_[1] += b; h_[2] += c; h_[3] += d; h_[4] += e; h_[5] += f; h_[6] += g; h_[7] += h;
 }
 void Sha256::update(const char *data, size_t size) {
+#ifdef __SWITCH__
+  sha256ContextUpdate(&context_, data, size);
+  return;
+#endif
   const auto *p = reinterpret_cast<const unsigned char *>(data);
   total_ += size;
+  // Whole blocks straight from the input, the rest through the buffer.
+  if (!used_)
+    for (; size >= 64; p += 64, size -= 64) block(p);
   while (size) {
     const size_t take = size < 64 - used_ ? size : 64 - used_;
     for (size_t i = 0; i < take; ++i) buffer_[used_ + i] = p[i];
@@ -51,10 +58,22 @@ void Sha256::update(const char *data, size_t size) {
     if (used_ == 64) {
       block(buffer_);
       used_ = 0;
+      for (; size >= 64; p += 64, size -= 64) block(p);
     }
   }
 }
 std::string Sha256::hex() {
+  static const char *digits = "0123456789abcdef";
+#ifdef __SWITCH__
+  unsigned char hash[SHA256_HASH_SIZE];
+  sha256ContextGetHash(&context_, hash);
+  std::string hashed;
+  for (const auto byte : hash) {
+    hashed += digits[byte >> 4];
+    hashed += digits[byte & 15];
+  }
+  return hashed;
+#endif
   const uint64_t bits = total_ * 8;
   const char pad = char(0x80);
   update(&pad, 1);
@@ -63,7 +82,6 @@ std::string Sha256::hex() {
   char length[8];
   for (int i = 0; i < 8; ++i) length[i] = char(bits >> ((7 - i) * 8));
   update(length, 8);
-  static const char *digits = "0123456789abcdef";
   std::string out;
   for (const auto word : h_)
     for (int shift = 28; shift >= 0; shift -= 4) out += digits[(word >> shift) & 15];

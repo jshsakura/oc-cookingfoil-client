@@ -618,7 +618,9 @@ bool DownloadStore::run(bool writes, std::string &error, const std::function<boo
   sqlite3 *db = nullptr;
   bool newer = false;
   std::string was;
-  if (connect(file_, db, false, newer, error, &was) != Opened::Ok)
+  // Only a write needs the digest (to skip writing bytes that did not
+  // change); hashing the whole file at each read was most of a read.
+  if (connect(file_, db, false, newer, error, writes ? &was : nullptr) != Opened::Ok)
     return false;
   // Another instance may have put a newer build's file here since.
   readOnly_ = newer;
