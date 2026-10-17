@@ -269,13 +269,31 @@ void Application::saveHomebrewLedger() {
   else
     wakeHistoryWriter();
 }
+void Application::queueFileList(const std::string &id, const std::vector<std::string> &files) {
+  std::lock_guard<std::mutex> held(historyMutex_);
+  fileListsPending_[id] = files.empty() ? std::nullopt : std::optional<std::string>(homebrew::serializeFileList(files));
+}
 void Application::writePendingLedger() {
   std::optional<std::string> text;
+  std::map<std::string, std::optional<std::string>> lists;
   {
     std::lock_guard<std::mutex> held(historyMutex_);
     text = std::exchange(ledgerPending_, std::nullopt);
+    lists = std::exchange(fileListsPending_, {});
   }
   std::string error;
+  // The lists first: a ledger naming an app whose list is not there yet
+  // would lose its files at a removal.
+  for (const auto &[id, list] : lists) {
+    const auto path = sdRoot_ + "/" + homebrew::fileListPath(id);
+    std::error_code ec;
+    if (!list) {
+      std::filesystem::remove(path, ec);
+      continue;
+    }
+    makeDirectories(std::filesystem::path(path).parent_path().string());
+    if (!atomicWrite(path, *list, error)) logLine("homebrew files: " + error);
+  }
   if (text && !atomicWrite(sdRoot_ + LedgerPath, *text, error))
     logLine("homebrew ledger: " + error);
 }
@@ -404,6 +422,7 @@ void Application::settleHomebrew(const homebrew::App &app, const std::optional<h
     if (file.path != app.installPath) record.files.push_back(file.path);
   for (const auto &entry : app.archive.entries)
     if (entry.path != app.installPath) record.files.push_back(entry.path);
+  queueFileList(app.id, record.files);
   homebrewLedger_[app.id] = record;
   homebrewOnCard_[app.installPath] = true;
   saveHomebrewLedger();
@@ -455,7 +474,10 @@ void Application::removeHomebrew(const homebrew::App &picked) {
     return;
   }
   if (ledgered) {
-    for (const auto &extra : found->second.files) {
+    // Installed in an earlier run: its list is on the card, not in memory.
+    auto extras = found->second.files;
+    if (extras.empty()) extras = homebrew::parseFileList(readFile(sdRoot_ + "/" + homebrew::fileListPath(app.id)));
+    for (const auto &extra : extras) {
       std::filesystem::remove(sdRoot_ + "/" + extra, ec);
       homebrew::removeEmptyFolders(sdRoot_, extra);
     }
@@ -463,6 +485,7 @@ void Application::removeHomebrew(const homebrew::App &picked) {
   }
   if (found != homebrewLedger_.end()) {
     homebrewOnCard_.erase(found->second.file);
+    queueFileList(found->first, {});
     homebrewLedger_.erase(found);
     saveHomebrewLedger();
   }

@@ -327,14 +327,27 @@ std::string serializeLedger(const Ledger &ledger) {
     }
     if (!r.fileSha.empty()) json_object_object_add(o, "fileSha", json_object_new_string(r.fileSha.c_str()));
     if (!r.shortcutKey.empty()) json_object_object_add(o, "shortcutKey", json_object_new_string(r.shortcutKey.c_str()));
-    if (!r.files.empty()) {
-      auto *files = json_object_new_array();
-      for (const auto &f : r.files) json_object_array_add(files, json_object_new_string(f.c_str()));
-      json_object_object_add(o, "files", files);
-    }
     json_object_object_add(root.get(), id.c_str(), o);
   }
   return json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_NOSLASHESCAPE);
+}
+std::string fileListPath(const std::string &id) { return "switch/cookingfoil/homebrew-files/" + id + ".json"; }
+std::string serializeFileList(const std::vector<std::string> &files) {
+  Json root(json_object_new_array());
+  for (const auto &f : files) json_object_array_add(root.get(), json_object_new_string(f.c_str()));
+  return json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PLAIN | JSON_C_TO_STRING_NOSLASHESCAPE);
+}
+std::vector<std::string> parseFileList(const std::string &json) {
+  std::vector<std::string> out;
+  Error error;
+  auto root = parseJson(json, error);
+  if (!root || !json_object_is_type(root.get(), json_type_array)) return out;
+  for (size_t f = 0; f < json_object_array_length(root.get()); ++f) {
+    auto *path = json_object_array_get_idx(root.get(), f);
+    if (json_object_is_type(path, json_type_string) && pathAllowed(json_object_get_string(path)))
+      out.push_back(json_object_get_string(path));
+  }
+  return out;
 }
 std::optional<CardFile> cardFile(const std::string &fullPath) {
   struct stat st {};

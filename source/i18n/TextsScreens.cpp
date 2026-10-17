@@ -410,7 +410,7 @@ const Translation rows[] = {
     {"Installed|tab", "설치됨", "導入済み", "已安装"},
     {"Homebrew", "홈브류", "ホームブリュー", "自制软件"},
     {"{0} already on the card was kept.", "이미 있던 파일 {0}는 그대로 두었습니다.", "カードにあった {0} はそのまま残しました。", "卡上已有的 {0} 保持不变。"},
-    {"{0} already on the card is skipped", "이미 있는 파일 {0}는 건너뜁니다", "カードにある {0} はスキップします", "已跳过卡上已有的 {0}"},
+    {"{0} already here", "이미 있는 {0} 제외", "既存の {0} を除く", "已有 {0} 跳过"},
     {"Could not read the game's data to create a save.", "게임 정보를 읽지 못해 세이브를 만들지 못했습니다.", "ゲーム情報を読めずセーブを作れませんでした。", "无法读取游戏信息，未能创建存档。"},
     {"This game does not use this kind of save.", "이 게임은 이 세이브를 쓰지 않습니다.", "このゲームはこの種類のセーブを使いません。", "此游戏不使用这种存档。"},
     {"Could not create the save.", "세이브를 새로 만들지 못했습니다.", "セーブを作成できませんでした。", "未能创建存档。"},

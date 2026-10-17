@@ -265,8 +265,15 @@ int runHomebrewTests() {
   CHECK(parseLedger("garbage").empty());
   {
     Ledger folder{{"gh-1", {"h", "1", "switch/ytb/ytb.nro", {"switch/ytb/data/a.bin", "../escape"}, {}, {}}}};
-    const auto back = parseLedger(serializeLedger(folder));
-    CHECK(back.at("gh-1").files == std::vector<std::string>{"switch/ytb/data/a.bin"});
+    // An older ledger's lists are read (paths checked), and written no more:
+    // they go in the app's own list.
+    const auto old = parseLedger(R"({"gh-1":{"hash":"h","version":"1","file":"switch/ytb/ytb.nro","files":["switch/ytb/data/a.bin","../escape"]}})");
+    CHECK(old.at("gh-1").files == std::vector<std::string>{"switch/ytb/data/a.bin"});
+    CHECK(serializeLedger(folder).find("files") == std::string::npos);
+    CHECK(parseLedger(serializeLedger(folder)).at("gh-1").files.empty());
+    CHECK(parseFileList(serializeFileList(folder.at("gh-1").files)) == std::vector<std::string>{"switch/ytb/data/a.bin"});
+    CHECK(parseFileList("garbage").empty());
+    CHECK(fileListPath("gh-1") == "switch/cookingfoil/homebrew-files/gh-1.json");
   }
   if (!apps.empty()) {
     const auto there = [](const std::string &) { return true; };

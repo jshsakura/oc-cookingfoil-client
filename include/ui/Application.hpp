@@ -519,6 +519,9 @@ private:
   // Older copies of the app the download replaces, for its worker to delete.
   std::vector<std::string> homebrewStale(const homebrew::App &app) const;
   void saveHomebrewLedger();
+  // The app's file list (homebrew::fileListPath) goes with the next ledger
+  // write; an empty one removes it.
+  void queueFileList(const std::string &id, const std::vector<std::string> &files);
   void writePendingLedger();
   void home();
   void library();
@@ -1464,6 +1467,8 @@ private:
   // homebrew.json's newest text, for the writer: an atomic write on the SD
   // card is a stall the screen must not wait for.
   std::optional<std::string> ledgerPending_;
+  // Folder installs' file lists to write with it, by app id (none: removed).
+  std::map<std::string, std::optional<std::string>> fileListsPending_;
   std::mutex stateWriteLock_; // one state write at a time, the newest last
   // Writes the waiting settings now; reload() does, before it reads them.
   void writePendingState();

@@ -128,8 +128,16 @@ struct Record {
   }
 };
 using Ledger = std::map<std::string, Record>; // by app id
+// The ledger reads a record's files from an older ledger too; it writes
+// them no more: they go in a list of their own (below).
 Ledger parseLedger(const std::string &json);
 std::string serializeLedger(const Ledger &ledger);
+// A folder install's other files, one small file per app read only when it
+// is removed. Kept in the ledger they made it thousands of lines (a game's
+// data folder), all read at every start. From the SD card root.
+std::string fileListPath(const std::string &id);
+std::string serializeFileList(const std::vector<std::string> &files);
+std::vector<std::string> parseFileList(const std::string &json);
 // The size and modified time of a file at a full path, or nothing.
 std::optional<CardFile> cardFile(const std::string &fullPath);
 // The ledger checked against the card. A file with the size and time it was

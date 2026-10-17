@@ -342,7 +342,30 @@ void Application::usePatchFolder(const std::string &sd) {
 // The app's records on the card: the homebrew ledger and 다운로드's list.
 void Application::openCardRecords(const std::string &sd) {
   sdRoot_ = sd;
-  homebrewLedger_ = homebrew::parseLedger(readFile(sd + "/switch/cookingfoil/homebrew.json"));
+  const auto ledgerFile = sd + "/switch/cookingfoil/homebrew.json";
+  homebrewLedger_ = homebrew::parseLedger(readFile(ledgerFile));
+  // An older ledger holds folder installs' file lists: they move to their
+  // own files once, and the ledger is written without them.
+  std::vector<std::string> moved;
+  bool lists = true;
+  for (const auto &[id, record] : homebrewLedger_) {
+    if (record.files.empty()) continue;
+    const auto path = sd + "/" + homebrew::fileListPath(id);
+    std::string error;
+    makeDirectories(std::filesystem::path(path).parent_path().string());
+    if (atomicWrite(path, homebrew::serializeFileList(record.files), error)) moved.push_back(id);
+    else {
+      logLine("homebrew files: " + error);
+      lists = false;
+    }
+  }
+  if (!moved.empty() && lists) {
+    std::string error;
+    if (atomicWrite(ledgerFile, homebrew::serializeLedger(homebrewLedger_), error))
+      logLine("homebrew ledger: file lists of " + std::to_string(moved.size()) + " app(s) moved to their own files");
+    else
+      logLine("homebrew ledger: " + error);
+  }
   // An app that closed mid-install left that one running: it goes back in
   // the queue, which picks up again once the shop is reachable.
   openDownloads(sd);
@@ -2820,10 +2843,12 @@ void Application::openDownloads(const std::string &sd) {
   }
   // Written back only when settling changed a row: a write rewrites the
   // whole file, seconds on a slow card, and the records read right after
-  // (the server settings) would wait on it.
-  const auto read = history::serialize(history_);
+  // (the server settings) would wait on it. Settling only changes running
+  // rows.
+  const bool running = std::any_of(history_.begin(), history_.end(),
+                                   [](const history::Entry &e) { return e.outcome == history::Outcome::Running; });
   history::settle(history_);
-  if (history::serialize(history_) != read) saveHistory();
+  if (running) saveHistory();
   part("settle");
   if (loading_)
     logLine("downloads " + std::to_string(history_.size()) + " rows: " + parts);

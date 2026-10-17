@@ -156,7 +156,7 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
     // Nothing comes in while it checks: no speed to measure yet.
     card.measure = !held && total && !checking;
     // Why it is less than the app's size: what the card has is not got again.
-    if (!held && total && kept) card.phase += " · " + trf("{0} already on the card is skipped", {formatBytes(kept)});
+    if (!held && total && kept) card.phase += " · " + trf("{0} already here", {formatBytes(kept)});
     card.chips.push_back({what, 1});
     // Asked to stop, it says so at once and takes no more presses until the
     // task has wound down (the file being checked or written finishes).
@@ -279,7 +279,7 @@ void Application::topCard(const TopCard &c, float dy) {
     status = c.phase + " · " + tr("The internet connection dropped. It goes on once it is back.");
     downloadSpeed_.add(now, c.bytes);
   } else if (!c.paused && c.measure && c.bytes > topCardStartBytes_ && still >= 20) {
-    status += " · " + std::string(tr("The connection paused. Reconnecting."));
+    status += " · " + std::string(tr("Reconnecting"));
     downloadSpeed_.add(now, c.bytes);
   } else if (!c.paused && c.measure) {
     downloadSpeed_.add(now, c.bytes);
@@ -305,7 +305,7 @@ void Application::topCard(const TopCard &c, float dy) {
       const double left = timeLeftShown_ ? timeLeft_.update(now, c.left, downloadSpeed_.average()) : -1;
       status += " · " + (timeLeftShown_ ? install::timeLeftText(left > Unbelievable ? -1 : left)
                                         : std::string(net::tuningFound() ? tr("Estimating time left")
-                                                                         : tr("Finding the best connection settings")));
+                                                                         : tr("Tuning the connection")));
     }
   } else {
     downloadSpeed_.reset();
