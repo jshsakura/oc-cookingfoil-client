@@ -2644,7 +2644,15 @@ Error Application::launchQueued() {
   installQueue_.pop_front();
   if (!next.kind.empty())
     return launchJob(next);
-  const std::vector<Item> files{next.file};
+  std::vector<Item> files{next.file};
+  // A server shortcut or a homebrew title queued by an earlier build has no
+  // format, and its address ends in the server's route (…/download): it is
+  // an NSP all the same.
+  if (files[0].format.empty()) {
+    const auto path = files[0].url.substr(0, files[0].url.find_first_of("?#"));
+    const bool route = path.size() >= 9 && path.compare(path.size() - 9, 9, "/download") == 0;
+    if (route || forwarder::shortcutId(forwarder::parseHexId(files[0].titleId))) files[0].format = "nsp";
+  }
   const auto row = std::find_if(history_.begin(), history_.end(),
                                [&](const history::Entry &e) { return e.id == next.entry; });
   if (auto error = installer_.start(files, next.name, next.icon, next.target,
