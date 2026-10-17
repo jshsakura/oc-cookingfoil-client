@@ -315,6 +315,8 @@ public:
   void setGenreTable(net::NameTable table) { genreTable_ = std::move(table); genreNames_ = net::namesIn(genreTable_, languageCode()); }
   // Where the PC preview keeps its fake SD card for user patches.
   void usePatchFolder(const std::string &sd);
+  void openCardRecords(const std::string &sd);
+  void openPatchStore(const std::string &sd);
   // The preview's picture cache, where the console keeps it beside its state.
   void useCacheFolder(std::string folder) { cacheFolder_ = std::move(folder); }
   // Touch: a tap runs the topmost area drawn last frame; a drag scrolls.

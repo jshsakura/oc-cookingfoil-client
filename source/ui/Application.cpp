@@ -238,13 +238,18 @@ bool Application::open() {
       background(tr("Preparing the image cache"), 0.17f, 0.19f, "images");
       images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
       images_->source({}, {}, imageCacheFolder(), fixture_);
-      background(tr("Reading patches and download history on the SD card"), 0.19f, 0.45f, "sd");
+      // Two steps under one caption, so the log tells which of them is slow.
+      background(tr("Reading patches and download history on the SD card"), 0.19f, 0.32f, "downloads");
 #ifdef __SWITCH__
-      usePatchFolder("sdmc:");
+      const std::string sd = "sdmc:";
 #else
-      if (!statePath_.empty())
-        usePatchFolder(std::filesystem::path(statePath_).parent_path().string() + "/sd");
+      const std::string sd = statePath_.empty() ? std::string() : std::filesystem::path(statePath_).parent_path().string() + "/sd";
 #endif
+      if (!sd.empty() && !patchWorker_.joinable()) {
+        openCardRecords(sd);
+        background(tr("Reading patches and download history on the SD card"), 0.32f, 0.45f, "patches");
+        openPatchStore(sd);
+      }
       if (!configPath_.empty()) {
         background(tr("Reading the server settings"), 0.45f, 0.93f, "config");
         reload();
@@ -331,6 +336,11 @@ bool Application::open() {
 void Application::usePatchFolder(const std::string &sd) {
   if (patchWorker_.joinable())
     return;
+  openCardRecords(sd);
+  openPatchStore(sd);
+}
+// The app's records on the card: the homebrew ledger and 다운로드's list.
+void Application::openCardRecords(const std::string &sd) {
   sdRoot_ = sd;
   homebrewLedger_ = homebrew::parseLedger(readFile(sd + "/switch/cookingfoil/homebrew.json"));
   // An app that closed mid-install left that one running: it goes back in
@@ -339,6 +349,9 @@ void Application::usePatchFolder(const std::string &sd) {
   rebuildQueue();
   // Left waiting or cut off last time: asked about once the shop is
   // reachable (offerResume), so nothing is said here.
+}
+// 패치's store: its ledger, and what a cut off change left half done.
+void Application::openPatchStore(const std::string &sd) {
   // A check of the old card stops first; it holds only a copy of the ledger.
   patchCheckStop_ = true;
   if (patchCheckWorker_.joinable())
