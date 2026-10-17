@@ -49,7 +49,7 @@ Score score(Cue cue) {
   case Cue::Start: { // 동전 두 개, on the butter's landings (every second from 0):
     // a coin on the first two, the fanfare on the third, a bass bouncing
     // with it between them, and the last chord left to ring and echo.
-    Score s{3.6f, 0.18f, 0.32f, 0.45f, {}};
+    Score s{3.6f, 0.18f, 0.32f, 0.36f, {}}; // soft: a little under the other cues
     for (const float at : {0.f, 1.f}) {
       s.notes.push_back({at, B5, 0.05f, 0.08f, Wave::Square, 0.4f});
       s.notes.push_back({at + 0.07f, E6, 0.05f, 0.25f, Wave::Square, 0.4f});
