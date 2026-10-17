@@ -100,8 +100,23 @@ Application::~Application() {
   flushHistory();
   if (storageWorker_.joinable())
     storageWorker_.join();
-  if (awake_)
+  if (awakeWorker_.joinable())
+    awakeWorker_.join();
+  if (awakeApplied_)
     platform::keepAwake(false);
+}
+void Application::applyAwake() {
+  if (awakeWorker_.joinable()) {
+    if (!awakeDone_) return; // the next poll sends what is wanted by then
+    awakeWorker_.join();
+  }
+  if (awakeApplied_ == awake_) return;
+  awakeApplied_ = awake_;
+  awakeDone_ = false;
+  awakeWorker_ = std::thread([this, on = awake_] {
+    platform::keepAwake(on);
+    awakeDone_ = true;
+  });
 }
 // The server restarting: said once per restart, small, and kept up while it
 // lasts; taken down as soon as the server answers again.
@@ -860,11 +875,13 @@ void Application::poll() {
   pollDevice();
   laps.lap("device");
   pollSaveJob();
+  laps.lap("save job");
   pollRetro();
+  laps.lap("retro");
   pollShopSaves();
   pollBackupSummary();
   pollDropbox();
-  laps.lap("saves/retro");
+  laps.lap("server saves");
   pollPatches();
   pollPatchCheck();
   laps.lap("patches");
@@ -888,10 +905,8 @@ void Application::poll() {
   const bool downloading = installer_.running() || retroDownloading() || (patchWorker_.joinable() && !patchBusy_.empty()) ||
                            !patchQueue_.empty() ||
                            appUpdate_ == AppUpdate::Downloading;
-  if (downloading != awake_) {
-    awake_ = downloading;
-    platform::keepAwake(awake_);
-  }
+  awake_ = downloading;
+  applyAwake();
   keepResumeChanges();
   serverRestartNotice();
   laps.lap("resume points");

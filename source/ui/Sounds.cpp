@@ -38,7 +38,9 @@ bool Sounds::open() {
   voices_.reserve(MostVoices + 1);
   SDL_PauseAudioDevice(device_, 0);
   maker_ = std::thread([this] {
-    const platform::OnCore off(platform::WriterCore); // never a frame's time
+    // Never a frame's time, nor the start's: the loading runs on the writer
+    // core, and a thread there is not paused for another of its priority.
+    const platform::OnCore off(platform::NetworkCore);
     for (int i = 0; i < CueCount; ++i) {
       auto samples = chime(Cue(i), Rate);
       SDL_LockAudioDevice(device_);

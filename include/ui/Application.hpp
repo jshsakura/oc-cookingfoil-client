@@ -1374,6 +1374,12 @@ private:
   InstalledSort installedSort_ = InstalledSort::Name;
   install::Status observedInstall_ = install::Status::Idle;
   bool awake_ = false; // the console is kept from dimming while downloading
+  // The applet calls behind it (the CPU boost above all) take up to a second:
+  // made on a thread of their own, the latest wanted state last.
+  std::thread awakeWorker_;
+  std::atomic<bool> awakeDone_{false};
+  bool awakeApplied_ = false;
+  void applyAwake();
   // Unfinished installs are kept in state.json so they can be resumed.
   // Every install starts here: the installer, the resume record and 다운로드's history.
   // Each file goes in the queue as its own entry (base game, update, DLC,
