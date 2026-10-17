@@ -6,7 +6,8 @@
 namespace foil::ui {
 void Application::refreshInstalled(std::function<void()> first) {
   if (deviceBusy_ || deviceFixture_ || installer_.running()) {
-    if (first) first();
+    // No read now, but what had to come first still runs, off the screen.
+    if (first) runOffScreen(std::move(first));
     if (installer_.running()) message(tr("Refresh the list after the install finishes."));
     return;
   }

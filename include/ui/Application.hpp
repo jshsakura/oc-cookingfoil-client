@@ -1373,6 +1373,13 @@ private:
   Error saveResult_;
   InstalledSort installedSort_ = InstalledSort::Name;
   install::Status observedInstall_ = install::Status::Idle;
+  // Console calls (a HOME Menu icon refreshed, a shortcut removed) that
+  // would wait on the drawing thread: run in order on a thread of their own.
+  std::thread consoleWorker_;
+  std::atomic<bool> consoleDone_{false};
+  std::vector<std::function<void()>> consoleTasks_;
+  void runOffScreen(std::function<void()> task);
+  void pumpConsoleTasks();
   bool awake_ = false; // the console is kept from dimming while downloading
   // The applet calls behind it (the CPU boost above all) take up to a second:
   // made on a thread of their own, the latest wanted state last.

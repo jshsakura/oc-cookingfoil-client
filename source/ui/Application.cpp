@@ -100,10 +100,30 @@ Application::~Application() {
   flushHistory();
   if (storageWorker_.joinable())
     storageWorker_.join();
+  if (consoleWorker_.joinable())
+    consoleWorker_.join();
+  for (const auto &task : std::exchange(consoleTasks_, {})) guarded("console task", task);
   if (awakeWorker_.joinable())
     awakeWorker_.join();
   if (awakeApplied_)
     platform::keepAwake(false);
+}
+void Application::runOffScreen(std::function<void()> task) {
+  consoleTasks_.push_back(std::move(task));
+  pumpConsoleTasks();
+}
+void Application::pumpConsoleTasks() {
+  if (consoleWorker_.joinable()) {
+    if (!consoleDone_) return; // the next poll starts what came meanwhile
+    consoleWorker_.join();
+  }
+  if (consoleTasks_.empty()) return;
+  consoleDone_ = false;
+  consoleWorker_ = std::thread([this, tasks = std::exchange(consoleTasks_, {})] {
+    const platform::OnCore off(platform::WriterCore);
+    for (const auto &task : tasks) guarded("console task", task);
+    consoleDone_ = true;
+  });
 }
 void Application::applyAwake() {
   if (awakeWorker_.joinable()) {
@@ -294,13 +314,18 @@ bool Application::open() {
     {
       std::lock_guard<std::mutex> lock(shownLock);
       text = caption;
-      const float waited = (SDL_GetTicks() - stepAt) / 1000.f;
-      goal = stepFrom + (stepTo - stepFrom) * 0.9f * (1 - std::exp(-waited / 0.4f));
+      // The bar runs on time, eased (most of the way in about three
+      // seconds); a step only holds it inside its own stretch, so a fast
+      // one never makes it leap and a slow one never quite stops it.
+      const float timed = 0.95f * (1 - std::exp(-seconds() / 1.2f));
+      goal = std::clamp(timed, stepFrom, stepFrom + (stepTo - stepFrom) * 0.95f);
     }
     const float dt = std::min(0.05f, (SDL_GetTicks() - lastFrame) / 1000.f);
     lastFrame = SDL_GetTicks();
+    // It follows at a steady pace: never faster than 60% a second, nor
+    // slower than 5% while it is behind.
     if (const float gap = goal - progressShown; gap > 0)
-      progressShown += std::min(gap, std::max(0.04f, gap * 6) * dt); // 4% a second at least
+      progressShown += std::min(gap, std::clamp(gap * 3, 0.05f, 0.6f) * dt);
     const uint32_t frameAt = SDL_GetTicks();
     paint_.splash(fontsOpen ? text : std::string(), progressShown, seconds());
     if (!platform::serviceApplet())
@@ -321,8 +346,8 @@ bool Application::open() {
   constexpr uint32_t HoldMs = 250;
   const float from = progressShown;
   // As long as what is left needs to look smooth: a bar near its end
-  // finishes at once, one half way takes about half a second.
-  const uint32_t FillMs = 200 + uint32_t(350 * std::clamp(1.f - from, 0.f, 1.f));
+  // finishes in a quarter second, one half way in about 0.6 s.
+  const uint32_t FillMs = 250 + uint32_t(700 * std::clamp(1.f - from, 0.f, 1.f));
   // The last word changes each start, one of a few kitchen lines.
   static const char *const Done[] = {"Well done!", "Golden brown, just right!", "A wild homebrew appeared!",
                                      "It's dangerous to go alone! Take this.", "You cooked something tasty!",
@@ -907,6 +932,7 @@ void Application::poll() {
                            appUpdate_ == AppUpdate::Downloading;
   awake_ = downloading;
   applyAwake();
+  pumpConsoleTasks();
   keepResumeChanges();
   serverRestartNotice();
   laps.lap("resume points");
@@ -2773,9 +2799,12 @@ Error Application::launchQueued() {
   }
   const auto row = std::find_if(history_.begin(), history_.end(),
                                [&](const history::Entry &e) { return e.id == next.entry; });
+  // Room as last read off the screen; unknown, it is not asked here (a full
+  // card's query takes seconds): the console refuses a write that does not fit.
+  const auto known = next.target == "nand" ? nandFree_ : sdFree_;
   if (auto error = installer_.start(files, next.name, next.icon, next.target,
                                     session_ ? session_->server() : Server{}, state_,
-                                    next.target == "nand" ? nandFree_ : sdFree_)) {
+                                    known ? known : std::optional<uint64_t>(std::numeric_limits<uint64_t>::max()))) {
     // It cannot start (no room, firmware): the rest of its pick goes too.
     history::end(history_, next.entry, history::Outcome::Failed, error.message, int64_t(std::time(nullptr)));
     dropGroup(next.group, error.message);
