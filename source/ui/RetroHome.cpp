@@ -22,6 +22,19 @@ void Application::retroHome() {
   headerItem("retroarch", 1252 - getW, 24, getW, 48, [this] { action(Action::Queue); });
   paint_.rect(1252 - getW, 24, getW, 48, Surface, 12);
   paint_.keyLabel("Y", get, 1272 - getW, 48, 19, Ink, true);
+  // L and R open the focused shelf's system, where they then step through
+  // the systems; said here, since nothing else shows it.
+  if (!retroShelves_.empty()) {
+    const auto systems = tr("By system");
+    const float sysW = paint_.keyWidth("L") + paint_.keyWidth("R") + paint_.fonts.measure(systems, 19, true) + 56,
+                sysX = 1252 - getW - 16 - sysW;
+    headerItem("systems", sysX, 24, sysW, 48, [this] { openRetroList(retroRow_); });
+    paint_.rect(sysX, 24, sysW, 48, Surface, 12);
+    paint_.key("L", sysX + 12, 48);
+    const float textX = sysX + 12 + paint_.keyWidth("L") + 16;
+    paint_.fonts.middle(systems, textX, 48, 19, Ink, true);
+    paint_.key("R", sysX + sysW - 12 - paint_.keyWidth("R"), 48);
+  }
   const int rows = int(retroShelves_.size());
   retroRow_ = std::clamp(retroRow_, 0, std::max(0, rows - 1));
   if (retroRow_ >= 0 && retroRow_ < rows)
@@ -158,6 +171,7 @@ void Application::retroHomeAction(Action a) {
   case Action::Right:
     retroCol_ = std::min(games(), retroCol_ + 1);
     break;
+  case Action::Previous:
   case Action::Next:
     openRetroList(retroRow_);
     break;

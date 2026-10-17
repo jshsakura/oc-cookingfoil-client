@@ -42,6 +42,7 @@ const Translation rows[] = {
     {"Refresh", "새로고침", "再読み込み", "刷新"},
     {"Update all", "모두 업데이트", "すべて更新", "全部更新"},
     {"Not connected to a server.", "서버에 연결되어 있지 않습니다.", "サーバーに接続していません。", "未连接到服务器。"},
+    {"By system", "기종별 보기", "機種別に見る", "按机种浏览"},
     {"Loading from the server.", "서버에서 불러오는 중입니다.", "サーバーから読み込んでいます。", "正在从服务器加载。"},
     {"This appears once the server answers.", "서버가 응답하면 바로 표시됩니다.", "サーバーが応答するとすぐに表示されます。", "服务器响应后会立即显示。"},
     {"Connect to a server to check for updates.", "서버에 연결한 뒤 업데이트를 확인합니다.", "サーバーに接続するとアップデートを確認します。", "连接服务器后检查更新。"},
