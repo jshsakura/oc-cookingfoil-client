@@ -553,7 +553,7 @@ private:
   std::string updatesFocus_; // the file the cursor is on in 업데이트/DLC, kept as rows leave
   int updatesTab_ = 1; // 1 업데이트, 2 DLC (내 게임's tabs after 설치됨)
   void showMyGamesTab(int tab);
-  float myGamesTabs(float right = 1252);
+  float myGamesTabs(float right, float reserve);
   float myGamesButtonWidth(const std::string &label);
   std::vector<UpdateCandidate> updateRows() const;
   void settings();
@@ -958,6 +958,9 @@ private:
   void notice(const std::string &title, const std::string &body = "", int icon = -1, const std::string &button = "",
               std::function<void()> press = {}, const std::string &other = "", const std::string &otherKey = "",
               std::function<void()> pressOther = {});
+  // A screen that needs the server, before it answers: still reading it,
+  // or not connected at all.
+  void offlineNotice(const std::string &body);
   // 홈 with nothing to show and a button on its notice: 설정 when no server
   // is set up, 다시 시도 when the one set up did not answer.
   bool homeOffersSettings() const { return groups_.empty() && !session_ && !stateWaiting_; }
@@ -1221,6 +1224,7 @@ private:
                   int icon = -1, const std::string &remove = "");
   std::string alert_, alertTitle_;
   bool refreshing_ = false; // - pressed: say so when the list is back
+  bool keepCatalog_ = false; // - pressed on the same server: the list stays until the new one is in
   std::unique_ptr<PatchStore> patchStore_;
   std::map<std::string, PatchRecord> patchRecords_; // drawn; the worker owns the store
   std::vector<UserPatch> serverPatches_, incomingPatches_;

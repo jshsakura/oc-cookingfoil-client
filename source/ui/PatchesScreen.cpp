@@ -695,7 +695,7 @@ void Application::patchesScreen() {
       for (int n = 0; n <= VisibleRows; ++n)
         paint_.skeleton(260, RowTop + n * RowStep, 992, RowHeight, 18);
     } else if (!connected_)
-      notice(tr("Not connected to a server."), tr("Connect to a server to load the patch list."), 21);
+      offlineNotice(tr("Connect to a server to load the patch list."));
     else if (patchError_ && patchRetryAt_)
       notice(tr("The server is reading its patches."), tr("It loads again by itself shortly."), 25);
     else if (patchError_)

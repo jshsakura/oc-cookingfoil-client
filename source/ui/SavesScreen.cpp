@@ -101,14 +101,19 @@ void Application::savesAction(Action a) {
 }
 void Application::savesScreen() {
   const bool shop = savesTab_ == 1;
-  // Search at the right end, as on every list; the tabs left of it.
+  // As on 홈브류: search at the right end, the tabs left of it, then the
+  // order (Y) on 이 기기 and 서버. Dropbox has none and the title takes its
+  // room; the tabs stay put by the search.
   const float searchX = SearchX;
   searchBar(savesQuery_, searchX);
-  // The order (Y) left of the search on 이 기기 and 서버, as on 내 게임.
-  // Dropbox has none, but its place stays: the tabs never move.
   const auto sort = savesSortLabel();
-  const float sortW = myGamesButtonWidth(sort), sortX = searchX - 16 - sortW;
-  const float tabsRight = sortX - 16;
+  const float sortW = myGamesButtonWidth(sort);
+  const float tabsLeft = headerTabs({tr("This console|mine"), tr("Server"), tr("Dropbox")}, savesTab_, [this](int n) {
+    savesTab_ = n;
+    if (n == 1 && !shopSavesLoaded_) loadShopSaves();
+    if (n == 2) dropboxEnter();
+  }, searchX - 16);
+  const float sortX = tabsLeft - 12 - sortW;
   if (savesTab_ != 2) {
     headerItem("sort", sortX, 24, sortW, 48, [this] { cycleSavesSort(); });
     paint_.rect(sortX, 24, sortW, 48, Surface, 12);
@@ -116,16 +121,11 @@ void Application::savesScreen() {
     paint_.icon(10, sortX + 60, 38, Ink, 20);
     paint_.fonts.middle(sort, sortX + 88, 48, 18, Ink, true, sortW - 106);
   }
-  const float tabsLeft = headerTabs({tr("This console|mine"), tr("Server"), tr("Dropbox")}, savesTab_, [this](int n) {
-    savesTab_ = n;
-    if (n == 1 && !shopSavesLoaded_) loadShopSaves();
-    if (n == 2) dropboxEnter();
-  }, tabsRight);
   pageTitle(tr("Saves"),
             shop ? (shopSavesLoaded_ ? countLabel(shopSaveGroups().size(), savesQuery_) : std::string())
             : savesTab_ == 0 && installed_.installed.complete ? countLabel(saveGameRows().size(), savesQuery_)
                                                              : "",
-            tabsLeft);
+            savesTab_ == 2 ? tabsLeft : sortX);
   if (savesTab_ == 2) {
     dropboxTab();
     return;
@@ -461,7 +461,7 @@ void Application::shopSavesList() {
   needHomebrewList(); // apps' saves take the app's name and icon from it
   if (shopSaves_.empty()) {
     if (!connected_)
-      notice(tr("Not connected to a server."), tr("Server saves load once the server is connected."), 21);
+      offlineNotice(tr("Server saves load once the server is connected."));
     else if (!shopSavesLoaded_ || shopSavesWorker_.joinable())
       for (int n = 0; n < Visible; ++n) paint_.skeleton(260, Top + n * RowStep, 992, RowHeight, 16);
     else if (shopSavesMissing_)

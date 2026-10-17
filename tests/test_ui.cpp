@@ -137,7 +137,7 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(app.current() == foil::ui::Screen::Installed);
     CHECK(app.onMenu());
     app.render();
-    app.touch(640, 48);
+    app.touch(820, 48);
     CHECK(app.current() == foil::ui::Screen::Updates);
     CHECK(!app.onMenu());
     CHECK(app.headerFocus() == "tab1");

@@ -670,7 +670,7 @@ void Application::homebrewScreen() {
   paint_.fonts.middle(order, sortX + 84, 48, 18, Ink, true, sortW - 100);
   pageTitle(tr("Homebrew"), homebrewLoaded_ ? countLabel(rows.size(), homebrewQuery_) : std::string(), sortX);
   if (!connected_) {
-    notice(tr("Not connected to a server."), tr("Connect to the server to see its homebrew."), 21);
+    offlineNotice(tr("Connect to the server to see its homebrew."));
     return;
   }
   if (!homebrewLoaded_) {

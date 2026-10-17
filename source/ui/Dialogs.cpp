@@ -113,6 +113,12 @@ float Application::pageTitle(const std::string &title, const std::string &meta, 
 std::string Application::countLabel(size_t count, const std::string &query) const {
   return query.empty() ? std::to_string(count) : trf("Search results: {0}", {std::to_string(count)});
 }
+void Application::offlineNotice(const std::string &body) {
+  if (session_ && !error_ && !pairingPending_)
+    notice(tr("Loading from the server."), tr("This appears once the server answers."), 21);
+  else
+    notice(tr("Not connected to a server."), body, 21);
+}
 void Application::notice(const std::string &title, const std::string &body, int icon, const std::string &button,
                          std::function<void()> press, const std::string &other, const std::string &otherKey,
                          std::function<void()> pressOther) {

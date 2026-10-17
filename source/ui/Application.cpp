@@ -725,8 +725,21 @@ void Application::reload(int prefer) {
     screen(Screen::Settings);
     return;
   }
-  clearCatalog();
-  session_.reset();
+  // - on the server already shown keeps its list until the new one is in;
+  // anything else (another server, none left) starts from empty.
+  const std::string shown = refreshing_ && connected_ && session_ ? session_->server().url : "";
+  size_t target = config_.servers.size();
+  {
+    const auto &servers = parsed.value.servers;
+    if (prefer >= 0 && size_t(prefer) < servers.size() && servers[prefer].enabled) target = prefer;
+    else
+      target = std::find_if(servers.begin(), servers.end(), [](const auto &s) { return s.enabled; }) - servers.begin();
+    keepCatalog_ = !shown.empty() && target < servers.size() && servers[target].url == shown;
+  }
+  if (!keepCatalog_) {
+    clearCatalog();
+    session_.reset();
+  }
   serverIndex_ = 0;
   config_ = std::move(parsed.value);
   error_ = {};
@@ -754,14 +767,21 @@ void Application::connect(size_t index) {
     return;
   }
   poll();
-  clearCatalog();
+  const bool keep = std::exchange(keepCatalog_, false) && session_ && connected_ &&
+                    session_->server().url == config_.servers[index].url;
+  if (!keep) clearCatalog();
   serverIndex_ = index;
   session_ = std::make_unique<net::Session>(config_.servers[index], state_,
                                             statePath_, &stop_);
   session_->setConfigPath(configPath_);
-  connected_ = false;
-  images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
-  images_->source(config_.servers[index], state_, imageCacheFolder(), fixture_);
+  if (keep) {
+    // The covers already drawn stay; only the keys may be new.
+    images_->updateState(state_);
+  } else {
+    connected_ = false;
+    images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
+    images_->source(config_.servers[index], state_, imageCacheFolder(), fixture_);
+  }
   renewTokensWith(config_.servers[index]);
   refresh();
 }

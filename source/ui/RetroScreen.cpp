@@ -823,7 +823,7 @@ void Application::retroList() {
   const int Visible = banner ? 4 : 5;
   if (retroGames_.empty()) {
     if (!connected_)
-      notice(tr("Not connected to a server."), tr("Retro games load once the server is connected."), 21);
+      offlineNotice(tr("Retro games load once the server is connected."));
     else if (retroMissing_)
       notice(tr("This server has no retro games."), tr("They appear here once the server has a retro folder."), 35);
     else if (retroError_ && retroRetryAt_)

@@ -34,14 +34,15 @@ std::vector<UpdateCandidate> Application::pendingUpdates() const {
     if (!taken.count(row.item.url)) out.push_back(row);
   return out;
 }
-float Application::myGamesTabs(float right) {
+float Application::myGamesTabs(float right, float reserve) {
   const auto &all = pendingUpdates();
   const auto count = [&](const char *type) {
     return int(std::count_if(all.begin(), all.end(), [&](const auto &row) { return row.item.type == type; }));
   };
-  // Short labels (Japanese runs long), and the strip ends where the title does.
+  // Short labels (Japanese runs long), and the strip ends where the title
+  // and the Y button left of it (`reserve`) do.
   return headerTabs({tr("Installed|tab"), tr("Updates"), "DLC"}, myGamesTab(), [this](int n) { showMyGamesTab(n); }, right,
-                    260 + paint_.fonts.measure(tr("My games"), 30, true) + 24, {0, count("update"), count("dlc")});
+                    260 + paint_.fonts.measure(tr("My games"), 30, true) + 24 + reserve, {0, count("update"), count("dlc")});
 }
 // The Y button between 내 게임's tabs and search (the order on 설치됨,
 // 모두 업데이트 or 모두 설치 on the others).
@@ -83,11 +84,12 @@ void Application::updates() {
   // Y updates everything in the tab; its button only shows when there is
   // something to update.
   const bool canUpdate = installed_.installed.complete && !deviceBusy_ && !rows.empty();
-  // As on 설치됨: search at the right end, 모두 업데이트 (Y) in the order's
-  // place, then the tabs.
+  // As on 홈브류: search at the right end, the tabs left of it, then
+  // 모두 업데이트 (Y) in the order's place.
   const auto yLabel = updatesTab_ == 2 ? tr("Install all") : tr("Update all");
-  const float searchX = SearchX, w = myGamesButtonWidth(yLabel), buttonX = searchX - 16 - w;
+  const float searchX = SearchX, w = myGamesButtonWidth(yLabel);
   searchBar(updatesQuery_, searchX);
+  const float tabsLeft = myGamesTabs(searchX - 16, w + 12), buttonX = tabsLeft - 12 - w;
   // Always there, dimmed with nothing to update, so the tabs never move.
   if (canUpdate) headerItem("all", buttonX, 24, w, 48, [this] { action(Action::Queue); });
   paint_.rect(buttonX, 24, w, 48, Surface, 12);
@@ -95,12 +97,11 @@ void Application::updates() {
   const auto ink = canUpdate ? Ink : SDL_Color{184, 182, 176, 255};
   paint_.icon(3, buttonX + 60, 38, ink, 20);
   paint_.fonts.middle(yLabel, buttonX + 88, 48, 18, ink, true, w - 106);
-  const float tabsLeft = myGamesTabs(buttonX - 16);
   pageTitle(tr("My games"),
             !updatesQuery_.empty() ? countLabel(rows.size(), updatesQuery_) : bytes ? std::to_string(rows.size()) + " · " + formatBytes(bytes) : std::to_string(rows.size()),
-            tabsLeft);
+            buttonX);
   if (!connected_) {
-    notice(tr("Not connected to a server."), tr("Connect to a server to check for updates."), 21);
+    offlineNotice(tr("Connect to a server to check for updates."));
     return;
   }
   // Pulsing rows only for a first read; a reread keeps the rows on screen.

@@ -403,7 +403,7 @@ void Application::dropboxTab() {
       return;
     }
     if (!dropboxSession_ && !connected_) {
-      notice(tr("Not connected to a server."), tr("Dropbox connects once the server is connected."), 21);
+      offlineNotice(tr("Dropbox connects once the server is connected."));
       return;
     }
     if (!dropboxSession_ && inContent()) paint_.ring(260, Top, 992, 466, 20);

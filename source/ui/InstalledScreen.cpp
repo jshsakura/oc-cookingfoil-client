@@ -180,19 +180,19 @@ void Application::installedScreen() {
   const auto rows = gameRows(installedQuery_);
   // A first read pulses; a reread keeps the list it already has.
   const bool firstRead = deviceBusy_ && !installed_.installed.complete;
-  // Search at the right end, the order (Y, as 모든 게임's filter) left of
-  // it, then 내 게임's tabs; - reloads the list.
+  // As on 홈브류: search at the right end, 내 게임's tabs left of it, then
+  // the order (Y); - reloads the list.
   const auto sort = installedSortLabel(installedSort_);
-  const float searchX = SearchX, sortW = myGamesButtonWidth(sort), sortX = searchX - 16 - sortW;
+  const float searchX = SearchX, sortW = myGamesButtonWidth(sort);
   searchBar(installedQuery_, searchX);
+  const float tabsLeft = myGamesTabs(searchX - 16, sortW + 12), sortX = tabsLeft - 12 - sortW;
   headerItem("sort", sortX, 24, sortW, 48, [this] { cycleInstalledSort(1); });
   paint_.rect(sortX, 24, sortW, 48, Surface, 12);
   paint_.key("Y", sortX + 18, 48);
   paint_.icon(10, sortX + 60, 38, Ink, 20);
   paint_.fonts.middle(sort, sortX + 88, 48, 18, Ink, true, sortW - 106);
-  const float tabsLeft = myGamesTabs(sortX - 16);
   pageTitle(tr("My games"), !firstRead || managedGame_ ? countLabel(rows.size(), installedQuery_) : std::string(),
-            tabsLeft);
+            sortX);
   if (firstRead && !managedGame_) {
     paint_.skeletonCards(260, 104, 12);
     return;
