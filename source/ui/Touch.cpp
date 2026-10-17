@@ -4,7 +4,7 @@
 namespace foil::ui {
 void Application::hit(float x, float y, float w, float h, std::function<void()> run) {
   // Inside a gliding list only the part on screen answers.
-  if (!clips_.empty()) {
+  if (!clips_.empty() && SDL_RenderIsClipEnabled(paint_.renderer)) {
     SDL_Rect clip{};
     SDL_RenderGetClipRect(paint_.renderer, &clip);
     const float left = std::max(x, float(clip.x)), top = std::max(y, float(clip.y));

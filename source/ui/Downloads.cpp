@@ -413,7 +413,10 @@ void Application::runningList(float y, const TopCard *card, float cardDy, float 
   if (!installQueue_.empty()) queueList(from + lead - top + shift, from);
   // Over the rows: a rising card passes in front of them.
   if (card) {
-    clipTo(232, from - 8, 1048, view + 8); // a row's cover may have let it go
+    // A row's cover may have let the clip go: set again, not stacked (one
+    // unclip below ends it; a second push stayed and cut the menu's taps).
+    unclip();
+    clipTo(232, from - 8, 1048, view + 8);
     topCard(*card, cardDy - top);
   }
   unclip();

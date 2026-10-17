@@ -307,25 +307,20 @@ bool Application::open() {
   // Within a step the bar's goal creeps toward the next step's start (most
   // of the way in under a second, never reaching it); the bar follows at a
   // limited speed, so a new step never makes it jump.
-  uint32_t lastFrame = SDL_GetTicks();
   while (!loaded) {
     std::string text;
     float goal = 0;
     {
       std::lock_guard<std::mutex> lock(shownLock);
       text = caption;
-      // The bar runs on time, eased (most of the way in about three
-      // seconds); a step only holds it inside its own stretch, so a fast
-      // one never makes it leap and a slow one never quite stops it.
-      const float timed = 0.95f * (1 - std::exp(-seconds() / 1.2f));
-      goal = std::clamp(timed, stepFrom, stepFrom + (stepTo - stepFrom) * 0.95f);
+      // The bar runs on time alone: steadily to 80% over three seconds,
+      // easing in at the end, and waits there; when the loading is done the
+      // fill below takes it the rest of the way. The steps only name what
+      // runs, so none makes it stop or leap.
+      const float t = std::min(1.f, seconds() / 3.f);
+      goal = 0.8f * (1 - (1 - t) * (1 - t) * 0.5f - 0.5f * (1 - t));
     }
-    const float dt = std::min(0.05f, (SDL_GetTicks() - lastFrame) / 1000.f);
-    lastFrame = SDL_GetTicks();
-    // It follows at a steady pace: never faster than 60% a second, nor
-    // slower than 5% while it is behind.
-    if (const float gap = goal - progressShown; gap > 0)
-      progressShown += std::min(gap, std::clamp(gap * 3, 0.05f, 0.6f) * dt);
+    progressShown = std::max(progressShown, goal);
     const uint32_t frameAt = SDL_GetTicks();
     paint_.splash(fontsOpen ? text : std::string(), progressShown, seconds());
     if (!platform::serviceApplet())
@@ -2144,6 +2139,9 @@ void Application::render() {
   else if (!std::exchange(alertHeard_, true)) sounds_.play(Cue::Error);
   hits_.clear();
   glideAreas_.clear();
+  // A screen that returned between clipTo() and unclip() left its clip
+  // behind: every frame starts with none, or the menu's hits fall outside.
+  clips_.clear();
   glideStep();
   header_.clear();
   // Asked once a launch, as soon as a server answers; 설정's badge shows it.
