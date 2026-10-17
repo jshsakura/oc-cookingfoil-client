@@ -22,4 +22,18 @@ private:
   int core_ = 0;
   unsigned long long mask_ = 0;
 };
+// The thread it is made on yields to the drawing thread: one step lower in
+// priority for as long as it lives. Horizon does not share a core between
+// threads of one priority, so a busy one beside the screen (a cache scan,
+// cover decoding) would hold every frame until it waits on something.
+class Behind {
+public:
+  Behind();
+  ~Behind();
+  Behind(const Behind &) = delete;
+  Behind &operator=(const Behind &) = delete;
+
+private:
+  int was_ = -1;
+};
 } // namespace foil::platform

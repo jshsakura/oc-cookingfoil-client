@@ -2944,6 +2944,7 @@ void Application::checkResumePoints() {
   for (const auto &[key, point] : resumeChecked_) keys.push_back(key);
   const auto started = std::filesystem::file_time_type::clock::now();
   resumeCheckWorker_ = std::thread([this, keys, started] {
+    const platform::Behind behind; // runs while the splash is up
     ResumeLeftovers leftovers;
     guarded("resume check", [&] {
       const auto there = platform::placeholdersThere(keys);

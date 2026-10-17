@@ -18,6 +18,19 @@ OnCore::OnCore([[maybe_unused]] int core) {
   }
 #endif
 }
+Behind::Behind() {
+#ifdef __SWITCH__
+  s32 priority = 0;
+  if (R_SUCCEEDED(svcGetThreadPriority(&priority, CUR_THREAD_HANDLE)) && priority < 0x3F &&
+      R_SUCCEEDED(svcSetThreadPriority(CUR_THREAD_HANDLE, u32(priority + 1))))
+    was_ = priority;
+#endif
+}
+Behind::~Behind() {
+#ifdef __SWITCH__
+  if (was_ >= 0) svcSetThreadPriority(CUR_THREAD_HANDLE, u32(was_));
+#endif
+}
 OnCore::~OnCore() {
 #ifdef __SWITCH__
   if (moved_)

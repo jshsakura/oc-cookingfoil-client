@@ -1,4 +1,5 @@
 #include "ui/Images.hpp"
+#include "platform/Cores.hpp"
 #include "platform/Storage.hpp"
 #include "core/Json.hpp"
 #include "net/Api.hpp"
@@ -177,6 +178,7 @@ void Images::source(Server server, State state, std::string cache,
     auto &cleanup = cacheCleanup();
     if (!cleanup.thread.joinable())
       cleanup.thread = std::thread([folder = cache_] {
+        const platform::Behind behind; // seconds of SD scanning: never the splash's time
         trimImageCache(folder, imageCacheLimit(platform::freeSpace("sd")), &cacheCleanup().stop);
       });
   }
@@ -250,6 +252,8 @@ void Images::provide(const std::string &key, const std::string &bytes) {
   entries_[key] = {bytes, nullptr, true, false, 0};
 }
 void Images::worker() {
+  // Covers decode beside the screen, never in its way.
+  const platform::Behind behind;
   while (!stop_) {
     std::string url;
     State state;
