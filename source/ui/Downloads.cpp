@@ -44,8 +44,14 @@ void Application::downloads() {
   // One download at a time, so one card at the top for whatever runs (a
   // game, an app, a retro game, a patch), and the queue under it.
   TopCard card;
+  const double now = SDL_GetTicks() / 1000.;
   if (!topCardNow(p, card)) {
-    if (!installQueue_.empty())
+    // Between one download and the next: the queue keeps its place under
+    // where the card was, instead of jumping up and back down.
+    constexpr double Between = 1.5;
+    if (!installQueue_.empty() && now - cardShownAt_ < Between)
+      runningList(294);
+    else if (!installQueue_.empty())
       runningList(90);
     else
       notice(tr("Nothing is downloading."),
@@ -55,8 +61,15 @@ void Application::downloads() {
              4);
     return;
   }
-  topCard(card);
-  runningList(294);
+  // A new card rises from the queue's first row, where it waited, and the
+  // rows under it move up a place, eased.
+  constexpr double Rise = 0.32;
+  if (card.key != topCardKey_) cardChangedAt_ = now;
+  cardShownAt_ = now;
+  const float t = float(std::clamp((now - cardChangedAt_) / Rise, 0.0, 1.0));
+  const float left = (1 - t) * (1 - t) * (1 - t); // what is still to go
+  runningList(294 + left * QueueStep);
+  topCard(card, left * (294 + QueueTitle - 90));
 }
 // What the top card shows now; false when nothing runs or waits paused.
 bool Application::topCardNow(const install::Progress &p, TopCard &card) {
@@ -189,7 +202,7 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
 // The card at the top of 진행 중: cover, name, percent (one decimal) and a
 // bar that glides, what it is doing with its speed and time left, its
 // parts, and 취소 and 일시정지 bottom right (A and Y do the same).
-void Application::topCard(const TopCard &c) {
+void Application::topCard(const TopCard &c, float dy) {
   if (c.key != topCardKey_) {
     topCardKey_ = c.key;
     topCardBytes_ = topCardStartBytes_ = c.bytes;
@@ -198,16 +211,16 @@ void Application::topCard(const TopCard &c) {
     downloadSpeed_.reset();
     timeLeft_.reset();
   }
-  hit(260, 90, 992, 180, [this] {
+  hit(260, dy + 90, 992, 180, [this] {
     sidebar_ = false;
     headerFocus_.clear();
     downloadsRow_ = 0;
   });
   if (inContent() && downloadsRow_ == 0)
-    paint_.ring(260, 90, 992, 180, 20);
-  paint_.rect(260, 90, 992, 180, Surface, 20);
-  cover(c.icon, 284, 112, 112, false, c.name);
-  paint_.fonts.text(c.name, 418, 112, 26, Ink, true, 680);
+    paint_.ring(260, dy + 90, 992, 180, 20);
+  paint_.rect(260, dy + 90, 992, 180, Surface, 20);
+  cover(c.icon, 284, dy + 112, 112, false, c.name);
+  paint_.fonts.text(c.name, 418, dy + 112, 26, Ink, true, 680);
   // The bar glides toward the figure, which a compressed file moves a whole
   // piece at a time; going back (the next file) jumps.
   const double frameAt = SDL_GetTicks() / 1000.;
@@ -224,13 +237,13 @@ void Application::topCard(const TopCard &c) {
   // One decimal: a slow download still visibly moves.
   char percent[16];
   std::snprintf(percent, sizeof(percent), "%.1f%%", std::floor(shownPercent_ * 10) / 10);
-  paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 26, true), 114, 26, Ink, true);
-  paint_.rect(418, 154, 810, 14, Line, 7);
-  paint_.rect(418, 154, 810 * shownPercent_ / 100., 14, Butter, 7);
+  paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 26, true), dy + 114, 26, Ink, true);
+  paint_.rect(418, dy + 154, 810, 14, Line, 7);
+  paint_.rect(418, dy + 154, 810 * shownPercent_ / 100., 14, Butter, 7);
   // Files already on the card, passed rather than fetched: the bar's start
   // in a paler butter, so a quick finish reads as what it is.
   if (c.skipped > 0)
-    paint_.rect(418, 154, 810 * std::min(c.skipped, shownPercent_) / 100., 14, SDL_Color{255, 226, 150, 255}, 7);
+    paint_.rect(418, dy + 154, 810 * std::min(c.skipped, shownPercent_) / 100., 14, SDL_Color{255, 226, 150, 255}, 7);
   std::string status = c.phase;
   const double now = SDL_GetTicks() / 1000.;
   downloadSeen_ = now;
@@ -271,12 +284,19 @@ void Application::topCard(const TopCard &c) {
       status += " · " + formatSpeed(steady * 1048576.0);
       // The time left waits for the connections to be found (or a minute):
       // from the first, slower speed it read an hour, then jumped to minutes.
-      constexpr double TimeLeftWait = 60;
+      // Even with them found, a few seconds of this card's own speed come
+      // first: right after the files on the card were checked, the first
+      // reading is tiny and read as days.
+      constexpr double TimeLeftWait = 60, FirstReadings = 6, Unbelievable = 7 * 86400;
       if (timeLeftFrom_ < 0) timeLeftFrom_ = now;
-      if (!timeLeftShown_ && (net::tuningFound() || now - timeLeftFrom_ >= TimeLeftWait)) timeLeftShown_ = true;
+      if (!timeLeftShown_ && now - timeLeftFrom_ >= FirstReadings &&
+          (net::tuningFound() || now - timeLeftFrom_ >= TimeLeftWait))
+        timeLeftShown_ = true;
       // Until then it says what it is doing rather than a number that will jump.
-      status += " · " + (timeLeftShown_ ? install::timeLeftText(timeLeft_.update(now, c.left, downloadSpeed_.average()))
-                                        : std::string(tr("Finding the best connection settings")));
+      const double left = timeLeftShown_ ? timeLeft_.update(now, c.left, downloadSpeed_.average()) : -1;
+      status += " · " + (timeLeftShown_ ? install::timeLeftText(left > Unbelievable ? -1 : left)
+                                        : std::string(net::tuningFound() ? tr("Estimating time left")
+                                                                         : tr("Finding the best connection settings")));
     }
   } else {
     downloadSpeed_.reset();
@@ -284,17 +304,17 @@ void Application::topCard(const TopCard &c) {
     timeLeftShown_ = false;
     timeLeftFrom_ = -1;
   }
-  paint_.fonts.text(status, 418, 181, 18, linkDown ? Bad : restarting ? Pending : Secondary, false, 810);
+  paint_.fonts.text(status, 418, dy + 181, 18, linkDown ? Bad : restarting ? Pending : Secondary, false, 810);
   float x = 418;
   for (const auto &[label, state] : c.chips) {
     // A finished part leads with the check mark icon (the font has no ✓).
     const bool done = state == 2, active = state == 1;
     const float mark = done ? 22 : 0;
     const auto width = paint_.fonts.measure(label, 15, true) + 24 + mark;
-    paint_.rect(x, 216, width, 32, done ? SDL_Color{227, 242, 234, 255} : active ? Ink : Ground, 8);
+    paint_.rect(x, dy + 216, width, 32, done ? SDL_Color{227, 242, 234, 255} : active ? Ink : Ground, 8);
     if (done)
-      paint_.icon(8, x + 10, 223, Okay, 18);
-    paint_.fonts.text(label, x + 12 + mark, 220, 15, done ? Okay : active ? Surface : Secondary, true);
+      paint_.icon(8, x + 10, dy + 223, Okay, 18);
+    paint_.fonts.text(label, x + 12 + mark, dy + 220, 15, done ? Okay : active ? Surface : Secondary, true);
     x += width + 10;
   }
   // 취소 always at the right end, as on every row; 일시정지 (or 이어받기) left of it.
@@ -303,18 +323,18 @@ void Application::topCard(const TopCard &c) {
     const std::string stop = tr("Cancel");
     const float cw = paint_.fonts.measure(stop, 16, true) + 32;
     bx -= cw;
-    hit(bx, 212, cw, 40, c.onCancel);
-    paint_.rect(bx, 216, cw, 32, Ground, 8);
-    paint_.fonts.middle(stop, bx + 16, 232, 16, Ink, true);
+    hit(bx, dy + 212, cw, 40, c.onCancel);
+    paint_.rect(bx, dy + 216, cw, 32, Ground, 8);
+    paint_.fonts.middle(stop, bx + 16, dy + 232, 16, Ink, true);
     bx -= 10;
   }
   if (c.onPause) {
     const std::string label = c.paused ? tr("Resume") : tr("Pause");
     const float w = paint_.fonts.measure(label, 16, true) + 32;
     bx -= w;
-    hit(bx, 212, w, 40, c.onPause);
-    paint_.rect(bx, 216, w, 32, c.paused ? Butter : Ground, 8);
-    paint_.fonts.middle(label, bx + 16, 232, 16, Ink, true);
+    hit(bx, dy + 212, w, 40, c.onPause);
+    paint_.rect(bx, dy + 216, w, 32, c.paused ? Butter : Ground, 8);
+    paint_.fonts.middle(label, bx + 16, dy + 232, 16, Ink, true);
     bx -= 10;
   }
   // Its page, only when it has one.
@@ -322,9 +342,9 @@ void Application::topCard(const TopCard &c) {
     const std::string label = tr("Details");
     const float w = paint_.fonts.measure(label, 16, true) + 32;
     bx -= w;
-    hit(bx, 212, w, 40, c.onDetails);
-    paint_.rect(bx, 216, w, 32, Ground, 8);
-    paint_.fonts.middle(label, bx + 16, 232, 16, Ink, true);
+    hit(bx, dy + 212, w, 40, c.onDetails);
+    paint_.rect(bx, dy + 216, w, 32, Ground, 8);
+    paint_.fonts.middle(label, bx + 16, dy + 232, 16, Ink, true);
   }
 }
 const history::Entry *Application::runningEntry() const {

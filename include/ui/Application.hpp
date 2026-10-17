@@ -839,10 +839,11 @@ private:
   // 진행 중 shows no 상세 at all).
   std::function<void()> runningDetails();
   bool topCardNow(const install::Progress &p, TopCard &card);
-  void topCard(const TopCard &card);
+  void topCard(const TopCard &card, float dy = 0);
   std::string topCardKey_;
   uint64_t topCardBytes_ = 0, topCardStartBytes_ = 0;
   double topCardMovedAt_ = 0; // when its byte count last moved
+  double cardChangedAt_ = -10, cardShownAt_ = -10; // a new card's rise; the last frame with one
   double resumedNoteUntil_ = 0; // its bar went back: "중단되었던 블록부터…" until then
   // A paused app or retro game sits on the card, not again in the list.
   size_t queueSkip() const { return queueHeld_ && !installQueue_.empty() && !installer_.running() && !retroDownloading() ? 1 : 0; }
