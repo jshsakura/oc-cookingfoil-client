@@ -105,16 +105,16 @@ void Application::savesScreen() {
   const float searchX = SearchX;
   searchBar(savesQuery_, searchX);
   // The order (Y) left of the search on 이 기기 and 서버, as on 내 게임.
-  float tabsRight = searchX - 16;
+  // Dropbox has none, but its place stays: the tabs never move.
+  const auto sort = savesSortLabel();
+  const float sortW = myGamesButtonWidth(sort), sortX = searchX - 16 - sortW;
+  const float tabsRight = sortX - 16;
   if (savesTab_ != 2) {
-    const auto sort = savesSortLabel();
-    const float sortW = myGamesButtonWidth(sort), sortX = tabsRight - sortW;
     headerItem("sort", sortX, 24, sortW, 48, [this] { cycleSavesSort(); });
     paint_.rect(sortX, 24, sortW, 48, Surface, 12);
     paint_.key("Y", sortX + 18, 48);
     paint_.icon(10, sortX + 60, 38, Ink, 20);
     paint_.fonts.middle(sort, sortX + 88, 48, 18, Ink, true, sortW - 106);
-    tabsRight = sortX - 16;
   }
   const float tabsLeft = headerTabs({tr("This console|mine"), tr("Server"), tr("Dropbox")}, savesTab_, [this](int n) {
     savesTab_ = n;

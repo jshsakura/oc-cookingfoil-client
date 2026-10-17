@@ -146,6 +146,10 @@ void Application::installedAction(Action a) {
   if (managedGame_) {
     if (deviceBusy_) return;
     if (a == Action::Back) { managedGame_.reset(); saves_.clear(); return; }
+    if (a == Action::Queue && screen_ != Screen::Saves) {
+      launchManagedGame();
+      return;
+    }
     if (a == Action::Up) manageRow_ = std::max(screen_ == Screen::Saves ? 1 : 0, manageRow_ - 1);
     if (a == Action::Down) manageRow_ = std::min(int(saves_.size()), manageRow_ + 1);
     if (a == Action::Accept && manageRow_ > 0) {
@@ -253,7 +257,8 @@ void Application::management() {
   const int shown = savesOnly ? 4 : 3;
   const int listed = std::max(1, std::min(shown, int(saves_.size())));
   const float height = 20 + 28 + (savesOnly ? 0 : Label + Row + 16) + Label + listed * (Row + Gap) + 6;
-  const auto body = modal(860, height, managedGame_->name, tr("Back"), "", "", savesOnly ? 36 : 6);
+  // Y starts the game, as the HOME Menu would (내 게임 only).
+  const auto body = modal(860, height, managedGame_->name, tr("Back"), savesOnly ? "" : tr("Launch|game"), "", savesOnly ? 36 : 6);
   const float x = body.x + 32, w = body.w - 64;
   float y = body.y + 20;
   paint_.fonts.text(applying_ ? trf("Apply {0} · pick where it goes", {applying_->name}) : managedGame_->titleId, x, y, 17,
@@ -321,6 +326,20 @@ void Application::management() {
   }
   removalConfirm();
   applyConfirm();
+}
+// The game picked in 내 게임, started now. Starting it closes this app, so
+// not while something downloads.
+void Application::launchManagedGame() {
+  if (!managedGame_) return;
+  if (downloadRunning()) {
+    message(tr("Start the game after the downloads finish."));
+    return;
+  }
+  // The system asks this app to close; it winds down as on any exit.
+  if (auto error = platform::launchApplication(managedGame_->applicationId)) {
+    alertTitle_ = tr("Could not start the game.");
+    alert_ = error.message;
+  }
 }
 void Application::removalConfirm() {
   if (!removal_) return;

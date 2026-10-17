@@ -8,6 +8,9 @@ namespace foil::platform {
 Parsed<InstalledLibrary> readInstalled();
 Parsed<std::vector<SaveEntry>> readSaves(uint64_t applicationId);
 Error removeInstalled(const RemovalRequest &request);
+// Closes this app and starts the installed game, as the HOME Menu would.
+// Only as an application (not opened from the Album).
+Error launchApplication(uint64_t applicationId);
 // Finds (remove false) or deletes (remove true) content files on the SD card
 // and console storage that no installed title uses, plus leftover install
 // placeholders. Deleting scans again first, so only what is unused at that

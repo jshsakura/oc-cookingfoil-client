@@ -176,7 +176,8 @@ void Application::savePanel() {
     }
   }
   y += Row + 16;
-  paint_.fonts.text(backups_.empty() ? std::string(tr("No backups yet.")) : trf("{0} backups", {std::to_string(backups_.size())}),
+  // What the rows below are for: each one is a backup to put back.
+  paint_.fonts.text(backups_.empty() ? std::string(tr("No backups yet.")) : trf("Restore a backup · {0}", {std::to_string(backups_.size())}),
                     x, y + 4, 19, Secondary, true);
   y += Label;
   // Backups, then "delete this save".

@@ -3,6 +3,7 @@
 #include "core/I18n.hpp"
 #include "core/SaveBackups.hpp"
 #include "core/Json.hpp"
+#include "core/Log.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -542,4 +543,17 @@ Parsed<CleanupReport> cleanOrphans(bool remove, CleanupProgress *progress,
   return {{}, {tr("Leftover cleanup works on the console.")}};
 #endif
 }
+#ifdef __SWITCH__
+Error launchApplication(uint64_t applicationId) {
+  if (!platform::applicationMode()) return {tr("Games can be started from here only when CookingFoil runs as an application.")};
+  const Result rc = appletRequestLaunchApplication(applicationId, nullptr);
+  if (R_FAILED(rc)) {
+    logLine("launch " + std::to_string(applicationId) + " failed: " + std::to_string(rc));
+    return {tr("Could not start the game.")};
+  }
+  return {};
+}
+#else
+Error launchApplication(uint64_t) { return {tr("Could not start the game.")}; }
+#endif
 } // namespace foil::platform

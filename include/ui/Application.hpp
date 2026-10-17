@@ -449,6 +449,7 @@ private:
   void homebrewScreen();
   void homebrewAction(Action a);
   void openHomebrewSort();
+  void launchManagedGame();
   void rememberShortcutKey(const std::string &appId, const std::string &key);
   bool homebrewShortcutStale(const homebrew::App &app) const;
   void homebrewSortAction(Action a);
