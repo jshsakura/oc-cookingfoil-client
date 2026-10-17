@@ -1,3 +1,4 @@
+#include <cctype>
 #include "ui/Application.hpp"
 #include "net/Socket.hpp"
 #include "net/Tuner.hpp"
@@ -633,7 +634,14 @@ void Application::openHistoryRow(const history::Entry &entry) {
   };
   const auto openApp = [&](const std::string &payload) {
     const auto apps = homebrew::parse("{\"homebrew\":[" + payload + "]}", "");
-    if (apps.empty() || !openHomebrewPage(apps.front().id))
+    if (apps.empty()) {
+      gone();
+      return;
+    }
+    // The server may list it under another id now (rebuilt): found by where
+    // it installs, or its name.
+    homebrewOpenLike_ = apps.front();
+    if (!openHomebrewPage(apps.front().id))
       gone();
   };
   if (entry.kind.empty()) {
@@ -685,7 +693,9 @@ bool Application::openHomebrewPage(const std::string &id) {
     return true;
   }
   homebrewOpenId_.clear();
-  const auto found = std::find_if(homebrew_.begin(), homebrew_.end(), [&](const homebrew::App &app) { return app.id == id; });
+  auto found = std::find_if(homebrew_.begin(), homebrew_.end(), [&](const homebrew::App &app) { return app.id == id; });
+  if (found == homebrew_.end() && homebrewOpenLike_) found = homebrewLike(*homebrewOpenLike_);
+  homebrewOpenLike_.reset();
   if (found == homebrew_.end())
     return false;
   if (screen_ != Screen::Homebrew)
@@ -712,5 +722,22 @@ bool Application::openHomebrewPage(const std::string &id) {
     return true;
   }
   return false;
+}
+// The server's entry for an app known from before, when its id changed (the
+// server rebuilt it): the same install path, else the same name.
+std::vector<homebrew::App>::iterator Application::homebrewLike(const homebrew::App &old) {
+  const auto lower = [](std::string text) {
+    for (auto &c : text) c = char(std::tolower(static_cast<unsigned char>(c)));
+    return text;
+  };
+  auto found = std::find_if(homebrew_.begin(), homebrew_.end(), [&](const homebrew::App &app) { return app.id == old.id; });
+  if (found == homebrew_.end() && !old.installPath.empty())
+    found = std::find_if(homebrew_.begin(), homebrew_.end(), [&](const homebrew::App &app) {
+      return !app.cardOnly && lower(app.installPath) == lower(old.installPath);
+    });
+  if (found == homebrew_.end() && !old.name.empty())
+    found = std::find_if(homebrew_.begin(), homebrew_.end(),
+                         [&](const homebrew::App &app) { return !app.cardOnly && app.name == old.name; });
+  return found;
 }
 } // namespace foil::ui

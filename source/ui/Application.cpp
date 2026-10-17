@@ -2701,7 +2701,14 @@ Error Application::launchJob(const QueuedInstall &next) {
   row()->at = int64_t(std::time(nullptr));
   bool started = false;
   if (next.kind == "homebrew") {
-    const auto apps = homebrew::parse("{\"homebrew\":[" + next.payload + "]}", "");
+    auto apps = homebrew::parse("{\"homebrew\":[" + next.payload + "]}", "");
+    // Queued before the server rebuilt it: today's entry for it (its id and
+    // addresses may have changed), so it does not fetch a file now gone.
+    if (!apps.empty() && homebrewLoaded_)
+      if (const auto now = homebrewLike(apps.front()); now != homebrew_.end() && now->id != apps.front().id) {
+        logLine("homebrew: " + apps.front().name + " is listed under a new id; fetched from there");
+        apps.front() = *now;
+      }
     started = !apps.empty() && runHomebrew(apps.front());
   } else if (next.kind == "retro") {
     started = runRetroGame(retro::parseGameJson(next.payload));

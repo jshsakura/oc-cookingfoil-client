@@ -354,6 +354,8 @@ public:
 
 private:
   void takeNetwork();
+  std::vector<homebrew::App>::iterator homebrewLike(const homebrew::App &old); // homebrew_.end(): none
+  std::optional<homebrew::App> homebrewOpenLike_; // a page asked for by an app known from before
   // Until the server first answers (or while the records are still being
   // read), the menu and the buttons are placeholders.
   bool menuPending() const { return !menuKnown_ && (network_.joinable() || stateWaiting_); }
