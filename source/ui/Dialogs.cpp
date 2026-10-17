@@ -209,20 +209,20 @@ void Application::viewPopup() {
 }
 void Application::dialogs() {
   if (!confirmInstall_ && alert_.empty() && !serverForm_ && !confirmCancel_ && !viewPopup_ &&
-      !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !confirmCleanup_ &&
-      !languagePopup_ && !cleanupBusy_ && !retroArchAsking_ && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
+      !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !tidyOpen_ &&
+      !languagePopup_ && !retroArchAsking_ && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
-      !homebrewRemoveAsk_ && !(homebrewAsk_ && homebrewExtras_) && !shortcutRemoveAsk_ && !selfShortcutAsk_ && unqueueAsk_ < 0 && !bugAsk_ && !cacheClearAsk_ && !clockModal() && !resumeAsked())
+      !homebrewRemoveAsk_ && !(homebrewAsk_ && homebrewExtras_) && !shortcutRemoveAsk_ && !selfShortcutAsk_ && unqueueAsk_ < 0 && !bugAsk_ && !clockModal() && !resumeAsked())
     return;
   SDL_RenderSetClipRect(paint_.renderer, nullptr);
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 150});
   blockTouch();
   // When the popup on top changed, for the double-press guard (settled()).
-  const int which = confirmCancel_ * 1 + confirmCleanup_ * 2 + confirmPatchRemove_ * 4 + confirmInstall_ * 8 +
+  const int which = confirmCancel_ * 1 + tidyOpen_ * 2 + confirmPatchRemove_ * 4 + confirmInstall_ * 8 +
                     dropboxUnlinkAsk_ * 32 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + (homebrewAsk_ && homebrewExtras_) * 256 +
                     (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + shopAppSaveAsk_ * 2048 +
                     (serverForm_ && serverForm_->confirmDelete) * 4096 + shortcutRemoveAsk_ * 8192 +
-                    selfShortcutAsk_ * 16384 + (unqueueAsk_ >= 0) * 32768 + bugAsk_ * 65536 + cacheClearAsk_ * 131072 +
+                    selfShortcutAsk_ * 16384 + (unqueueAsk_ >= 0) * 32768 + bugAsk_ * 65536 +
                     clockModal() * 262144 + resumeAsked() * 524288;
   if (which != popupKind_) {
     popupKind_ = which;
@@ -266,12 +266,8 @@ void Application::dialogs() {
   } else if (shopAppSaveAsk_ && alert_.empty()) {
     if (shopSaves_.empty()) shopAppSaveAsk_ = false;
     else appSaveConfirm(shopSaves_[std::clamp(shopSavePick_, 0, int(shopSaves_.size()) - 1)]);
-  } else if (cleanupBusy_) {
-    cleanupProgressDialog();
-  } else if (confirmCleanup_) {
-    cleanupDialog();
-  } else if (cacheClearAsk_ && alert_.empty()) {
-    imageCacheDialog();
+  } else if (tidyOpen_ && alert_.empty()) {
+    fileCleanupDialog();
   } else if (confirmPatchRemove_ || managingPatch_ || pickingPatch_) {
     patchDialog();
   } else if (shortcutRemoveAsk_ && alert_.empty()) {

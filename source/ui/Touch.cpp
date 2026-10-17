@@ -132,8 +132,8 @@ void Application::scrollToTop() {
   for (int n = 0; n < 4000 && !top(); ++n) action(Action::Up);
 }
 bool Application::popupOpen() const {
-  return !alert_.empty() || clockModal() || unqueueAsk_ >= 0 || bugAsk_ || cacheClearAsk_ || appUpdateAsk_ || appUpdate_ == AppUpdate::Downloading || viewPopup_ || confirmInstall_ || confirmCancel_ || languagePopup_ ||
-         confirmCleanup_ || cleanupBusy_ || confirmPatchRemove_ || managingPatch_ || pickingPatch_ || serverForm_ || homebrewRemoveAsk_ || (homebrewAsk_ && homebrewExtras_) || shortcutRemoveAsk_ || selfShortcutAsk_ ||
+  return !alert_.empty() || clockModal() || unqueueAsk_ >= 0 || bugAsk_ || appUpdateAsk_ || appUpdate_ == AppUpdate::Downloading || viewPopup_ || confirmInstall_ || confirmCancel_ || languagePopup_ ||
+         tidyOpen_ || confirmPatchRemove_ || managingPatch_ || pickingPatch_ || serverForm_ || homebrewRemoveAsk_ || (homebrewAsk_ && homebrewExtras_) || shortcutRemoveAsk_ || selfShortcutAsk_ ||
          retroArchAsking_ || saveNeedsGame_ || savePicking_ || shopAppSaveAsk_ || applyAsking_ || managedGame_ ||
          removal_ || galleryOpen_ || (screen_ == Screen::Saves && (dropboxModal() || dropboxSession_));
 }

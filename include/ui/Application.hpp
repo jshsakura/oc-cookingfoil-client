@@ -20,6 +20,7 @@
 #include "core/Patches.hpp"
 #include "core/CardPatches.hpp"
 #include "core/I18n.hpp"
+#include <array>
 #include <condition_variable>
 #include <deque>
 #include <future>
@@ -306,7 +307,7 @@ public:
   void saveOwnState();
   // 설정's options card: 언어, 기본 저장 위치, 앱 업데이트, 남은 파일 정리,
   // then the switches: 서명 검사, 펌웨어 검사, 홈 메뉴 바로가기, 오류 로그 전송.
-  static constexpr int SettingsOptions = 10;
+  static constexpr int SettingsOptions = 9;
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).
@@ -838,18 +839,30 @@ private:
   size_t queueSkip() const { return queueHeld_ && !installQueue_.empty() && !installer_.running() && !retroDownloading() ? 1 : 0; }
   void patchGame(const UserPatch &patch, std::string &name, std::string &icon) const;
   void patchDialog();
-  // 설정 > 남은 파일 정리: scan, confirm, then delete on a worker thread.
-  void startCleanup(bool remove);
-  void pollCleanup();
-  void cleanupDialog();
-  // 설정's 이미지 캐시 row (ImageCache.cpp).
+  // 설정 > 파일 정리 (FileCleanup.cpp): what each kind of leftover takes,
+  // and the picked ones deleted, on a worker thread.
+  struct TidyFound {
+    Parsed<CleanupReport> leftovers;
+    std::vector<std::pair<std::string, uint64_t>> pieces; // half-downloaded files, by full path
+    uint64_t pieceBytes = 0, cacheBytes = 0;
+  };
+  void openFileCleanup();
+  void deletePickedFiles();
+  void pollFileCleanup();
+  void fileCleanupAction(Action a);
+  void fileCleanupDialog();
+  bool tidyLeftoversAllowed() const;
+  bool tidyPiecesAllowed() const;
+  uint64_t tidyBytes(int row) const;
+  bool tidyPicked(int row) const;
+  bool tidyOpen_ = false, tidyBusy_ = false, tidyDeleting_ = false, tidyKnown_ = false;
+  int tidyRow_ = 0;
+  std::array<bool, 3> tidyOn_{true, true, false}, tidyRemoving_{};
+  TidyFound tidyFound_, tidyIncoming_; // what the screen shows; what the worker brings
+  std::thread tidyWorker_;
+  std::atomic<bool> tidyDone_{false};
   std::string imageCacheFolder() const;
-  void measureImageCache(bool clear);
-  void imageCacheAction(Action a);
-  void imageCacheDialog();
-  void cleanupProgressDialog(); // while a scan or delete runs
   CleanupProgress cleanupProgress_;
-  float cleanupShown_ = 0; // the bar's drawn fill, eased toward the real one
   // 설정 > 앱 업데이트: the server's newest build, checked when 설정 opens;
   // A gets it, swaps the .nro and starts the app again.
   enum class AppUpdate { Unknown, Checking, Latest, Available, Missing, Failed, Downloading };
@@ -1194,18 +1207,11 @@ private:
   std::atomic<int> incomingPatchRetry_{0};
   uint32_t patchRetryAt_ = 0; // ticks when a 503 list asks again
   bool managingPatch_ = false; // the patch management popup is open
-  std::thread cleanupWorker_;
-  std::thread cacheWorker_;
-  std::atomic<int64_t> cacheBytes_{-1}; // the picture cache's size; -1 until measured
-  std::atomic<bool> cacheBusy_{false}, cacheCleared_{false};
-  bool cacheClearAsk_ = false;
+  std::atomic<bool> cacheBusy_{false}; // the image cache is being emptied
   std::string cacheFolder_; // set by the preview; else beside the state file
   uint64_t restartSeen_ = 0; // the server restarts already said
   bool restartShowing_ = false, refreshAfterRestart_ = false;
   uint32_t restartProbeAt_ = 0; // when the list was last asked during a restart
-  std::atomic<bool> cleanupDone_{false};
-  bool cleanupBusy_ = false, cleanupRemoving_ = false, confirmCleanup_ = false;
-  Parsed<CleanupReport> cleanupResult_;
   int patchMenuRow_ = 0;
   Error patchError_, incomingPatchError_;
   std::string patchBusy_, patchBusyLabel_, patchMessage_, patchFailTitle_;

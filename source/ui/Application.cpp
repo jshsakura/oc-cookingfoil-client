@@ -69,10 +69,8 @@ Application::~Application() {
     patchCheckWorker_.join();
   if (patchWorker_.joinable())
     patchWorker_.join();
-  if (cleanupWorker_.joinable())
-    cleanupWorker_.join();
-  if (cacheWorker_.joinable())
-    cacheWorker_.join();
+  if (tidyWorker_.joinable())
+    tidyWorker_.join();
   if (saveWorker_.joinable())
     saveWorker_.join();
   if (retroWorker_.joinable())
@@ -782,7 +780,7 @@ void Application::poll() {
   pollDropbox();
   pollPatches();
   pollPatchCheck();
-  pollCleanup();
+  pollFileCleanup();
   pollAppUpdate();
   pollClock();
   // The keys were made again at a load (core/State): said once.
@@ -805,8 +803,6 @@ void Application::poll() {
   }
   keepResumeChanges();
   serverRestartNotice();
-  if (cacheCleared_.exchange(false))
-    message(tr("Deleted the image cache."));
   const auto installStatus = installer_.progress().status;
   if (installStatus == install::Status::Running) {
     const auto bytes = net::receivedBytes();
@@ -1206,8 +1202,6 @@ void Application::action(Action a) {
     descriptionScroll_ = std::clamp(int(std::lround(glide_.pos / ScrollStep)), 0,
                                     (descriptionHeight_ + ScrollStep - 1) / ScrollStep);
   unglide();
-  if (cleanupBusy_) // the progress modal is up until it finishes
-    return;
   if (galleryOpen_ && (fullPage() || (screen_ == Screen::Patches && managingPatch_))) {
     if (a == Action::Back) galleryOpen_ = false;
     else if (!detail_.screenshots.empty()) {
@@ -1359,17 +1353,8 @@ void Application::action(Action a) {
     if (a == Action::Back) languagePopup_ = false;
     return;
   }
-  if (confirmCleanup_) {
-    if (a == Action::Back)
-      confirmCleanup_ = false;
-    else if (a == Action::Accept && settled()) {
-      confirmCleanup_ = false;
-      startCleanup(true);
-    }
-    return;
-  }
-  if (cacheClearAsk_) {
-    imageCacheAction(a);
+  if (tidyOpen_) {
+    fileCleanupAction(a);
     return;
   }
   if (homebrewRemoveAsk_ || homebrewAsk_ || shortcutRemoveAsk_ ||
@@ -1676,31 +1661,18 @@ void Application::action(Action a) {
         saveOwnState();
         break;
       case 2: appUpdateAction(a); break;
-      case 3:
-        // Said first, as the image cache is: what goes and what stays.
-        if (cleanupBusy_) break;
-        confirmCleanup_ = true;
-        dialogFocus_ = 0;
-        break;
-      case 4:
-        if (cacheBusy_) break; // emptying it now
-        measureImageCache(false); // a running count: nothing to walk
-        if (cacheBytes_ == 0) message(tr("The image cache is empty."));
-        else {
-          cacheClearAsk_ = true;
-          dialogFocus_ = 0;
-        }
-        break;
+      // What each leftover takes, in a popup; the picked ones go.
+      case 3: openFileCleanup(); break;
       // The switches, together.
-      case 5: toggleInstallCheck(state_.skipSignatureCheck); break;
-      case 6: toggleInstallCheck(state_.skipFirmwareCheck); break;
-      case 7: toggleInstallCheck(state_.makeShortcuts); break;
-      case 8:
+      case 4: toggleInstallCheck(state_.skipSignatureCheck); break;
+      case 5: toggleInstallCheck(state_.skipFirmwareCheck); break;
+      case 6: toggleInstallCheck(state_.makeShortcuts); break;
+      case 7:
         toggleInstallCheck(state_.sounds);
         sounds_.setOn(state_.sounds);
         sounds_.play(Cue::Add); // turned on: heard at once
         break;
-      case 9:
+      case 8:
         bugAsk_ = true;
         bugMessage_.clear();
         dialogFocus_ = 0;
@@ -3009,77 +2981,6 @@ void Application::offerResume() {
 }
 } // namespace foil::ui
 namespace foil::ui {
-void Application::startCleanup(bool remove) {
-  if (cleanupBusy_)
-    return;
-  if (installer_.running() || deviceBusy_) {
-    message(tr("Clean up after the install or console task finishes."));
-    return;
-  }
-  cleanupBusy_ = true;
-  cleanupRemoving_ = remove;
-  cleanupProgress_.stage = cleanupProgress_.done = cleanupProgress_.total = 0;
-  cleanupProgress_.listed = false;
-  cleanupProgress_.bytes = 0;
-  cleanupShown_ = 0;
-  if (cleanupWorker_.joinable())
-    cleanupWorker_.join();
-  cleanupWorker_ = std::thread([this, remove] {
-    if (!guarded("cleanup", [this, remove] { cleanupResult_ = platform::cleanOrphans(remove, &cleanupProgress_, [this](const std::string &key) {
-      return installer_.resumePoint(key).has_value();
-    }); }))
-      cleanupResult_ = {{}, {tr("Cleanup failed. Check log.txt.")}};
-    cleanupDone_ = true;
-  });
-}
-void Application::pollCleanup() {
-  if (!cleanupDone_.exchange(false))
-    return;
-  cleanupWorker_.join();
-  cleanupBusy_ = false;
-  const auto &report = cleanupResult_.value;
-  const auto count = std::to_string(report.files + report.placeholders);
-  if (cleanupResult_.error) {
-    alertTitle_ = tr("Could not clean up leftovers");
-    alert_ = cleanupResult_.error.message;
-  } else if (cleanupRemoving_ && report.files + report.placeholders == 0) {
-    message(tr("No leftover files to clean up."));
-  } else if (cleanupRemoving_) {
-    message(trf("Deleted {0} leftover files · {1}.", {count, formatBytes(report.bytes)}));
-    cardChanged(); // free space changed
-    refreshInstalled();
-  } else if (report.files + report.placeholders == 0) {
-    message(tr("No leftover files to clean up."));
-  } else {
-    confirmCleanup_ = true;
-    dialogFocus_ = 1; // a stray A keeps the files
-  }
-}
-void Application::cleanupProgressDialog() {
-  const auto body = modal(620, 150, cleanupRemoving_ ? tr("Deleting leftover files") : tr("Looking for leftover files"), "", "", "", 23);
-  const float x = body.x + 32, w = body.w - 64, y = body.y + 26;
-  const int stage = cleanupProgress_.stage, done = cleanupProgress_.done, total = cleanupProgress_.total;
-  const bool listed = cleanupProgress_.listed;
-  const std::string where = stage == 2 ? tr("Console") : tr("SD card");
-  const std::string step = stage >= 3      ? std::string(tr("Finishing up"))
-                           : listed && total ? trf("{0} · {1}/{2}", {where, std::to_string(done), std::to_string(total)})
-                                             : trf("Checking {0}", {where});
-  paint_.fonts.text(step, x, y, 20, Ink, true, w);
-  const auto bytes = formatBytes(cleanupProgress_.bytes);
-  paint_.fonts.text(bytes, x + w - paint_.fonts.measure(bytes, 20, true), y, 20, Ink, true);
-  // One bar that only fills: each storage is half, reading its records the
-  // first fifth of that half and its leftovers the rest.
-  float target = 1;
-  if (stage < 3) {
-    const float within = !listed ? 0.2f : total ? 0.2f + 0.8f * float(done) / float(total) : 1.f;
-    target = (std::max(stage, 1) - 1 + within) / 2;
-  }
-  cleanupShown_ = std::max(cleanupShown_, cleanupShown_ + (target - cleanupShown_) * 0.2f);
-  paint_.rect(x, y + 48, w, 10, Line, 5);
-  paint_.rect(x, y + 48, std::max(10.f, w * cleanupShown_), 10, Butter, 5);
-  paint_.fonts.text(cleanupRemoving_ ? tr("Keep the console on until it finishes.") : tr("Installed games and saves are left alone."),
-                    x, y + 76, 17, Secondary, false, w);
-}
 void Application::languageDialog() {
   constexpr float Row = 64, Gap = 8;
   const auto body = modal(560, 16 + LanguageCount * (Row + Gap) + 8, "언어 · Language", tr("Close"), "", "", 17); // i18n: as is (both scripts, readable in any language)
@@ -3097,10 +2998,5 @@ void Application::languageDialog() {
     paint_.fonts.middle(name, x + 78, y + Row / 2, 21, Ink, true);
     if (Language(i) == language()) paint_.icon(8, x + w - 44, y + (Row - 26) / 2, Good, 26);
   }
-}
-void Application::cleanupDialog() {
-  const auto body = modal(700, 24 + 52 + 16, tr("Delete leftover files?"), tr("Cancel"), "", tr("Delete"), 37);
-  paint_.fonts.wrapped(tr("Deletes files no game uses and pieces of cut-off installs. Installed games and saves stay."),
-                       body.x + 32, body.y + 24, 18, Secondary, body.w - 64, 2);
 }
 } // namespace foil::ui
