@@ -1,6 +1,7 @@
 #include "core/DownloadStore.hpp"
 #include "core/State.hpp"
 #include "core/Json.hpp"
+#include "core/Sha256.hpp"
 #include <sqlite3.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -14,6 +15,8 @@
 #include <atomic>
 #include <filesystem>
 #include <thread>
+#include <mutex>
+#include <map>
 namespace foil {
 namespace {
 // Schema versions, in PRAGMA user_version. Each step runs once, in order.
@@ -273,6 +276,49 @@ void DownloadStore::close() {
 // byte the same (a row written as it already was, one forgotten that was
 // never there) writes nothing: each write rewrites the whole file on the
 // card, so one that changes nothing only wears it.
+// What quick_check last passed for a file (or the app last wrote to it), as
+// a SHA-256 of its bytes: the same bytes read again need no check, and only
+// 32 bytes stay in memory. The file is still read from the card each time,
+// so a change by another instance is always seen.
+std::mutex checkedLock;
+std::map<std::string, std::string> checkedFiles;
+std::string digest(const char *data, size_t size) {
+  Sha256 hash;
+  hash.update(data, size);
+  return hash.hex();
+}
+std::string digest(const std::string &bytes) { return digest(bytes.data(), bytes.size()); }
+// The whole file straight into memory SQLite owns (no second copy); null
+// with size 0 when there is none or it cannot be read.
+unsigned char *readWhole(const std::string &file, size_t &size) {
+  size = 0;
+  FILE *in = std::fopen(file.c_str(), "rb");
+  if (!in) return nullptr;
+  unsigned char *out = nullptr;
+  if (std::fseek(in, 0, SEEK_END) == 0) {
+    const long length = std::ftell(in);
+    if (length > 0 && std::fseek(in, 0, SEEK_SET) == 0 &&
+        (out = static_cast<unsigned char *>(sqlite3_malloc64(sqlite3_uint64(length))))) {
+      if (std::fread(out, 1, size_t(length), in) == size_t(length)) size = size_t(length);
+      else {
+        sqlite3_free(out);
+        out = nullptr;
+      }
+    }
+  }
+  std::fclose(in);
+  return out;
+}
+bool alreadyChecked(const std::string &file, const std::string &sum) {
+  std::lock_guard<std::mutex> held(checkedLock);
+  const auto found = checkedFiles.find(file);
+  return !sum.empty() && found != checkedFiles.end() && found->second == sum;
+}
+void rememberChecked(const std::string &file, const std::string &sum) {
+  std::lock_guard<std::mutex> held(checkedLock);
+  if (sum.empty()) checkedFiles.erase(file);
+  else checkedFiles[file] = sum;
+}
 bool persist(sqlite3 *db, const std::string &file, std::string &error, const std::string *was = nullptr) {
   sqlite3_int64 size = 0;
   unsigned char *bytes = sqlite3_serialize(db, "main", &size, 0);
@@ -280,12 +326,14 @@ bool persist(sqlite3 *db, const std::string &file, std::string &error, const std
     error = "could not serialize the database";
     return false;
   }
-  if (was && was->size() == size_t(size) && std::memcmp(was->data(), bytes, size_t(size)) == 0) {
-    sqlite3_free(bytes);
-    return true;
-  }
-  const bool ok = atomicWrite(file, std::string(reinterpret_cast<const char *>(bytes), size_t(size)), error);
+  std::string written(reinterpret_cast<const char *>(bytes), size_t(size));
   sqlite3_free(bytes);
+  // Nothing changed: the file is left as it is (no write at all).
+  const auto sum = digest(written);
+  if (was && *was == sum) return true;
+  const bool ok = atomicWrite(file, written, error);
+  // Made by the app from a database that was checked: no check again for it.
+  rememberChecked(file, ok ? sum : std::string());
   return ok;
 }
 // Opens the file and brings it up to date; `check` also runs quick_check.
@@ -308,18 +356,23 @@ DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&
   if (opened != SQLITE_OK)
     return failed(opened);
   sqlite3_extended_result_codes(db, 1);
+  bool checked = false;
+  std::string known; // the bytes' digest, when checking
   {
-    std::string bytes = readFile(file);
+    size_t size = 0;
+    unsigned char *bytes = readWhole(file, size);
+    if (!bytes)
+      bytes = readWhole(file + ".old", size); // a write cut off between its two renames
+    const auto *chars = reinterpret_cast<const char *>(bytes);
+    // What was read, as a digest: a write of the same bytes is skipped.
     if (read)
-      *read = bytes;
-    if (bytes.empty())
-      bytes = readFile(file + ".old"); // a write cut off between its two renames
-    if (!bytes.empty()) {
-      auto *copy = static_cast<unsigned char *>(sqlite3_malloc64(bytes.size()));
-      if (!copy)
-        return failed(SQLITE_NOMEM);
-      std::memcpy(copy, bytes.data(), bytes.size());
-      const int rc = sqlite3_deserialize(db, "main", copy, sqlite3_int64(bytes.size()), sqlite3_int64(bytes.size()),
+      *read = bytes ? digest(chars, size) : std::string();
+    if (check && bytes) {
+      known = read ? *read : digest(chars, size);
+      checked = alreadyChecked(file, known);
+    }
+    if (bytes) {
+      const int rc = sqlite3_deserialize(db, "main", bytes, sqlite3_int64(size), sqlite3_int64(size),
                                          SQLITE_DESERIALIZE_FREEONCLOSE | SQLITE_DESERIALIZE_RESIZEABLE);
       if (rc != SQLITE_OK)
         return failed(rc);
@@ -329,7 +382,7 @@ DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&
   // zeroed where it was, not left in a freed page for a PC to read.
   if (!exec(db, "PRAGMA temp_store=MEMORY; PRAGMA secure_delete=ON;", error))
     return failed(sqlite3_errcode(db));
-  if (check) {
+  if (check && !checked) {
     Statement quick(db, "PRAGMA quick_check");
     if (!quick)
       return failed(sqlite3_errcode(db));
@@ -341,6 +394,7 @@ DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&
       closeDb(db);
       return Opened::Broken;
     }
+    rememberChecked(file, known);
   }
   int version = 0;
   {

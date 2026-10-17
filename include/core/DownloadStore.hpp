@@ -87,7 +87,8 @@ public:
 
 private:
   enum class Opened { Ok, Broken, Failed };
-  // `read`: the file's bytes as they were read (empty when it had none).
+  // `read`: a digest of the file's bytes as they were read (empty when it
+  // had none), so a write of the same bytes is skipped.
   Opened connect(const std::string &file, sqlite3 *&db, bool check, bool &newer, std::string &error,
                  std::string *read = nullptr);
   // One call's work: lock, open, one transaction, close, unlock.
