@@ -2247,8 +2247,11 @@ void Application::render() {
   if (pressing_) {
     if ((pressedUntil_ && SDL_GetTicks() >= pressedUntil_) || pressedScreen_ != int(screen_)) pressing_ = false;
     else {
+      // A card a little larger than what was touched, as on the web, not a
+      // box drawn tight around it.
+      constexpr float Pad = 8;
       SDL_RenderSetClipRect(paint_.renderer, nullptr);
-      paint_.rect(pressed_.x, pressed_.y, pressed_.w, pressed_.h, {0, 0, 0, 46}, 12);
+      paint_.rect(pressed_.x - Pad, pressed_.y - Pad, pressed_.w + 2 * Pad, pressed_.h + 2 * Pad, {0, 0, 0, 36}, 18);
     }
   }
   SDL_RenderPresent(paint_.renderer);
