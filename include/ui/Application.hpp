@@ -498,8 +498,12 @@ private:
   bool homebrewShortcutPossible(const homebrew::App &app) const;
   void requestHomebrewShortcut(const homebrew::App &app);
   void removeHomebrew(const homebrew::App &app);
-  void settleHomebrew(const homebrew::App &app, const std::optional<homebrew::CardFile> &seen, const std::string &fileSha);
+  void settleHomebrew(const homebrew::App &app, const std::optional<homebrew::CardFile> &seen, const std::string &fileSha,
+                      const std::vector<std::string> &removed);
+  // Older copies of the app the download replaces, for its worker to delete.
+  std::vector<std::string> homebrewStale(const homebrew::App &app) const;
   void saveHomebrewLedger();
+  void writePendingLedger();
   void home();
   void library();
   // Every list's search box sits at the header's right end, one size on all
@@ -538,7 +542,9 @@ private:
   void management();
   void removalConfirm(); // the delete question over 게임 관리
   void installedAction(Action action);
-  void refreshInstalled();
+  // first runs on the worker before the read (console calls a frame must
+  // not wait for), or here when no read can start.
+  void refreshInstalled(std::function<void()> first = nullptr);
   void cycleInstalledSort(int step);
   void pollDevice();
   void openManagement();
@@ -1144,6 +1150,7 @@ private:
   std::optional<uint64_t> sdFree_, nandFree_, sdTotal_, nandTotal_;
   bool storageChecked_ = false;
   uint32_t storageAt_ = 0, noticeAt_ = 0;
+  uint32_t noticeShownAt_ = 0; // when the toast came up; a new text on it does not move it
   // Free space and the card files the screens ask about (RetroArch, cores),
   // read on a worker: while a download writes, the card answers slowly, and
   // a frame that waits for it stops the screen.
@@ -1428,6 +1435,9 @@ private:
   // The app's state (settings, keys) for cookingfoil.db, newest only: the
   // database is read and written whole, which a button must not wait for.
   std::optional<State> statePending_;
+  // homebrew.json's newest text, for the writer: an atomic write on the SD
+  // card is a stall the screen must not wait for.
+  std::optional<std::string> ledgerPending_;
   std::mutex stateWriteLock_; // one state write at a time, the newest last
   // Writes the waiting settings now; reload() does, before it reads them.
   void writePendingState();

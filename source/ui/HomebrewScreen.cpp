@@ -72,8 +72,12 @@ void Application::pollHomebrew() {
   if (homebrewFinish_) std::exchange(homebrewFinish_, nullptr)();
 }
 void Application::checkHomebrewCard() {
-  homebrewOnCard_.clear();
-  for (const auto &[id, record] : homebrewLedger_) homebrewOnCard_[record.file] = fileExists(sdRoot_ + "/" + record.file);
+  // Before the first scan only: after it, what it found stands until the
+  // next one answers, with no stat per app on the drawing thread.
+  if (!homebrewScanned_) {
+    homebrewOnCard_.clear();
+    for (const auto &[id, record] : homebrewLedger_) homebrewOnCard_[record.file] = fileExists(sdRoot_ + "/" + record.file);
+  }
   scanHomebrewCard();
 }
 // Every .nro under switch/, read off the main thread: apps other tools or
@@ -225,8 +229,25 @@ const homebrew::App *Application::homebrewPicked() const {
   return rows.empty() ? nullptr : &homebrewAt(rows[std::clamp(selected_, 0, int(rows.size()) - 1)]);
 }
 void Application::saveHomebrewLedger() {
+  bool closing;
+  {
+    std::lock_guard<std::mutex> held(historyMutex_);
+    closing = historyClosing_;
+    ledgerPending_ = homebrew::serializeLedger(homebrewLedger_);
+  }
+  if (closing)
+    writePendingLedger(); // the writer is gone, so straight to the card
+  else
+    wakeHistoryWriter();
+}
+void Application::writePendingLedger() {
+  std::optional<std::string> text;
+  {
+    std::lock_guard<std::mutex> held(historyMutex_);
+    text = std::exchange(ledgerPending_, std::nullopt);
+  }
   std::string error;
-  if (!atomicWrite(sdRoot_ + LedgerPath, homebrew::serializeLedger(homebrewLedger_), error))
+  if (text && !atomicWrite(sdRoot_ + LedgerPath, *text, error))
     logLine("homebrew ledger: " + error);
 }
 // Into 다운로드's queue; its turn runs it on the retro worker, so 다운로드
@@ -280,15 +301,24 @@ bool Application::runHomebrew(const homebrew::App &app) {
   const auto sd = sdRoot_;
   retroBytes_ = bytes;
   retroCancel_ = false;
-  if (!runRetroJob("homebrew:" + app.id, [this, server, state, sd, app]() -> std::function<void()> {
+  if (!runRetroJob("homebrew:" + app.id, [this, server, state, sd, app, stale = homebrewStale(app)]() -> std::function<void()> {
         Error error;
         const bool ok = net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_);
+        // The older copies go here, off the drawing thread.
+        std::vector<std::string> removed;
+        for (const auto &old : ok ? stale : std::vector<std::string>{})
+          if (fileExists(sd + "/" + old)) {
+            std::error_code ec;
+            std::filesystem::remove(sd + "/" + old, ec);
+            homebrew::removeEmptyFolders(sd, old);
+            removed.push_back(old);
+          }
         const bool cancelled = retroCancel_;
         const uint64_t received = retroReceived_, kept = retroKept_;
         // The new file as written, so the next card check needs no hash.
         const auto seen = ok ? homebrew::cardFile(sd + "/" + app.installPath) : std::nullopt;
         const auto fileSha = seen ? sha256File(sd + "/" + app.installPath) : std::string();
-        return [this, ok, error, app, cancelled, received, kept, seen, fileSha] {
+        return [this, ok, error, app, cancelled, received, kept, seen, fileSha, removed] {
           cardChanged();
           if (finishRetroEntry("homebrew", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
                            ok || cancelled ? "" : error.message, received, kept))
@@ -302,7 +332,7 @@ bool Application::runHomebrew(const homebrew::App &app) {
             alert_ = error.message;
             return;
           }
-          settleHomebrew(app, seen, fileSha);
+          settleHomebrew(app, seen, fileSha, removed);
           if (autoHomebrewShortcut(app)) return;
           // Why it ended so soon: only the changed files came.
           message(trf("Downloaded {0}. Open it from hbmenu.", {app.name}) +
@@ -316,26 +346,27 @@ bool Application::runHomebrew(const homebrew::App &app) {
 // elsewhere goes (the one a previous build kept, or one straight under
 // switch/), so no duplicate stays. Files a folder install no longer lists
 // stay put: they may be the app's settings or saves.
-void Application::settleHomebrew(const homebrew::App &app, const std::optional<homebrew::CardFile> &seen,
-                                 const std::string &fileSha) {
-  std::error_code ec;
-  const auto previous = homebrewLedger_.find(app.id);
+std::vector<std::string> Application::homebrewStale(const homebrew::App &app) const {
   std::vector<std::string> stale{"switch/" + app.fileName};
-  if (previous != homebrewLedger_.end()) stale.push_back(previous->second.file);
+  if (const auto previous = homebrewLedger_.find(app.id); previous != homebrewLedger_.end()) stale.push_back(previous->second.file);
   // A copy the card scan found goes too when it has the same file name; a
   // differently named file in the app's folder may be something else.
   const auto card = homebrewCardOf_.find(app.id);
   const auto cardPath = card == homebrewCardOf_.end() ? std::string() : homebrewCard_[card->second].path;
   if (!cardPath.empty() && cardPath.substr(cardPath.rfind('/') + 1) == app.fileName) stale.push_back(cardPath);
-  for (const auto &old : stale)
-    if (old != app.installPath && fileExists(sdRoot_ + "/" + old)) {
-      std::filesystem::remove(sdRoot_ + "/" + old, ec);
-      homebrew::removeEmptyFolders(sdRoot_, old);
-      homebrewOnCard_.erase(old);
-      homebrewCard_.erase(std::remove_if(homebrewCard_.begin(), homebrewCard_.end(),
-                                         [&](const homebrew::CardNro &nro) { return nro.path == old; }),
-                          homebrewCard_.end());
-    }
+  stale.erase(std::remove(stale.begin(), stale.end(), app.installPath), stale.end());
+  return stale;
+}
+// The worker deleted the older copies already; here only what the screens
+// know follows.
+void Application::settleHomebrew(const homebrew::App &app, const std::optional<homebrew::CardFile> &seen,
+                                 const std::string &fileSha, const std::vector<std::string> &removed) {
+  for (const auto &old : removed) {
+    homebrewOnCard_.erase(old);
+    homebrewCard_.erase(std::remove_if(homebrewCard_.begin(), homebrewCard_.end(),
+                                       [&](const homebrew::CardNro &nro) { return nro.path == old; }),
+                        homebrewCard_.end());
+  }
   homebrew::Record record{app.hash, app.version, app.installPath, {}, seen.value_or(homebrew::CardFile{}), fileSha};
   for (const auto &file : app.files)
     if (file.path != app.installPath) record.files.push_back(file.path);

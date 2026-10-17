@@ -1,17 +1,23 @@
 #include "ui/Application.hpp"
 #include "platform/Installed.hpp"
+#include "platform/Cores.hpp"
 #include "core/Log.hpp"
 #include <algorithm>
 namespace foil::ui {
-void Application::refreshInstalled() {
-  if (deviceBusy_ || deviceFixture_) return;
-  if (installer_.running()) { message(tr("Refresh the list after the install finishes.")); return; }
+void Application::refreshInstalled(std::function<void()> first) {
+  if (deviceBusy_ || deviceFixture_ || installer_.running()) {
+    if (first) first();
+    if (installer_.running()) message(tr("Refresh the list after the install finishes."));
+    return;
+  }
   if (deviceWorker_.joinable()) deviceWorker_.join();
   // The list on screen stays until the new one arrives: no blank flash.
   deviceBusy_ = true;
   readingSaves_ = removalOperation_ = false;
   deviceError_ = {};
-  deviceWorker_ = std::thread([this] {
+  deviceWorker_ = std::thread([this, first = std::move(first)] {
+    const platform::OnCore off(platform::WriterCore); // the drawing core keeps the screen
+    if (first && !guarded("installed first", first)) logLine("installed: the step before the read failed");
     if (!guarded("installed", [this] {
           auto result = platform::readInstalled();
           incomingInstalled_ = std::move(result.value);

@@ -630,6 +630,7 @@ bool Application::hasFocusable() const {
   return true;
 }
 void Application::message(const std::string &text) {
+  if (notice_.empty()) noticeShownAt_ = SDL_GetTicks();
   notice_ = text;
   noticeAt_ = SDL_GetTicks();
 }
@@ -815,22 +816,29 @@ void Application::poll() {
     }
   }
   if (observedInstall_ == install::Status::Running && installStatus == install::Status::Succeeded) {
-    // The server's shortcut over an older one: the HOME Menu reads its new icon.
+    // The server's shortcut over an older one: the HOME Menu reads its new
+    // icon. The console calls run before the installed list is read, off the
+    // drawing thread.
+    std::vector<uint64_t> fresh, replaced;
     for (const auto &part : installer_.progress().parts) {
       // A shortcut (its id in the shortcut range), with a row of its own or not.
       const uint64_t id = forwarder::parseHexId(part.titleId);
       if (!forwarder::shortcutId(id)) continue;
-      platform::refreshShortcutIcon(id);
+      fresh.push_back(id);
       shortcuts_.insert(id);
       // One made here before for the same app goes, so it shows once.
       for (const auto &app : homebrew_)
         if (app.forwarderTitleId == part.titleId)
           if (const auto local = homebrewShortcutId(app); local != id && shortcuts_.count(local)) {
-            if (const auto error = platform::removeShortcut(local)) logLine("shortcut: the one made here stays: " + error.message);
-            else shortcuts_.erase(local);
+            replaced.push_back(local);
+            shortcuts_.erase(local);
           }
     }
-    refreshInstalled();
+    refreshInstalled(fresh.empty() ? std::function<void()>() : [fresh, replaced] {
+      for (const auto id : fresh) platform::refreshShortcutIcon(id);
+      for (const auto local : replaced)
+        if (const auto error = platform::removeShortcut(local)) logLine("shortcut: the one made here stays: " + error.message);
+    });
   }
   // Stopped as the app closes: not an end. Its row, its place in the queue
   // and where it stands all stay, and the next start goes on from there.
@@ -2237,7 +2245,10 @@ void Application::render() {
     const bool twoLines = paint_.fonts.measure(notice_, 18) > MaxText;
     const float w = 22 + Icon + 12 + text + 26, h = twoLines ? 72 : 50;
     // Centered on the page: the whole width when the menu is hidden.
-    const float x = (fullPage() ? 640 : 756) - w / 2, y = 646 - h;
+    // It comes up a little as it appears, eased, instead of popping in.
+    constexpr float RiseMs = 180, Rise = 14;
+    const float t = std::min(1.f, float(SDL_GetTicks() - noticeShownAt_) / RiseMs);
+    const float x = (fullPage() ? 640 : 756) - w / 2, y = 646 - h + Rise * (1 - t) * (1 - t);
     paint_.rect(x, y, w, h, {22, 22, 26, 235}, int(h / 2 < 25 ? h / 2 : 25));
     paint_.icon(33, x + 22, y + (h - Icon) / 2, Butter, int(Icon));
     if (twoLines)
@@ -2932,20 +2943,24 @@ void Application::wakeHistoryWriter() {
   if (historyWriter_.joinable())
     return;
   historyWriter_ = std::thread([this] {
+    // The whole records file is built and written here: never on the
+    // drawing core, where a finished download would stall the screen.
+    const platform::OnCore off(platform::WriterCore);
     for (;;) {
       std::optional<std::vector<history::Entry>> list;
       std::map<std::string, std::optional<install::Installer::ResumePoint>> points;
       {
         std::unique_lock<std::mutex> held(historyMutex_);
         historyWake_.wait(held, [this] {
-          return historyPending_ || !resumePending_.empty() || statePending_ || historyClosing_;
+          return historyPending_ || !resumePending_.empty() || statePending_ || ledgerPending_ || historyClosing_;
         });
-        if (!historyPending_ && resumePending_.empty() && !statePending_)
+        if (!historyPending_ && resumePending_.empty() && !statePending_ && !ledgerPending_)
           return; // closing, nothing left
         list = std::exchange(historyPending_, std::nullopt);
         points = std::exchange(resumePending_, {});
       }
       writePendingState();
+      writePendingLedger();
       std::string error;
       if (list && !store_.save(*list, error))
         logLine("downloads: " + error);

@@ -197,7 +197,10 @@ bool Application::startShortcut(const QueuedInstall &next) {
   // were read on this console already.
   const auto cached = images_ && plan.iconUrl.rfind("http", 0) == 0 ? images_->cachedPath(plan.iconUrl) : std::string();
   retroBytes_ = 0; // nothing to download: no percent on its row
-  return runRetroJob("shortcut", [this, plan, server, cached, state = state_, sd = sdRoot_,
+  // The server's for the same app goes once this one is made, so the HOME
+  // Menu shows it once; asked here, removed on the worker.
+  const bool replace = plan.replaces && shortcuts_.count(plan.replaces);
+  return runRetroJob("shortcut", [this, plan, server, cached, replace, state = state_, sd = sdRoot_,
                                   languages = homebrew::nacpLanguages(languageCode())]() -> std::function<void()> {
     logLine("shortcut: making " + plan.display); // a crash after this line is the shortcut's
     Error error;
@@ -234,7 +237,12 @@ bool Application::startShortcut(const QueuedInstall &next) {
       error = platform::makeShortcut(request, id);
     }
     const bool patches = !error && forwarder::signaturePatchesFound(sd);
-    return [this, plan, error, id, patches] {
+    bool replaced = false;
+    if (!error && replace && plan.replaces != id) {
+      if (const auto removed = platform::removeShortcut(plan.replaces)) logLine("shortcut: server one stays: " + removed.message);
+      else replaced = true;
+    }
+    return [this, plan, error, id, patches, replaced] {
       finishRetroEntry("shortcut", error ? history::Outcome::Failed : history::Outcome::Done, error.message, 0, 0);
       if (error) {
         alertTitle_ = tr("Could not make the shortcut");
@@ -242,11 +250,7 @@ bool Application::startShortcut(const QueuedInstall &next) {
         return;
       }
       shortcuts_.insert(id);
-      // The server's for the same app goes, so the HOME Menu shows it once.
-      if (plan.replaces && plan.replaces != id && shortcuts_.count(plan.replaces)) {
-        if (const auto removed = platform::removeShortcut(plan.replaces)) logLine("shortcut: server one stays: " + removed.message);
-        else shortcuts_.erase(plan.replaces);
-      }
+      if (replaced) shortcuts_.erase(plan.replaces);
       // Unsigned, the shortcut opens only with signature patches: said now,
       // not when the HOME Menu shows an error code.
       if (!patches) {
