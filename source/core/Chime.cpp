@@ -73,6 +73,8 @@ Score score(Cue cue) {
     for (int i = 0; i < 3; ++i) s.notes.push_back({i * 0.08f, run[i], 0.05f, i < 2 ? 0.12f : 0.35f, Wave::Marimba});
     return s;
   }
+  case Cue::Shortcut: // the done's 도·미·솔 carried up to the next 도, softer, on the same marimba
+    return {0.7f, 0.12f, 0.2f, 0.26f, {{0, C7, 0.05f, 0.3f, Wave::Marimba}}};
   case Cue::Error: // two low notes down
     return {0.45f, 0, 0, 0.4f, {{0, E4, 0.08f, 0.08f, Wave::Triangle}, {0.11f, C4, 0.12f, 0.14f, Wave::Triangle}}};
   }

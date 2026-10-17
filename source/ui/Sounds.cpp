@@ -82,6 +82,11 @@ void Sounds::play(Cue cue) {
   // The start waits for the butter's next landing, less what the device
   // holds before it is heard (one buffer).
   size_t wait = 0;
+  // Right behind a done, a shortcut's note comes on that arpeggio's next
+  // step (its notes are 80 ms apart) rather than over it.
+  constexpr uint32_t DoneStepMs = 240;
+  if (const auto done = lastAt_[int(Cue::Done)]; cue == Cue::Shortcut && done && now - done < DoneStepMs)
+    wait = size_t(DoneStepMs - (now - done)) * Rate / 1000;
   if (cue == Cue::Start && beatAt_) {
     constexpr uint32_t BeatMs = 1000, BufferMs = 1024 * 1000 / Rate;
     const uint32_t toBeat = (BeatMs - (now - beatAt_) % BeatMs) % BeatMs;

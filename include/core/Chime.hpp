@@ -5,8 +5,8 @@
 #include <cstdint>
 #include <vector>
 namespace foil {
-enum class Cue { Start, Move, Add, Done, Error };
-constexpr int CueCount = 5;
+enum class Cue { Start, Move, Add, Done, Error, Shortcut };
+constexpr int CueCount = 6;
 // The cue's samples at `rate` per second, ready to play.
 std::vector<int16_t> chime(Cue cue, int rate);
 } // namespace foil

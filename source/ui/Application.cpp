@@ -1006,7 +1006,13 @@ void Application::poll() {
     // The card leaves 진행 중 at once; how it ended is said here and kept
     // in 완료 or 실패.
     if (installStatus == install::Status::Succeeded) {
-      sounds_.play(Cue::Done);
+      // A HOME Menu shortcut follows what it belongs to, which already
+      // played the done: its own, smaller sound.
+      const auto &done = installer_.progress().parts;
+      const bool shortcut = !done.empty() && std::all_of(done.begin(), done.end(), [](const Item &f) {
+        return forwarder::shortcutId(forwarder::parseHexId(f.titleId));
+      });
+      sounds_.play(shortcut ? Cue::Shortcut : Cue::Done);
       // Only what puts a new entry on the HOME Menu (a base game, an app
       // installed as a title) points there; an update or DLC just finished.
       const auto &parts = installer_.progress().parts;
