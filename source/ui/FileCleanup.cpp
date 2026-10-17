@@ -174,8 +174,8 @@ void Application::fileCleanupDialog() {
        tidyLeftoversAllowed() || tidyDeleting_ ? tr("Cut-off installs and unused files")
                                                : tr("Can be cleaned once the install finishes"),
        tidyLeftoversAllowed()},
-      {tr("Download pieces"),
-       tidyPiecesAllowed() ? tr("Unfinished files not in the queue")
+      {tr("Orphaned downloads"),
+       tidyPiecesAllowed() ? tr("Temporary files of downloads no longer queued")
                            : tr("Available once the queue is empty"),
        tidyPiecesAllowed()},
       {tr("Image cache"), tr("Covers and screenshots, fetched again"), !imageCacheFolder().empty()},
