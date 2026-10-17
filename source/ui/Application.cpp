@@ -208,7 +208,7 @@ bool Application::open() {
   // Everything after this is read on the loading thread. It never draws:
   // the fonts are the screen's once open, and the language it sets is
   // applied to them when it is done.
-  background("", 0.03f, 0.06f, "fonts");
+  background("", 0.03f, 0.14f, "fonts");
   loading_ = true;
   std::atomic<bool> loaded{false}, fontsOpen{false}, fontsFailed{false};
   std::thread loader([&] {
@@ -224,7 +224,7 @@ bool Application::open() {
       fontsOpen = true;
       // The saved language is read now so the captions are already in it;
       // reload() sets it again with the config as the last fallback.
-      background(tr("Reading the app's records on the SD card."), 0.06f, 0.17f, "records");
+      background(tr("Reading the app's records on the SD card."), 0.14f, 0.38f, "records");
       if (!statePath_.empty()) {
         const auto saved = loadState(statePath_).value;
         state_.language = saved.language;
@@ -235,11 +235,11 @@ bool Application::open() {
       sounds_.playStart(); // as soon as it is made, if sounds are on
       // Each step says what it is doing under the logo, so a slow SD card or
       // server shows where the time goes.
-      background(tr("Preparing the image cache"), 0.17f, 0.19f, "images");
+      background(tr("Preparing the image cache"), 0.38f, 0.40f, "images");
       images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
       images_->source({}, {}, imageCacheFolder(), fixture_);
       // Two steps under one caption, so the log tells which of them is slow.
-      background(tr("Reading patches and download history on the SD card"), 0.19f, 0.32f, "downloads");
+      background(tr("Reading patches and download history on the SD card"), 0.40f, 0.62f, "downloads");
 #ifdef __SWITCH__
       const std::string sd = "sdmc:";
 #else
@@ -247,15 +247,15 @@ bool Application::open() {
 #endif
       if (!sd.empty() && !patchWorker_.joinable()) {
         openCardRecords(sd);
-        background(tr("Reading patches and download history on the SD card"), 0.32f, 0.45f, "patches");
+        background(tr("Reading patches and download history on the SD card"), 0.62f, 0.66f, "patches");
         openPatchStore(sd);
       }
       if (!configPath_.empty()) {
-        background(tr("Reading the server settings"), 0.45f, 0.93f, "config");
+        background(tr("Reading the server settings"), 0.66f, 0.86f, "config");
         reload();
       }
 #ifdef __SWITCH__
-      background(tr("Reading the games on this console"), 0.93f, 0.97f, "installed");
+      background(tr("Reading the games on this console"), 0.86f, 0.92f, "installed");
       refreshInstalled();
       // Album (applet mode) gets a few hundred MB and no title rights: say so
       // before something big fails, and how to open it properly.
@@ -267,9 +267,11 @@ bool Application::open() {
     });
     loaded = true;
   });
+  // The steps' shares follow what they take on the console (records and
+  // downloads a third of a second each, the fonts and the settings less).
   // Within a step the bar's goal creeps toward the next step's start (most
-  // of the way over the first seconds, never reaching it); the bar follows
-  // at a limited speed, so a new step never makes it jump.
+  // of the way in under a second, never reaching it); the bar follows at a
+  // limited speed, so a new step never makes it jump.
   uint32_t lastFrame = SDL_GetTicks();
   while (!loaded) {
     std::string text;
@@ -278,12 +280,12 @@ bool Application::open() {
       std::lock_guard<std::mutex> lock(shownLock);
       text = caption;
       const float waited = (SDL_GetTicks() - stepAt) / 1000.f;
-      goal = stepFrom + (stepTo - stepFrom) * 0.9f * (1 - std::exp(-waited / 2.5f));
+      goal = stepFrom + (stepTo - stepFrom) * 0.9f * (1 - std::exp(-waited / 0.4f));
     }
     const float dt = std::min(0.05f, (SDL_GetTicks() - lastFrame) / 1000.f);
     lastFrame = SDL_GetTicks();
     if (const float gap = goal - progressShown; gap > 0)
-      progressShown += std::min(gap, std::max(0.04f, gap * 2) * dt); // 4% a second at least
+      progressShown += std::min(gap, std::max(0.04f, gap * 6) * dt); // 4% a second at least
     const uint32_t frameAt = SDL_GetTicks();
     paint_.splash(fontsOpen ? text : std::string(), progressShown, seconds());
     if (!platform::serviceApplet())

@@ -10,11 +10,15 @@
 #include "net/Segmented.hpp"
 #include "net/Segments.hpp"
 #include "net/Socket.hpp"
+#include "platform/Cores.hpp"
 #include "platform/Storage.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
+#include <deque>
+#include <mutex>
 #include <cstring>
 #include <filesystem>
 #include <thread>
@@ -344,6 +348,80 @@ PartFetch fetchPart(const std::string &url, const std::vector<std::string> &head
   return finish();
 }
 
+namespace {
+// What came over the network goes to the card on a thread of its own, as a
+// game's parts do (Segmented's writer): the connection keeps reading while
+// the card makes a file or catches up, up to `Held` bytes ahead of it.
+class TarPipe {
+public:
+  explicit TarPipe(std::function<bool(const char *, size_t)> feed) : feed_(std::move(feed)), thread_([this] { run(); }) {}
+  ~TarPipe() {
+    {
+      std::lock_guard<std::mutex> held(lock_);
+      stop_ = true;
+    }
+    changed_.notify_all();
+    thread_.join();
+  }
+  // Gathered into 1 MB pieces; false once a write failed.
+  bool put(const char *data, size_t size) {
+    batch_.insert(batch_.end(), data, data + size);
+    return batch_.size() < Piece || send();
+  }
+  // Everything handed over is on the card; false if a write failed.
+  bool drain() {
+    if (!send()) return false;
+    std::unique_lock<std::mutex> held(lock_);
+    changed_.wait(held, [&] { return (queue_.empty() && !busy_) || failed_; });
+    return !failed_;
+  }
+
+private:
+  static constexpr size_t Piece = 1u << 20;
+  static constexpr size_t Held = 16u << 20;
+  bool send() {
+    if (batch_.empty()) return !failed();
+    std::unique_lock<std::mutex> held(lock_);
+    changed_.wait(held, [&] { return held_ + batch_.size() <= Held || queue_.empty() || failed_; });
+    if (failed_) return false;
+    held_ += batch_.size();
+    queue_.push_back(std::move(batch_));
+    batch_ = {};
+    changed_.notify_all();
+    return true;
+  }
+  bool failed() {
+    std::lock_guard<std::mutex> held(lock_);
+    return failed_;
+  }
+  void run() {
+    const platform::OnCore off(platform::WriterCore);
+    std::unique_lock<std::mutex> held(lock_);
+    for (;;) {
+      changed_.wait(held, [&] { return !queue_.empty() || stop_; });
+      if (queue_.empty()) return;
+      auto piece = std::move(queue_.front());
+      queue_.pop_front();
+      busy_ = true;
+      held.unlock();
+      const bool ok = !failed_ && feed_(piece.data(), piece.size());
+      held.lock();
+      busy_ = false;
+      held_ -= piece.size();
+      if (!ok) failed_ = true;
+      changed_.notify_all();
+    }
+  }
+  std::function<bool(const char *, size_t)> feed_;
+  std::vector<char> batch_;
+  std::mutex lock_;
+  std::condition_variable changed_;
+  std::deque<std::vector<char>> queue_;
+  size_t held_ = 0;
+  bool busy_ = false, failed_ = false, stop_ = false;
+  std::thread thread_;
+};
+} // namespace
 TarFetch rangedTar(const std::string &url, const std::vector<std::string> &headers, uint64_t from,
                    const std::string &validator, const std::function<std::unique_ptr<ArchiveWriter>(uint64_t)> &open,
                    const std::function<void(uint64_t, const std::string &)> &checkpoint,
@@ -358,9 +436,23 @@ TarFetch rangedTar(const std::string &url, const std::vector<std::string> &heade
     if (checkpoint)
       checkpoint(at, etag);
   };
+  // The writer is fed on the pipe's thread; whatever reads it (where to ask
+  // from, a fresh start) waits for the pipe to empty first.
+  TarPipe pipe([&](const char *data, size_t size) {
+    if (!writer->feed(data, size))
+      return false;
+    if (writer->boundary() >= saved + CheckpointBytes)
+      save(writer->boundary());
+    return true;
+  });
   RangedSink sink;
-  sink.kept = [&] { return writer ? writer->boundary() : from; };
+  sink.kept = [&] {
+    pipe.drain(); // a failed write is the writer's error, read below
+    return writer ? writer->boundary() : from;
+  };
   sink.begin = [&](uint64_t at, const Response &reply) {
+    if (!pipe.drain())
+      return false;
     // A fresh writer at the boundary; the entry cut off part way goes.
     if (writer) {
       writer->abandon();
@@ -380,13 +472,10 @@ TarFetch rangedTar(const std::string &url, const std::vector<std::string> &heade
   sink.data = [&](const char *data, size_t size) {
     received += size;
     shown += size;
-    if (!writer->feed(data, size))
-      return false;
-    if (writer->boundary() >= saved + CheckpointBytes)
-      save(writer->boundary());
-    return true;
+    return pipe.put(data, size);
   };
   result.response = rangedStream(url, headers, validator, sink, cancel);
+  pipe.drain();
   if (writer && !writer->error().empty())
     result.tarError = writer->error();
   else if (rangedOk(result.response)) {
