@@ -350,7 +350,10 @@ public:
 
 private:
   void takeNetwork();
-  void onTheWayButton(float x, float w, bool downloading, double percent);
+  // Until the server first answers (or while the records are still being
+  // read), the menu and the buttons are placeholders.
+  bool menuPending() const { return !menuKnown_ && (network_.joinable() || stateWaiting_); }
+  void onTheWayButton(float x, float w, bool downloading, double percent, double skipped = 0);
   // False when there was nothing new to write.
   bool keepResumeChanges();
   // Leaving the screen (HOME, sleep): a running download's place goes to

@@ -209,11 +209,16 @@ Error makeShortcut(const ShortcutRequest &request, uint64_t &id) {
   record.storageId = NcmStorageId_SdCard;
   if (R_FAILED(rc = nsPushApplicationRecord(id, NsApplicationRecordType_Installed, &record, 1)))
     return failure("record", rc);
-  // The HOME Menu reads the new icon and name (ns application manager
-  // InvalidateApplicationControlCache, cmd 404, as sphaira's ns.cpp).
-  if (Service *ns = nsGetServiceSession_ApplicationManagerInterface()) serviceDispatchIn(ns, 404, id);
+  refreshShortcutIcon(id);
   logLine("shortcut made " + forwarder::hexId(id) + " for " + input.nroPath);
   return {};
+}
+void refreshShortcutIcon(uint64_t id) {
+  // ns application manager InvalidateApplicationControlCache, cmd 404, as
+  // sphaira's ns.cpp.
+  if (R_FAILED(nsInitialize())) return;
+  if (Service *ns = nsGetServiceSession_ApplicationManagerInterface()) serviceDispatchIn(ns, 404, id);
+  nsExit();
 }
 Error removeShortcut(uint64_t id) {
   Services services;
@@ -257,6 +262,7 @@ Error makeShortcut(const ShortcutRequest &request, uint64_t &id) {
   made.insert(id);
   return {};
 }
+void refreshShortcutIcon(uint64_t) {}
 Error removeShortcut(uint64_t id) {
   std::lock_guard<std::mutex> lock(mutex);
   made.erase(id);

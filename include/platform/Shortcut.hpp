@@ -28,6 +28,9 @@ void setShortcutBlocker(const std::string &reason);
 // its title id. The message, when it fails, is for the player.
 Error makeShortcut(const ShortcutRequest &request, uint64_t &id);
 Error removeShortcut(uint64_t id);
+// The HOME Menu reads the title's icon and name again: a shortcut installed
+// over an older one with the same id otherwise keeps the old picture.
+void refreshShortcutIcon(uint64_t id);
 // The ones of `ids` the console has installed.
 std::set<uint64_t> presentShortcuts(const std::vector<uint64_t> &ids);
 } // namespace foil::platform

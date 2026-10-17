@@ -471,7 +471,7 @@ float Application::infoCard(const Group &g, const std::string &publisher, float 
 // downloads, quiet gray while it waits its turn. Before the first byte (the
 // connection, the token, the files already there) a short bar runs back and
 // forth, so the press shows at once rather than a still 0%.
-void Application::onTheWayButton(float x, float w, bool downloading, double percent) {
+void Application::onTheWayButton(float x, float w, bool downloading, double percent, double skipped) {
   constexpr float Top = 568, Height = 60;
   paint_.rect(x, Top, w, Height, downloading ? Ink : SDL_Color{228, 225, 218, 255}, 14);
   const bool preparing = downloading && percent <= 0;
@@ -483,8 +483,13 @@ void Application::onTheWayButton(float x, float w, bool downloading, double perc
       const float run = width * 0.3f, t = float(SDL_GetTicks() % 1400) / 1400.f;
       const float at = (t < 0.5f ? t * 2 : 2 - t * 2) * (width - run);
       paint_.rect(x + Inset + at, y, run, Track, Butter, Track / 2);
-    } else
+    } else {
       paint_.rect(x + Inset, y, std::max(Track, width * float(std::min(percent, 100.)) / 100), Track, Butter, Track / 2);
+      // Files already on the card, passed rather than fetched: paler, as in 다운로드.
+      if (skipped > 0)
+        paint_.rect(x + Inset, y, std::max(Track, width * float(std::min({skipped, percent, 100.})) / 100), Track,
+                    SDL_Color{255, 226, 150, 255}, Track / 2);
+    }
   }
   const auto label = preparing     ? std::string(tr("Preparing|download"))
                      : downloading ? trf("Downloading {0}", {std::to_string(int(percent)) + "%"})

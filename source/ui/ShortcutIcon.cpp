@@ -13,7 +13,12 @@ struct Freed {
 };
 } // namespace
 std::string shortcutIconJpeg(const std::string &image, int side) {
-  if (image.empty() || side <= 0) return {};
+  if (image.size() < 8 || side <= 0) return {};
+  // JPEG or PNG only: WebP unpacked on the shortcut's thread crashed the app
+  // (0.3.133, in libwebp), so it is asked for in these and nothing else is read.
+  const auto *b = reinterpret_cast<const uint8_t *>(image.data());
+  const bool jpeg = b[0] == 0xFF && b[1] == 0xD8, png = b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G';
+  if (!jpeg && !png) return {};
   SDL_Surface *loaded = IMG_Load_RW(SDL_RWFromConstMem(image.data(), int(image.size())), 1);
   if (!loaded) return {};
   const Freed source{SDL_ConvertSurfaceFormat(loaded, SDL_PIXELFORMAT_RGB24, 0)};

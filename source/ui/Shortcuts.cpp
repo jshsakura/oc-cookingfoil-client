@@ -172,10 +172,14 @@ bool Application::startShortcut(const QueuedInstall &next) {
       std::string icon;
       if (plan.iconUrl.rfind("http", 0) == 0) {
         auto headers = net::authHeaders(server, state, plan.iconUrl);
-        headers.push_back("Accept: image/jpeg,image/png,image/webp;q=0.8");
+        headers.push_back("Accept: image/jpeg,image/png"); // no WebP (see shortcutIconJpeg)
         const auto got = net::get(plan.iconUrl, headers);
         if (got.status == 200 && got.error.empty()) icon = shortcutIconJpeg(got.body);
-        if (icon.empty()) logLine("shortcut: " + plan.display + " keeps the app's own icon (HTTP " + std::to_string(got.status) + ")");
+        if (!icon.empty())
+          logLine("shortcut: " + plan.display + " icon from the server's picture (" +
+                  (uint8_t(got.body[0]) == 0xFF ? "JPEG " : "PNG ") + std::to_string(got.body.size() >> 10) + "KB -> " +
+                  std::to_string(icon.size() >> 10) + "KB)");
+        else logLine("shortcut: " + plan.display + " keeps the app's own icon (HTTP " + std::to_string(got.status) + ")");
       }
       platform::ShortcutRequest request;
       request.nroPath = forwarder::loaderPath(plan.launch.empty() ? plan.file : plan.launch);

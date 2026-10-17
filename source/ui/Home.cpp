@@ -50,12 +50,19 @@ std::vector<Application::HeroTag> Application::heroTags(const Group &g) const {
 }
 void Application::home() {
   if (groups_.empty()) {
+    // A write still holds the records (a slow card): the home's shape, as
+    // while it connects; past a few seconds, what may be holding them.
+    if (stateWaiting_ && SDL_GetTicks() - stateWaitAt_ > 8000) {
+      notice(tr("Reading the app's records on the SD card."), tr("If another CookingFoil is open, close it."), 25);
+      return;
+    }
+    const auto shape = [this] {
+      paint_.skeleton(260, 24, 992, 248, 20);
+      paint_.skeleton(260, 300, 160, 28, 8);
+      paint_.skeletonCards(260, 346, 6);
+    };
     if (stateWaiting_) {
-      // A write still holds the records (a slow card); past a few seconds,
-      // what may be holding them for longer.
-      const bool long_ = SDL_GetTicks() - stateWaitAt_ > 8000;
-      notice(tr("Reading the app's records on the SD card."),
-             long_ ? tr("If another CookingFoil is open, close it.") : "", 25);
+      shape();
       return;
     }
     if (!session_) {
@@ -85,9 +92,7 @@ void Application::home() {
       return;
     }
     // Connecting: the shape of the home screen, pulsing.
-    paint_.skeleton(260, 24, 992, 248, 20);
-    paint_.skeleton(260, 300, 160, 28, 8);
-    paint_.skeletonCards(260, 346, 6);
+    shape();
     return;
   }
   constexpr int RowTop = 300, RowHeight = 283, Columns = 6;

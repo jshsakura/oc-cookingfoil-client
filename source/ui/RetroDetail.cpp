@@ -437,17 +437,8 @@ void Application::retroDetailPanel() {
   int queueAt = -1;
   if (const int onTheWay = retroPageOnTheWay(percent, queueAt)) {
     const bool downloading = onTheWay == 2;
-    paint_.rect(840, 568, W, 60, downloading ? Ink : SDL_Color{228, 225, 218, 255}, 14);
-    if (downloading) {
-      constexpr float Inset = 18, Track = 5;
-      const float width = W - 2 * Inset;
-      paint_.rect(840 + Inset, 568 + 60 - 11, width, Track, {70, 70, 76, 255}, Track / 2);
-      paint_.rect(840 + Inset, 568 + 60 - 11, std::max(Track, width * float(percent) / 100), Track, Butter, Track / 2);
-    }
-    const auto label = downloading ? trf("Downloading {0}", {std::to_string(int(percent)) + "%"})
-                                   : std::string(tr("Waiting to download"));
-    const float labelWidth = paint_.fonts.measure(label, 21, true);
-    paint_.fonts.middle(label, 840 + (W - labelWidth) / 2, downloading ? 594 : 598, 21, downloading ? Surface : Secondary, true);
+    onTheWayButton(840, W, downloading, percent,
+                   downloading && retroBytes_ ? 100.0 * double(retroKept_.load()) / double(retroBytes_) : 0);
   } else {
     paint_.rect(840, 568, W, 60, Butter, 14);
     const auto get = retroGetLabel();

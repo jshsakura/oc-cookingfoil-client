@@ -1,4 +1,5 @@
 #include "ui/Application.hpp"
+#include "platform/Shortcut.hpp"
 #include "net/Socket.hpp"
 #include "net/Direct.hpp"
 #include "net/Segmented.hpp"
@@ -650,7 +651,13 @@ void Application::reload(int prefer) {
   }
   writePendingState(); // what was just set, before it is read back
   bool busy = false;
-  const auto state = loadState(statePath_, &busy);
+  auto state = loadState(statePath_, &busy);
+  // At start the loading screen waits for a write still going, so the app
+  // opens once, read, rather than showing its menu and then reading again.
+  for (const auto until = SDL_GetTicks() + 15000; loading_ && state.error && busy && SDL_GetTicks() < until;) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    state = loadState(statePath_, &busy);
+  }
   if (state.error && busy && !session_) {
     // Held by a write still going, not broken: the servers show now (not an
     // empty 설정) and the records are read again until they can be.
@@ -792,8 +799,13 @@ void Application::poll() {
       lastByteMs_ = SDL_GetTicks();
     }
   }
-  if (observedInstall_ == install::Status::Running && installStatus == install::Status::Succeeded)
+  if (observedInstall_ == install::Status::Running && installStatus == install::Status::Succeeded) {
+    // The server's shortcut over an older one: the HOME Menu reads its new icon.
+    for (const auto &part : installer_.progress().parts)
+      if (part.type == "shortcut" && !part.titleId.empty())
+        platform::refreshShortcutIcon(std::strtoull(part.titleId.c_str(), nullptr, 16));
     refreshInstalled();
+  }
   // Stopped as the app closes: not an end. Its row, its place in the queue
   // and where it stands all stay, and the next start goes on from there.
   const bool stopped = installStatus == install::Status::Stopped;
@@ -1773,7 +1785,7 @@ void Application::footer(
   const float left = statusBar();
   // Until the server first answers the buttons mean little: placeholders,
   // as the menu shows.
-  if (!menuKnown_ && network_.joinable()) {
+  if (menuPending()) {
     (void)left;
     float x = 1248;
     for (const float w : {96.f, 110.f, 96.f, 110.f}) {
@@ -1835,7 +1847,7 @@ void Application::shell() {
   };
   // Until the server first answers, the menu is placeholders: 레트로 게임
   // and 홈브류 appear only when it has them, and the rows would jump.
-  if (!menuKnown_ && network_.joinable()) {
+  if (menuPending()) {
     for (int i = 0; i < MenuItems; ++i)
       paint_.skeleton(16, 92 + i * MenuRowPitch, 200, MenuRowHeight, 12);
     return;
@@ -1909,7 +1921,7 @@ float Application::statusBar() {
   float x = 28;
   // Until the server first answers: placeholders, as the menu and the
   // buttons show (the link, then the two storages).
-  if (!menuKnown_ && network_.joinable()) {
+  if (menuPending()) {
     for (const float w : {120.f, 210.f, 210.f}) {
       paint_.skeleton(x, Mid - 15, w, 30, 15);
       x += w + 24;
@@ -2725,8 +2737,12 @@ void Application::openDownloads(const std::string &sd) {
     else
       logLine("downloads: " + error);
   }
+  // Written back only when settling changed a row: a write rewrites the
+  // whole file, seconds on a slow card, and the records read right after
+  // (the server settings) would wait on it.
+  const auto read = history::serialize(history_);
   history::settle(history_);
-  saveHistory();
+  if (history::serialize(history_) != read) saveHistory();
 }
 // The points were written beside the console's placeholders, which can go
 // without them (a system cleanup, another installer); a point with nothing

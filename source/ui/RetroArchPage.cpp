@@ -153,19 +153,10 @@ void Application::retroArchPage() {
   if (retroArchPart_ == Button) paint_.ring(X, 568, W, 60, 14);
   const bool downloading = retroBusy_ == "pack";
   if (downloading || retroArchQueuedAt() >= 0) {
-    paint_.rect(X, 568, W, 60, downloading ? Ink : SDL_Color{228, 225, 218, 255}, 14);
     double percent = 0;
-    if (downloading) {
-      if (retroBytes_) percent = std::min(100.0, 100.0 * double(retroReceived_.load()) / double(retroBytes_));
-      constexpr float Inset = 18, Track = 5;
-      const float width = W - 2 * Inset;
-      paint_.rect(X + Inset, 568 + 60 - 11, width, Track, {70, 70, 76, 255}, Track / 2);
-      paint_.rect(X + Inset, 568 + 60 - 11, std::max(Track, width * float(percent) / 100), Track, Butter, Track / 2);
-    }
-    const auto label = downloading ? trf("Downloading {0}", {std::to_string(int(percent)) + "%"})
-                                   : std::string(tr("Waiting to download"));
-    paint_.fonts.middle(label, X + (W - paint_.fonts.measure(label, 21, true)) / 2, downloading ? 594 : 598, 21,
-                        downloading ? Surface : Secondary, true);
+    if (downloading && retroBytes_) percent = std::min(100.0, 100.0 * double(retroReceived_.load()) / double(retroBytes_));
+    onTheWayButton(X, W, downloading, percent,
+                   downloading && retroBytes_ ? 100.0 * double(retroKept_.load()) / double(retroBytes_) : 0);
   } else {
     paint_.rect(X, 568, W, 60, Butter, 14);
     const std::string label = present ? tr("Check for updates|retroarch") : tr("Install RetroArch");

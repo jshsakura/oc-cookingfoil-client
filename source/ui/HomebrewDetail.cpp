@@ -252,8 +252,8 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
         return (q.kind == "shortcut" && q.name == trf("{0} shortcut", {app.name})) ||
                (!app.forwarderUrl.empty() && q.file.url == app.forwarderUrl);
       });
-      const std::string state = hasShortcut ? tr("Made") : queued ? tr("Queued") : blocked ? tr("Unavailable")
-                                : unsigned_ ? tr("Needs sig patches") : tr("None");
+      const std::string state = hasShortcut ? tr("Installed") : queued ? tr("Queued") : blocked ? tr("Unavailable")
+                                : unsigned_ ? tr("Needs sig patches") : tr("Not installed");
       paint_.fonts.middle(state, X + W - 16 - paint_.fonts.measure(state, 16, true), mid, 16,
                           hasShortcut ? Good : unsigned_ ? Pending : Secondary, true);
       continue;
@@ -289,7 +289,8 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
   if (homebrewAskRow_ < 0 && panelFocus) paint_.ring(X, 568, W, 60, 14);
   double percent = 0;
   if (const int onTheWay = homebrewOnTheWay(app, percent)) {
-    onTheWayButton(X, W, onTheWay == 2, percent);
+    const bool mine = retroBusy_ == "homebrew:" + app.id && retroBytes_;
+    onTheWayButton(X, W, onTheWay == 2, percent, mine ? 100.0 * double(retroKept_.load()) / double(retroBytes_) : 0);
   } else if (app.cardOnly) {
     paint_.rect(X, 568, W, 60, {228, 225, 218, 255}, 14);
     const std::string label = tr("Not on the server");
