@@ -580,8 +580,12 @@ void Application::screen(Screen screen) {
     patchCheckWanted_ = true;
   }
   // 홈브류 asks the card which apps are still there; the list loads as it draws.
-  if (screen == Screen::Homebrew)
+  // The list as the server has it now, asked with its ETag: unchanged costs
+  // a short reply, and the list on screen stays until a new one comes.
+  if (screen == Screen::Homebrew) {
     checkHomebrewCard();
+    if (homebrewLoaded_ && !homebrewError_) loadHomebrew();
+  }
   // 설정 says whether a newer build is on the server, asked once a launch.
   if (screen == Screen::Settings && appUpdate_ == AppUpdate::Unknown && connected_)
     checkAppUpdate();

@@ -31,8 +31,15 @@ void Application::loadHomebrew() {
     Error error;
     if (!guarded("homebrew", [&] { net::homebrewList(server, state, etag, apps, unchanged, error, &stop_, titles); }))
       error.message = tr("Something went wrong reading the homebrew list.");
-    homebrewFinish_ = [this, apps = std::move(apps), unchanged, error, etag]() mutable {
+    homebrewFinish_ = [this, apps = std::move(apps), unchanged, error, etag, shown = homebrewLoaded_ && !homebrew_.empty()]() mutable {
       homebrewLoaded_ = true;
+      // A look again that failed keeps the list it had: said in the log only.
+      if (error && shown) {
+        logLine("homebrew: list kept, " + error.message);
+        error = {};
+        unchanged = true;
+        etag = homebrewEtag_;
+      }
       homebrewError_ = error;
       // A row in 다운로드 asked for an app's page before the list was here.
       const auto wanted = std::exchange(homebrewOpenId_, std::string());
