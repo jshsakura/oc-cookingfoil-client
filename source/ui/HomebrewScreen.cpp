@@ -46,9 +46,18 @@ void Application::loadHomebrew() {
       if (error) return;
       homebrewEtag_ = etag;
       if (!unchanged) {
+        // The cursor (and an open page) stays on the same app when the new
+        // list puts it somewhere else.
+        const auto *was = screen_ == Screen::Homebrew ? homebrewPicked() : nullptr;
+        const auto keep = was ? was->id : std::string();
         homebrew_ = std::move(apps);
         sortShopSaves(); // apps' saves in 공유 now sort by the app's name
         matchHomebrewCard();
+        if (!keep.empty()) {
+          const auto rows = homebrewRows();
+          for (int n = 0; n < int(rows.size()); ++n)
+            if (homebrewAt(rows[n]).id == keep) selected_ = n;
+        }
       }
       if (screen_ == Screen::Homebrew && sidebar_ && autoSidebar_ && hasFocusable()) sidebar_ = autoSidebar_ = false;
       if (!wanted.empty() && screen_ == Screen::Homebrew && !openHomebrewPage(wanted)) {
