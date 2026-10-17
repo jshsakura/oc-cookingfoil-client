@@ -293,9 +293,9 @@ bool Application::open() {
   took();
   logLine("startup " + steps);
   // The bar runs on to its end before the app shows, rather than the app
-  // popping up from part way: a short fill, then a second full to read the
+  // popping up from part way: a short fill, then a moment full to read the
   // last word.
-  constexpr uint32_t FillMs = 450, HoldMs = 1000;
+  constexpr uint32_t FillMs = 200, HoldMs = 400;
   const float from = progressShown;
   // The last word changes each start, one of a few kitchen lines.
   static const char *const Done[] = {"Well done!", "Golden brown, just right!", "A wild homebrew appeared!",
@@ -456,17 +456,12 @@ void Application::localizeNames() {
                                                              : source->name;
   }
 }
-void Application::setItems(std::vector<Item> items) {
-  const auto started = SDL_GetTicks();
-  groups_ = groupCatalog(std::move(items));
-  groupIndex_.clear();
-  groupIndex_.reserve(groups_.size());
-  for (size_t i = 0; i < groups_.size(); ++i)
-    groupIndex_.emplace(groups_[i].id, i);
-  updatesStale_ = true;
-  // Groups copy each item into files (and the base into representative);
-  // only the base, or the representative without one, needs its names.
-  for (auto &g : groups_) {
+namespace {
+// Groups copy each item into files (and the base into representative);
+// only the base, or the representative without one, needs its names.
+std::vector<Group> groupedCatalog(std::vector<Item> items) {
+  auto groups = groupCatalog(std::move(items));
+  for (auto &g : groups) {
     for (auto *list : {&g.alternatives, &g.dlc})
       for (auto &f : *list)
         std::vector<std::string>().swap(f.names), std::vector<std::string>().swap(f.icons);
@@ -475,6 +470,18 @@ void Application::setItems(std::vector<Item> items) {
     if (g.base)
       std::vector<std::string>().swap(g.representative.names), std::vector<std::string>().swap(g.representative.icons);
   }
+  return groups;
+}
+} // namespace
+void Application::setItems(std::vector<Item> items) { setGroups(groupedCatalog(std::move(items))); }
+void Application::setGroups(std::vector<Group> groups) {
+  const auto started = SDL_GetTicks();
+  groups_ = std::move(groups);
+  groupIndex_.clear();
+  groupIndex_.reserve(groups_.size());
+  for (size_t i = 0; i < groups_.size(); ++i)
+    groupIndex_.emplace(groups_[i].id, i);
+  updatesStale_ = true;
   localizeNames();
   chips_ = libraryChips(groups_, genreNames_);
   rebuildHome();
@@ -511,6 +518,7 @@ void Application::clearCatalog() {
   ++catalogVersion_;
   hero_ = 0;
   incoming_.clear();
+  incomingGroups_.clear();
   selection_.reset();
   details_.clear();
   detail_ = {};
@@ -725,7 +733,11 @@ void Application::refresh() {
     incomingError_ = {};
     const bool ok = guarded("catalog", [this] {
       if (session_->refresh(incomingError_) && !session_->unchanged())
-        incoming_ = session_->takeItems();
+      {
+        // Grouped here, off the drawing thread: it takes a few hundred
+        // milliseconds for a large catalog, which stopped the screen.
+        incomingGroups_ = groupedCatalog(session_->takeItems());
+      }
     });
     if (!ok)
       incomingError_.message = tr("Failed to process the list. Check log.txt.");
@@ -801,9 +813,20 @@ void Application::poll() {
   }
   if (observedInstall_ == install::Status::Running && installStatus == install::Status::Succeeded) {
     // The server's shortcut over an older one: the HOME Menu reads its new icon.
-    for (const auto &part : installer_.progress().parts)
-      if (part.type == "shortcut" && !part.titleId.empty())
-        platform::refreshShortcutIcon(std::strtoull(part.titleId.c_str(), nullptr, 16));
+    for (const auto &part : installer_.progress().parts) {
+      // A shortcut (its id in the shortcut range), with a row of its own or not.
+      const uint64_t id = forwarder::parseHexId(part.titleId);
+      if (!forwarder::shortcutId(id)) continue;
+      platform::refreshShortcutIcon(id);
+      shortcuts_.insert(id);
+      // One made here before for the same app goes, so it shows once.
+      for (const auto &app : homebrew_)
+        if (app.forwarderTitleId == part.titleId)
+          if (const auto local = homebrewShortcutId(app); local != id && shortcuts_.count(local)) {
+            if (const auto error = platform::removeShortcut(local)) logLine("shortcut: the one made here stays: " + error.message);
+            else shortcuts_.erase(local);
+          }
+    }
     refreshInstalled();
   }
   // Stopped as the app closes: not an end. Its row, its place in the queue
@@ -858,6 +881,8 @@ void Application::poll() {
         homebrewEtag_.clear();
         loadHomebrew();
       }
+      for (const auto &part : parts)
+        if (forwarder::shortcutId(forwarder::parseHexId(part.titleId))) shortcutFailed(part.titleId);
     }
     // The card leaves 진행 중 at once; how it ended is said here and kept
     // in 완료 or 실패.
@@ -990,8 +1015,8 @@ void Application::takeNetwork() {
   featured_ = session_->featured();
   genreNames_ = session_->genres();
   scoreLabels_ = session_->scoreLabels();
-  setItems(std::move(incoming_));
-  incoming_ = {};
+  setGroups(std::move(incomingGroups_));
+  incomingGroups_ = {};
   error_ = {};
   offerResume();
   // 홈브류 is read ahead once the home is up, so it opens with its list.
@@ -2218,6 +2243,14 @@ void Application::render() {
       paint_.fonts.middle(notice_, x + 22 + Icon + 12, y + h / 2, 18, Surface);
   }
   dialogs();
+  // What the finger is on, darker, as a pressed button on the web.
+  if (pressing_) {
+    if ((pressedUntil_ && SDL_GetTicks() >= pressedUntil_) || pressedScreen_ != int(screen_)) pressing_ = false;
+    else {
+      SDL_RenderSetClipRect(paint_.renderer, nullptr);
+      paint_.rect(pressed_.x, pressed_.y, pressed_.w, pressed_.h, {0, 0, 0, 46}, 12);
+    }
+  }
   SDL_RenderPresent(paint_.renderer);
 }
 

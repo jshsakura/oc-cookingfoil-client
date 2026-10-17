@@ -187,6 +187,9 @@ void Images::updateState(State state) {
   std::lock_guard<std::mutex> lock(mutex_);
   state_ = std::move(state);
 }
+std::string Images::cachedPath(const std::string &url) const {
+  return cache_.empty() ? "" : cache_ + "/" + hash(url) + ".image";
+}
 void Images::request(const std::string &url) {
   if (url.empty())
     return;

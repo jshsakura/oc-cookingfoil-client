@@ -187,7 +187,7 @@ int main(int argc, char **argv) {
             touchY = lastY = ty;
             lastX = tx;
             dragging = false;
-            ui.fingerDown();
+            ui.fingerDown(tx, ty);
           } else if (event.type == SDL_FINGERMOTION) {
             if (!dragging && (std::abs(ty - touchY) > TapSlop || std::abs(tx - touchX) > TapSlop)) {
               dragging = true;

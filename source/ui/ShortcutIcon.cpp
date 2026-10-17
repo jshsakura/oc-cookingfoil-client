@@ -2,23 +2,60 @@
 #include <SDL.h>
 #include <SDL_image.h>
 #include <algorithm>
-#include <vector>
+#include <csetjmp>
+#include <cstdio>
+#include <cstdlib>
+#include <jpeglib.h>
 namespace foil::ui {
 namespace {
 // The control data holds an icon of at most this many bytes.
 constexpr size_t MaxIcon = 0x20000;
+// libjpeg straight into memory, its errors caught here: SDL_image's JPEG
+// writer (IMG_SaveJPG_RW) crashed the app on the console (0.3.133, 0.3.134).
+struct Escape {
+  jpeg_error_mgr base;
+  std::jmp_buf back;
+};
+void escape(j_common_ptr info) { std::longjmp(reinterpret_cast<Escape *>(info->err)->back, 1); }
+std::string encodeJpeg(const uint8_t *rgb, int width, int height, int pitch, int quality) {
+  jpeg_compress_struct info{};
+  Escape errors{};
+  info.err = jpeg_std_error(&errors.base);
+  errors.base.error_exit = escape;
+  errors.base.output_message = [](j_common_ptr) {}; // nothing to stderr
+  unsigned char *buffer = nullptr;
+  unsigned long size = 0;
+  if (setjmp(errors.back)) {
+    jpeg_destroy_compress(&info);
+    std::free(buffer);
+    return {};
+  }
+  jpeg_create_compress(&info);
+  jpeg_mem_dest(&info, &buffer, &size);
+  info.image_width = JDIMENSION(width);
+  info.image_height = JDIMENSION(height);
+  info.input_components = 3;
+  info.in_color_space = JCS_RGB;
+  jpeg_set_defaults(&info);
+  jpeg_set_quality(&info, quality, TRUE);
+  jpeg_start_compress(&info, TRUE);
+  while (info.next_scanline < info.image_height) {
+    JSAMPROW row = const_cast<JSAMPROW>(rgb + size_t(info.next_scanline) * size_t(pitch));
+    jpeg_write_scanlines(&info, &row, 1);
+  }
+  jpeg_finish_compress(&info);
+  std::string out(reinterpret_cast<const char *>(buffer), size_t(size));
+  jpeg_destroy_compress(&info);
+  std::free(buffer);
+  return out;
+}
 struct Freed {
   SDL_Surface *surface;
   ~Freed() { SDL_FreeSurface(surface); }
 };
 } // namespace
 std::string shortcutIconJpeg(const std::string &image, int side) {
-  if (image.size() < 8 || side <= 0) return {};
-  // JPEG or PNG only: WebP unpacked on the shortcut's thread crashed the app
-  // (0.3.133, in libwebp), so it is asked for in these and nothing else is read.
-  const auto *b = reinterpret_cast<const uint8_t *>(image.data());
-  const bool jpeg = b[0] == 0xFF && b[1] == 0xD8, png = b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G';
-  if (!jpeg && !png) return {};
+  if (image.empty() || side <= 0) return {};
   SDL_Surface *loaded = IMG_Load_RW(SDL_RWFromConstMem(image.data(), int(image.size())), 1);
   if (!loaded) return {};
   const Freed source{SDL_ConvertSurfaceFormat(loaded, SDL_PIXELFORMAT_RGB24, 0)};
@@ -47,14 +84,10 @@ std::string shortcutIconJpeg(const std::string &image, int side) {
     }
   }
   // As good as fits: a busy picture at the top quality can run over.
-  std::vector<char> buffer(MaxIcon);
   for (int quality = 92; quality >= 50; quality -= 14) {
-    SDL_RWops *rw = SDL_RWFromMem(buffer.data(), int(buffer.size()));
-    if (!rw) return {};
-    const bool saved = IMG_SaveJPG_RW(out.surface, rw, 0, quality) == 0;
-    const auto size = SDL_RWtell(rw);
-    SDL_RWclose(rw);
-    if (saved && size > 4 && size_t(size) <= buffer.size()) return std::string(buffer.data(), size_t(size));
+    auto jpeg = encodeJpeg(static_cast<const uint8_t *>(out.surface->pixels), side, side, out.surface->pitch, quality);
+    if (jpeg.size() > 4 && jpeg.size() <= MaxIcon) return jpeg;
+    if (jpeg.empty()) break; // it failed, not too large
   }
   return {};
 }

@@ -257,7 +257,7 @@ int serveWeb(ui::Application &app, ui::Runtime &runtime, int port) {
       app.touch(std::strtof(args["x"].c_str(), nullptr), std::strtof(args["y"].c_str(), nullptr));
       reply(client, "text/plain", "ok");
     } else if (path == "/down") {
-      app.fingerDown();
+      app.fingerDown(std::strtof(args["x"].c_str(), nullptr), std::strtof(args["y"].c_str(), nullptr));
       reply(client, "text/plain", "ok");
     } else if (path == "/dragstart") {
       app.dragBegin(std::strtof(args["x"].c_str(), nullptr), std::strtof(args["y"].c_str(), nullptr),

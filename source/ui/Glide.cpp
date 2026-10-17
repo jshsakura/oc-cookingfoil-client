@@ -39,7 +39,27 @@ void Application::fingerDown() {
   glide_.velocity = 0;
   glide_.settling = false;
 }
+void Application::fingerDown(float x, float y) {
+  const auto inside = [&](const SDL_FRect &a) { return x >= a.x && x < a.x + a.w && y >= a.y && y < a.y + a.h; };
+  // A list still coasting on another screen (or elsewhere on this one) does
+  // not eat the touch: only one on the moving list stops it.
+  const bool onIt = std::any_of(glideAreas_.begin(), glideAreas_.end(),
+                                [&](const GlideArea &a) { return a.id == glide_.id && inside(a.area); });
+  fingerDown();
+  swallowTap_ = swallowTap_ && onIt;
+  pressing_ = false;
+  if (swallowTap_) return;
+  for (auto it = hits_.rbegin(); it != hits_.rend(); ++it)
+    if (inside(it->area)) {
+      pressed_ = it->area;
+      pressing_ = true;
+      pressedUntil_ = 0;
+      pressedScreen_ = int(screen_);
+      return;
+    }
+}
 void Application::dragBegin(float x, float y, float dx, float dy) {
+  pressing_ = false; // a drag presses nothing
   // The topmost area under the finger that moves the way the finger set
   // off, as drawn in the last frame.
   const bool sideways = std::abs(dx) > std::abs(dy);

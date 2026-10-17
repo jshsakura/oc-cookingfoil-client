@@ -84,6 +84,7 @@ public:
   ~Application();
   bool open();
   void setItems(std::vector<Item> items);
+  void setGroups(std::vector<Group> groups); // already grouped (groupCatalog)
   void setSession(std::unique_ptr<net::Session> session);
   void refresh();
   // Downloads that find their token run out get a fresh one from this server.
@@ -318,6 +319,9 @@ public:
   void touch(float x, float y);
   void drag(float dx, float dy);
   void fingerDown(); // a finger lands: a coasting list stops, and that touch opens nothing
+  // Where it lands: only a touch on the coasting list itself is spent on
+  // stopping it, and what is under the finger shows pressed until it lifts.
+  void fingerDown(float x, float y);
   // A finger starts moving (past the tap slop) from x, y; dx, dy is its first
   // move, which picks sideways (a shelf, the banner) or up and down.
   void dragBegin(float x, float y, float dx = 0, float dy = 1);
@@ -459,6 +463,9 @@ private:
   // icon (the .nro's when that cannot be had). payload: a homebrew app's
   // JSON, "retro:" and a game's, or "self".
   void queueShortcut(const std::string &name, const std::string &icon, const std::string &payload);
+  bool makeHomebrewShortcutHere(const homebrew::App &app); // queued; false where none can be made
+  bool makeRetroShortcutHere(const retro::Game &game);
+  void shortcutFailed(const std::string &titleId); // the server's would not come: made here
   void removeHomebrewShortcut(const homebrew::App &app);
   void removeShortcuts(const std::vector<uint64_t> &ids, const std::string &name); // those the console has
   // After a download, when 설정 asks for shortcuts: made here when the
@@ -1030,6 +1037,10 @@ private:
     float target = 0;
   } glide_;
   bool swallowTap_ = false; // the touch that stopped a coasting list
+  SDL_FRect pressed_{};      // what the finger is on, shown pressed
+  uint32_t pressedUntil_ = 0; // 0 while held; else when the pressed look goes
+  bool pressing_ = false;
+  int pressedScreen_ = -1; // the screen it was pressed on: another one drops the look
   // Where other areas were left by the finger (a shelf swiped, then the
   // page scrolled): each keeps its place until a button is pressed.
   std::map<std::string, float> glideRest_;
@@ -1102,6 +1113,7 @@ private:
   std::atomic<bool> stop_{false};
   std::atomic<bool> retroCancel_{false}; // Y while RetroArch downloads; also set on exit
   std::vector<Item> incoming_;
+  std::vector<Group> incomingGroups_; // incoming_ grouped on the network thread
   Error incomingError_;
   net::Detail detail_, incomingDetail_;
   std::unique_ptr<Selection> selection_;

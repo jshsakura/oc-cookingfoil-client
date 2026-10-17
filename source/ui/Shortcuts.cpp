@@ -118,30 +118,51 @@ void Application::removeShortcuts(const std::vector<uint64_t> &ids, const std::s
 }
 bool Application::autoHomebrewShortcut(const homebrew::App &app) {
   if (!state_.makeShortcuts) return false;
-  if (platform::canMakeShortcuts() && homebrew::cardNroPath(homebrewFile(app))) {
-    queueShortcut(app.name, homebrewIcon(app),
-                  serializePlan({homebrewFile(app), "", "", app.name, "", app.name, app.iconUrl, homebrewServerShortcut(app)}));
-    return true;
-  }
-  return installShortcut(app.name, app.iconUrl, app.forwarderUrl, app.forwarderTitleId, app.forwarderSize);
+  // The server's first: it is built from the app with the picture set on the
+  // web, .nro and all, which a shortcut made here cannot change.
+  if (!app.cardOnly && !app.forwarderUrl.empty() && session_)
+    return installShortcut(app.name, app.iconUrl, app.forwarderUrl, app.forwarderTitleId, app.forwarderSize);
+  return makeHomebrewShortcutHere(app);
 }
-// Made here: the game's core with the ROM, under the game's name and the
-// server's picture of it. The server's own only where none can be made here.
+bool Application::makeHomebrewShortcutHere(const homebrew::App &app) {
+  if (!platform::canMakeShortcuts() || !homebrew::cardNroPath(homebrewFile(app))) return false;
+  queueShortcut(app.name, homebrewIcon(app),
+                serializePlan({homebrewFile(app), "", "", app.name, "", app.name, app.iconUrl, homebrewServerShortcut(app)}));
+  return true;
+}
+// The server's shortcut first (its picture as set on the web); without one,
+// made here: the game's core with the ROM, under the game's name and the
+// server's picture of it.
 bool Application::installRetroShortcut(const retro::Game &game) {
   if (!retroReady(game)) return false; // it would open to an error
-  if (state_.makeShortcuts && !retro::corePath(game.core).empty() && !game.romPath.empty() &&
-      platform::canMakeShortcuts() && retroArchPresent()) {
-    const auto rom = "sdmc:/" + game.romPath;
-    // The id comes from the core's path and the ROM, so each game has its own.
-    queueShortcut(game.name, game.iconUrl,
-                  serializePlan({retro::RetroArchApp, retro::corePath(game.core),
-                                 rom.find(' ') == std::string::npos ? rom : "\"" + rom + "\"", game.name, "RetroArch",
-                                 game.name, game.iconUrl, forwarder::serverShortcutId(game.forwarderTitleId)}));
-    return true;
-  }
   if (!game.forwarderUrl.empty())
     return installShortcut(game.name, game.iconUrl, game.forwarderUrl, game.forwarderTitleId, game.forwarderSize);
-  return false;
+  return state_.makeShortcuts && makeRetroShortcutHere(game);
+}
+bool Application::makeRetroShortcutHere(const retro::Game &game) {
+  if (retro::corePath(game.core).empty() || game.romPath.empty() || !platform::canMakeShortcuts() || !retroArchPresent())
+    return false;
+  const auto rom = "sdmc:/" + game.romPath;
+  // The id comes from the core's path and the ROM, so each game has its own.
+  queueShortcut(game.name, game.iconUrl,
+                serializePlan({retro::RetroArchApp, retro::corePath(game.core),
+                               rom.find(' ') == std::string::npos ? rom : "\"" + rom + "\"", game.name, "RetroArch",
+                               game.name, game.iconUrl, forwarder::serverShortcutId(game.forwarderTitleId)}));
+  return true;
+}
+// The server's shortcut did not come or would not install: made here
+// instead, so a broken one on the server never leaves the app without one.
+void Application::shortcutFailed(const std::string &titleId) {
+  for (const auto &app : homebrew_)
+    if (!app.forwarderTitleId.empty() && app.forwarderTitleId == titleId && makeHomebrewShortcutHere(app)) {
+      logLine("shortcut: the server's for " + app.name + " failed; made here");
+      return;
+    }
+  for (const auto &game : retroGames_)
+    if (!game.forwarderTitleId.empty() && game.forwarderTitleId == titleId && makeRetroShortcutHere(game)) {
+      logLine("shortcut: the server's for " + game.name + " failed; made here");
+      return;
+    }
 }
 void Application::queueShortcut(const std::string &name, const std::string &icon, const std::string &payload) {
   queueJob("shortcut", trf("{0} shortcut", {name}), icon, "", 0, payload);
@@ -158,9 +179,13 @@ bool Application::startShortcut(const QueuedInstall &next) {
     plan = {homebrewFile(app), "", "", app.name, "", app.name, app.iconUrl, homebrewServerShortcut(app)};
   }
   const auto server = session_ ? session_->server() : Server{};
+  // The picture the screen showed, as the image cache keeps it: those bytes
+  // were read on this console already.
+  const auto cached = images_ && plan.iconUrl.rfind("http", 0) == 0 ? images_->cachedPath(plan.iconUrl) : std::string();
   retroBytes_ = 0; // nothing to download: no percent on its row
-  return runRetroJob("shortcut", [this, plan, server, state = state_, sd = sdRoot_,
+  return runRetroJob("shortcut", [this, plan, server, cached, state = state_, sd = sdRoot_,
                                   languages = homebrew::nacpLanguages(languageCode())]() -> std::function<void()> {
+    logLine("shortcut: making " + plan.display); // a crash after this line is the shortcut's
     Error error;
     uint64_t id = 0;
     homebrew::NroInfo info;
@@ -168,19 +193,22 @@ bool Application::startShortcut(const QueuedInstall &next) {
       error.message = trf("Could not read the app file: {0}", {plan.file});
     else {
       // The server's picture, as the web shows it now (its address carries
-      // the version); the .nro's own when it cannot be had.
-      std::string icon;
-      if (plan.iconUrl.rfind("http", 0) == 0) {
+      // the version): the screen's copy in the image cache, else fetched as
+      // the screen fetches it. The .nro's own when neither can be had.
+      std::string icon, picture = cached.empty() ? std::string() : readFile(cached), from = "cache";
+      if (picture.empty() && plan.iconUrl.rfind("http", 0) == 0) {
         auto headers = net::authHeaders(server, state, plan.iconUrl);
-        headers.push_back("Accept: image/jpeg,image/png"); // no WebP (see shortcutIconJpeg)
+        headers.push_back("Accept: image/webp,image/*;q=0.8");
         const auto got = net::get(plan.iconUrl, headers);
-        if (got.status == 200 && got.error.empty()) icon = shortcutIconJpeg(got.body);
-        if (!icon.empty())
-          logLine("shortcut: " + plan.display + " icon from the server's picture (" +
-                  (uint8_t(got.body[0]) == 0xFF ? "JPEG " : "PNG ") + std::to_string(got.body.size() >> 10) + "KB -> " +
-                  std::to_string(icon.size() >> 10) + "KB)");
-        else logLine("shortcut: " + plan.display + " keeps the app's own icon (HTTP " + std::to_string(got.status) + ")");
+        if (got.status == 200 && got.error.empty()) picture = got.body;
+        from = "HTTP " + std::to_string(got.status);
       }
+      if (!picture.empty()) icon = shortcutIconJpeg(picture);
+      if (!icon.empty())
+        logLine("shortcut: " + plan.display + " icon from the server's picture (" + from + ", " +
+                std::to_string(picture.size() >> 10) + "KB -> " + std::to_string(icon.size() >> 10) + "KB)");
+      else if (plan.iconUrl.rfind("http", 0) == 0)
+        logLine("shortcut: " + plan.display + " keeps the app's own icon (" + from + ")");
       platform::ShortcutRequest request;
       request.nroPath = forwarder::loaderPath(plan.launch.empty() ? plan.file : plan.launch);
       request.extraArgs = plan.extra;
@@ -260,14 +288,9 @@ bool Application::homebrewShortcutPossible(const homebrew::App &app) const {
   return (platform::canMakeShortcuts() && homebrew::cardNroPath(homebrewFile(app))) ||
          (!app.cardOnly && !app.forwarderUrl.empty() && session_);
 }
-// 바로가기 on the app's card: made now when nothing downloads, else queued
-// to be made in its turn; the server's forwarder when none can be made here.
+// 바로가기 on the app's card: the server's forwarder when it has one (built
+// with the picture set on the web), else made here in its queue turn.
 void Application::requestHomebrewShortcut(const homebrew::App &app) {
-  if (platform::canMakeShortcuts() && homebrew::cardNroPath(homebrewFile(app))) {
-    queueShortcut(app.name, homebrewIcon(app),
-                  serializePlan({homebrewFile(app), "", "", app.name, "", app.name, app.iconUrl, homebrewServerShortcut(app)}));
-    return;
-  }
   if (!app.cardOnly && !app.forwarderUrl.empty() && session_) {
     Item shortcut;
     shortcut.url = app.forwarderUrl;
@@ -283,6 +306,7 @@ void Application::requestHomebrewShortcut(const homebrew::App &app) {
       message(trf("Installing the {0} HOME Menu shortcut.", {app.name}));
     return;
   }
+  if (makeHomebrewShortcutHere(app)) return;
   alertTitle_ = tr("A shortcut can't be made here");
   const auto reason = platform::shortcutBlocker();
   alert_ = reason.empty() ? std::string(tr("The server has no shortcut for this app.")) : reason;

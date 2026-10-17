@@ -138,6 +138,9 @@ bool Application::popupOpen() const {
          removal_ || galleryOpen_ || (screen_ == Screen::Saves && (dropboxModal() || dropboxSession_));
 }
 void Application::touch(float x, float y) {
+  // The pressed look stays a moment after the finger lifts, so a quick tap
+  // still shows it took.
+  if (pressing_ && !pressedUntil_) pressedUntil_ = SDL_GetTicks() + 120;
   poll();
   if (swallowTap_) {
     swallowTap_ = false;

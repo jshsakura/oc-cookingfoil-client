@@ -57,18 +57,12 @@ int runHomebrewCardTests() {
       SDL_FillRect(wide, nullptr, SDL_MapRGB(wide->format, 0, 0, 255));
       const SDL_Rect middle{50, 0, 300, 300};
       SDL_FillRect(wide, &middle, SDL_MapRGB(wide->format, 255, 0, 0));
-      std::string png(1 << 20, '\0'), bmp(1 << 20, '\0');
+      std::string png(1 << 20, '\0');
       SDL_RWops *rw = SDL_RWFromMem(png.data(), int(png.size()));
       CHECK(IMG_SavePNG_RW(wide, rw, 0) == 0);
       png.resize(size_t(SDL_RWtell(rw)));
       SDL_RWclose(rw);
-      rw = SDL_RWFromMem(bmp.data(), int(bmp.size()));
-      CHECK(SDL_SaveBMP_RW(wide, rw, 0) == 0);
-      bmp.resize(size_t(SDL_RWtell(rw)));
-      SDL_RWclose(rw);
       SDL_FreeSurface(wide);
-      // Only JPEG and PNG are read (WebP crashed on the console): a BMP is not.
-      CHECK(foil::ui::shortcutIconJpeg(bmp).empty());
       const auto icon = foil::ui::shortcutIconJpeg(png);
       CHECK(icon.size() > 4 && icon.size() <= 0x20000 && uint8_t(icon[0]) == 0xFF && uint8_t(icon[1]) == 0xD8);
       SDL_Surface *back = IMG_Load_RW(SDL_RWFromConstMem(icon.data(), int(icon.size())), 1);

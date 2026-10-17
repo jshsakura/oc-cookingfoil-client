@@ -36,6 +36,9 @@ public:
   // New access keys after pairing; decoded images and textures are kept.
   void updateState(State state);
   void request(const std::string &url);
+  // Where the picture at `url` is kept on the card once fetched (empty
+  // without a cache folder); it may not be there yet.
+  std::string cachedPath(const std::string &url) const;
   void provide(const std::string &key, const std::string &bytes);
   void decode(int budget = 2);
   bool ready() const;
