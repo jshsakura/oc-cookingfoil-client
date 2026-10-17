@@ -387,7 +387,7 @@ bool persist(sqlite3 *db, const std::string &file, std::string &error, const std
 }
 // Opens the file and brings it up to date; `check` also runs quick_check.
 DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&db, bool check, bool &newer,
-                                             std::string &error, std::string *read) {
+                                             std::string &error, std::string *read, bool mayWrite) {
   auto failed = [&](int rc) {
     if (error.empty())
       error = db ? sqlite3_errmsg(db) : sqlite3_errstr(rc);
@@ -463,6 +463,10 @@ DownloadStore::Opened DownloadStore::connect(const std::string &file, sqlite3 *&
     if (!exec(db, "PRAGMA query_only=1;", error))
       return failed(sqlite3_errcode(db));
     return Opened::Ok;
+  }
+  if (version < Latest && !mayWrite) {
+    closeDb(db);
+    return Opened::Unwritten;
   }
   // Each step and its version number commit together, or not at all; the
   // file is written once they all have.
@@ -551,11 +555,24 @@ bool DownloadStore::open(const std::string &path, std::string &error) {
   readOnly_ = false;
   known_.clear();
   const std::string file = fileName(path);
+  sqlite3 *db = nullptr;
+  bool newer = false;
+  // Most opens only read and check: that needs no lock, so one an earlier run
+  // left behind (closed from HOME mid-write) is not waited out at the start.
+  // Anything to write (an older file, legacy rows, a damaged one) takes the
+  // lock below and is done there.
+  if (connect(file, db, true, newer, error, nullptr, false) == Opened::Ok && (newer || legacyPoints(db).empty())) {
+    closeDb(db);
+    std::remove((file + "-journal").c_str());
+    file_ = file;
+    readOnly_ = newer;
+    return true;
+  }
+  closeDb(db);
+  error.clear();
   FileLock lock(file + ".lock");
   if (!lock.acquire(error))
     return false;
-  sqlite3 *db = nullptr;
-  bool newer = false;
   const auto first = connect(file, db, true, newer, error);
   // Resume points kept in the database by older builds move to their own
   // file (resumeFile, <name>.resume.json), then leave the database: written here once.

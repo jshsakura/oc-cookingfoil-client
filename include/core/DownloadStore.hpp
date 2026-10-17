@@ -97,11 +97,12 @@ public:
   static bool busy(const std::string &error);
 
 private:
-  enum class Opened { Ok, Broken, Failed };
+  // Unwritten: the file needs bringing up to date and `mayWrite` was false.
+  enum class Opened { Ok, Broken, Failed, Unwritten };
   // `read`: a digest of the file's bytes as they were read (empty when it
   // had none), so a write of the same bytes is skipped.
   Opened connect(const std::string &file, sqlite3 *&db, bool check, bool &newer, std::string &error,
-                 std::string *read = nullptr);
+                 std::string *read = nullptr, bool mayWrite = true);
   // One call's work: lock, open, one transaction, close, unlock.
   bool run(bool writes, std::string &error, const std::function<bool(sqlite3 *, std::string &)> &work);
   // Reads the resume file, lets `change` edit its points and made keys, and

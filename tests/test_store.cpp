@@ -138,6 +138,18 @@ int runStoreTests() {
     CHECK(second.save(list, error));
   }
   {
+    // A lock a run closed mid-write left behind, still fresh: an open that
+    // only reads does not wait it out.
+    spit(path + ".lock", std::to_string(static_cast<long long>(std::time(nullptr))) + " 1 1\n");
+    DownloadStore store;
+    std::string error;
+    const auto began = std::chrono::steady_clock::now();
+    CHECK(store.open(path, error));
+    CHECK(std::chrono::steady_clock::now() - began < std::chrono::milliseconds(500));
+    CHECK(store.load().size() == 3);
+    std::filesystem::remove(path + ".lock");
+  }
+  {
     // A fresh open reads the list back in its order, with every field.
     DownloadStore store;
     std::string error;

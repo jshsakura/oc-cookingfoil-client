@@ -98,12 +98,14 @@ int runStateTests() {
     CHECK(foil::loadState(db).value.queueJson == "[]");
   }
   {
-    // Held by a write still going (another instance's lock, fresh): busy, a
-    // moment's error, not the file's; once let go it reads as before.
+    // Held by a write still going (another instance's lock, fresh), or left
+    // by a run closed mid-write: a read does not wait on it (a write replaces
+    // the file whole by rename, so a read sees it whole either way).
     const auto lock = foil::DownloadStore::fileName(db) + ".lock";
     { std::ofstream f(lock); f << std::time(nullptr) << " 1 1\n"; }
     bool busy = false;
-    CHECK(foil::loadState(db, &busy).error && busy);
+    const auto held = foil::loadState(db, &busy);
+    CHECK(!held.error && !busy && held.value.deviceKey == KeyA);
     std::filesystem::remove(lock);
     busy = false;
     const auto again = foil::loadState(db, &busy);

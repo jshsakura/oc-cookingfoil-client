@@ -10,6 +10,8 @@ constexpr size_t MostVoices = 6;
 // and a burst of presses does not stack loud enough to crackle.
 constexpr uint32_t MoveGapMs = 35;
 constexpr uint32_t OtherGapMs = 90;
+// Every cue a touch under how it was made (about -1.4 dB).
+constexpr int Gain = 218;
 } // namespace
 Sounds::~Sounds() {
   if (maker_.joinable()) maker_.join();
@@ -86,7 +88,7 @@ void Sounds::mix(void *self, Uint8 *stream, int bytes) {
   for (auto &v : me.voices_) {
     const size_t n = std::min(count, v.samples->size() - v.at);
     for (size_t i = 0; i < n; ++i)
-      out[i] = int16_t(std::clamp(int(out[i]) + int((*v.samples)[v.at + i]), -32768, 32767));
+      out[i] = int16_t(std::clamp(int(out[i]) + int((*v.samples)[v.at + i]) * Gain / 256, -32768, 32767));
     v.at += n;
   }
   me.voices_.erase(std::remove_if(me.voices_.begin(), me.voices_.end(),
