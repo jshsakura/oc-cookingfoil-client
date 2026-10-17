@@ -302,7 +302,7 @@ bool homebrewArchive(const Server &server, const State &state, homebrew::App app
 // a file changed on the server since the list (503), and how long to wait.
 bool homebrewFiles(const Server &server, const State &state, const homebrew::App &app, const std::string &sd,
                    std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel,
-                   std::atomic<uint64_t> *keptBytes, int &busy) {
+                   std::atomic<uint64_t> *keptBytes, int &busy, CheckProgress *check) {
   busy = 0;
   const auto passed = [keptBytes](uint64_t bytes) {
     if (keptBytes) *keptBytes += bytes;
@@ -310,29 +310,43 @@ bool homebrewFiles(const Server &server, const State &state, const homebrew::App
   // What the card already has as listed (a cut install, or a new build that
   // kept most files): checked once, by size and then hash. A fresh install
   // has none of them and passes at once.
+  // Each file found is counted as it is found, so the screen fills its
+  // lighter part as the check goes rather than jumping at the end.
   std::vector<bool> have(app.files.size());
   std::set<std::string> kept;
   uint64_t total = 0, missing = 0;
   size_t missingFiles = 0;
+  if (check) check->done = 0, check->total = int(app.files.size());
+  struct Done {
+    CheckProgress *check;
+    ~Done() { if (check) check->total = 0; }
+  } done{check};
   for (size_t i = 0; i < app.files.size(); ++i) {
     if (cancel && *cancel) return false;
     const auto &file = app.files[i];
     total += file.size;
     have[i] = alreadyThere(sd + "/" + file.path, file.size, file.sha256);
-    if (have[i]) kept.insert(file.path);
-    else missing += file.size, ++missingFiles;
+    if (have[i]) {
+      kept.insert(file.path);
+      received += file.size;
+      passed(file.size);
+    } else
+      missing += file.size, ++missingFiles;
+    if (check) ++check->done;
   }
-  if (!missingFiles) {
-    received += total;
-    passed(total);
-    return true;
-  }
+  if (check) check->total = 0;
+  if (!missingFiles) return true;
 
   // Most of it there: only what is missing, a file at a time. Otherwise the
   // whole bundle in one stream, the files already there read past.
   constexpr uint64_t FewFiles = 200;
   const bool fewMissing = missing * 4 <= total && missingFiles <= FewFiles;
-  if (!app.bundleUrl.empty() && !fewMissing) {
+  const bool bundle = !app.bundleUrl.empty() && !fewMissing;
+  if (bundle) {
+    // The bundle streams the files already there too, and counts them as
+    // they come.
+    received -= std::min<uint64_t>(received, total - missing);
+    if (keptBytes) *keptBytes -= std::min<uint64_t>(*keptBytes, total - missing);
     bool unusable = false;
     const uint64_t before = received;
     if (fetchBundle(server, state, app, sd, kept, received, error, cancel, unusable)) return true;
@@ -343,11 +357,12 @@ bool homebrewFiles(const Server &server, const State &state, const homebrew::App
     received = before;
     error = {};
   }
-  // What the card has is counted at once, so what is left to get is known
-  // from the start (the screen shows that, not the whole app). Only here: a
-  // bundle streams those files too, so there they count as they come.
-  received += total - missing;
-  passed(total - missing);
+  // What the card has counts again after a bundle that gave out (it took
+  // them back to count them as they streamed).
+  if (bundle) {
+    received += total - missing;
+    passed(total - missing);
+  }
   // A folder install: thousands of small files, each its own request, so
   // most of the time is the round trip; eight at a time, each checked. One
   // already on the card as the server lists it (found above, or written by
@@ -392,7 +407,7 @@ bool homebrewFiles(const Server &server, const State &state, const homebrew::App
 } // namespace
 bool homebrewDownload(const Server &server, const State &state, const homebrew::App &listed, const std::string &sd,
                       std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel,
-                      std::atomic<uint64_t> *keptBytes) {
+                      std::atomic<uint64_t> *keptBytes, CheckProgress *check) {
   if (listed.archive.usable()) return homebrewArchive(server, state, listed, sd, received, error, cancel);
   if (listed.files.empty())
     return fetchFile(server, state, listed.downloadUrl, sd, listed.installPath, "", 0, received, error, cancel);
@@ -402,7 +417,7 @@ bool homebrewDownload(const Server &server, const State &state, const homebrew::
   const uint64_t before = received, keptBefore = keptBytes ? keptBytes->load() : 0;
   for (int round = 0;; ++round) {
     int busy = 0;
-    if (homebrewFiles(server, state, app, sd, received, error, cancel, keptBytes, busy)) return true;
+    if (homebrewFiles(server, state, app, sd, received, error, cancel, keptBytes, busy, check)) return true;
     if ((cancel && *cancel) || !busy || round > 0) return false;
     logLine("homebrew " + app.id + ": a file changed on the server, listing again");
     const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(std::min(busy, 30));

@@ -49,8 +49,13 @@ void Application::downloads() {
     // Between one download and the next: the queue keeps its place under
     // where the card was, instead of jumping up and back down.
     constexpr double Between = 1.5;
-    if (!installQueue_.empty() && now - cardShownAt_ < Between)
-      runningList(294);
+    if (!installQueue_.empty() && now - cardShownAt_ < Between) {
+      // The card just done stays a moment, still, until the next one comes.
+      auto still = lastCard_;
+      still.onPause = still.onCancel = still.onDetails = nullptr;
+      still.measure = false;
+      runningList(294, &still);
+    }
     else if (!installQueue_.empty())
       runningList(90);
     else
@@ -64,17 +69,19 @@ void Application::downloads() {
   // A new card rises from the queue's first row, where it waited, and the
   // rows under it move up a place, eased.
   constexpr double Rise = 0.32;
-  if (card.key != topCardKey_) cardChangedAt_ = now;
+  // Only one taking another's place rises; the first one is simply there.
+  if (card.key != topCardKey_ && !card.extra && !topCardKey_.empty() && now - cardShownAt_ < 5) cardChangedAt_ = now;
   cardShownAt_ = now;
+  lastCard_ = card;
   const float t = float(std::clamp((now - cardChangedAt_) / Rise, 0.0, 1.0));
   const float left = (1 - t) * (1 - t) * (1 - t); // what is still to go
-  runningList(294 + left * QueueStep);
-  topCard(card, left * (294 + QueueTitle - 90));
+  runningList(294, &card, left * (294 + QueueTitle - 90), left * QueueStep);
 }
 // What the top card shows now; false when nothing runs or waits paused.
 bool Application::topCardNow(const install::Progress &p, TopCard &card) {
   if (p.status == install::Status::Running) {
     card.key = "install:" + p.name;
+    card.extra = !p.parts.empty() && p.parts.front().type == "shortcut";
     card.name = p.name;
     card.icon = p.icon;
     card.phase = p.phase;
@@ -121,6 +128,7 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
     const bool pack = retroBusy_ == "pack";
     const std::string kind = held ? installQueue_.front().kind : running != history_.end() ? running->kind : "";
     card.key = "small:" + (held ? installQueue_.front().name : running != history_.end() ? running->install.name : retroBusy_);
+    card.extra = kind == "shortcut";
     card.name = held ? installQueue_.front().name : running != history_.end() ? running->install.name : pack ? "RetroArch" : "";
     card.icon = held ? installQueue_.front().icon : running != history_.end() ? running->install.icon : "";
     const auto what = pack || kind == "retroarch" ? std::string("RetroArch")
@@ -138,10 +146,11 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
     card.bytes = got;
     card.left = total > got ? total - got : 0;
     card.paused = held;
-    const int checking = retroToCheck_;
+    const int checking = retroToCheck_ ? retroToCheck_.load() : homebrewCheck_.total.load();
+    const int checked = retroToCheck_ ? retroCheckDone_.load() : homebrewCheck_.done.load();
     card.phase = held        ? std::string(tr("Paused."))
                  : checking  ? trf("Checking the files already on the card ({0} / {1})",
-                                   {std::to_string(retroCheckDone_.load()), std::to_string(checking)})
+                                   {std::to_string(checked), std::to_string(checking)})
                  : total     ? formatBytes(got) + " / " + formatBytes(total)
                              : std::string(tr("Checking which files to get"));
     // Nothing comes in while it checks: no speed to measure yet.
@@ -387,19 +396,26 @@ bool Application::hasPage(const history::Entry &entry) const {
 }
 // Under the installer's card (or from the top): the retro and patch cards
 // and 대기 중, one area that glides under a finger or the right stick.
-void Application::runningList(float y) {
-  constexpr float Bottom = 660;
-  if (installQueue_.empty())
-    return;
+// The card (when one runs) and the queue under it scroll as one page: a
+// finger anywhere on it moves it, and it stretches at its ends as every list.
+void Application::runningList(float y, const TopCard *card, float cardDy, float shift) {
+  constexpr float Bottom = 660, CardTop = 90;
+  const float from = card ? CardTop : y, view = Bottom - from;
+  const float lead = card ? y - CardTop : 0; // the card's part of the page
   // The queue, without the paused item already on the card at the top.
-  const float content = queueHeight();
+  const float content = lead + queueHeight();
   const int picked = downloadsRow_ - 1;
-  const float focus = picked < 0 ? 0 : QueueTitle + picked * QueueStep - (Bottom - y) / 2 + QueueStep / 2;
-  const float max = std::max(0.f, content - (Bottom - y));
-  const float top = glide("running", 232, y, 1048, Bottom - y, std::clamp(focus, 0.f, max), max, 1);
-  if (max > 0) paint_.scrollbar(1266, y, Bottom - y - 12, top, Bottom - y, content);
-  clipTo(232, y - 8, 1048, Bottom - y + 8);
-  queueList(y - top, y);
+  const float focus = picked < 0 ? 0 : lead + QueueTitle + picked * QueueStep - view / 2 + QueueStep / 2;
+  const float max = std::max(0.f, content - view);
+  const float top = glide("running", 232, from, 1048, view, std::clamp(focus, 0.f, max), max, 1);
+  if (max > 0) paint_.scrollbar(1266, from, view - 12, top, view, content);
+  clipTo(232, from - 8, 1048, view + 8);
+  if (!installQueue_.empty()) queueList(from + lead - top + shift, from);
+  // Over the rows: a rising card passes in front of them.
+  if (card) {
+    clipTo(232, from - 8, 1048, view + 8); // a row's cover may have let it go
+    topCard(*card, cardDy - top);
+  }
   unclip();
 }
 float Application::queueHeight() const {

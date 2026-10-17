@@ -66,7 +66,8 @@ void Application::rememberShortcutKey(const std::string &appId, const std::strin
   saveHomebrewLedger();
 }
 // The server built the shortcut again (icon, name, cores) since this one
-// was made: its row offers it again.
+// was made: its row offers it again. One made before keys were kept is
+// offered once too, or it could never be brought up to date.
 bool Application::homebrewShortcutStale(const homebrew::App &app) const {
   if (app.forwarderKey.empty() || !homebrewHasShortcut(app)) return false;
   const auto found = homebrewLedger_.find(app.id);

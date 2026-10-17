@@ -762,6 +762,8 @@ bool PatchStore::rebuildCheat(const std::string &path, Error &error) {
       merged += '\n';
     merged += readFile(stored(owner->id, path));
   }
+  // The same as the card has (every start rebuilds them): left unwritten.
+  if (fs::exists(sd(path), ec) && readFile(sd(path)) == merged) return true;
   return atomicWrite(sd(path), merged, error.message);
 }
 std::vector<PatchConflict> PatchStore::conflicts(const std::string &id) const {

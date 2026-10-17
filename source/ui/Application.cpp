@@ -296,11 +296,11 @@ bool Application::open() {
   // The bar runs on to its end before the app shows, rather than the app
   // popping up from part way: a fill, then a moment full to read the last
   // word.
-  constexpr uint32_t HoldMs = 400;
+  constexpr uint32_t HoldMs = 250;
   const float from = progressShown;
   // As long as what is left needs to look smooth: a bar near its end
   // finishes at once, one half way takes about half a second.
-  const uint32_t FillMs = 250 + uint32_t(450 * std::clamp(1.f - from, 0.f, 1.f));
+  const uint32_t FillMs = 200 + uint32_t(350 * std::clamp(1.f - from, 0.f, 1.f));
   // The last word changes each start, one of a few kitchen lines.
   static const char *const Done[] = {"Well done!", "Golden brown, just right!", "A wild homebrew appeared!",
                                      "It's dangerous to go alone! Take this.", "You cooked something tasty!",

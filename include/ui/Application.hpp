@@ -5,6 +5,7 @@
 #include "install/Installer.hpp"
 #include "net/Api.hpp"
 #include "net/Dropbox.hpp"
+#include "net/HomebrewApi.hpp"
 #include "ui/DropboxRows.hpp"
 #include "ui/Images.hpp"
 #include "ui/Painter.hpp"
@@ -459,6 +460,8 @@ private:
   // last card scan found them and as made or removed since.
   std::set<uint64_t> shortcuts_;
   std::set<uint64_t> homebrewShortcutsFound_; // the card worker's result
+  std::vector<uint64_t> homebrewShortcutsAsked_; // the ids it looked for
+  bool shortcutsUnasked() const;
   std::atomic<bool> signaturePatchesFound_{true};
   bool signaturePatches_ = true; // seen on the card at the last scan; a shortcut needs them to open
   bool shortcutRemoveAsk_ = false; // X on the app popup's shortcut row, asked first
@@ -828,6 +831,7 @@ private:
     double skipped = 0; // of percent, what was already on the card (drawn lighter)
     uint64_t bytes = 0, left = 0; // a running byte count (for the speed) and what is left
     bool paused = false, measure = true;
+    bool extra = false; // a shortcut that follows what just came down: it takes the card's place quietly
     std::vector<std::pair<std::string, int>> chips; // label, 0 waits / 1 now / 2 done
     std::function<void()> onPause, onCancel, onDetails; // onDetails: none when it has no page
   };
@@ -845,6 +849,8 @@ private:
   uint64_t topCardBytes_ = 0, topCardStartBytes_ = 0;
   double topCardMovedAt_ = 0; // when its byte count last moved
   double cardChangedAt_ = -10, cardShownAt_ = -10; // a new card's rise; the last frame with one
+  TopCard lastCard_; // drawn on in the moment between one job and the next
+  net::CheckProgress homebrewCheck_; // an app's files on the card checked before it downloads
   double resumedNoteUntil_ = 0; // its bar went back: "중단되었던 블록부터…" until then
   // A paused app or retro game sits on the card, not again in the list.
   size_t queueSkip() const { return queueHeld_ && !installQueue_.empty() && !installer_.running() && !retroDownloading() ? 1 : 0; }
@@ -1432,7 +1438,7 @@ private:
   static constexpr float QueueTitle = 0, QueueStep = 88; // the queue has no title: its cards follow the one above
   // 진행 중 below the installer's card: the retro and patch cards and the
   // queue, gliding as one under a finger.
-  void runningList(float y);
+  void runningList(float y, const TopCard *card = nullptr, float cardDy = 0, float shift = 0);
   uint64_t queuedBytes() const;
   std::vector<history::Entry> history_;
   // Hands the list to the history writer and returns at once: a write on the

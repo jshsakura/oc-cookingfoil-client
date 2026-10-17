@@ -53,6 +53,8 @@ void Application::loadHomebrew() {
         homebrew_ = std::move(apps);
         sortShopSaves(); // apps' saves in 공유 now sort by the app's name
         matchHomebrewCard();
+        // Its server shortcuts, asked about once the card was looked at.
+        if (homebrewScanned_ && shortcutsUnasked()) scanHomebrewCard();
         if (!keep.empty()) {
           const auto rows = homebrewRows();
           for (int n = 0; n < int(rows.size()); ++n)
@@ -76,16 +78,25 @@ void Application::pollHomebrew() {
     homebrewScanned_ = true;
     takeHomebrewLedgerCheck();
     // The shortcuts asked about: whichever the console no longer has goes.
-    for (const auto &nro : homebrewCard_) shortcuts_.erase(forwarder::titleId(forwarder::loaderPath(nro.path)));
-    for (const auto &app : homebrew_) shortcuts_.erase(homebrewServerShortcut(app));
+    // Only those: a list that came while it looked was not asked about.
+    for (const auto id : homebrewShortcutsAsked_) shortcuts_.erase(id);
     shortcuts_.insert(homebrewShortcutsFound_.begin(), homebrewShortcutsFound_.end());
     signaturePatches_ = signaturePatchesFound_;
     matchHomebrewCard();
+    if (shortcutsUnasked()) scanHomebrewCard(); // the list came while it looked
     if (screen_ == Screen::Homebrew && sidebar_ && autoSidebar_ && hasFocusable()) sidebar_ = autoSidebar_ = false;
   }
   if (!homebrewDone_.exchange(false)) return;
   homebrewWorker_.join();
   if (homebrewFinish_) std::exchange(homebrewFinish_, nullptr)();
+}
+// A listed app's server shortcut the last look did not ask the console about.
+bool Application::shortcutsUnasked() const {
+  const std::set<uint64_t> asked(homebrewShortcutsAsked_.begin(), homebrewShortcutsAsked_.end());
+  return std::any_of(homebrew_.begin(), homebrew_.end(), [&](const homebrew::App &app) {
+    const auto id = homebrewServerShortcut(app);
+    return id && !asked.count(id);
+  });
 }
 void Application::checkHomebrewCard() {
   // Before the first scan only: after it, what it found stands until the
@@ -133,6 +144,7 @@ void Application::scanHomebrewCard() {
     homebrewCardFound_ = std::move(found);
     homebrewLedgerFound_ = std::move(check);
     homebrewShortcutsFound_ = std::move(shortcuts);
+    homebrewShortcutsAsked_ = ids;
     homebrewCardDone_ = true;
   });
 }
@@ -320,7 +332,7 @@ bool Application::runHomebrew(const homebrew::App &app) {
   retroCancel_ = false;
   if (!runRetroJob("homebrew:" + app.id, [this, server, state, sd, app, stale = homebrewStale(app)]() -> std::function<void()> {
         Error error;
-        const bool ok = net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_);
+        const bool ok = net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_, &homebrewCheck_);
         // The older copies go here, off the drawing thread.
         std::vector<std::string> removed;
         for (const auto &old : ok ? stale : std::vector<std::string>{})
@@ -384,7 +396,10 @@ void Application::settleHomebrew(const homebrew::App &app, const std::optional<h
                                        [&](const homebrew::CardNro &nro) { return nro.path == old; }),
                         homebrewCard_.end());
   }
-  homebrew::Record record{app.hash, app.version, app.installPath, {}, seen.value_or(homebrew::CardFile{}), fileSha};
+  homebrew::Record record{app.hash, app.version, app.installPath, {}, seen.value_or(homebrew::CardFile{}), fileSha, {}};
+  // The app came again; its HOME Menu shortcut did not change with it.
+  if (const auto before = homebrewLedger_.find(app.id); before != homebrewLedger_.end())
+    record.shortcutKey = before->second.shortcutKey;
   for (const auto &file : app.files)
     if (file.path != app.installPath) record.files.push_back(file.path);
   for (const auto &entry : app.archive.entries)
