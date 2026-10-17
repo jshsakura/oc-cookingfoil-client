@@ -99,9 +99,14 @@ bool Application::runRetroJob(const std::string &busy, std::function<std::functi
 }
 void Application::pollRetro() {
   if (retroDone_.exchange(false)) {
+    // How long the end of a job held the screen, and in which part.
+    const uint32_t from = SDL_GetTicks();
     retroWorker_.join();
-    retroBusy_.clear();
+    const uint32_t joined = SDL_GetTicks();
+    const auto busy = std::exchange(retroBusy_, std::string());
     if (retroFinish_) std::exchange(retroFinish_, nullptr)();
+    if (const uint32_t now = SDL_GetTicks(); now - from >= 150)
+      logLine("slow " + busy + " end: join " + std::to_string(joined - from) + "ms, finish " + std::to_string(now - joined) + "ms");
   }
   if (!retroListDone_.exchange(false)) {
     if (!retroListWorker_.joinable()) startRetroDetail(); // one wanted while a list was loading

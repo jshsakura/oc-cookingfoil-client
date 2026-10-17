@@ -141,7 +141,6 @@ void Application::touch(float x, float y) {
   // The pressed look stays a moment after the finger lifts, so a quick tap
   // still shows it took.
   if (pressing_ && !pressedUntil_) pressedUntil_ = SDL_GetTicks() + 120;
-  poll();
   if (swallowTap_) {
     swallowTap_ = false;
     return;
@@ -149,14 +148,17 @@ void Application::touch(float x, float y) {
   // A tap moves the cursor off the header; the tapped thing takes it.
   headerFocus_.clear();
   // Hits are recorded in draw order, so the last match is the one on top.
+  // They are what the last frame showed: the tap goes there before anything
+  // that finished meanwhile (a download, its shortcut) changes the list.
   for (auto it = hits_.rbegin(); it != hits_.rend(); ++it) {
     const auto &a = it->area;
     if (x >= a.x && x < a.x + a.w && y >= a.y && y < a.y + a.h) {
       const auto run = it->run;
       run();
-      return;
+      break;
     }
   }
+  poll();
 }
 void Application::drag(float dx, float dy) {
   // In a gliding area: the view follows the finger (finger up reads further

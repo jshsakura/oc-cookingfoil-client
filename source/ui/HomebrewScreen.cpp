@@ -379,8 +379,13 @@ bool Application::runHomebrew(const homebrew::App &app) {
             alert_ = error.message;
             return;
           }
+          const uint32_t settling = SDL_GetTicks();
           settleHomebrew(app, seen, fileSha, removed);
-          if (autoHomebrewShortcut(app)) return;
+          const uint32_t shortcut = SDL_GetTicks();
+          const bool queued = autoHomebrewShortcut(app);
+          if (const uint32_t now = SDL_GetTicks(); now - settling >= 100)
+            logLine("homebrew end: settle " + std::to_string(shortcut - settling) + "ms, shortcut " + std::to_string(now - shortcut) + "ms");
+          if (queued) return;
           // Why it ended so soon: only the changed files came.
           message(trf("Downloaded {0}. Open it from hbmenu.", {app.name}) +
                   (kept ? " " + trf("{0} already on the card was kept.", {formatBytes(kept)}) : std::string()));
