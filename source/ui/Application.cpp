@@ -499,6 +499,24 @@ void Application::localizeNames() {
   }
 }
 namespace {
+// A poll that held the drawing thread long enough to feel (keys and taps
+// wait on it) says which of its steps took the time, in the log.
+struct Laps {
+  static constexpr uint32_t SlowMs = 150, StepMs = 30;
+  uint32_t start = SDL_GetTicks(), at = start;
+  std::string steps;
+  void lap(const char *name) {
+    const uint32_t now = SDL_GetTicks();
+    if (now - at >= StepMs) steps += std::string(" ") + name + " " + std::to_string(now - at) + "ms";
+    at = now;
+  }
+  ~Laps() {
+    static uint32_t loggedAt = 0; // a run of them says so once a second
+    const uint32_t total = SDL_GetTicks() - start;
+    if (total >= SlowMs && SDL_GetTicks() - loggedAt >= 1000 && (loggedAt = SDL_GetTicks()))
+      logLine("slow poll " + std::to_string(total) + "ms:" + (steps.empty() ? " (no single step)" : steps));
+  }
+};
 // Groups copy each item into files (and the base into representative);
 // only the base, or the representative without one, needs its names.
 std::vector<Group> groupedCatalog(std::vector<Item> items) {
@@ -832,22 +850,28 @@ void Application::waitForState(int prefer) {
   });
 }
 void Application::poll() {
+  Laps laps;
   if (stateReady_.exchange(false)) {
     stateWorker_.join();
     stateWaiting_ = false;
     reload(statePrefer_);
+    laps.lap("reload");
   }
   pollDevice();
+  laps.lap("device");
   pollSaveJob();
   pollRetro();
   pollShopSaves();
   pollBackupSummary();
   pollDropbox();
+  laps.lap("saves/retro");
   pollPatches();
   pollPatchCheck();
+  laps.lap("patches");
   pollFileCleanup();
   pollAppUpdate();
   pollClock();
+  laps.lap("cleanup/update/clock");
   // The keys were made again at a load (core/State): said once.
   if (const auto why = statePath_.empty() ? Rebound::None : takeRebound(); why != Rebound::None) {
     alertTitle_ = tr("Approve this console again");
@@ -857,7 +881,9 @@ void Application::poll() {
   }
   pollLog();
   pollHomebrew();
+  laps.lap("homebrew");
   pollResumeCheck();
+  laps.lap("resume check");
   // No dimming or auto-sleep while something downloads.
   const bool downloading = installer_.running() || retroDownloading() || (patchWorker_.joinable() && !patchBusy_.empty()) ||
                            !patchQueue_.empty() ||
@@ -868,6 +894,7 @@ void Application::poll() {
   }
   keepResumeChanges();
   serverRestartNotice();
+  laps.lap("resume points");
   const auto installStatus = installer_.progress().status;
   if (installStatus == install::Status::Running) {
     const auto bytes = net::receivedBytes();
@@ -978,6 +1005,7 @@ void Application::poll() {
       message(installer_.progress().name + " · " + installer_.progress().error);
     }
   }
+  laps.lap("install end");
   // A patch job whose patch the worker finished (or skipped) ends its row.
   if (!patchWorker_.joinable() && patchQueue_.empty())
     settlePatchJob(false, "");
@@ -986,6 +1014,7 @@ void Application::poll() {
   if (resumeOffered_ || ended)
     if (auto error = launchQueued())
       alert_ = error.message;
+  laps.lap("next download");
   if (!done_.exchange(false)) {
     // Waiting for approval: asked every 5 seconds for 5 minutes, then - asks again.
     constexpr uint32_t PairWaitMs = 5 * 60 * 1000;
@@ -1009,6 +1038,7 @@ void Application::poll() {
     return;
   }
   takeNetwork();
+  laps.lap("catalog");
 }
 // What the network thread brought: a detail, the approval state or the catalog.
 void Application::takeNetwork() {
@@ -2061,6 +2091,7 @@ float Application::statusBar() {
 }
 void Application::render() {
   poll();
+  const uint32_t drawStart = SDL_GetTicks();
   // An alert that comes up says so once with the error cue.
   if (alert_.empty()) alertHeard_ = false;
   else if (!std::exchange(alertHeard_, true)) sounds_.play(Cue::Error);
@@ -2316,6 +2347,12 @@ void Application::render() {
       SDL_RenderSetClipRect(paint_.renderer, nullptr);
       paint_.rect(pressed_.x - Pad, pressed_.y - Pad, pressed_.w + 2 * Pad, pressed_.h + 2 * Pad, {0, 0, 0, 36}, 18);
     }
+  }
+  // Drawing that held the thread (keys and taps wait on it), once a second.
+  static uint32_t slowLoggedAt = 0;
+  if (const uint32_t took = SDL_GetTicks() - drawStart; took >= 150 && !loading_ && SDL_GetTicks() - slowLoggedAt >= 1000) {
+    slowLoggedAt = SDL_GetTicks();
+    logLine("slow draw " + std::to_string(took) + "ms on screen " + std::to_string(int(screen_)));
   }
   SDL_RenderPresent(paint_.renderer);
 }
