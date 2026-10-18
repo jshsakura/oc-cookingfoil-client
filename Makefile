@@ -18,15 +18,10 @@ ZSTD_C := $(addprefix third_party/zstd/lib/common/,entropy_common.c error_privat
           $(addprefix third_party/zstd/lib/decompress/,huf_decompress.c zstd_ddict.c zstd_decompress.c zstd_decompress_block.c) \
           source/zstd/ZstdSnapshot.c
 ZSTD_FLAGS := -DZSTD_DISABLE_ASM -DZSTD_LEGACY_SUPPORT=0 -DDEBUGLEVEL=0 -DZSTD_TRACE=0 -Ithird_party/zstd/lib -Ithird_party/zstd/lib/common
-# makefiles/switch.mk holds major.minor; the last number is the commit
-# count, so every build reads newer than the one before and 설정 > 앱
-# 업데이트 can tell them apart (the server reads it from the NACP).
-APP_BASE := $(shell sed -n 's/^APP_VERSION := //p' makefiles/switch.mk)
-# The commits since the minor version began (APP_BUILD_FROM in switch.mk),
-# so 0.3 starts at 0.3.0 and stays above every 0.2.x already out.
-APP_BUILD_FROM := $(shell sed -n 's/^APP_BUILD_FROM := //p' makefiles/switch.mk)
-APP_BUILD := $(shell echo $$(( $$(git rev-list --count HEAD 2>/dev/null || echo 0) - $(or $(APP_BUILD_FROM),0) )))
-APP_VERSION := $(basename $(APP_BASE)).$(APP_BUILD)
+# The version as makefiles/switch.mk writes it (scripts/ship.sh raises it):
+# not the commit count, which a fresh clone, a shallow CI checkout or the
+# public repository's history would each read differently.
+APP_VERSION := $(shell sed -n 's/^APP_VERSION := //p' makefiles/switch.mk)
 HOST_FLAGS += -DCOOKINGFOIL_VERSION=\"$(APP_VERSION)\"
 SHARED := $(wildcard source/core/*.cpp source/net/*.cpp source/ui/*.cpp source/install/*.cpp source/platform/*.cpp source/i18n/*.cpp source/zstd/*.cpp) $(QR_ROOT)/qrcodegen.cpp
 # Save backups zip with minizip. Without it on the host (Debian/Ubuntu package

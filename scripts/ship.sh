@@ -1,39 +1,59 @@
 #!/usr/bin/env bash
-# Ships the committed build: builds it, checks the .nro for anything
-# private, puts it where the server hands it out, publishes it on the
-# GitHub release, then pushes the commits.
+# Ships a build: raises the version in makefiles/switch.mk and commits it,
+# builds, checks the .nro for anything private, puts it where our server
+# hands it out, then tags the commit and pushes. The tag (vX.Y.Z) makes
+# GitHub Actions build the public release from the same source, with its
+# licenses, marked latest (.github/workflows/release.yml).
 #
 #   scripts/ship.sh            the whole run
-#   scripts/ship.sh --check    build and scan only; nothing leaves this machine
+#   scripts/ship.sh --server   our server only (a build to try on the console);
+#                              the commit stays here and goes with the next run
+#   scripts/ship.sh --check    build and scan the current version; nothing
+#                              is raised and nothing leaves this machine
 #
 # Where it goes is this machine's, kept out of the repository in
 # scripts/ship.env (see scripts/ship.env.example):
-#   COOK_CLIENT_DIR   the server's client folder (cookingfoil.nro goes in)
-#   COOK_RELEASE_REPO the GitHub repository with the client-latest release
+#   COOK_CLIENT_DIR       the server's client folder (cookingfoil.nro goes in)
 #   COOK_PRIVATE_PATTERN  more strings the build must not hold (this
-#                     machine's domains, names), an extended regex
+#                         machine's domains, names), an extended regex
 set -euo pipefail
 cd "$(dirname "$0")/.."
-check_only=false
-[ "${1:-}" = "--check" ] && check_only=true
+mode=all
+case "${1:-}" in
+  --check) mode=check ;;
+  --server) mode=server ;;
+  "") ;;
+  *) echo "usage: scripts/ship.sh [--server|--check]" >&2; exit 2 ;;
+esac
 
 env_file=scripts/ship.env
 if [ -f "$env_file" ]; then
   # shellcheck source=/dev/null
   source "$env_file"
 fi
-if ! $check_only; then
-  : "${COOK_CLIENT_DIR:?set it in $env_file}"
-  : "${COOK_RELEASE_REPO:?set it in $env_file}"
-fi
+[ "$mode" = check ] || : "${COOK_CLIENT_DIR:?set it in $env_file}"
 
-# Only what is committed ships: the version comes from the commit count.
-# The engine submodule is always modified in place by its patches.
+# Only what is committed ships. The engine submodule is always modified in
+# place by its patches.
 if [ -n "$(git status --porcelain --ignore-submodules=all)" ]; then
   echo "uncommitted changes; commit first" >&2
   git status --short --ignore-submodules=all >&2
   exit 1
 fi
+
+# One more than the last build shipped, committed before it is built.
+raised=false
+if [ "$mode" != check ]; then
+  current=$(sed -n 's/^APP_VERSION := //p' makefiles/switch.mk)
+  next="${current%.*}.$(( ${current##*.} + 1 ))"
+  sed -i "s/^APP_VERSION := .*/APP_VERSION := $next/" makefiles/switch.mk
+  git commit -q -m "chore: release $next" makefiles/switch.mk
+  raised=true
+fi
+undo() {
+  # A build that does not ship takes its version back.
+  if $raised; then git reset -q --keep HEAD~1; fi
+}
 
 version=$(make -s version 2>/dev/null | tail -n 1)
 echo "== building $version"
@@ -44,11 +64,13 @@ mkdir -p build
 if ! make -j"$(nproc)" >"$log" 2>&1; then
   tail -n 40 "$log" >&2
   echo "build failed; the whole output is in $log" >&2
+  undo
   exit 1
 fi
 built=$(python3 -c "import sys; d=open('cookingfoil.nacp','rb').read(); print(d[0x3060:0x3070].split(b'\0')[0].decode())")
 if [ "$built" != "$version" ]; then
   echo "the build says $built, the commit $version" >&2
+  undo
   exit 1
 fi
 
@@ -61,27 +83,25 @@ hits=$(strings -n 6 cookingfoil.nro |
 if [ -n "$hits" ]; then
   echo "private strings in the build:" >&2
   echo "$hits" >&2
+  undo
   exit 1
 fi
-if $check_only; then
+if [ "$mode" = check ]; then
   echo "== $version built and clean (not shipped)"
   exit 0
 fi
 
-# To the server: a temporary name, then renamed, so a console downloading
+# To our server: a temporary name, then renamed, so a console downloading
 # right then never gets half a file.
 echo "== $COOK_CLIENT_DIR"
 sudo cp cookingfoil.nro "$COOK_CLIENT_DIR/.cookingfoil.nro.tmp"
 sudo mv "$COOK_CLIENT_DIR/.cookingfoil.nro.tmp" "$COOK_CLIENT_DIR/cookingfoil.nro"
+if [ "$mode" = server ]; then
+  echo "== $version on our server only"
+  exit 0
+fi
 
-echo "== $COOK_RELEASE_REPO client-latest"
-gh release upload client-latest cookingfoil.nro -R "$COOK_RELEASE_REPO" --clobber
-notes=$(mktemp)
-trap 'rm -f "$notes"' EXIT
-gh release view client-latest -R "$COOK_RELEASE_REPO" --json body -q .body |
-  sed -E "s/지금 버전: [0-9]+\.[0-9]+\.[0-9]+/지금 버전: $version/" > "$notes"
-grep -q "지금 버전: $version" "$notes" || { echo "the notes name no version to bump" >&2; exit 1; }
-gh release edit client-latest -R "$COOK_RELEASE_REPO" --notes-file "$notes" >/dev/null
-
+git tag -a "v$version" -m "CookingFoil $version"
 git push -q origin HEAD
-echo "== shipped $version"
+git push -q origin "v$version"
+echo "== shipped $version; GitHub Actions builds the release from v$version"
