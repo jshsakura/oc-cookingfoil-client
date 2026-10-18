@@ -1337,6 +1337,18 @@ std::string Application::selectedName() const {
 }
 void Application::action(Action a) {
   poll();
+  // A press that held the thread, as a slow draw is told: the screen waits
+  // on it, and neither the draw nor the poll counts it.
+  struct Held {
+    Application &app;
+    Action a;
+    uint32_t from = SDL_GetTicks();
+    ~Held() {
+      if (const uint32_t took = SDL_GetTicks() - from; took >= 150)
+        logLine("slow press " + std::to_string(took) + "ms: action " + std::to_string(int(a)) + " on screen " +
+                std::to_string(int(app.screen_)));
+    }
+  } held{*this, a};
   if (a == Action::Up || a == Action::Down || a == Action::Left || a == Action::Right || a == Action::Previous ||
       a == Action::Next)
     sounds_.play(Cue::Move);
