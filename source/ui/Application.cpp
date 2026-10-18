@@ -319,7 +319,19 @@ bool Application::open() {
   // Within a step the bar's goal creeps toward the next step's start (most
   // of the way in under a second, never reaching it); the bar follows at a
   // limited speed, so a new step never makes it jump.
-  while (!loaded) {
+  // A fast card still waits for the start cue (user, 2026-10-18): the bar
+  // fills up on the fanfare's chord, so the landings, the sound and the
+  // last word come as one. Without the sound it ends where the chord would
+  // be (the cue starts on the first landing it is ready for). A card slower
+  // than that ends when its reading does. The catalog that comes meanwhile
+  // is laid out, so the home opens filled.
+  constexpr uint32_t SyncFillMs = 450;
+  const auto chordAt = [&] {
+    const uint32_t heard = sounds_.startHeardAt();
+    return (heard ? heard : shownAt + 1000) + Sounds::FanfareMs;
+  };
+  while (!loaded || int32_t(chordAt() - SyncFillMs - SDL_GetTicks()) > 0) {
+    if (loaded && done_.exchange(false)) takeNetwork();
     std::string text;
     float goal = 0;
     {
@@ -354,7 +366,8 @@ bool Application::open() {
   const float from = progressShown;
   // As long as what is left needs to look smooth: a bar near its end
   // finishes in a quarter second, one half way in about 0.6 s.
-  const uint32_t FillMs = 250 + uint32_t(700 * std::clamp(1.f - from, 0.f, 1.f));
+  const int32_t toChord = int32_t(chordAt() - SDL_GetTicks());
+  const uint32_t FillMs = toChord > 0 ? uint32_t(toChord) : 250 + uint32_t(700 * std::clamp(1.f - from, 0.f, 1.f));
   // The last word changes each start: a kitchen line or a nod to a game.
   static const char *const Done[] = {"Well done!", "Golden brown, just right!", "A wild homebrew appeared!",
                                      "It's dangerous to go alone! Take this.", "You cooked something tasty!",

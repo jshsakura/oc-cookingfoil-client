@@ -90,7 +90,9 @@ void Sounds::play(Cue cue) {
   if (cue == Cue::Start && beatAt_) {
     constexpr uint32_t BeatMs = 1000, BufferMs = 1024 * 1000 / Rate;
     const uint32_t toBeat = (BeatMs - (now - beatAt_) % BeatMs) % BeatMs;
-    wait = size_t((toBeat + BeatMs - BufferMs % BeatMs) % BeatMs) * Rate / 1000;
+    const uint32_t waitMs = (toBeat + BeatMs - BufferMs % BeatMs) % BeatMs;
+    wait = size_t(waitMs) * Rate / 1000;
+    startHeardAt_ = now + waitMs + BufferMs;
   }
   voices_.push_back({&cues_[int(cue)], 0, wait});
   SDL_UnlockAudioDevice(device_);

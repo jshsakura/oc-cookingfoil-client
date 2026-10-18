@@ -23,6 +23,10 @@ public:
   // The start cue, now or as soon as it is made, on the splash's next
   // landing: the butter lands every second from `beatAt` (SDL ticks).
   void playStart(uint32_t beatAt);
+  // When the start cue's first coin is heard (SDL ticks); 0 until it is
+  // set to play. Its fanfare's chord comes FanfareMs after that.
+  uint32_t startHeardAt() const { return startHeardAt_; }
+  static constexpr uint32_t FanfareMs = 2270;
   void setOn(bool on) { on_.store(on); }
   bool on() const { return on_; }
 
@@ -39,6 +43,7 @@ private:
   std::atomic<bool> on_{true};
   bool startWanted_ = false, startPlayed_ = false; // under the lock
   uint32_t beatAt_ = 0;                            // under the lock
+  std::atomic<uint32_t> startHeardAt_{0};
   std::thread maker_;
   std::array<uint32_t, CueCount> lastAt_{}; // when each cue last started
 };
