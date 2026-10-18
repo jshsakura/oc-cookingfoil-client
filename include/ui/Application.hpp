@@ -1218,7 +1218,10 @@ private:
   // Something was written to or removed from the card: what was read goes,
   // and free space is asked again.
   void cardChanged();
-  void notePress(const std::string &what, uint32_t from) const;
+  void notePress(const std::string &what, uint32_t from);
+  void pressLap(const char *name);
+  std::string pressSteps_;
+  uint32_t pressAt_ = 0;
   bool exitAfterDevice_ = false; // + pressed while the console was being read
   bool cancelRetro_ = false; // the cancel popup is about the retro download
   bool confirmCancel_ = false, confirmExit_ = false, exitAfterCancel_ = false,

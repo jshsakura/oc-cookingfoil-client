@@ -1337,12 +1337,23 @@ std::string Application::selectedName() const {
 }
 // A press or tap that held the thread, as a slow draw is told: the screen
 // waits on it, and neither the draw nor the poll counts it.
-void Application::notePress(const std::string &what, uint32_t from) const {
+// Steps of 30 ms or more go in the line, as a slow poll's do.
+void Application::notePress(const std::string &what, uint32_t from) {
   if (const uint32_t took = SDL_GetTicks() - from; took >= 150)
-    logLine("slow press " + std::to_string(took) + "ms: " + what + " on screen " + std::to_string(int(screen_)));
+    logLine("slow press " + std::to_string(took) + "ms: " + what + " on screen " + std::to_string(int(screen_)) +
+            pressSteps_);
+  pressSteps_.clear();
+  pressAt_ = SDL_GetTicks();
+}
+void Application::pressLap(const char *name) {
+  const uint32_t now = SDL_GetTicks();
+  if (now - pressAt_ >= 30) pressSteps_ += std::string(" ") + name + " " + std::to_string(now - pressAt_) + "ms";
+  pressAt_ = now;
 }
 void Application::action(Action a) {
   poll();
+  pressSteps_.clear();
+  pressAt_ = SDL_GetTicks();
   struct Held {
     Application &app;
     std::string what;
@@ -2671,16 +2682,22 @@ bool Application::queueJob(const std::string &kind, const std::string &name, con
   const auto id = history::add(history_, std::move(row));
   if (first)
     history::takeFirstTurn(history_, id);
+  pressLap("queue add");
   saveHistory();
+  pressLap("queue save");
   rebuildQueue();
+  pressLap("queue order");
   // Patches picked with a game are queued as part of it, before it runs.
   if (group)
     return true;
   const bool waits = downloadRunning() || installQueue_.size() > 1;
-  if (auto error = launchQueued())
+  const auto launched = launchQueued();
+  pressLap("queue launch");
+  if (auto error = launched)
     alert_ = error.message;
   else {
     sounds_.play(Cue::Add);
+    pressLap("queue sound");
     // A shortcut made at once says so itself when it is in.
     if (waits || kind != "shortcut") message(waits ? tr("Added to the download queue.") : tr("Download started."));
   }

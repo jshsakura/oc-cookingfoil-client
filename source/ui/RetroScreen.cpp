@@ -85,6 +85,7 @@ bool Application::runRetroJob(const std::string &busy, std::function<std::functi
   if (retroWorker_.joinable()) return false;
   retroBusy_ = busy;
   retroReceived_ = retroKept_ = 0;
+  pressLap("retro job");
   retroWorker_ = std::thread([this, job = std::move(job)] {
     // Off the drawing core: checking the files already on the card (their
     // hashes) and writing them took frames from the screen.
@@ -95,6 +96,7 @@ bool Application::runRetroJob(const std::string &busy, std::function<std::functi
     retroFinish_ = std::move(finish);
     retroDone_ = true;
   });
+  pressLap("retro thread");
   return true;
 }
 void Application::pollRetro() {
@@ -366,6 +368,7 @@ bool Application::getRetroGame(const retro::Game &game, bool again) {
                                : tr("You already have this game. Press Y to get RetroArch and play it."));
     return false;
   }
+  pressLap("retro checks");
   if (sdFree_ && *sdFree_ < game.size + game.size / 10 + (8u << 20)) {
     alertTitle_ = tr("Cannot get the game");
     alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(game.size)});
@@ -373,8 +376,11 @@ bool Application::getRetroGame(const retro::Game &game, bool again) {
   }
   // RetroArch or the game's core missing: the base pack goes in the queue
   // first, so the game (and its shortcut) only come once it can start.
-  if (!retroReady(game) && !retroArchPending() && syncRetroArch(false))
+  const bool ready = retroReady(game);
+  pressLap("retro ready");
+  if (!ready && !retroArchPending() && syncRetroArch(false))
     message(tr("RetroArch comes first, then the game: it needs RetroArch's files to start."));
+  pressLap("retro sync");
   // Its turn comes in 다운로드's queue, behind whatever downloads now.
   return queueJob("retro", game.name, game.iconUrl, game.bundleUrl, game.size, retro::serializeGame(game));
 }

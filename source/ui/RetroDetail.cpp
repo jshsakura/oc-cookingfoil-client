@@ -93,7 +93,9 @@ int Application::retroPageOnTheWay(double &percent, int &queueAt) const {
 void Application::getRetroPick() {
   double percent = 0;
   int queueAt = -1;
-  if (const int onTheWay = retroPageOnTheWay(percent, queueAt)) {
+  const int onTheWay = retroPageOnTheWay(percent, queueAt);
+  pressLap("retro on the way");
+  if (onTheWay) {
     // Already on its way: whether to cancel it, as 다운로드 asks.
     dialogFocus_ = 0;
     if (onTheWay == 2) {
@@ -143,6 +145,7 @@ void Application::getRetroChecked() {
         queued += getRetroGame(found->second, true);
     if (queued > 1) message(trf("Added {0} versions to the download queue.", {std::to_string(queued)}));
   };
+  pressLap("retro versions");
   if (missing.empty() || !session_) {
     queueAll();
     return;
