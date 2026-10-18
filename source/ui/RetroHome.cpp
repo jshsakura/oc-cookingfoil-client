@@ -96,7 +96,9 @@ void Application::retroHome() {
     const int first = int(left);
     // Near the end, by cursor or by finger: the next of the system's games.
     if (first + Columns + 4 >= count) loadShelfMore(n);
-    clipTo(232, y + 40, 1048, ShelfHeight - 40);
+    // From under the header, so the focus ring (8 px out from a card at y + 46)
+    // shows whole at the top.
+    clipTo(232, y + 36, 1048, ShelfHeight - 36);
     for (int col = 0; col <= Columns && first + col <= count; ++col) {
       const int i = first + col;
       const float cx = 260 + CardStep * (i - left), cy = y + 46;

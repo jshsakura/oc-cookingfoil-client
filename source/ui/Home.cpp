@@ -217,7 +217,9 @@ void Application::home() {
                              focused ? float(std::max(0, selected_ - (Columns - 1))) : 0.f,
                              float(count + 1 - Columns), 170, true, true);
     const int first = int(left);
-    clipTo(232, y + 40, 1048, RowHeight - 40);
+    // From under the header, so the focus ring (8 px out from a card at y + 46)
+    // shows whole at the top.
+    clipTo(232, y + 36, 1048, RowHeight - 36);
     for (int col = 0; col <= Columns && first + col <= count; ++col) {
       const float cx = 260 + 170 * (first + col - left), cy = y + 46;
       if (first + col < count) {
