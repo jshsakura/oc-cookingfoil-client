@@ -163,6 +163,21 @@ int runRetroTests() {
   // file is hashed to decide.
   record.files["retroarch/cores/x.nro"] = "c";
   CHECK(planPack(pack, record, exists, sizeOf, "sdmc:").fetch.empty());
+  {
+    // The whole pack's tar only for many files that are most of it: a new
+    // core's 216 small files (81 MB of a 576 MB pack) come one by one.
+    PackPlan many;
+    many.fetch.resize(216);
+    many.bytes = 81ull << 20;
+    CHECK(!planByBundle(many, 576ull << 20));
+    many.bytes = 400ull << 20;
+    CHECK(planByBundle(many, 576ull << 20));
+    PackPlan few;
+    few.fetch.resize(49);
+    few.bytes = 576ull << 20;
+    CHECK(!planByBundle(few, 576ull << 20));
+    CHECK(!planByBundle(many, 0)); // the server gave no bundle size
+  }
   onCard.erase("sdmc:/switch/retroarch_switch.nro");
   CHECK(planPack(pack, record, exists, sizeOf, "sdmc:").fetch.size() == 1);
   onCard.insert("sdmc:/switch/retroarch_switch.nro");

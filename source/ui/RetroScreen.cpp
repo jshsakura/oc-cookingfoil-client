@@ -590,10 +590,9 @@ bool Application::runRetroArch(bool full) {
         Error error;
         int done = 0;
         std::string ignored;
-        // Many files: the whole pack as one tar, writing only what the plan
-        // wants (changed, missing; a settings file already there stays).
-        constexpr size_t BundleFrom = 50;
-        if (!pack.value.bundleUrl.empty() && plan.fetch.size() >= BundleFrom) {
+        // Most of the pack: the whole pack as one tar, writing only what the
+        // plan wants (changed, missing; a settings file already there stays).
+        if (!pack.value.bundleUrl.empty() && retro::planByBundle(plan, pack.value.bundleSize)) {
           std::set<std::string> wanted;
           for (const auto &file : plan.fetch) wanted.insert(file.path);
           retroBytes_ = pack.value.bundleSize;

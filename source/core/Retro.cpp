@@ -317,6 +317,10 @@ PackPlan planPack(const Pack &pack, const PackRecord &record, bool (*exists)(con
   }
   return plan;
 }
+bool planByBundle(const PackPlan &plan, uint64_t bundleSize) {
+  constexpr size_t BundleFrom = 50; // fewer files come one by one whatever their size
+  return bundleSize && plan.fetch.size() >= BundleFrom && plan.bytes >= bundleSize / 2;
+}
 std::string serializeGame(const Game &game) {
   Json root(json_object_new_object());
   const auto text = [&](const char *key, const std::string &value) {

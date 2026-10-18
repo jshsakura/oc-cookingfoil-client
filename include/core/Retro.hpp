@@ -137,4 +137,8 @@ struct PackPlan {
 };
 PackPlan planPack(const Pack &pack, const PackRecord &record, bool (*exists)(const std::string &),
                   uint64_t (*sizeOf)(const std::string &), const std::string &sd);
+// Whether the plan comes as the whole pack's tar (bundleSize bytes) rather
+// than file by file: only for many files that are most of the pack. A new
+// core with a few hundred small files fetches those, not the whole pack.
+bool planByBundle(const PackPlan &plan, uint64_t bundleSize);
 } // namespace foil::retro
