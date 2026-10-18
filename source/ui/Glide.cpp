@@ -52,6 +52,8 @@ void Application::fingerDown(float x, float y) {
   for (auto it = hits_.rbegin(); it != hits_.rend(); ++it)
     if (inside(it->area)) {
       pressed_ = it->area;
+      pressedLook_ = it->look;
+      pressedRadius_ = it->radius;
       pressing_ = true;
       pressedUntil_ = 0;
       pressedScreen_ = int(screen_);

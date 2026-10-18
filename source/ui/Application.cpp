@@ -2456,10 +2456,13 @@ void Application::render() {
       pressing_ = false;
     else {
       // A card a little larger than what was touched, as on the web, not a
-      // box drawn tight around it.
+      // box drawn tight around it; a small button darkens as itself.
       constexpr float Pad = 8;
       SDL_RenderSetClipRect(paint_.renderer, nullptr);
-      paint_.rect(pressed_.x - Pad, pressed_.y - Pad, pressed_.w + 2 * Pad, pressed_.h + 2 * Pad, {0, 0, 0, 36}, 18);
+      if (pressedLook_.w > 0)
+        paint_.rect(pressedLook_.x, pressedLook_.y, pressedLook_.w, pressedLook_.h, {0, 0, 0, 36}, pressedRadius_);
+      else
+        paint_.rect(pressed_.x - Pad, pressed_.y - Pad, pressed_.w + 2 * Pad, pressed_.h + 2 * Pad, {0, 0, 0, 36}, 18);
     }
   }
   // Drawing that held the thread (keys and taps wait on it), once a second.

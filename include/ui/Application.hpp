@@ -1031,6 +1031,9 @@ private:
              bool selected = false, const std::string &name = "", bool exact = false, bool dark = false);
   void footer(const std::vector<std::pair<std::string, std::string>> &hints);
   void hit(float x, float y, float w, float h, std::function<void()> run);
+  // A small button drawn at `look` (corner `radius`): it answers a little
+  // above and below it, and shows pressed as itself, not as a larger card.
+  void buttonHit(SDL_FRect look, int radius, std::function<void()> run);
   // Under a popup nothing answers: no taps, and no list glides behind it.
   void blockTouch() {
     hit(0, 0, 1280, 720, [] {});
@@ -1042,6 +1045,8 @@ private:
   struct Hit {
     SDL_FRect area;
     std::function<void()> run;
+    SDL_FRect look{}; // shown pressed as this when set; else a card around area
+    int radius = 0;
   };
   std::vector<Hit> hits_;
   // The header's buttons (tabs, filter, search, Y buttons), recorded each
@@ -1093,6 +1098,8 @@ private:
   } glide_;
   bool swallowTap_ = false; // the touch that stopped a coasting list
   SDL_FRect pressed_{};      // what the finger is on, shown pressed
+  SDL_FRect pressedLook_{};  // a button's own shape, when it gave one
+  int pressedRadius_ = 0;
   uint32_t pressedUntil_ = 0; // 0 while held; else when the pressed look goes
   bool pressing_ = false;
   int pressedScreen_ = -1; // the screen it was pressed on: another one drops the look

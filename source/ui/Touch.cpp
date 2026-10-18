@@ -15,6 +15,15 @@ void Application::hit(float x, float y, float w, float h, std::function<void()> 
   }
   hits_.push_back({{x, y, w, h}, std::move(run)});
 }
+void Application::buttonHit(SDL_FRect look, int radius, std::function<void()> run) {
+  constexpr float Slop = 4; // a finger needs a little more than the drawn button
+  const size_t before = hits_.size();
+  hit(look.x, look.y - Slop, look.w, look.h + 2 * Slop, std::move(run));
+  if (hits_.size() > before) {
+    hits_.back().look = look;
+    hits_.back().radius = radius;
+  }
+}
 // A touched header item takes the cursor, as a touched card or menu item
 // does. 내 게임's tabs open sibling screens that draw the same tabs, so
 // the cursor lands on the touched tab there too.

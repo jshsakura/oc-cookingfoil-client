@@ -333,7 +333,7 @@ void Application::topCard(const TopCard &c, float dy) {
     const std::string stop = tr("Cancel");
     const float cw = paint_.fonts.measure(stop, 16, true) + 32;
     bx -= cw;
-    hit(bx, dy + 212, cw, 40, c.onCancel);
+    buttonHit({bx, dy + 216, cw, 32}, 8, c.onCancel);
     paint_.rect(bx, dy + 216, cw, 32, Ground, 8);
     paint_.fonts.middle(stop, bx + 16, dy + 232, 16, Ink, true);
     bx -= 10;
@@ -342,7 +342,7 @@ void Application::topCard(const TopCard &c, float dy) {
     const std::string label = c.paused ? tr("Resume") : tr("Pause");
     const float w = paint_.fonts.measure(label, 16, true) + 32;
     bx -= w;
-    hit(bx, dy + 212, w, 40, c.onPause);
+    buttonHit({bx, dy + 216, w, 32}, 8, c.onPause);
     paint_.rect(bx, dy + 216, w, 32, c.paused ? Butter : Ground, 8);
     paint_.fonts.middle(label, bx + 16, dy + 232, 16, Ink, true);
     bx -= 10;
@@ -352,7 +352,7 @@ void Application::topCard(const TopCard &c, float dy) {
     const std::string label = tr("Details");
     const float w = paint_.fonts.measure(label, 16, true) + 32;
     bx -= w;
-    hit(bx, dy + 212, w, 40, c.onDetails);
+    buttonHit({bx, dy + 216, w, 32}, 8, c.onDetails);
     paint_.rect(bx, dy + 216, w, 32, Ground, 8);
     paint_.fonts.middle(label, bx + 16, dy + 232, 16, Ink, true);
   }
@@ -492,7 +492,7 @@ void Application::queueList(float y, float viewTop) {
     float right = 1228;
     const auto button = [&](const std::string &label, std::function<void()> run) {
       const float w = paint_.fonts.measure(label, 16, true) + 32, x = right - w;
-      hit(x, ry + 18, w, 40, std::move(run));
+      buttonHit({x, ry + 22, w, 32}, 8, std::move(run));
       paint_.rect(x, ry + 22, w, 32, Ground, 8);
       paint_.fonts.middle(label, x + 16, ry + 38, 16, Ink, true);
       right = x - 10;
