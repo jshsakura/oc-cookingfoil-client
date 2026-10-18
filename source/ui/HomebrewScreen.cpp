@@ -520,6 +520,9 @@ void Application::removeHomebrew(const homebrew::App &picked, bool folder) {
                                      [&](const homebrew::CardNro &nro) { return nro.path == file; }),
                       homebrewCard_.end());
   matchHomebrewCard();
+  // What the screens read of the card goes with it: RetroArch removed here
+  // reads as gone on the retro pages, which then offer it again.
+  cardChanged();
   if (ownFolder.empty()) {
     message(trf("Removed {0}.", {app.name}));
     return;
