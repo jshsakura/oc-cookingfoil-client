@@ -20,9 +20,10 @@ void Application::dialogHints(float right, float y, const std::string &close,
   float x = right - width + 22;
   for (const auto &[key, label] : keys) {
     const float w = paint_.keyLabelWidth(key, label, 18);
+    // Pressed, a pill just round the key and its label, inside the footer band.
     hit(x - 6, y - 22, w + 12, 44, [this, key = key] {
       action(key == "A" ? Action::Accept : key == "Y" ? Action::Queue : key == "X" ? Action::Search : Action::Back);
-    });
+    }, {x - 8, y - 20, w + 16, 40}, 20);
     const bool strong = key == "Y" || (key == "A" && !accept.empty());
     paint_.keyLabel(key, label, x, y, 18, strong ? Ink : Secondary, strong);
     x += w + 22;
