@@ -24,8 +24,7 @@ void Application::downloads() {
                                  formatBytes(p.total + queuedBytes())});
   pageTitle(tr("Downloads"), downloadsTab_ == 0 ? queued : std::string());
   // Tabs with their counts: what runs now, what finished, what did not.
-  const int running = int(shownQueue().size()) + (installer_.running() || retroDownloading() || queueSkip() ? 1 : 0) +
-                      int(patchQueue_.size()) + (patchWorker_.joinable() && !patchBusy_.empty() ? 1 : 0);
+  const int running = int(downloadsRunning());
   int done = 0, failed = 0, cancelled = 0;
   for (const auto &e : history_) {
     if (extraJob(e)) continue;
@@ -427,6 +426,12 @@ float Application::queueHeight() const {
 }
 // 대기 중: what comes next, in order, scrolling under the title. On a row A
 // moves it sooner, X later and Y takes it off; the row's buttons do the same.
+// What 진행 중 lists: the queue, the job running now and the patches'. The
+// menu's badge on 다운로드 shows the same count.
+size_t Application::downloadsRunning() const {
+  return shownQueue().size() + (installer_.running() || retroDownloading() || queueSkip() ? 1 : 0) + patchQueue_.size() +
+         (patchWorker_.joinable() && !patchBusy_.empty() ? 1 : 0);
+}
 std::vector<size_t> Application::shownQueue() const {
   std::vector<size_t> out;
   for (size_t i = queueSkip(); i < installQueue_.size(); ++i)

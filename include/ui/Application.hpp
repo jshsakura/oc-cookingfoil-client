@@ -1470,6 +1470,7 @@ private:
   // The queue's rows as 진행 중 lists them (their places in installQueue_):
   // no extras, and not a paused item that is on the card at the top.
   std::vector<size_t> shownQueue() const;
+  size_t downloadsRunning() const;
   void moveShown(int row, bool up);
   static constexpr float QueueTitle = 0, QueueStep = 88; // the queue has no title: its cards follow the one above
   // 진행 중 below the installer's card: the retro and patch cards and the

@@ -2117,9 +2117,7 @@ void Application::shell() {
                         16, Ink, true);
     }
     if (open && (updates || downloads)) {
-      const auto progress = installer_.progress();
-      const auto count = updates ? pendingUpdates().size()
-          : shownQueue().size() + (installer_.running() || retroDownloading() || queueSkip() ? 1 : 0);
+      const auto count = updates ? pendingUpdates().size() : downloadsRunning();
       if (count) {
         paint_.rect(171, y + height / 2 - 14, 28, 28, Butter, 14);
         const auto text = count > 99 ? "99+" : std::to_string(count);
