@@ -154,7 +154,9 @@ void Application::touch(float x, float y) {
     const auto &a = it->area;
     if (x >= a.x && x < a.x + a.w && y >= a.y && y < a.y + a.h) {
       const auto run = it->run;
+      const uint32_t from = SDL_GetTicks();
       run();
+      notePress("tap", from);
       break;
     }
   }
