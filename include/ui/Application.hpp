@@ -532,6 +532,9 @@ private:
   void queueFileList(const std::string &id, const std::vector<std::string> &files);
   void writePendingLedger();
   void home();
+  // The home's first view asked for ahead of it: the banner's pictures and
+  // the first two rows' covers (while the start's last word waits).
+  void warmHome();
   void library();
   // Every list's search box sits at the header's right end, one size on all
   // of them; filters and tabs go left of it.

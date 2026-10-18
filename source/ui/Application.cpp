@@ -331,7 +331,11 @@ bool Application::open() {
     return (heard ? heard : shownAt + 1000) + Sounds::FanfareMs;
   };
   while (!loaded || int32_t(chordAt() - SyncFillMs - SDL_GetTicks()) > 0) {
-    if (loaded && done_.exchange(false)) takeNetwork();
+    if (loaded && done_.exchange(false)) {
+      takeNetwork();
+      warmHome();
+    }
+    if (loaded && images_) images_->decode();
     std::string text;
     float goal = 0;
     {
@@ -410,7 +414,11 @@ bool Application::open() {
     paint_.splash(done, from + (1 - from) * eased, seconds());
     // The catalog that arrives while the last word shows is laid out now, so
     // the home opens filled rather than with its placeholders.
-    if (done_.exchange(false)) takeNetwork();
+    if (done_.exchange(false)) {
+      takeNetwork();
+      warmHome();
+    }
+    if (images_) images_->decode();
     if (!platform::serviceApplet()) {
       exitRequested_ = true;
       break;

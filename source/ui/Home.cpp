@@ -48,6 +48,17 @@ std::vector<Application::HeroTag> Application::heroTags(const Group &g) const {
   if (!g.dlc.empty()) tags.push_back({"DLC " + std::to_string(g.dlc.size())});
   return tags;
 }
+void Application::warmHome() {
+  if (!images_ || groups_.empty() || hero_ >= groups_.size()) return;
+  const auto &icon = groups_[hero_].representative.icon;
+  if (!heroBanner_.empty() && heroFeatured_) images_->request(thumbnailUrl(heroBanner_, "xl"));
+  images_->request(thumbnailUrl(icon));
+  images_->request(thumbnailUrl(icon, "md"));
+  for (size_t n = 0; n < themes_.size() && n < 2; ++n)
+    for (size_t col = 0; col < themes_[n].items.size() && col < 6; ++col)
+      if (themes_[n].items[col] < groups_.size())
+        images_->request(thumbnailUrl(groups_[themes_[n].items[col]].representative.icon));
+}
 void Application::home() {
   if (groups_.empty()) {
     // A write still holds the records (a slow card): the home's shape, as
