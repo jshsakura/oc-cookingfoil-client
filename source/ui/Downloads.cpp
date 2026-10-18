@@ -247,11 +247,13 @@ void Application::topCard(const TopCard &c, float dy) {
   std::snprintf(percent, sizeof(percent), "%.1f%%", std::floor(shownPercent_ * 10) / 10);
   paint_.fonts.text(percent, 1228 - paint_.fonts.measure(percent, 26, true), dy + 114, 26, Ink, true);
   paint_.rect(418, dy + 154, 810, 14, Line, 7);
-  paint_.rect(418, dy + 154, 810 * shownPercent_ / 100., 14, Butter, 7);
+  // The fill never narrower than the bar is tall: a rounded end needs that
+  // much, or the first percents draw flat and grow round.
+  paint_.rect(418, dy + 154, std::max(14., 810 * shownPercent_ / 100.), 14, Butter, 7);
   // Files already on the card, passed rather than fetched: the bar's start
   // in a paler butter, so a quick finish reads as what it is.
   if (c.skipped > 0)
-    paint_.rect(418, dy + 154, 810 * std::min(c.skipped, shownPercent_) / 100., 14, SDL_Color{255, 226, 150, 255}, 7);
+    paint_.rect(418, dy + 154, std::max(14., 810 * std::min(c.skipped, shownPercent_) / 100.), 14, SDL_Color{255, 226, 150, 255}, 7);
   std::string status = c.phase;
   const double now = SDL_GetTicks() / 1000.;
   downloadSeen_ = now;
