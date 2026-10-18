@@ -10,6 +10,8 @@
 # scripts/ship.env (see scripts/ship.env.example):
 #   COOK_CLIENT_DIR   the server's client folder (cookingfoil.nro goes in)
 #   COOK_RELEASE_REPO the GitHub repository with the client-latest release
+#   COOK_PRIVATE_PATTERN  more strings the build must not hold (this
+#                     machine's domains, names), an extended regex
 set -euo pipefail
 cd "$(dirname "$0")/.."
 check_only=false
@@ -54,7 +56,7 @@ fi
 # build paths (/home/davem), curl's sample address, the NACP author.
 echo "== scanning cookingfoil.nro"
 hits=$(strings -n 6 cookingfoil.nro |
-  grep -iE '192\.168\.|example\.com|jshsakura|gmail|/home/|tinfoil\.|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.' |
+  grep -iE "192\\.168\\.|\\b100\\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\.|/home/|/srv/|/mnt/|eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.${COOK_PRIVATE_PATTERN:+|$COOK_PRIVATE_PATTERN}" |
   grep -v '/home/davem' || true)
 if [ -n "$hits" ]; then
   echo "private strings in the build:" >&2

@@ -251,8 +251,8 @@ int runNetworkTests() {
         CHECK(!SegmentPlan::load("5-3-4;", back2));
         CHECK(plan.received() > 0 && !plan.done());
         // Connections: automatic by the server's address, or as set.
-        CHECK(foil::net::connectionsFor("http://192.0.2.10:38000", 0) == 2);
-        CHECK(foil::net::connectionsFor("http://198.51.100.10:38000", 0) == 2);
+        CHECK(foil::net::connectionsFor("http://192.168.0.20:38000", 0) == 2);
+        CHECK(foil::net::connectionsFor("http://100.64.0.10:38000", 0) == 2);
         CHECK(foil::net::connectionsFor("http://127.0.0.1:38000", 0) == 2);
         CHECK(foil::net::connectionsFor("http://172.20.1.1/", 0) == 2);
         CHECK(foil::net::connectionsFor("http://172.32.1.1/", 0) == 4);
