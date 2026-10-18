@@ -123,6 +123,9 @@ Parsed<Detail> parseDetail(const std::string& json);
 struct PairingInfo {
     std::string url, code;
     int64_t expiresAt = 0;
+    // Why the download's token did not connect this console (X-CookingFoil-Enroll:
+    // "used", "expired", "revoked"); empty when there was none or it was unknown.
+    std::string refusal;
 };
 Parsed<PairingInfo> parsePairingInfo(const std::string& json, const Server& server);
 // The note sent with an approval request, read as the server reads it: line
@@ -134,9 +137,14 @@ std::string cleanPairMessage(const std::string& text);
 // "pairSecret": ...}, each of the last two only when there is one; empty
 // when there is neither, and then nothing is sent.
 // enrollToken: a download's token not yet spent, so the server can approve
-// the request under that download's account.
+// the request under that download's account. label: the console's own
+// nickname, which names it in the server's approval queue; sent only with
+// one of the others.
 std::string pairRequestBody(const std::string& deviceKey, const std::string& message, const std::string& secret = "",
-                            const std::string& enrollToken = "");
+                            const std::string& enrollToken = "", const std::string& label = "");
+// The console's nickname (System Settings), sent as `label` when it asks a
+// server to take it; set once at start, before any session.
+void setConsoleName(std::string name);
 // /api/shop/info's "features": what this server offers beyond the catalog
 // (retro, homebrew, ...). Empty for a reply without them.
 std::set<std::string> parseFeatures(const std::string& json);
@@ -204,6 +212,7 @@ private:
     NameTable genres_, scoreLabels_;
     bool pairingPending_ = false;
     PairingInfo pairingInfo_;
+    std::string enrollRefusal_; // PairingInfo::refusal, kept across polls
     std::string pairMessageSent_; // the body the server last took
     // The server holds another secret for this console's request (409): an
     // admin must clear that request before a QR code means anything.

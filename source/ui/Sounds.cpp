@@ -12,6 +12,8 @@ constexpr uint32_t MoveGapMs = 35;
 constexpr uint32_t OtherGapMs = 90;
 // Every cue a touch under how it was made (about -1.4 dB).
 constexpr int Gain = 218;
+// The start, which plays on every launch, about 3 dB under the rest.
+constexpr int StartGain = 154;
 } // namespace
 Sounds::~Sounds() {
   if (maker_.joinable()) maker_.join();
@@ -94,7 +96,7 @@ void Sounds::play(Cue cue) {
     wait = size_t(waitMs) * Rate / 1000;
     startHeardAt_ = now + waitMs + BufferMs;
   }
-  voices_.push_back({&cues_[int(cue)], 0, wait});
+  voices_.push_back({&cues_[int(cue)], 0, wait, cue == Cue::Start ? StartGain : Gain});
   SDL_UnlockAudioDevice(device_);
 }
 // On SDL's audio thread, with the device locked.
@@ -108,7 +110,7 @@ void Sounds::mix(void *self, Uint8 *stream, int bytes) {
     v.wait -= skip;
     const size_t n = std::min(count - skip, v.samples->size() - v.at);
     for (size_t i = 0; i < n; ++i)
-      out[skip + i] = int16_t(std::clamp(int(out[skip + i]) + int((*v.samples)[v.at + i]) * Gain / 256, -32768, 32767));
+      out[skip + i] = int16_t(std::clamp(int(out[skip + i]) + int((*v.samples)[v.at + i]) * v.gain / 256, -32768, 32767));
     v.at += n;
   }
   me.voices_.erase(std::remove_if(me.voices_.begin(), me.voices_.end(),

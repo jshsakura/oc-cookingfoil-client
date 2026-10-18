@@ -1,5 +1,6 @@
 #include "platform/Storage.hpp"
 #include "net/Socket.hpp"
+#include "net/Api.hpp"
 #include "ui/Application.hpp"
 #include "core/Json.hpp"
 #include "ui/Runtime.hpp"
@@ -121,6 +122,7 @@ int main(int argc, char **argv) {
   curl_global_init(CURL_GLOBAL_DEFAULT);
   // The app's keys are bound to this console (core/State).
   foil::setIdentitySource(foil::platform::consoleIdentity);
+  foil::net::setConsoleName(foil::platform::consoleNickname());
   foil::openLog("sdmc:/switch/cookingfoil/log.txt");
   foil::logLine(std::string("start " COOKINGFOIL_VERSION " ") + (appletGetAppletType() == AppletType_Application ? "application" : "applet") + " mode, " + self);
   if (!updateNote.empty()) foil::logLine(updateNote);

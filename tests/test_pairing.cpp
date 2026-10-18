@@ -45,6 +45,10 @@ int runPairingTests() {
   CHECK(foil::net::pairRequestBody(key, "", secret, token) ==
         "{\"deviceKey\":\"" + key + "\",\"pairSecret\":\"" + secret + "\",\"enrollToken\":\"" + token + "\"}");
   CHECK(foil::net::pairRequestBody(key, "", "", token) == "{\"deviceKey\":\"" + key + "\",\"enrollToken\":\"" + token + "\"}");
+  // The console's nickname names it in the server's queue, but never asks on its own.
+  CHECK(foil::net::pairRequestBody(key, "", secret, "", "Living room") ==
+        "{\"deviceKey\":\"" + key + "\",\"pairSecret\":\"" + secret + "\",\"label\":\"Living room\"}");
+  CHECK(foil::net::pairRequestBody(key, "", "", "", "Living room").empty());
   // Trimmed, line breaks and tabs read as spaces, a run of spaces as one.
   CHECK(foil::net::cleanPairMessage("  철수\n거실 기기\r\n ") == "철수 거실 기기");
   CHECK(foil::net::cleanPairMessage("철수\t\t거실   기기") == "철수 거실 기기");

@@ -36,8 +36,14 @@ void Application::pairing() {
   paint_.rect(260, 90, 992, 466, Surface, 20);
   paint_.pill(tr("Awaiting device approval"), 290, 120, false, 17);
   paint_.fonts.text(tr("Scan this QR code from the server website to approve."), 290, 176, 28, Ink, true, 580);
-  paint_.fonts.wrapped(tr("Sign in to the shop on your phone, open device approval and scan the code to approve this device for that account."),
-                       290, 230, 21, Secondary, 570, 3);
+  // A download that no longer connects says why; the server already lists
+  // this console under that download's account, so approving it is the rest.
+  const auto &refusal = pairingInfo_.refusal;
+  const char *why = refusal == "used"      ? "This download is already connected on another console. Approve this one too in device approval to add it to the same account."
+                    : refusal == "expired" ? "This download is more than a day old and no longer connects by itself. Approve this console in device approval to add it to your account."
+                    : refusal == "revoked" ? "This download was canceled. Approve this console in device approval to add it to your account."
+                                           : "Sign in to the shop on your phone, open device approval and scan the code to approve this device for that account.";
+  paint_.fonts.wrapped(tr(why), 290, 230, 21, Secondary, 570, 3);
   if (!pairingInfo_.code.empty()) {
     paint_.fonts.text(tr("Device code"), 290, 326, 18, Secondary);
     paint_.fonts.text(pairingInfo_.code, 290, 357, 30, Ink, true);

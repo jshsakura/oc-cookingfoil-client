@@ -982,8 +982,12 @@ std::string cleanPairMessage(const std::string& text) {
     line.resize(end);
     return line.substr(0, line.find_last_not_of(' ') + 1);
 }
+namespace {
+std::string consoleName_;
+}
+void setConsoleName(std::string name) { consoleName_ = cleanPairMessage(name).substr(0, 64); }
 std::string pairRequestBody(const std::string& deviceKey, const std::string& message, const std::string& secret,
-                            const std::string& enrollToken) {
+                            const std::string& enrollToken, const std::string& label) {
     const auto note = cleanPairMessage(message);
     if (note.empty() && secret.empty() && enrollToken.empty()) return "";
     Json body(json_object_new_object());
@@ -991,6 +995,7 @@ std::string pairRequestBody(const std::string& deviceKey, const std::string& mes
     if (!note.empty()) json_object_object_add(body.get(), "message", json_object_new_string(note.c_str()));
     if (!secret.empty()) json_object_object_add(body.get(), "pairSecret", json_object_new_string(secret.c_str()));
     if (!enrollToken.empty()) json_object_object_add(body.get(), "enrollToken", json_object_new_string(enrollToken.c_str()));
+    if (!label.empty()) json_object_object_add(body.get(), "label", json_object_new_string(label.c_str()));
     return json_object_to_json_string_ext(body.get(), JSON_C_TO_STRING_PLAIN | JSON_C_TO_STRING_NOSLASHESCAPE);
 }
 void Session::setPairMessage(const std::string& message) {
@@ -1051,6 +1056,7 @@ bool Session::pair(Error& error) {
             return false;
         }
         pairingPending_ = true; pairingInfo_ = parsePairingInfo(response.body, server_).value;
+        pairingInfo_.refusal = enrollRefusal_;
         error.message = tr("Connects once you approve this device on the server website."); return false;
     }
     if (status != "approved") { error.message = tr("Check the device approval response."); return false; }
@@ -1102,7 +1108,7 @@ void Session::sendPairMessage() {
     const auto note = state_.pairMessages.find(server_.url);
     const auto secret = state_.pairSecrets.find(server_.url);
     const auto body = pairRequestBody(deviceKeyFor(state_, server_.url), note == state_.pairMessages.end() ? "" : note->second,
-                                      secret == state_.pairSecrets.end() ? "" : secret->second, server_.enrollToken);
+                                      secret == state_.pairSecrets.end() ? "" : secret->second, server_.enrollToken, consoleName_);
     if (body.empty()) { pairMessageSent_.clear(); pairMismatch_ = false; return; }
     if (body == pairMessageSent_) return;
     const auto url = server_.url + "/api/pair/request";
@@ -1216,6 +1222,7 @@ bool Session::enroll(Error& error, bool replacing) {
     headers.push_back("Content-Type: application/json");
     Json body(json_object_new_object());
     json_object_object_add(body.get(), "token", json_object_new_string(token.c_str()));
+    if (!consoleName_.empty()) json_object_object_add(body.get(), "label", json_object_new_string(consoleName_.c_str()));
     PostOptions options;
     options.body = json_object_to_json_string_ext(body.get(), JSON_C_TO_STRING_PLAIN);
     options.timeout = 15;
@@ -1237,6 +1244,9 @@ bool Session::enroll(Error& error, bool replacing) {
         std::string failure;
         if (!dropEnrollToken(configPath_, server_.url, failure)) logLine("enroll: token not taken out of config.json: " + failure);
         server_.enrollToken.clear();
+        // The server put this console in its queue under the download's account;
+        // the approval screen says why it waits.
+        enrollRefusal_ = sent.enroll == "used" || sent.enroll == "expired" || sent.enroll == "revoked" ? sent.enroll : "";
         return true;
     }
     if (sent.status == 409) {

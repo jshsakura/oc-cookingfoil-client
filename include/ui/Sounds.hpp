@@ -35,6 +35,7 @@ private:
     const std::vector<int16_t> *samples;
     size_t at;
     size_t wait = 0; // samples of silence before it starts
+    int gain = 256;  // of 256
   };
   static void mix(void *self, Uint8 *stream, int bytes);
   SDL_AudioDeviceID device_ = 0;

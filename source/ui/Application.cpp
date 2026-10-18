@@ -312,6 +312,11 @@ bool Application::open() {
       }
 #endif
     });
+    // The last step ends here, not after the wait for the start cue below.
+    {
+      std::lock_guard<std::mutex> lock(shownLock);
+      took();
+    }
     loaded = true;
   });
   // The steps' shares follow what they take on the console (records and
@@ -361,7 +366,6 @@ bool Application::open() {
   if (fontsFailed)
     return false;
   paint_.fonts.preferChinese(language() == Language::Chinese);
-  took();
   logLine("startup " + steps);
   // The bar runs on to its end before the app shows, rather than the app
   // popping up from part way: a fill, then a moment full to read the last

@@ -17,7 +17,9 @@ std::string hex(unsigned value) {
 namespace {
 // time:s, the service with the right to set a clock, on its own session:
 // the one libnx opened at start (time:u) only reads, and stays as it is.
-enum : u32 { UserClock = 0, NetworkClock = 1 }; // time:s GetStandard*SystemClock
+// The user clock (what the console shows) refuses a time of its own (0x274):
+// it is the local clock while automatic correction is off, so that one is set.
+enum : u32 { UserClock = 0, NetworkClock = 1, LocalClock = 4 }; // time:s GetStandard*SystemClock
 enum : u32 { SetCurrentTime = 1 };              // ISystemClock
 Result setOne(Service &time, u32 which, u64 seconds) {
   Service clock;
@@ -38,11 +40,12 @@ ClockSet setClock(int64_t unixSeconds) {
     return result;
   }
   const Result network = setOne(time, NetworkClock, u64(unixSeconds));
+  const Result local = setOne(time, LocalClock, u64(unixSeconds));
   const Result user = setOne(time, UserClock, u64(unixSeconds));
   serviceClose(&time);
   const auto after = int64_t(std::time(nullptr));
   result.ok = unixSeconds > 0 && std::llabs(after - unixSeconds) < 60;
-  result.detail = "network " + hex(network) + " user " + hex(user) + " clock " + std::to_string(before) + " -> " +
+  result.detail = "network " + hex(network) + " local " + hex(local) + " user " + hex(user) + " clock " + std::to_string(before) + " -> " +
                   std::to_string(after) + " target " + std::to_string(unixSeconds);
   return result;
 }

@@ -1,4 +1,5 @@
 #include "platform/Identity.hpp"
+#include <algorithm>
 #ifdef __SWITCH__
 #include <switch.h>
 #endif
@@ -19,6 +20,21 @@ DeviceIdentity consoleIdentity() {
   return identity;
 #else
   return deriveIdentity(0x5043207072657669ull); // "PC previ": a stand-in
+#endif
+}
+std::string consoleNickname() {
+#ifdef __SWITCH__
+  std::string name;
+  if (R_FAILED(setsysInitialize())) return name;
+  SetSysDeviceNickName nick{};
+  if (R_SUCCEEDED(setsysGetDeviceNickname(&nick))) {
+    name.assign(nick.nickname, sizeof nick.nickname);
+    name.resize(std::min(name.find('\0'), name.size()));
+  }
+  setsysExit();
+  return name;
+#else
+  return "";
 #endif
 }
 } // namespace foil::platform
