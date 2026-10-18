@@ -86,6 +86,12 @@ void Application::pollHomebrew() {
     if (shortcutsUnasked()) scanHomebrewCard(); // the list came while it looked
     if (screen_ == Screen::Homebrew && sidebar_ && autoSidebar_ && hasFocusable()) sidebar_ = autoSidebar_ = false;
   }
+  if (homebrewFolderDone_.exchange(false)) {
+    homebrewFolderWorker_.join();
+    cardChanged();
+    if (homebrewFolderError_.empty()) message(trf("Removed {0}.", {homebrewFolderName_}));
+    else alert_ = trf("Could not delete the folder: {0}", {homebrewFolderError_});
+  }
   if (!homebrewDone_.exchange(false)) return;
   homebrewWorker_.join();
   if (homebrewFinish_) std::exchange(homebrewFinish_, nullptr)();
@@ -433,10 +439,20 @@ void Application::settleHomebrew(const homebrew::App &app, const std::optional<h
   saveHomebrewLedger();
   matchHomebrewCard();
 }
+std::string Application::homebrewOwnFolder(const homebrew::App &app) const {
+  if (app.title) return "";
+  const auto file = homebrewFile(app);
+  std::vector<std::string> paths;
+  for (const auto &nro : homebrewCard_) paths.push_back(nro.path);
+  const bool ledgered = homebrewLedger_.count(app.id) && homebrewLedger_.at(app.id).file == file;
+  if (!ledgered && std::find(paths.begin(), paths.end(), file) == paths.end()) return "";
+  return homebrew::ownFolder(file, paths);
+}
 // The app's files (a folder install's too), the folders they leave empty,
 // and its ledger entry; files the ledger does not list stay. An app with no
 // ledger entry loses the one file the card scan found, nothing else.
-void Application::removeHomebrew(const homebrew::App &picked) {
+// With `folder`, the folder it has to itself goes too, whatever else is in it.
+void Application::removeHomebrew(const homebrew::App &picked, bool folder) {
   // A title is taken off the console as a game is; 다운로드's list of
   // installed titles follows.
   if (picked.title) {
@@ -455,6 +471,11 @@ void Application::removeHomebrew(const homebrew::App &picked) {
     return;
   }
   const auto app = picked; // a card row goes away with its file
+  const auto ownFolder = folder ? homebrewOwnFolder(app) : std::string();
+  if (folder && (ownFolder.empty() || homebrewFolderWorker_.joinable())) {
+    message(tr("Try again in a moment."));
+    return;
+  }
   const auto file = homebrewFile(app);
   const auto found = homebrewLedger_.find(app.id);
   const bool ledgered = found != homebrewLedger_.end() && found->second.file == file;
@@ -499,7 +520,22 @@ void Application::removeHomebrew(const homebrew::App &picked) {
                                      [&](const homebrew::CardNro &nro) { return nro.path == file; }),
                       homebrewCard_.end());
   matchHomebrewCard();
-  message(trf("Removed {0}.", {app.name}));
+  if (ownFolder.empty()) {
+    message(trf("Removed {0}.", {app.name}));
+    return;
+  }
+  homebrewFolderName_ = app.name;
+  homebrewFolderError_.clear();
+  homebrewFolderWorker_ = std::thread([this, sd = sdRoot_, ownFolder] {
+    const platform::OnCore off(platform::WriterCore);
+    std::string error;
+    if (!guarded("homebrew folder", [&] {
+          if (!homebrew::removeCardFolder(sd, ownFolder, error)) logLine("homebrew remove folder: " + error);
+        }))
+      error = ownFolder;
+    homebrewFolderError_ = error.empty() ? std::string() : ownFolder;
+    homebrewFolderDone_ = true;
+  });
 }
 void Application::homebrewAction(Action a) {
   const auto rows = homebrewRows();
@@ -521,6 +557,9 @@ void Application::homebrewAction(Action a) {
     else if (a == Action::Accept && settled()) {
       homebrewRemoveAsk_ = false;
       if (picked) removeHomebrew(*picked);
+    } else if (a == Action::Search && settled() && picked && !homebrewOwnFolder(*picked).empty()) {
+      homebrewRemoveAsk_ = false;
+      removeHomebrew(*picked, true);
     }
     return;
   }
@@ -741,8 +780,12 @@ void Application::homebrewRemoveDialog() {
   }
   const auto &app = homebrewAt(rows[std::clamp(selected_, 0, int(rows.size()) - 1)]);
   const bool shortcut = homebrewHasShortcut(app);
-  const auto body = modal(700, 24 + 70 + (shortcut ? 30 : 0) + 16, tr("Remove this app?"), tr("Cancel"), "",
-                          tr("Delete"), 37);
+  const auto folder = homebrewOwnFolder(app);
+  const auto folderLine =
+      folder.empty() ? std::string() : trf("Press X to delete the whole {0} folder, settings and saves included.", {folder});
+  const int folderLines = folder.empty() ? 0 : paint_.fonts.lineCount(folderLine, 19, 700 - 64, 2);
+  const auto body = modal(700, 24 + 70 + (shortcut ? 30 : 0) + folderLines * 30 + 16, tr("Remove this app?"),
+                          tr("Cancel"), "", tr("Delete"), 37, folder.empty() ? std::string() : std::string(tr("Delete folder")));
   const float x = body.x + 32, y = body.y + 24;
   paint_.fonts.text(app.name, x, y, 21, Ink, true, body.w - 64);
   paint_.fonts.text(app.title ? std::string(tr("Removes it from the console and the HOME Menu. User saves are kept."))
@@ -750,5 +793,8 @@ void Application::homebrewRemoveDialog() {
                     x, y + 38, 19, Secondary, false, body.w - 64);
   if (shortcut)
     paint_.fonts.text(tr("Its HOME Menu shortcut is deleted too."), x, y + 68, 19, Secondary, false, body.w - 64);
+  if (!folder.empty())
+    paint_.fonts.wrapped(folderLine, x,
+                         y + 68 + (shortcut ? 30 : 0), 19, Secondary, body.w - 64, 2, false, 1.4f);
 }
 } // namespace foil::ui

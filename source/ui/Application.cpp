@@ -89,6 +89,8 @@ Application::~Application() {
     homebrewWorker_.join();
   if (homebrewCardWorker_.joinable())
     homebrewCardWorker_.join();
+  if (homebrewFolderWorker_.joinable())
+    homebrewFolderWorker_.join();
   if (shopSavesWorker_.joinable())
     shopSavesWorker_.join();
   if (stateWorker_.joinable())

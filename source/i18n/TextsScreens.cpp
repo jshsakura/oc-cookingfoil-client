@@ -481,6 +481,8 @@ const Translation rows[] = {
     {"Could not read the downloaded save files.", "받은 세이브 파일을 읽지 못했습니다.", "ダウンロードしたセーブファイルを読み込めませんでした。", "无法读取下载的存档文件。"},
     {"Remove this app?", "홈브류를 삭제하시겠습니까?", "このアプリを削除しますか?", "要删除此应用吗?"},
     {"Removes {0} from the SD card.", "SD 카드에서 {0}을(를) 삭제합니다.", "SD カードから {0} を削除します。", "将从 SD 卡删除 {0}。"},
+    {"Delete folder", "폴더째 삭제", "フォルダーごと削除", "删除整个文件夹"},
+    {"Press X to delete the whole {0} folder, settings and saves included.", "X를 누르면 설정과 세이브까지 {0} 폴더를 통째로 삭제합니다.", "X を押すと、設定やセーブも含めて {0} フォルダーをまるごと削除します。", "按 X 将删除整个 {0} 文件夹，其中的设置和存档也会一并删除。"},
     {"Removes it from the console and the HOME Menu. User saves are kept.", "본체와 HOME 메뉴에서 이 앱을 지웁니다. 사용자 세이브는 남습니다.", "本体と HOME メニューからこのアプリを削除します。ユーザーのセーブデータは残ります。", "将从主机和 HOME 菜单删除此应用。用户存档会保留。"},
     {"Installed as a title", "타이틀로 설치", "タイトルとしてインストール", "作为游戏安装"},
     {"Opens from the HOME Menu once installed.", "설치하면 HOME 메뉴에서 바로 엽니다.", "インストールすると HOME メニューから起動できます。", "安装后可从 HOME 菜单直接打开。"},

@@ -243,4 +243,30 @@ bool removeCardFile(const std::string &sdRoot, const std::string &path, std::str
   removeEmptyFolders(sdRoot, path);
   return true;
 }
+std::string ownFolder(const std::string &path, const std::vector<std::string> &cardNros) {
+  const auto slash = path.rfind('/');
+  if (!cardNroPath(path) || slash == std::string::npos || slash == path.find('/')) return "";
+  const auto folder = path.substr(0, slash);
+  const auto prefix = lower(folder) + "/";
+  for (const auto &other : cardNros)
+    if (other != path && lower(other).rfind(prefix, 0) == 0) return "";
+  return folder;
+}
+bool removeCardFolder(const std::string &sdRoot, const std::string &folder, std::string &error) {
+  const auto name = folder.rfind("switch/", 0) == 0 ? folder.substr(7) : std::string();
+  // A stand-in file inside it passes cardNroPath() only for one plain
+  // folder under switch/ that is not CookingFoil's.
+  if (name.empty() || name.find('/') != std::string::npos || !cardNroPath(folder + "/x.nro")) {
+    error = folder;
+    return false;
+  }
+  const auto full = sdRoot + "/" + folder;
+  std::error_code ec;
+  std::filesystem::remove_all(full, ec);
+  if (ec && std::filesystem::exists(full)) {
+    error = ec.message();
+    return false;
+  }
+  return true;
+}
 } // namespace foil::homebrew

@@ -409,6 +409,14 @@ private:
   bool homebrewScanned_ = false;
   std::thread homebrewCardWorker_;
   std::atomic<bool> homebrewCardDone_{false};
+  // A removed app's own folder, deleted off the drawing thread: it can hold
+  // thousands of files (a game's data). Its name, and the error when it failed.
+  std::thread homebrewFolderWorker_;
+  std::atomic<bool> homebrewFolderDone_{false};
+  std::string homebrewFolderName_, homebrewFolderError_;
+  // The folder the app's file has to itself ("switch/<folder>"), offered for
+  // removal with it; empty when there is none.
+  std::string homebrewOwnFolder(const homebrew::App &app) const;
   std::vector<homebrew::CardNro> homebrewCardFound_; // the worker's result, taken on the main thread
   homebrew::Ledger homebrewLedgerLooked_;             // the ledger the worker checked
   homebrew::LedgerCheck homebrewLedgerFound_;          // and what it found
@@ -513,7 +521,7 @@ private:
   // (NCM is the installer's while it runs); false when none can be made.
   bool homebrewShortcutPossible(const homebrew::App &app) const;
   void requestHomebrewShortcut(const homebrew::App &app);
-  void removeHomebrew(const homebrew::App &app);
+  void removeHomebrew(const homebrew::App &app, bool folder = false);
   void settleHomebrew(const homebrew::App &app, const std::optional<homebrew::CardFile> &seen, const std::string &fileSha,
                       const std::vector<std::string> &removed);
   // Older copies of the app the download replaces, for its worker to delete.

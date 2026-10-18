@@ -63,4 +63,12 @@ Status cardStatus(const std::string &appVersion, const std::string &cardVersion)
 bool removeCardFile(const std::string &sdRoot, const std::string &path, std::string &error);
 // The empty folders above <sdRoot>/<path>, up to (not including) switch/.
 void removeEmptyFolders(const std::string &sdRoot, const std::string &path);
+// The folder an app's file has to itself: "switch/<folder>" for a file the
+// scan lists at switch/<folder>/<file>.nro when no other file in `cardNros`
+// (the scan's paths) lies in that folder; empty for one straight under
+// switch/ or in a folder shared with another app.
+std::string ownFolder(const std::string &path, const std::vector<std::string> &cardNros);
+// Deletes <sdRoot>/switch/<folder> and everything in it. Only a folder one
+// level under switch/ is touched, never CookingFoil's own.
+bool removeCardFolder(const std::string &sdRoot, const std::string &folder, std::string &error);
 } // namespace foil::homebrew

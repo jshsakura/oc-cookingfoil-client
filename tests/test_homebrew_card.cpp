@@ -248,6 +248,25 @@ int runHomebrewCardTests() {
   CHECK(!removeCardFile(sd.string(), "hbmenu.nro", error) && fs::exists(sd / "hbmenu.nro"));
   CHECK(!removeCardFile(sd.string(), "switch/ytb/deep/deep.nro", error) && fs::exists(sd / "switch/ytb/deep/deep.nro"));
   CHECK(!removeCardFile(sd.string(), "switch/../hbmenu.nro", error) && fs::exists(sd / "hbmenu.nro"));
+  // An app's own folder: offered only when no other app's file shares it.
+  CHECK(ownFolder("switch/ytb/ytb-player.nro", {"switch/ytb/ytb-player.nro"}) == "switch/ytb");
+  CHECK(ownFolder("switch/Ytb/ytb-player.nro", {"switch/ytb/other.nro"}).empty());
+  CHECK(ownFolder("switch/root.nro", {"switch/root.nro"}).empty());
+  CHECK(ownFolder("switch/cookingfoil/cookingfoil.nro", {}).empty());
+  CHECK(ownFolder("switch/../x.nro", {}).empty());
+  // The folder goes whole, settings and all; nothing outside it.
+  write(sd / "switch/ytb/ytb-player.nro", "x");
+  write(sd / "switch/ytb/data/cache.bin", "x");
+  CHECK(removeCardFolder(sd.string(), "switch/ytb", error));
+  CHECK(!fs::exists(sd / "switch/ytb") && fs::exists(sd / "switch/fake.nro"));
+  // Anything but switch/<one folder> is refused untouched.
+  CHECK(!removeCardFolder(sd.string(), "switch", error) && fs::exists(sd / "switch"));
+  CHECK(!removeCardFolder(sd.string(), "switch/", error) && fs::exists(sd / "switch"));
+  CHECK(!removeCardFolder(sd.string(), "switch/cookingfoil", error) && fs::exists(sd / "switch/cookingfoil"));
+  CHECK(!removeCardFolder(sd.string(), "switch/CookingFoil", error) && fs::exists(sd / "switch/cookingfoil"));
+  CHECK(!removeCardFolder(sd.string(), "switch/..", error) && fs::exists(sd / "hbmenu.nro"));
+  CHECK(!removeCardFolder(sd.string(), "switch/a/b", error));
+  CHECK(!removeCardFolder(sd.string(), "atmosphere", error));
   fs::remove_all(sd);
   return failures;
 }
