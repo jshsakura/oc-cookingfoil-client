@@ -1218,6 +1218,8 @@ private:
   // Something was written to or removed from the card: what was read goes,
   // and free space is asked again.
   void cardChanged();
+  void followTakeBack();
+  bool takenBack_ = false; // heard while a refresh ran: the next poll refreshes
   void notePress(const std::string &what, uint32_t from);
   void pressLap(const char *name);
   std::string pressSteps_;

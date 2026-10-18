@@ -37,6 +37,7 @@ std::chrono::steady_clock::time_point lastAsk;
 bool askedOnce = false;
 std::atomic<bool> signInRefused{false};
 std::atomic<uint64_t> sessionRefused{0};
+std::atomic<bool> consoleRevoked{false};
 // A reply's header block, in the thread curl reads it on: whether it is a
 // success so far and has no restart header.
 thread_local bool replyOk = false;
@@ -112,6 +113,7 @@ void heardHeader(const char *data, size_t bytes) {
   if (key == "x-cookingfoil-session") { // the session token refused: expired | revoked | invalid
     sessionRefused.fetch_add(1);
     const auto value = trimmed();
+    if (value == "revoked") consoleRevoked = true;
     logLine("session token " + (value == "expired" || value == "revoked" || value == "invalid" ? value : std::string("refused")));
     return;
   }
@@ -293,8 +295,10 @@ void askSession(const std::string &origin, SessionEntry &entry) {
             std::to_string(RenewBeforeSeconds / 60) + " min before it ends");
     return;
   }
-  // 403: this server keeps the sign-in; 401: the sign-in itself is wrong,
-  // and the request it was for says so. 429 is the lock, not asked again.
+  // 403: this server keeps the sign-in; 401: the sign-in itself is wrong
+  // (the console taken back), and the request it was for says so. 429 is
+  // the lock, not asked again.
+  if (grant.status == 401) consoleRevoked = true;
   entry.refused = true;
   logLine("session token for " + origin + " not given: status " + std::to_string(grant.status) + "; signing in as before");
 }
@@ -349,6 +353,7 @@ bool isSessionToken(const std::string &token) {
   return owner(token) != nullptr;
 }
 uint64_t sessionRefusals() { return sessionRefused.load(); }
+bool takeConsoleRevoked() { return consoleRevoked.exchange(false); }
 void forgetSessions() {
   std::lock_guard<std::mutex> held(sessionLock);
   sessions.clear();

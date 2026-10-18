@@ -93,6 +93,11 @@ bool renewSession(const std::string &sent);
 bool isSessionToken(const std::string &token);
 // The X-CookingFoil-Session replies heard so far (expired | revoked | invalid).
 uint64_t sessionRefusals();
+// The server took this console back (its account turned off or removed, its
+// password changed): a reply said X-CookingFoil-Session: revoked, or asking
+// for a session token was refused (401). True once per take-back, for the
+// screen to refresh and ask for approval again.
+bool takeConsoleRevoked();
 // Tests: every session forgotten.
 void forgetSessions();
 } // namespace foil::net

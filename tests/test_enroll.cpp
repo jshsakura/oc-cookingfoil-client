@@ -3,6 +3,7 @@
 #include "core/Json.hpp"
 #include "core/State.hpp"
 #include "net/Api.hpp"
+#include "net/Socket.hpp"
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <poll.h>
@@ -238,6 +239,55 @@ int runEnrollTests() {
       if (request.rfind("POST /api/pair/request", 0) == 0) carried = has(request, "\"enrollToken\":\"" + token + "\"");
     CHECK(carried);
     pairStatus = "approved";
+  }
+  {
+    // A console the server took back (its account off, its password
+    // changed), with no enroll token: the kept key goes, and approval is
+    // asked again with a new pair secret, so the key the server issues next
+    // goes only to this console. Then the QR code shows.
+    std::string written;
+    CHECK(atomicWrite(configPath,
+                      R"({"servers":[{"title":"Shop","url":")" + url +
+                          R"(","username":"","password":"","enrollToken":"","cfClientId":"","cfClientSecret":"","enabled":true}],"language":"ko","installTarget":"sd"})",
+                      written));
+    auto state = loadState(db).value;
+    state.accessKeys[url] = "revoked-key";
+    state.pairSecrets[url] = std::string(64, 'c'); // one the server no longer holds
+    CHECK(saveState(db, state, error));
+    pairStatus = "pending";
+    net::Session session(server(), loadState(db).value, db);
+    session.setConfigPath(configPath);
+    Error waiting;
+    CHECK(!session.refresh(waiting) && session.pairingPending());
+    const auto kept = loadState(db).value;
+    CHECK(!kept.accessKeys.count(url));
+    const auto secret = kept.pairSecrets.count(url) ? kept.pairSecrets.at(url) : std::string();
+    CHECK(secret.size() == 64 && secret != std::string(64, 'c'));
+    const auto sent = mock.take();
+    int asked = 0;
+    for (const auto &request : sent)
+      if (request.rfind("GET /api/pair/status", 0) == 0 && has(request, "X-Pair-Secret: " + secret)) {
+        ++asked;
+        CHECK(!has(request, "revoked-key"));
+      }
+    CHECK(asked == 1);
+    CHECK(count(sent, "POST /api/pair/request") == 1);
+    pairStatus = "approved";
+  }
+  {
+    // The server says so on any reply: once, for the screen to refresh.
+    mock.answer = [](const std::string &) -> Reply {
+      return {401, "X-CookingFoil-Session: revoked\r\n", R"({"error":"session revoked"})"};
+    };
+    net::takeConsoleRevoked(); // what tests before this one left
+    net::get(url + "/api/shop/sections", {}, "", nullptr);
+    CHECK(net::takeConsoleRevoked() && !net::takeConsoleRevoked());
+    mock.answer = [](const std::string &) -> Reply {
+      return {401, "X-CookingFoil-Session: expired\r\n", "{}"};
+    };
+    net::get(url + "/api/shop/sections", {}, "", nullptr);
+    CHECK(!net::takeConsoleRevoked()); // expired is renewed, not a take-back
+    mock.take();
   }
   {
     // A username still signs in with Basic, as before; none sends none.

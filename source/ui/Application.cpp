@@ -167,6 +167,16 @@ void Application::serverRestartNotice() {
   restartShowing_ = false;
   if (notice_ == tr("The server is restarting. Downloads go on shortly.")) notice_.clear();
 }
+// The server took this console back (its account off, its password
+// changed): a refresh, where the session drops the old key and asks for
+// approval again, so the QR code shows instead of each screen failing.
+void Application::followTakeBack() {
+  if (net::takeConsoleRevoked()) takenBack_ = true;
+  if (!takenBack_ || !session_ || network_.joinable()) return;
+  takenBack_ = false;
+  logLine("the server took this console back; refreshing to ask for approval again");
+  refresh();
+}
 // Where a cut-off file stands, from the install thread to the card.
 bool Application::keepResumeChanges() {
   auto changes = installer_.takeResumeChanges();
@@ -932,6 +942,7 @@ void Application::poll() {
   pumpConsoleTasks();
   keepResumeChanges();
   serverRestartNotice();
+  followTakeBack();
   laps.lap("resume points");
   const auto installStatus = installer_.progress().status;
   if (installStatus == install::Status::Running) {

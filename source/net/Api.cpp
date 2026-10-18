@@ -1007,6 +1007,13 @@ bool Session::pair(Error& error) {
         if (!enroll(error, true)) return false;
         if (server_.enrollToken.empty()) { pairingPending_ = false; pairingInfo_ = {}; return true; }
     }
+    // Taken back (the account off, its password changed): the kept key is
+    // no good, and approval starts again with a new pair secret, so the key
+    // the server issues next goes only to this console.
+    if (status == "pending" && kept != state_.accessKeys.end() && !kept->second.empty() && server_.enrollToken.empty()) {
+        forgetAccessKey();
+        return pair(error);
+    }
     if (status == "pending") {
         sendPairMessage();
         if (pairMismatch_) {
@@ -1029,6 +1036,18 @@ bool Session::pair(Error& error) {
         state_ = std::move(updated);
     }
     pairingPending_ = false; pairingInfo_ = {}; return true;
+}
+void Session::forgetAccessKey() {
+    auto saved = loadState(path_);
+    auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
+    updated.accessKeys.erase(server_.url);
+    updated.pairSecrets.erase(server_.url); // the server dropped its record of it too
+    Error error;
+    if (!saveState(path_, updated, error)) logLine("pair: the old key not cleared: " + error.message);
+    state_ = std::move(updated);
+    withdrawSession(originOf(server_.url));
+    pairMessageSent_.clear();
+    logLine("pair: the server took this console back; asking for approval again");
 }
 void Session::sendPairMessage() {
     // The status poll already knocks; the request goes out to carry the pair
