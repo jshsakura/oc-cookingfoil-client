@@ -355,10 +355,40 @@ bool Application::open() {
   // As long as what is left needs to look smooth: a bar near its end
   // finishes in a quarter second, one half way in about 0.6 s.
   const uint32_t FillMs = 250 + uint32_t(700 * std::clamp(1.f - from, 0.f, 1.f));
-  // The last word changes each start, one of a few kitchen lines.
+  // The last word changes each start: a kitchen line or a nod to a game.
   static const char *const Done[] = {"Well done!", "Golden brown, just right!", "A wild homebrew appeared!",
                                      "It's dangerous to go alone! Take this.", "You cooked something tasty!",
-                                     "3, 2, 1, GO!", "Let's-a go!"};
+                                     "3, 2, 1, GO!", "Let's-a go!",
+                                     "Your library is in this castle!",
+                                     "All your base are belong to us.",
+                                     "Do a barrel roll!",
+                                     "Hey! Listen!",
+                                     "Finish him!",
+                                     "Hadouken!",
+                                     "Shoryuken!",
+                                     "It's super effective!",
+                                     "A winner is you!",
+                                     "The cake is not a lie.",
+                                     "Would you kindly press A?",
+                                     "Snake? Snake?! SNAAAKE!",
+                                     "Up, Up, Down, Down, Left, Right, Left, Right, B, A",
+                                     "War never changes. Your library does.",
+                                     "Stay a while and listen.",
+                                     "Nothing is true, everything is downloadable.",
+                                     "Praise the sun!",
+                                     "YOU DIED... just kidding, it loaded.",
+                                     "Continue? 9... 8... 7...",
+                                     "Hey, you. You're finally awake.",
+                                     "Get over here!",
+                                     "Fus Ro Dah!",
+                                     "Waka waka waka!",
+                                     "Gotta go fast!",
+                                     "Achievement unlocked: opened the app",
+                                     "Press any button. Except HOME.",
+                                     "PLAYER 1 READY",
+                                     "It's-a me!",
+                                     "Your quest begins now.",
+                                     "Loading... the boss is waiting."};
   const std::string done = tr(Done[std::time(nullptr) % std::size(Done)]);
   const uint32_t fillFrom = SDL_GetTicks();
   for (;;) {
