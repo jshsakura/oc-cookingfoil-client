@@ -26,8 +26,15 @@ void filesBelow(const fs::path &root, const fs::path &dir, std::vector<std::pair
        it.increment(ec)) {
     // A Mac's "._" files and the like are not part of any patch.
     if (systemJunk(it->path().filename().string()) || !it->is_regular_file(ec)) continue;
-    const auto size = it->file_size(ec);
-    out.emplace_back(fs::relative(it->path(), root, ec).generic_string(), ec ? 0 : uint64_t(size));
+    std::error_code sizeError;
+    const auto size = it->file_size(sizeError);
+    // The path below the card's root by its text: fs::relative canonicalizes,
+    // which fails on the console's "sdmc:" root and took the size with it.
+    auto path = it->path().generic_string();
+    const auto top = root.generic_string();
+    if (path.compare(0, top.size(), top) == 0) path.erase(0, top.size());
+    while (!path.empty() && path.front() == '/') path.erase(0, 1);
+    out.emplace_back(path, sizeError ? 0 : uint64_t(size));
   }
 }
 } // namespace

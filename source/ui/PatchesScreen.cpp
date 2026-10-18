@@ -890,7 +890,8 @@ void Application::patchDialog() {
     confirmPatchRemove_ = managingPatch_ = pickingPatch_ = false;
     return;
   }
-  if (pickingPatch_)
+  // The chosen patch's 상세 정보 takes the list's place; B brings it back.
+  if (pickingPatch_ && !managingPatch_)
     patchPicker(rows, games[std::clamp(selected_, 0, int(games.size()) - 1)]);
   const auto *picked = pickedPatch(rows);
   if (!picked) {
@@ -899,7 +900,6 @@ void Application::patchDialog() {
   }
   const auto &row = *picked;
   if (managingPatch_) {
-    if (pickingPatch_) paint_.rect(0, 0, 1280, 720, {0, 0, 0, 120});
     patchMenu(row);
     if (galleryOpen_) gallery();
   }
