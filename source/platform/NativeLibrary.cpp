@@ -3,6 +3,7 @@
 #include "core/I18n.hpp"
 #include "core/SaveBackups.hpp"
 #include "core/Json.hpp"
+#include "core/Nacp.hpp"
 #include "core/Log.hpp"
 #include <algorithm>
 #include <cstdio>
@@ -67,6 +68,9 @@ Parsed<std::vector<NcmApplicationContentMetaKey>> keys(Database &db, NcmContentM
 // version, size and icon are kept on the SD card and reused while the game's
 // NS record is unchanged; a new language or an update reads it again.
 const std::string InstalledCache = "sdmc:/switch/cookingfoil/cache/installed";
+// Raised when names are read differently: 1 reads HOS 21's compressed titles,
+// which an older cache kept as garbled names.
+constexpr int InstalledCacheFormat = 1;
 struct CachedGame {
   uint64_t updated = 0, bytes = 0;
   std::string name, publisher, version;
@@ -76,7 +80,9 @@ std::map<std::string, CachedGame> loadInstalledCache(const std::string &language
   std::map<std::string, CachedGame> cache;
   Error error;
   auto root = parseJson(readFile(InstalledCache + "/index.json"), error);
-  if (error || stringField(root.get(), "language") != language) return cache;
+  if (error || stringField(root.get(), "language") != language ||
+      integerField(root.get(), "format") != InstalledCacheFormat)
+    return cache;
   auto *games = field(root.get(), "games");
   if (!json_object_is_type(games, json_type_object)) return cache;
   json_object_object_foreach(games, id, entry) {
@@ -95,6 +101,7 @@ std::map<std::string, CachedGame> loadInstalledCache(const std::string &language
 void saveInstalledCache(const std::string &language, const std::map<std::string, CachedGame> &cache) {
   Json root(json_object_new_object());
   json_object_object_add(root.get(), "language", json_object_new_string(language.c_str()));
+  json_object_object_add(root.get(), "format", json_object_new_int(InstalledCacheFormat));
   auto *games = json_object_new_object();
   for (const auto &[id, g] : cache) {
     auto *entry = json_object_new_object();
@@ -221,6 +228,7 @@ Parsed<InstalledLibrary> readInstalled() {
       u64 size = 0;
       const auto rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, id, control.get(), sizeof(*control), &size);
       if (R_SUCCEEDED(rc) && size >= sizeof(NacpStruct)) {
+        nacp::plainTitles(reinterpret_cast<uint8_t *>(&control->nacp), sizeof(NacpStruct));
         NacpLanguageEntry *language = nullptr;
         if (R_SUCCEEDED(nacpGetLanguageEntry(&control->nacp, &language)) && language) {
           const auto name = bounded(language->name);
