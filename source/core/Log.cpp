@@ -6,6 +6,7 @@
 #include <ctime>
 #include <filesystem>
 #include <mutex>
+#include <regex>
 #ifdef __SWITCH__
 #include <switch.h>
 #include <malloc.h>
@@ -64,7 +65,9 @@ bool tokenChar(char c) {
 // What follows a credential's name, and anything shaped like a signed token
 // (eyJ...), reads as "***": a bug report never carries a key or a password.
 std::string withoutSecrets(std::string line) {
-  for (const char *lead : {"Bearer ", "Basic ", "X-Access-Key: ", "access_token", "refresh_token", "password", "accessKey"}) {
+  for (const char *lead : {"Bearer ", "Basic ", "X-Access-Key: ", "X-Device-Key: ", "X-Pair-Secret: ", "access_token",
+                           "refresh_token", "password", "accessKey", "enrollToken", "pairSecret", "token=", "\"token\"",
+                           "Secret"}) {
     for (size_t at = line.find(lead); at != std::string::npos; at = line.find(lead, at)) {
       size_t from = at + std::char_traits<char>::length(lead);
       while (from < line.size() && (line[from] == '"' || line[from] == ':' || line[from] == '=' || line[from] == ' ')) ++from;
@@ -74,12 +77,13 @@ std::string withoutSecrets(std::string line) {
       at = from;
     }
   }
-  // A session token (cfs_…) wherever it shows.
-  for (size_t at = line.find("cfs_"); at != std::string::npos; at = line.find("cfs_", at + 3)) {
-    size_t to = at + 4;
-    while (to < line.size() && tokenChar(line[to])) ++to;
-    if (to > at + 4) line.replace(at, to - at, "***");
-  }
+  // A session token (cfs_…) or an enrollment token (cfe_…) wherever it shows.
+  for (const char *mark : {"cfs_", "cfe_"})
+    for (size_t at = line.find(mark); at != std::string::npos; at = line.find(mark, at + 3)) {
+      size_t to = at + 4;
+      while (to < line.size() && tokenChar(line[to])) ++to;
+      if (to > at + 4) line.replace(at, to - at, "***");
+    }
   for (size_t at = line.find("eyJ"); at != std::string::npos; at = line.find("eyJ", at + 3)) {
     size_t to = at;
     while (to < line.size() && tokenChar(line[to])) ++to;
@@ -115,6 +119,52 @@ std::string withoutAddresses(const std::string &line) {
   if (const auto host = out.find("resolve host: "); host != std::string::npos)
     out = out.substr(0, host + 14) + "(server)";
   return withoutSecrets(out);
+}
+namespace {
+void replaceAll(std::string &text, const std::string &what, const std::string &with) {
+  if (what.empty()) return;
+  for (size_t at = text.find(what); at != std::string::npos; at = text.find(what, at + with.size()))
+    text.replace(at, what.size(), with);
+}
+// `what` where it stands as a word of its own (not inside a longer name).
+void replaceWord(std::string &text, const std::string &what, const std::string &with) {
+  const auto inWord = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; };
+  for (size_t at = text.find(what); at != std::string::npos; at = text.find(what, at)) {
+    const size_t end = at + what.size();
+    if ((at > 0 && inWord(text[at - 1])) || (end < text.size() && inWord(text[end]))) {
+      at = end;
+      continue;
+    }
+    text.replace(at, what.size(), with);
+    at += with.size();
+  }
+}
+} // namespace
+std::string forReport(const std::string &text, const ReportPrivate &known) {
+  std::string out;
+  size_t start = 0;
+  while (start < text.size()) {
+    const auto end = text.find('\n', start);
+    const auto stop = end == std::string::npos ? text.size() : end;
+    out += withoutAddresses(text.substr(start, stop - start));
+    if (end != std::string::npos) out += '\n';
+    start = stop + 1;
+  }
+  // Known values first, whole: a secret never leaves even its first 8.
+  for (const auto &secret : known.secrets)
+    if (secret.size() >= 6) replaceAll(out, secret, "***");
+  for (const auto &host : known.hosts)
+    if (host.size() >= 3) replaceAll(out, host, "(server)");
+  for (const auto &name : known.names)
+    if (name.size() >= 3) replaceWord(out, name, "(user)");
+  static const std::regex ipv4(R"(\b(?:\d{1,3}\.){3}\d{1,3}\b)");
+  static const std::regex email(R"([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})");
+  static const std::regex home(R"(((?:/home|/Users|[A-Za-z]:\\Users)[/\\])[^/\\\s"']+)");
+  static const std::regex longHex(R"(\b([0-9A-Fa-f]{8})[0-9A-Fa-f]{32,}\b)");
+  out = std::regex_replace(out, email, "(email)");
+  out = std::regex_replace(out, ipv4, "(ip)");
+  out = std::regex_replace(out, home, "$1(user)");
+  return std::regex_replace(out, longHex, "$1...");
 }
 void logLine(const std::string &raw) {
   const auto line = withoutAddresses(raw);

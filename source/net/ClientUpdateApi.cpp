@@ -82,6 +82,21 @@ bool installClient(const Server &server, const State &state, const update::Relea
   }
   return true;
 }
+ReportPrivate reportPrivate(const Server &server, const State &state) {
+  ReportPrivate known;
+  const auto scheme = server.url.find("://");
+  auto host = server.url.substr(scheme == std::string::npos ? 0 : scheme + 3);
+  host = host.substr(0, host.find_first_of("/?#"));
+  if (const auto at = host.rfind('@'); at != std::string::npos) host.erase(0, at + 1);
+  if (!host.empty() && host.front() != '[') host = host.substr(0, host.find(':'));
+  if (!host.empty()) known.hosts.push_back(host);
+  known.names.push_back(server.username);
+  for (const auto *value : {&server.password, &server.enrollToken, &server.cfClientId, &server.cfClientSecret})
+    known.secrets.push_back(*value);
+  for (const auto *values : {&state.accessKeys, &state.pairSecrets, &state.pairMessages})
+    for (const auto &[url, value] : *values) known.secrets.push_back(value);
+  return known;
+}
 bool sendBugReport(const Server &server, const State &state, const std::string &log, Error &error,
                    const std::atomic<bool> *cancel) {
   const auto url = server.url + "/api/client/log";
@@ -89,7 +104,7 @@ bool sendBugReport(const Server &server, const State &state, const std::string &
   headers.push_back("Content-Type: text/plain; charset=utf-8");
   headers.push_back("X-Log-Reason: bug%20report"); // the version rides on every request (authHeaders)
   PostOptions options;
-  options.body = log;
+  options.body = forReport(log, reportPrivate(server, state));
   options.timeout = 30;
   const auto response = post(url, headers, options, cancel);
   if (!response.error.empty()) error.message = response.error;

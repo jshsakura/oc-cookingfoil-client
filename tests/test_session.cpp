@@ -2,6 +2,7 @@
 #include "core/State.hpp"
 #include "net/Api.hpp"
 #include "core/Log.hpp"
+#include "net/ClientUpdateApi.hpp"
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <poll.h>
@@ -140,6 +141,42 @@ int runSessionTests() {
         CHECK(withoutAddresses("token eyJhbGc.eyJzdWI.sig_1 ok") == "token *** ok");
         CHECK(withoutAddresses("password=hunter2 & more") == "password=*** & more");
         CHECK(withoutAddresses("hash 3f2a ok, eyJust a word") == "hash 3f2a ok, eyJust a word");
+    }
+    {
+        // A bug report keeps what tells the fault and nothing that tells who
+        // or where: the server, the account, keys and secrets are masked.
+        foil::Server server;
+        server.url = "https://shop.example.com:8443/base";
+        server.username = "alice";
+        server.password = "pw-hunter2";
+        server.enrollToken = "cfe_AAAA0000enroll";
+        foil::State state;
+        state.accessKeys[server.url] = "ak_BBBB1111access";
+        state.pairSecrets[server.url] = std::string(64, 'c');
+        state.pairMessages[server.url] = "Alice's living room";
+        const auto known = foil::net::reportPrivate(server, state);
+        const auto report = [&](const std::string &text) { return foil::forReport(text, known); };
+        // Diagnostics stay.
+        CHECK(report("CookingFoil 0.3.184 fw 21.0.0 install 0100C4E013E5E000 failed: HTTP 500") ==
+              "CookingFoil 0.3.184 fw 21.0.0 install 0100C4E013E5E000 failed: HTTP 500");
+        CHECK(report("nca 0123456789abcdef0123456789abcdef ok") == "nca 0123456789abcdef0123456789abcdef ok");
+        // The server, as an address, a bare host or an IP.
+        CHECK(report("GET https://shop.example.com:8443/api/shop status=200") == "GET /api/shop status=200");
+        CHECK(report("lost shop.example.com mid-way") == "lost (server) mid-way");
+        CHECK(report("direct 192.0.2.10:38000 refused") == "direct (ip):38000 refused");
+        // The account, as a word only (not inside a longer one).
+        CHECK(report("signed in as alice, palicex ok") == "signed in as (user), palicex ok");
+        CHECK(report("owner admin@example.org") == "owner (email)");
+        // Secrets by value and by name; keys keep their first 8.
+        CHECK(report("basic pw-hunter2 enroll cfe_AAAA0000enroll key ak_BBBB1111access") == "basic *** enroll *** key ***");
+        CHECK(report("pair " + std::string(64, 'c')) == "pair ***");
+        CHECK(report("note Alice's living room") == "note ***");
+        CHECK(report("X-Device-Key: " + std::string(64, 'D')) == "X-Device-Key: ***");
+        CHECK(report("device " + std::string(64, 'E') + " seen") == "device EEEEEEEE... seen");
+        CHECK(report("session cfs_ZZZZ9999 and token=abc123") == "session *** and token=***");
+        // A user name inside a path.
+        CHECK(report("open /home/bob/cookingfoil/x.nro") == "open /home/(user)/cookingfoil/x.nro");
+        CHECK(report("a\nb http://198.51.100.7/x?k=1\n") == "a\nb /x\n");
     }
     return failures;
 }
