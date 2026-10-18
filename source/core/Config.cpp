@@ -163,6 +163,15 @@ bool dropEnrollToken(const std::string& path, const std::string& serverUrl, std:
         if (server.url == serverUrl && !server.enrollToken.empty()) { server.enrollToken.clear(); changed = true; }
     return !changed || saveConfig(path, config.value, error);
 }
+bool dropPassword(const std::string& path, const std::string& serverUrl, std::string& error) {
+    if (path.empty()) return true;
+    auto config = parseConfig(readFile(path));
+    if (config.error) { error = config.error.message; return false; }
+    bool changed = false;
+    for (auto& server : config.value.servers)
+        if (server.url == serverUrl && !server.password.empty()) { server.password.clear(); changed = true; }
+    return !changed || saveConfig(path, config.value, error);
+}
 Parsed<Config> loadConfig(const std::string& path) {
     std::error_code ec;
     // Copies kept by 0.3.88 to 0.3.94 brought deleted servers back; they go.

@@ -187,6 +187,7 @@ private:
     // The kept access key and pair secret for this server go (the console
     // was taken back), and its session token with them.
     void forgetAccessKey();
+    void forgetPasswordOnceKeyed();
     // This server's pair secret, made and saved first when the console has no
     // key from it yet; empty when it has one or the secret could not be saved.
     std::string pairSecret();

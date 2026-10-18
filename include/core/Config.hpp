@@ -11,4 +11,7 @@ bool saveConfig(const std::string& path, const Config& config, std::string& erro
 // The enroll token of the server at `serverUrl` taken out of the config.json
 // at `path`, once it was spent. True when nothing needed it.
 bool dropEnrollToken(const std::string& path, const std::string& serverUrl, std::string& error);
+// The server's password out of the file (the username stays): once the
+// console holds a key from a server that takes passwords for approval only.
+bool dropPassword(const std::string& path, const std::string& serverUrl, std::string& error);
 }

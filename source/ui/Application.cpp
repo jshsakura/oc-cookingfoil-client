@@ -1154,6 +1154,11 @@ void Application::takeNetwork() {
   }
   pairingPending_ = session_->pairingPending();
   pairingInfo_ = session_->pairingInfo();
+  // A password taken out of config.json after approval leaves this copy
+  // too, so saving the server form never writes it back.
+  if (session_->server().password.empty())
+    for (auto &server : config_.servers)
+      if (server.url == session_->server().url) server.password.clear();
   menuKnown_ = true; // the server answered (or did not): the menu is what it is
   qr_.encode(pairingInfo_.url);
   pairPollAt_ = pairingPending_ ? SDL_GetTicks() : 0;

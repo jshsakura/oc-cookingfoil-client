@@ -275,6 +275,64 @@ int runEnrollTests() {
     pairStatus = "approved";
   }
   {
+    // An ID and password are for approval on a server that says
+    // pair-password-only: sent to /api/pair/* alone, and once a key came,
+    // taken out of config.json, so they no longer cross the network or sit
+    // on the card. A server without the mark gets them as before.
+    const auto withPassword = [&](bool only) {
+      std::string written;
+      CHECK(atomicWrite(configPath,
+                        R"({"servers":[{"title":"Shop","url":")" + url +
+                            R"(","username":"alice","password":"secret-pass","enrollToken":"","cfClientId":"","cfClientSecret":"","enabled":true}],"language":"ko","installTarget":"sd"})",
+                        written));
+      auto state = loadState(db).value;
+      state.accessKeys.clear();
+      state.pairSecrets.clear();
+      CHECK(saveState(db, state, error));
+      mock.answer = [only](const std::string &request) -> Reply {
+        if (request.rfind("GET /api/pair/status", 0) == 0)
+          return only ? Reply{200, "", R"({"status":"approved","accessKey":"password-key"})"} : Reply{404, "", "{}"};
+        if (request.rfind("GET /api/shop/info", 0) == 0)
+          return {200, "", only ? R"({"features":["pair-password-only"]})" : R"({"features":[]})"};
+        if (request.rfind("GET /api/shop/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
+        return {200, "", "{}"};
+      };
+    };
+    const auto basic = std::string("Authorization: Basic ");
+    withPassword(true);
+    {
+      net::Session session(server(), loadState(db).value, db);
+      session.setConfigPath(configPath);
+      CHECK(session.refresh(error));
+      const auto sent = mock.take();
+      // Approved by it; /api/shop/info (asked before the server's mark is
+      // known) is the one other request it rides on.
+      for (const auto &request : sent) {
+        const bool pairing = request.find(" /api/pair/") != std::string::npos;
+        const bool info = request.rfind("GET /api/shop/info", 0) == 0;
+        if (!info) CHECK(has(request, basic) == pairing);
+      }
+      CHECK(count(sent, "GET /api/pair/status") >= 1);
+      CHECK(loadState(db).value.accessKeys.at(url) == "password-key");
+      CHECK(server().password.empty() && readFile(configPath).find("secret-pass") == std::string::npos);
+      CHECK(server().username == "alice"); // kept: the form shows whose it was
+      CHECK(session.server().password.empty());
+      // Next time no password goes anywhere, the pairing paths included.
+      CHECK(session.refresh(error));
+      for (const auto &request : mock.take()) CHECK(!has(request, basic));
+    }
+    withPassword(false);
+    {
+      net::Session session(server(), loadState(db).value, db);
+      session.setConfigPath(configPath);
+      CHECK(session.refresh(error));
+      mock.take();
+      CHECK(session.refresh(error));
+      CHECK(count(mock.take(), basic) >= 3); // a server with no pairing: Basic everywhere, as before
+      CHECK(server().password == "secret-pass");
+    }
+  }
+  {
     // The server says so on any reply: once, for the screen to refresh.
     mock.answer = [](const std::string &) -> Reply {
       return {401, "X-CookingFoil-Session: revoked\r\n", R"({"error":"session revoked"})"};

@@ -102,6 +102,19 @@ std::string titleId(json_object* obj, const char* key) {
 }
 }
 namespace {
+// Servers that take an ID and password for approval only
+// (pair-password-only): Basic goes to /api/pair/* there, nowhere else.
+std::mutex pairOnlyLock;
+std::set<std::string> pairOnlyOrigins;
+bool pairPasswordOnly(const std::string& origin) {
+    std::lock_guard<std::mutex> held(pairOnlyLock);
+    return pairOnlyOrigins.count(origin) > 0;
+}
+void markPairPasswordOnly(const std::string& origin, bool only) {
+    std::lock_guard<std::mutex> held(pairOnlyLock);
+    if (only) pairOnlyOrigins.insert(origin);
+    else pairOnlyOrigins.erase(origin);
+}
 // `session`: the session token in place of Basic and the access key when
 // the server gives one; false for asking for it.
 std::vector<std::string> serverHeaders(const Server& server, const State& state, const std::string& url, bool session) {
@@ -115,7 +128,17 @@ std::vector<std::string> serverHeaders(const Server& server, const State& state,
     if (!token.empty()) headers.push_back("Authorization: Bearer " + token);
     // No username, no Basic: a client from the website signs in with its
     // access key alone.
-    else if (!server.username.empty()) headers.push_back("Authorization: Basic " + base64(server.username + ":" + server.password));
+    // An ID and password sign in as before, unless the server takes them
+    // for approval only (pair-password-only): then they go to /api/pair/*
+    // alone. A password taken out after approval sends none with a key.
+    else if (!server.username.empty()) {
+        const auto origin = originOf(url);
+        const bool pairing = url.compare(origin.size(), 10, "/api/pair/") == 0;
+        const auto held = state.accessKeys.find(server.url);
+        const bool spent = server.password.empty() && held != state.accessKeys.end() && !held->second.empty();
+        if (!spent && (pairing || !pairPasswordOnly(origin)))
+            headers.push_back("Authorization: Basic " + base64(server.username + ":" + server.password));
+    }
     if (const auto device = deviceKeyFor(state, server.url); !device.empty()) headers.push_back("X-Device-Key: " + device);
     const auto key = state.accessKeys.find(server.url);
     if (token.empty() && key != state.accessKeys.end() && !key->second.empty()) headers.push_back("X-Access-Key: " + key->second);
@@ -1037,6 +1060,23 @@ bool Session::pair(Error& error) {
     }
     pairingPending_ = false; pairingInfo_ = {}; return true;
 }
+// Approved (a key held) on a server that takes the password for approval
+// only: it leaves config.json, so it no longer sits on the card or crosses
+// the network. A take-back asks again by the QR code (or a password typed
+// in again).
+void Session::forgetPasswordOnceKeyed() {
+    const auto key = state_.accessKeys.find(server_.url);
+    if (server_.password.empty() || !features_.count("pair-password-only") || key == state_.accessKeys.end() ||
+        key->second.empty())
+        return;
+    std::string failure;
+    if (!dropPassword(configPath_, server_.url, failure)) {
+        logLine("pair: the password not taken out of config.json: " + failure);
+        return;
+    }
+    server_.password.clear();
+    logLine("pair: approved; the password is out of config.json");
+}
 void Session::forgetAccessKey() {
     auto saved = loadState(path_);
     auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
@@ -1232,10 +1272,13 @@ bool Session::refresh(Error& error) {
         const auto info = server_.url + "/api/shop/info";
         const auto response = get(info, authHeaders(server_, state_, info), "", cancel_);
         followDirectNaming(info, response);
-        if (response.status == 200) {
-            features_ = parseFeatures(response.body);
-            recommendConnections(parseMaxConnections(response.body));
-        } else if (response.status == 404) features_.clear();
+        if (response.status == 200 || response.status == 404) {
+            if (response.status == 404) features_.clear();
+            else features_ = parseFeatures(response.body);
+            markPairPasswordOnly(originOf(server_.url), features_.count("pair-password-only") > 0);
+            forgetPasswordOnceKeyed();
+        }
+        if (response.status == 200) recommendConnections(parseMaxConnections(response.body));
         // Only a server that says so is asked for a session token.
         if (response.status == 200 || response.status == 404) {
             if (features_.count("session-token")) offerSessionFor(server_, state_);
