@@ -291,7 +291,8 @@ int runEnrollTests() {
       CHECK(saveState(db, state, error));
       mock.answer = [only](const std::string &request) -> Reply {
         if (request.rfind("GET /api/pair/status", 0) == 0)
-          return only ? Reply{200, "", R"({"status":"approved","accessKey":"password-key"})"} : Reply{404, "", "{}"};
+          return only ? Reply{200, "", R"({"status":"approved","accessKey":"password-key","passwordOnly":true})"}
+                      : Reply{404, "", "{}"};
         if (request.rfind("GET /api/shop/info", 0) == 0)
           return {200, "", only ? R"({"features":["pair-password-only"]})" : R"({"features":[]})"};
         if (request.rfind("GET /api/shop/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
@@ -305,12 +306,11 @@ int runEnrollTests() {
       session.setConfigPath(configPath);
       CHECK(session.refresh(error));
       const auto sent = mock.take();
-      // Approved by it; /api/shop/info (asked before the server's mark is
-      // known) is the one other request it rides on.
+      // The approval says passwordOnly itself: nothing after it carries
+      // the password, /api/shop/info included.
       for (const auto &request : sent) {
         const bool pairing = request.find(" /api/pair/") != std::string::npos;
-        const bool info = request.rfind("GET /api/shop/info", 0) == 0;
-        if (!info) CHECK(has(request, basic) == pairing);
+        CHECK(has(request, basic) == pairing);
       }
       CHECK(count(sent, "GET /api/pair/status") >= 1);
       CHECK(loadState(db).value.accessKeys.at(url) == "password-key");

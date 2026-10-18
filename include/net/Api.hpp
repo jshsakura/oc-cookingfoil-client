@@ -188,6 +188,7 @@ private:
     // was taken back), and its session token with them.
     void forgetAccessKey();
     void forgetPasswordOnceKeyed();
+    bool pairPasswordOnly_ = false; // a /api/pair/* reply said passwordOnly
     // This server's pair secret, made and saved first when the console has no
     // key from it yet; empty when it has one or the secret could not be saved.
     std::string pairSecret();

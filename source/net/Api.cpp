@@ -1023,6 +1023,12 @@ bool Session::pair(Error& error) {
     if (!response.error.empty() || response.status != 200) { error.message = response.error.empty() ? tr("Could not check the device approval status.") : response.error; return false; }
     auto root = parseJson(response.body, error); if (error) return false;
     const auto status = stringField(root.get(), "status");
+    // The server takes the password for approval only: said here too, so
+    // nothing after the approval (the shop info first) carries it.
+    if (const auto* only = field(root.get(), "passwordOnly"); json_object_is_type(only, json_type_boolean) && json_object_get_boolean(only)) {
+        pairPasswordOnly_ = true;
+        markPairPasswordOnly(originOf(server_.url), true);
+    }
     // A key kept from before that the server no longer approves (the console
     // was removed): the download's token approves it again, not a new request.
     const auto kept = state_.accessKeys.find(server_.url);
@@ -1057,6 +1063,7 @@ bool Session::pair(Error& error) {
         updated.pairSecrets.erase(server_.url); // done with: the key came
         if (!saveState(path_, updated, error)) { error.message = tr("Could not save the issued key. Check where the state file is stored."); return false; }
         state_ = std::move(updated);
+        forgetPasswordOnceKeyed();
     }
     pairingPending_ = false; pairingInfo_ = {}; return true;
 }
@@ -1066,7 +1073,7 @@ bool Session::pair(Error& error) {
 // in again).
 void Session::forgetPasswordOnceKeyed() {
     const auto key = state_.accessKeys.find(server_.url);
-    if (server_.password.empty() || !features_.count("pair-password-only") || key == state_.accessKeys.end() ||
+    if (server_.password.empty() || !pairPasswordOnly(originOf(server_.url)) || key == state_.accessKeys.end() ||
         key->second.empty())
         return;
     std::string failure;
@@ -1275,7 +1282,7 @@ bool Session::refresh(Error& error) {
         if (response.status == 200 || response.status == 404) {
             if (response.status == 404) features_.clear();
             else features_ = parseFeatures(response.body);
-            markPairPasswordOnly(originOf(server_.url), features_.count("pair-password-only") > 0);
+            markPairPasswordOnly(originOf(server_.url), pairPasswordOnly_ || features_.count("pair-password-only") > 0);
             forgetPasswordOnceKeyed();
         }
         if (response.status == 200) recommendConnections(parseMaxConnections(response.body));
