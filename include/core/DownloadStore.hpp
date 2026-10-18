@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 // 다운로드's records in SQLite (cookingfoil.db on the SD card): the queue and
 // every download that ran, in list order, and where a file that was cut off
 // stands so it picks up at that byte. The app's own state (settings, the
@@ -110,7 +111,9 @@ private:
   bool changeResume(const std::function<void(std::map<std::string, ResumePoint> &, std::vector<std::string> &)> &change);
   mutable std::mutex lock_;
   std::string file_; // empty while closed
-  bool readOnly_ = false;
+  // As file_ (open) and the newer build's file (read only), read without
+  // the lock.
+  std::atomic<bool> open_{false}, readOnly_{false};
   std::set<uint64_t> known_; // rows this instance loaded or wrote: the only ones its saves delete
 };
 } // namespace foil

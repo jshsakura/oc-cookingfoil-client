@@ -257,17 +257,14 @@ std::string DownloadStore::fileName(const std::string &path) {
   // "/…" is the SD card already.
   return path.rfind("sdmc:/", 0) == 0 ? path.substr(5) : path;
 }
-bool DownloadStore::isOpen() const {
-  std::lock_guard<std::mutex> held(lock_);
-  return !file_.empty();
-}
-bool DownloadStore::readOnly() const {
-  std::lock_guard<std::mutex> held(lock_);
-  return readOnly_;
-}
+// Not under the lock: a save holds it for as long as the card takes to
+// write, and the screens ask this before every save.
+bool DownloadStore::isOpen() const { return open_; }
+bool DownloadStore::readOnly() const { return readOnly_; }
 void DownloadStore::close() {
   std::lock_guard<std::mutex> held(lock_);
   file_.clear();
+  open_ = false;
   readOnly_ = false;
   known_.clear();
 }
@@ -552,6 +549,7 @@ Points legacyPoints(sqlite3 *db) {
 bool DownloadStore::open(const std::string &path, std::string &error) {
   std::lock_guard<std::mutex> held(lock_);
   file_.clear();
+  open_ = false;
   readOnly_ = false;
   known_.clear();
   const std::string file = fileName(path);
@@ -565,6 +563,7 @@ bool DownloadStore::open(const std::string &path, std::string &error) {
     closeDb(db);
     std::remove((file + "-journal").c_str());
     file_ = file;
+    open_ = true;
     readOnly_ = newer;
     return true;
   }
@@ -578,6 +577,7 @@ bool DownloadStore::open(const std::string &path, std::string &error) {
   // file (resumeFile, <name>.resume.json), then leave the database: written here once.
   if (first == Opened::Ok && !newer) {
     file_ = file;
+    open_ = true;
     const auto legacy = legacyPoints(db);
     if (!legacy.empty()) {
       auto resume = parseResume(readFile(resumeFile()));
@@ -591,6 +591,7 @@ bool DownloadStore::open(const std::string &path, std::string &error) {
         persist(db, file, failure);
     }
     file_.clear();
+    open_ = false;
   }
   closeDb(db);
   if (first == Opened::Failed)
@@ -617,6 +618,7 @@ bool DownloadStore::open(const std::string &path, std::string &error) {
   // Left by builds that let SQLite write the file itself: nothing reads it now.
   std::remove((file + "-journal").c_str());
   file_ = file;
+  open_ = true;
   readOnly_ = newer;
   return true;
 }
