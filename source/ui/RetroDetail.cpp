@@ -430,7 +430,7 @@ void Application::retroDetailPanel() {
                     : storageChecked_ ? std::string(tr("Space unknown"))
                                       : std::string(tr("Checking"));
   paint_.fonts.middle(room, 840 + TextLeft, CardTop + 41, 15, {200, 200, 206, 255}, false, W - TextLeft - 12);
-  hit(840, 568, W, 60, [this] {
+  buttonHit({840, 568, W, 60}, 14, [this] {
     descriptionFocus_ = false;
     retroPart_ = int(retroVersionList().size());
     getRetroPick();

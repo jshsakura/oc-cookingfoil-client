@@ -282,7 +282,7 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
   paint_.fonts.middle(tr("Size|info"), X + 12, 530, 18, Secondary);
   const auto size = app.size ? formatBytes(app.size) : std::string("-");
   paint_.fonts.middle(size, X + W - 12 - paint_.fonts.measure(size, 24, true), 530, 24, Ink, true);
-  hit(X, 568, W, 60, [this, app] {
+  buttonHit({X, 568, W, 60}, 14, [this, app] {
     descriptionFocus_ = false;
     homebrewAskRow_ = -1;
     homebrewButton(app);

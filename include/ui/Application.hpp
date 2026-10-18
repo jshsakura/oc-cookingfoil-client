@@ -1033,7 +1033,9 @@ private:
   void cover(const std::string &url, float x, float y, int size,
              bool selected = false, const std::string &name = "", bool exact = false, bool dark = false);
   void footer(const std::vector<std::pair<std::string, std::string>> &hints);
-  void hit(float x, float y, float w, float h, std::function<void()> run);
+  // `look`, when given, is how it shows pressed (corner `radius`); else as a
+  // card a little larger than the area.
+  void hit(float x, float y, float w, float h, std::function<void()> run, SDL_FRect look = {}, int radius = 0);
   // A small button drawn at `look` (corner `radius`): it answers a little
   // above and below it, and shows pressed as itself, not as a larger card.
   void buttonHit(SDL_FRect look, int radius, std::function<void()> run);
@@ -1064,9 +1066,11 @@ private:
   std::vector<HeaderItem> header_;
   std::string headerFocus_, headerHome_; // the item with the cursor ("" none); where it lands first
   // Touch area and d-pad stop at once; draws the focus ring when it has the cursor.
-  void headerHit(const std::string &id, float x, float y, float w, float h, const std::function<void()> &run);
+  // Pressed, it darkens as `look` (the drawn button), or the area itself.
+  void headerHit(const std::string &id, float x, float y, float w, float h, const std::function<void()> &run,
+                 SDL_FRect look, int radius);
   void headerItem(const std::string &id, float x, float y, float w, float h, std::function<void()> run,
-                  bool home = false);
+                  bool home = false, SDL_FRect look = {}, int radius = 12);
   bool enterHeader();
   bool headerAction(Action a); // false: the key is not the header's, handle it as usual
   bool contentAtTop() const;   // Up from here goes to the header

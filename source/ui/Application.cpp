@@ -2483,7 +2483,7 @@ void Application::render() {
       pressing_ = false;
     else {
       // A card a little larger than what was touched, as on the web, not a
-      // box drawn tight around it; a small button darkens as itself.
+      // box drawn tight around it; a button darkens as itself.
       constexpr float Pad = 8;
       SDL_RenderSetClipRect(paint_.renderer, nullptr);
       if (pressedLook_.w > 0)

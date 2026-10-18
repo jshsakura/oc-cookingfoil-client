@@ -90,7 +90,8 @@ float Application::headerTabs(const std::vector<std::string> &labels, int curren
                           chosen ? Surface : Ink, true);
     }
     const auto run = [pick, n] { pick(n); };
-    headerHit("tab" + std::to_string(n), x, 24, w, 48, run);
+    // Pressed, a tab darkens as the chosen one is drawn, not the whole strip's height.
+    headerHit("tab" + std::to_string(n), x, 24, w, 48, run, {x, 30, w, 36}, 9);
     header_.push_back({"tab" + std::to_string(n), {x, 24, w, 48}, run, true});
     if (n == current) headerHome_ = "tab" + std::to_string(n);
     if (n == current && headerFocus_.rfind("tab", 0) == 0) headerFocus_ = "tab" + std::to_string(n);
@@ -159,12 +160,12 @@ void Application::notice(const std::string &title, const std::string &body, int 
     paint_.rect(x, y, width, ButtonH, Butter, 14);
     if (focused) paint_.keyLabel("A", button, x + 32, y + ButtonH / 2, 20, Ink, true);
     else paint_.fonts.middle(button, x + 32, y + ButtonH / 2, 20, Ink, true);
-    if (press) hit(x, y, width, ButtonH, press);
+    if (press) buttonHit({x, y, width, ButtonH}, 14, press);
     if (!other.empty()) {
       const float ox = x + width + Gap;
       paint_.rect(ox, y, otherWidth, ButtonH, Ground, 14);
       paint_.keyLabel(otherKey, other, ox + 32, y + ButtonH / 2, 20, Ink, true);
-      if (pressOther) hit(ox, y, otherWidth, ButtonH, pressOther);
+      if (pressOther) buttonHit({ox, y, otherWidth, ButtonH}, 14, pressOther);
     }
   }
   unclip();

@@ -810,7 +810,9 @@ void Application::retroList() {
   constexpr float Mid = 48;
   float x = 260;
   if (system) {
-    headerItem("previous", 256, 26, paint_.keyWidth("L") + 8, 44, [this] { action(Action::Previous); });
+    // L and R are bare key badges: pressed, the badge darkens, not a box round it.
+    headerItem("previous", 256, 26, paint_.keyWidth("L") + 8, 44, [this] { action(Action::Previous); }, false,
+               {x, Mid - 16, paint_.keyWidth("L"), 32}, 16);
     paint_.key("L", x, Mid);
     x += paint_.keyWidth("L") + 12;
     if (!system->iconUrl.empty()) {
@@ -821,7 +823,8 @@ void Application::retroList() {
     const float room = viewX - 16 - x - paint_.keyWidth("R") - 70;
     x = paint_.fonts.middle(retro::systemName(*system, languageCode()), x, Mid, 26, Ink, true, room);
     x += 10 + paint_.pill(std::to_string(retroTotal_), x + 10, Mid - 13);
-    headerItem("next", x + 8, 26, paint_.keyWidth("R") + 8, 44, [this] { action(Action::Next); });
+    headerItem("next", x + 8, 26, paint_.keyWidth("R") + 8, 44, [this] { action(Action::Next); }, false,
+               {x + 12, Mid - 16, paint_.keyWidth("R"), 32}, 16);
     paint_.key("R", x + 12, Mid);
   } else
     pageTitle(tr("Retro games"), "", 0);

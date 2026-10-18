@@ -146,7 +146,7 @@ void Application::retroArchPage() {
   paint_.fonts.middle(tr("Size|info"), X + 12, 530, 18, Secondary);
   const auto sizeText = size ? formatBytes(size) : std::string("-");
   paint_.fonts.middle(sizeText, X + W - 12 - paint_.fonts.measure(sizeText, 24, true), 530, 24, Ink, true);
-  hit(X, 568, W, 60, [this] {
+  buttonHit({X, 568, W, 60}, 14, [this] {
     retroArchPart_ = Button;
     action(Action::Accept);
   });

@@ -326,7 +326,7 @@ void Application::detail() {
     paint_.fonts.middle(room, x + TextLeft, CardTop + 41, 15,
                         chosen ? SDL_Color{200, 200, 206, 255} : Secondary, false, CardWidth - TextLeft - 12);
   }
-  hit(840, 568, 386, 60, [this] {
+  buttonHit({840, 568, 386, 60}, 14, [this] {
     part_ = int(selection_->rows()) + 1;
     descriptionFocus_ = false;
     action(Action::Accept);

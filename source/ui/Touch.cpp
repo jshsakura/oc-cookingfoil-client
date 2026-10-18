@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 namespace foil::ui {
-void Application::hit(float x, float y, float w, float h, std::function<void()> run) {
+void Application::hit(float x, float y, float w, float h, std::function<void()> run, SDL_FRect look, int radius) {
   // Inside a gliding list only the part on screen answers.
   if (!clips_.empty() && SDL_RenderIsClipEnabled(paint_.renderer)) {
     SDL_Rect clip{};
@@ -13,31 +13,26 @@ void Application::hit(float x, float y, float w, float h, std::function<void()> 
       return;
     x = left, y = top, w = right - left, h = bottom - top;
   }
-  hits_.push_back({{x, y, w, h}, std::move(run)});
+  hits_.push_back({{x, y, w, h}, std::move(run), look, radius});
 }
 void Application::buttonHit(SDL_FRect look, int radius, std::function<void()> run) {
   constexpr float Slop = 4; // a finger needs a little more than the drawn button
-  const size_t before = hits_.size();
-  hit(look.x, look.y - Slop, look.w, look.h + 2 * Slop, std::move(run));
-  if (hits_.size() > before) {
-    hits_.back().look = look;
-    hits_.back().radius = radius;
-  }
+  hit(look.x, look.y - Slop, look.w, look.h + 2 * Slop, std::move(run), look, radius);
 }
 // A touched header item takes the cursor, as a touched card or menu item
 // does. 내 게임's tabs open sibling screens that draw the same tabs, so
 // the cursor lands on the touched tab there too.
 void Application::headerHit(const std::string &id, float x, float y, float w, float h,
-                            const std::function<void()> &run) {
+                            const std::function<void()> &run, SDL_FRect look, int radius) {
   hit(x, y, w, h, [this, id, run] {
     run();
     headerFocus_ = id;
     sidebar_ = autoSidebar_ = false;
-  });
+  }, look, radius);
 }
 void Application::headerItem(const std::string &id, float x, float y, float w, float h, std::function<void()> run,
-                             bool home) {
-  headerHit(id, x, y, w, h, run);
+                             bool home, SDL_FRect look, int radius) {
+  headerHit(id, x, y, w, h, run, look.w > 0 ? look : SDL_FRect{x, y, w, h}, radius);
   header_.push_back({id, {x, y, w, h}, std::move(run), false});
   if (home || headerHome_.empty()) headerHome_ = id;
   if (headerFocus_ == id) paint_.ring(x, y, w, h, 12);
