@@ -372,10 +372,12 @@ bool Application::open() {
   // word.
   constexpr uint32_t HoldMs = 250;
   const float from = progressShown;
-  // As long as what is left needs to look smooth: a bar near its end
-  // finishes in a quarter second, one half way in about 0.6 s.
+  // A card slower than the start cue keeps its beat too: the bar fills up on
+  // the butter's next landing at least MinFillMs away.
+  constexpr uint32_t MinFillMs = 400;
   const int32_t toChord = int32_t(chordAt() - SDL_GetTicks());
-  const uint32_t FillMs = toChord > 0 ? uint32_t(toChord) : 250 + uint32_t(700 * std::clamp(1.f - from, 0.f, 1.f));
+  const uint32_t toLanding = 1000 - (SDL_GetTicks() - shownAt) % 1000;
+  const uint32_t FillMs = toChord > 0 ? uint32_t(toChord) : toLanding + (toLanding < MinFillMs ? 1000 : 0);
   // The last word changes each start: a kitchen line or a nod to a game.
   static const char *const Done[] = {"Well done!", "Golden brown, just right!", "A wild homebrew appeared!",
                                      "It's dangerous to go alone! Take this.", "You cooked something tasty!",

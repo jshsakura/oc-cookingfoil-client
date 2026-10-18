@@ -331,10 +331,10 @@ bool Application::getHomebrew(const homebrew::App &app) {
     }
     return true;
   }
-  uint64_t bytes = app.files.empty() ? app.size : 0;
+  uint64_t bytes = app.files.empty() ? (app.filesSize ? app.filesSize : app.size) : 0;
   for (const auto &file : app.files) bytes += file.size;
   // A bundle's bytes are the tar's (headers and padding too), a zip's its own.
-  if (!app.bundleUrl.empty()) bytes = homebrew::bundleSize(app);
+  if (!app.bundleUrl.empty() && !app.files.empty()) bytes = homebrew::bundleSize(app);
   if (app.archive.usable()) bytes = app.archive.size;
   if (bytes && sdFree_ && *sdFree_ < bytes + (8u << 20)) {
     alertTitle_ = tr("Cannot download this app");
@@ -345,18 +345,21 @@ bool Application::getHomebrew(const homebrew::App &app) {
 }
 bool Application::runHomebrew(const homebrew::App &app) {
   if (app.cardOnly) return false;
-  uint64_t bytes = app.files.empty() ? app.size : 0;
+  uint64_t bytes = app.files.empty() ? (app.filesSize ? app.filesSize : app.size) : 0;
   for (const auto &file : app.files) bytes += file.size;
-  if (!app.bundleUrl.empty()) bytes = homebrew::bundleSize(app);
+  if (!app.bundleUrl.empty() && !app.files.empty()) bytes = homebrew::bundleSize(app);
   if (app.archive.usable()) bytes = app.archive.size;
   const auto server = session_ ? session_->server() : Server{};
   const auto state = state_;
   const auto sd = sdRoot_;
   retroBytes_ = bytes;
   retroCancel_ = false;
-  if (!runRetroJob("homebrew:" + app.id, [this, server, state, sd, app, stale = homebrewStale(app)]() -> std::function<void()> {
+  if (!runRetroJob("homebrew:" + app.id, [this, server, state, sd, listed = app, stale = homebrewStale(app)]() -> std::function<void()> {
         Error error;
-        const bool ok = net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_, &homebrewCheck_);
+        // A port's files come with it now, not with the list; the ledger keeps them.
+        auto app = listed;
+        const bool ok = net::homebrewFilesOf(server, state, app, error, &retroCancel_) &&
+                        net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_, &homebrewCheck_);
         // The older copies go here, off the drawing thread.
         std::vector<std::string> removed;
         for (const auto &old : ok ? stale : std::vector<std::string>{})

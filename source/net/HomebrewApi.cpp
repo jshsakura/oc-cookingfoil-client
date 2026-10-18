@@ -405,15 +405,26 @@ bool homebrewFiles(const Server &server, const State &state, const homebrew::App
   return !(cancel && *cancel); // cancelled: the caller says so
 }
 } // namespace
+bool homebrewFilesOf(const Server &server, const State &state, homebrew::App &app, Error &error,
+                     const std::atomic<bool> *cancel) {
+  if (!app.files.empty() || !app.filesCount) return true;
+  const auto response = get(app.filesUrl, authHeaders(server, state, app.filesUrl), "", cancel);
+  if (!response.error.empty()) error.message = response.error;
+  else if (response.status != 200) error.message = trf("Could not load the homebrew list. HTTP {0}", {std::to_string(response.status)});
+  else if (!homebrew::parseFiles(response.body, app, server.url)) error.message = tr("Could not read this app's file list.");
+  if (error) logLine("homebrew " + app.id + ": its file list did not come: " + error.message);
+  return !error;
+}
 bool homebrewDownload(const Server &server, const State &state, const homebrew::App &listed, const std::string &sd,
                       std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel,
                       std::atomic<uint64_t> *keptBytes, CheckProgress *check) {
   if (listed.archive.usable()) return homebrewArchive(server, state, listed, sd, received, error, cancel);
-  if (listed.files.empty())
-    return fetchFile(server, state, listed.downloadUrl, sd, listed.installPath, "", 0, received, error, cancel);
+  auto app = listed;
+  if (!homebrewFilesOf(server, state, app, error, cancel)) return false;
+  if (app.files.empty())
+    return fetchFile(server, state, app.downloadUrl, sd, app.installPath, "", 0, received, error, cancel);
   // A file the server changed since the list (503): wait as it asks, read
   // the list again and go on with the app as it is now; once.
-  auto app = listed;
   const uint64_t before = received, keptBefore = keptBytes ? keptBytes->load() : 0;
   for (int round = 0;; ++round) {
     int busy = 0;
@@ -429,8 +440,9 @@ bool homebrewDownload(const Server &server, const State &state, const homebrew::
     Error listError;
     if (!homebrewList(server, state, etag, apps, unchanged, listError, cancel)) return false;
     const auto again = std::find_if(apps.begin(), apps.end(), [&](const homebrew::App &a) { return a.id == app.id; });
-    if (again == apps.end() || again->files.empty()) return false;
+    if (again == apps.end()) return false;
     app = *again;
+    if (!homebrewFilesOf(server, state, app, error, cancel) || app.files.empty()) return false;
     received = before;
     if (keptBytes) *keptBytes = keptBefore;
     error = {};

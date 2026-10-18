@@ -42,7 +42,33 @@ std::string appFolder(const std::string &path) {
   const auto second = path.find('/', 7);
   return second == std::string::npos ? "" : path.substr(0, second);
 }
+// Every file inside the app's folder, checked; false when one is not.
+bool readFiles(json_object *files, const std::string &installPath, const std::string &base, std::vector<File> &out) {
+  const auto folder = appFolder(installPath);
+  for (size_t f = 0; f < json_object_array_length(files); ++f) {
+    auto *item = json_object_array_get_idx(files, f);
+    File file{stringField(item, "path"), stringField(item, "sha256"), urlField(item, "url", base),
+              uint64_t(std::max<int64_t>(0, integerField(item, "size")))};
+    std::transform(file.sha256.begin(), file.sha256.end(), file.sha256.begin(), ::tolower);
+    if (!json_object_is_type(item, json_type_object) || !pathAllowed(file.path) ||
+        file.path.rfind(folder + "/", 0) != 0 || file.url.empty() || file.sha256.size() != 64 ||
+        file.sha256.find_first_not_of("0123456789abcdef") != std::string::npos)
+      return false;
+    out.push_back(std::move(file));
+  }
+  return true;
+}
 } // namespace
+bool parseFiles(const std::string &json, App &app, const std::string &base) {
+  Error error;
+  auto root = parseJson(json, error);
+  auto *files = root ? field(root.get(), "files") : nullptr;
+  std::vector<File> read;
+  if (!json_object_is_type(files, json_type_array) || !readFiles(files, app.installPath, base, read) || read.empty())
+    return false;
+  app.files = std::move(read);
+  return true;
+}
 std::vector<App> parse(const std::string &json, const std::string &base) {
   std::vector<App> out;
   Error error;
@@ -114,23 +140,16 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
       a.installPath = installPath;
     else
       continue;
-    // A folder install: every file inside the app's folder, checked.
-    auto *files = field(o, "files");
-    bool filesOk = true;
-    if (json_object_is_type(files, json_type_array)) {
-      const auto folder = appFolder(a.installPath);
-      for (size_t f = 0; f < json_object_array_length(files) && filesOk; ++f) {
-        auto *item = json_object_array_get_idx(files, f);
-        File file{stringField(item, "path"), stringField(item, "sha256"), urlField(item, "url", base),
-                  uint64_t(std::max<int64_t>(0, integerField(item, "size")))};
-        std::transform(file.sha256.begin(), file.sha256.end(), file.sha256.begin(), ::tolower);
-        filesOk = json_object_is_type(item, json_type_object) && pathAllowed(file.path) &&
-                  file.path.rfind(folder + "/", 0) == 0 && !file.url.empty() && file.sha256.size() == 64 &&
-                  file.sha256.find_first_not_of("0123456789abcdef") == std::string::npos;
-        a.files.push_back(std::move(file));
-      }
+    // A folder install: every file inside the app's folder, checked; or,
+    // left out of the list, how many there are and where they are listed.
+    if (auto *files = field(o, "files"); json_object_is_type(files, json_type_array)) {
+      if (!readFiles(files, a.installPath, base, a.files)) continue;
+    } else if (const auto count = integerField(o, "files_count"); count > 0) {
+      a.filesCount = size_t(count);
+      a.filesSize = uint64_t(std::max<int64_t>(0, integerField(o, "files_size")));
+      a.filesUrl = urlField(o, "files_url", base);
+      if (a.filesUrl.empty() && !base.empty()) a.filesUrl = base + "/api/homebrew/" + a.id + "/files";
     }
-    if (!filesOk) continue;
     // A zip taken whole: every entry goes somewhere under switch/ by a path
     // that cannot leave it; one that does not leaves the zip out (the .nro
     // alone still comes from download_url).
@@ -197,6 +216,10 @@ std::string serialize(const App &a) {
       json_object_array_add(files, item);
     }
     json_object_object_add(o.get(), "files", files);
+  } else if (a.filesCount) {
+    json_object_object_add(o.get(), "files_count", json_object_new_int64(int64_t(a.filesCount)));
+    json_object_object_add(o.get(), "files_size", json_object_new_int64(int64_t(a.filesSize)));
+    add("files_url", a.filesUrl);
   }
   if (a.archive.usable()) {
     auto *archive = json_object_new_object();

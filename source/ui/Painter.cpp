@@ -289,8 +289,11 @@ Hop hop(float seconds) {
   static constexpr Key Keys[] = {{0, 0, 1.12f, .86f}, {.12f, 0, .94f, 1.08f}, {.5f, 34, 1, 1},
                                  {.88f, 0, 1.04f, .96f}, {1, 0, 1.12f, .86f}};
   const float t = seconds - std::floor(seconds);
+  // The first hop leaves from standing: the screen opens on a take-off, not a
+  // landing, so every landing it shows is one the start cue rings on.
+  constexpr Key Standing{0, 0, 1, 1};
   for (int i = 0; i + 1 < int(std::size(Keys)); ++i) {
-    const auto &a = Keys[i], &b = Keys[i + 1];
+    const auto &a = i == 0 && seconds < 1 ? Standing : Keys[i], &b = Keys[i + 1];
     if (t > b.at) continue;
     float u = (t - a.at) / (b.at - a.at);
     u = i == 1 ? 1 - (1 - u) * (1 - u) : i == 2 ? u * u : u * u * (3 - 2 * u);

@@ -455,6 +455,7 @@ const Translation rows[] = {
     {"The server has no shortcut for this app.", "서버에 이 앱의 바로가기가 없습니다.", "サーバーにはこのアプリのショートカットがありません。", "服务器上没有此应用的快捷方式。"},
     {"Get this app?", "이 앱을 받을까요?", "このアプリをダウンロードしますか?", "要下载此应用吗?"},
     {"This server does not offer homebrew.", "이 서버는 홈브류를 제공하지 않습니다.", "このサーバーはホームブリューを提供していません。", "此服务器不提供自制软件。"},
+    {"Could not read this app's file list.", "이 앱의 파일 목록을 읽지 못했습니다.", "このアプリのファイル一覧を読み込めませんでした。", "无法读取此应用的文件列表。"},
     {"Could not load the homebrew list. HTTP {0}", "홈브류 목록을 불러오지 못했습니다. HTTP {0}", "ホームブリューの一覧を読み込めませんでした。HTTP {0}", "无法载入自制软件列表。HTTP {0}"},
     {"Something went wrong reading the homebrew list.", "홈브류 목록을 처리하다 오류가 났습니다.", "ホームブリューの一覧の処理中にエラーが起きました。", "处理自制软件列表时出错。"},
     {"Cannot download this app", "홈브류를 받을 수 없습니다", "このアプリをダウンロードできません", "无法下载此应用"},

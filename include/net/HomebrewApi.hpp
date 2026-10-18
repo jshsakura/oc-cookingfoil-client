@@ -20,6 +20,10 @@ bool homebrewList(const Server &server, const State &state, std::string &etag, s
 struct CheckProgress {
   std::atomic<int> done{0}, total{0};
 };
+// A folder install's files the list left out (App::filesCount), read from
+// App::filesUrl into app.files; true at once when it has them already.
+bool homebrewFilesOf(const Server &server, const State &state, homebrew::App &app, Error &error,
+                     const std::atomic<bool> *cancel);
 bool homebrewDownload(const Server &server, const State &state, const homebrew::App &app, const std::string &sd,
                       std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel,
                       std::atomic<uint64_t> *kept = nullptr, CheckProgress *check = nullptr);

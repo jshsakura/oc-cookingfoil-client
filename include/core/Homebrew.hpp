@@ -47,6 +47,12 @@ struct App {
   // means the .nro alone from downloadUrl.
   std::string installPath;
   std::vector<File> files;
+  // A folder install whose files the list leaves out (files_count; a port
+  // carries thousands, too many for the console to read in one list): they
+  // come from filesUrl when it downloads. filesSize: their bytes together.
+  size_t filesCount = 0;
+  uint64_t filesSize = 0;
+  std::string filesUrl;
   // A folder install's files as one tar stream (one request, resumable);
   // empty when the server has none, and the files come one by one.
   std::string bundleUrl;
@@ -80,6 +86,10 @@ std::string plainNotes(const std::string &markdown);
 // GET /api/homebrew's list; entries missing what is needed, or with a file
 // name that could leave its folder, are left out.
 std::vector<App> parse(const std::string &json, const std::string &base);
+// A folder install's files from its own reply ({"files": [...]}), checked as
+// the list's are, into app.files; false (app.files left empty) when one
+// fails a check or there are none.
+bool parseFiles(const std::string &json, App &app, const std::string &base);
 // One app in the list's shape, URLs absolute; parse() reads it back
 // (kept with a 다운로드 entry so a failed one can start again).
 std::string serialize(const App &app);

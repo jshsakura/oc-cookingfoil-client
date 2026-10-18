@@ -185,6 +185,28 @@ int runHomebrewTests() {
     CHECK(rejected("switch/ytb/data/a.bin", "/switch/ytb/a.bin"));
     CHECK(rejected("switch/ytb/data/a.bin", "switch/other/a.bin"));
     CHECK(rejected(R"("install_path":"switch/ytb/ytb-player.nro")", R"("install_path":"atmosphere/x.nro")"));
+    // A port's thousands of files left out of the list: how many, how big,
+    // and where they are listed (this server's own path when it names none);
+    // kept through serialize, and read from their own reply as the list's are.
+    auto lean = entry;
+    lean.insert(lean.size() - 1, R"(,"install_path":"switch/ytb/ytb-player.nro","files_count":2,"files_size":15)");
+    const auto counted = parse(R"({"homebrew":[)" + lean + "]}", "https://shop.example");
+    CHECK(counted.size() == 1);
+    if (!counted.empty()) {
+      auto app = counted.front();
+      CHECK(app.files.empty() && app.filesCount == 2 && app.filesSize == 15 &&
+            app.filesUrl == "https://shop.example/api/homebrew/gh-9c9ef5794087/files");
+      const auto again = parse(R"({"homebrew":[)" + serialize(app) + "]}", "");
+      CHECK(again.size() == 1 && again.front().filesCount == 2 && again.front().filesUrl == app.filesUrl);
+      const std::string list = e.substr(e.find(R"("files":[)"), e.rfind(']') - e.find(R"("files":[)") + 1);
+      CHECK(parseFiles("{" + list + "}", app, "https://shop.example") && app.files.size() == 2 &&
+            app.files[1].url == "https://shop.example/f/2");
+      auto outside = counted.front();
+      auto escaping = list;
+      escaping.replace(escaping.find("switch/ytb/data/a.bin"), 21, "switch/other/a.bin");
+      CHECK(!parseFiles("{" + escaping + "}", outside, "https://shop.example") && outside.files.empty());
+      CHECK(!parseFiles(R"({"files":[]})", outside, "https://shop.example"));
+    }
   }
   // Only install_dir: the nro goes inside that folder; one outside switch/ is refused.
   {
