@@ -987,12 +987,13 @@ void Application::poll() {
       if (!forwarder::shortcutId(id)) continue;
       fresh.push_back(id);
       shortcuts_.insert(id);
-      // One made here before for the same app goes, so it shows once.
+      // One made here before for the same app goes, so it shows once: asked
+      // whether or not the last look saw it (a missing one is no error).
       for (const auto &app : homebrew_)
         if (app.forwarderTitleId == part.titleId) rememberShortcutKey(app.id, app.forwarderKey);
       for (const auto &app : homebrew_)
         if (app.forwarderTitleId == part.titleId)
-          if (const auto local = homebrewShortcutId(app); local != id && shortcuts_.count(local)) {
+          if (const auto local = homebrewShortcutId(app); local && local != id) {
             replaced.push_back(local);
             shortcuts_.erase(local);
           }

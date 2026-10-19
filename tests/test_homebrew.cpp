@@ -313,6 +313,17 @@ int runHomebrewTests() {
     CHECK(parseFileList("garbage").empty());
     CHECK(fileListPath("gh-1") == "switch/cookingfoil/homebrew-files/gh-1.json");
   }
+  {
+    // Renamed on the server: the old folder's listed files go, not the ones
+    // the new install uses, and nothing while the folder stays the same.
+    App moved;
+    moved.installPath = "switch/new/new.nro";
+    moved.files = {File{"switch/shared/a.bin", "", "", 1}};
+    const std::vector<std::string> before{"switch/old/data/b.bin", "switch/shared/a.bin"};
+    CHECK(movedAway("switch/old/old.nro", before, moved) == std::vector<std::string>{"switch/old/data/b.bin"});
+    CHECK(movedAway("switch/new/older.nro", before, moved).empty());
+    CHECK(movedAway("", before, moved).empty());
+  }
   if (!apps.empty()) {
     const auto there = [](const std::string &) { return true; };
     const auto gone = [](const std::string &) { return false; };

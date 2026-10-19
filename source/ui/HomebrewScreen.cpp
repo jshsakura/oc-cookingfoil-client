@@ -353,7 +353,9 @@ bool Application::runHomebrew(const homebrew::App &app) {
   const auto sd = sdRoot_;
   retroBytes_ = bytes;
   retroCancel_ = false;
-  if (!runRetroJob("homebrew:" + app.id, [this, server, state, sd, listed = app, stale = homebrewStale(app)]() -> std::function<void()> {
+  const auto ledgered = homebrewLedger_.find(app.id);
+  const auto before = ledgered == homebrewLedger_.end() ? std::optional<homebrew::Record>() : ledgered->second;
+  if (!runRetroJob("homebrew:" + app.id, [this, server, state, sd, listed = app, stale = homebrewStale(app), before]() -> std::function<void()> {
         Error error;
         // A port's files come with it now, not with the list; the ledger keeps them.
         auto app = listed;
@@ -368,13 +370,34 @@ bool Application::runHomebrew(const homebrew::App &app) {
             homebrew::removeEmptyFolders(sd, old);
             removed.push_back(old);
           }
+        // Renamed on the server: what its last install put in the old folder
+        // goes too, and the shortcut made here for the old file.
+        uint64_t oldShortcut = 0;
+        if (ok && before && before->file != app.installPath) {
+          auto oldList = before->files;
+          if (oldList.empty()) oldList = homebrew::parseFileList(readFile(sd + "/" + homebrew::fileListPath(app.id)));
+          for (const auto &old : homebrew::movedAway(before->file, oldList, app)) {
+            std::error_code ec;
+            std::filesystem::remove(sd + "/" + old, ec);
+            homebrew::removeEmptyFolders(sd, old);
+          }
+          homebrew::removeEmptyFolders(sd, before->file);
+          oldShortcut = forwarder::titleId(forwarder::loaderPath(before->file));
+          if (oldShortcut == forwarder::titleId(forwarder::loaderPath(app.installPath))) oldShortcut = 0;
+        }
         const bool cancelled = retroCancel_;
         const uint64_t received = retroReceived_, kept = retroKept_;
         // The new file as written, so the next card check needs no hash.
         const auto seen = ok ? homebrew::cardFile(sd + "/" + app.installPath) : std::nullopt;
         const auto fileSha = seen ? sha256File(sd + "/" + app.installPath) : std::string();
-        return [this, ok, error, app, cancelled, received, kept, seen, fileSha, removed] {
+        return [this, ok, error, app, cancelled, received, kept, seen, fileSha, removed, oldShortcut] {
           cardChanged();
+          if (forwarder::shortcutId(oldShortcut)) {
+            shortcuts_.erase(oldShortcut);
+            refreshInstalled([oldShortcut] {
+              if (const auto error = platform::removeShortcut(oldShortcut)) logLine("shortcut: the old one stays: " + error.message);
+            });
+          }
           if (finishRetroEntry("homebrew", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
                            ok || cancelled ? "" : error.message, received, kept))
             return;
