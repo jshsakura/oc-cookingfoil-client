@@ -11,6 +11,7 @@ const Translation rows[] = {
     {"Most backups|sort", "백업 많은순", "バックアップが多い順", "备份最多"},
     {"Installed first|sort", "설치됨 먼저", "インストール済みを先に", "已安装优先"},
     {"Installed only|sort", "설치된 것만", "インストール済みのみ", "仅已安装"},
+    {"With console|sort", "내 기기 포함", "本体も表示", "含本机"},
     {"Popular|sort", "인기순", "人気順", "热门"},
     {"Largest", "용량 큰순", "容量が大きい順", "容量最大"},
     {"Recently updated|sort", "업데이트순", "更新順", "最近更新"},

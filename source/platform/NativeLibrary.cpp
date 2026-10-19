@@ -348,6 +348,30 @@ Parsed<std::vector<SaveEntry>> readSaves(uint64_t applicationId) {
   return {{}, {tr("Saves can be listed on the console.")}};
 #endif
 }
+Parsed<std::set<uint64_t>> savedApplications() {
+#ifdef __SWITCH__
+  Reader reader;
+  auto rc = fsOpenSaveDataInfoReader(&reader.reader, FsSaveDataSpaceId_User);
+  if (R_FAILED(rc)) return {{}, failure(tr("Could not open the save list."), rc)};
+  reader.opened = true;
+  std::set<uint64_t> result;
+  for (;;) {
+    FsSaveDataInfo entries[32]{};
+    s64 count = 0;
+    rc = fsSaveDataInfoReaderRead(&reader.reader, entries, 32, &count);
+    if (R_FAILED(rc) || count < 0 || count > 32) return {{}, failure(tr("Could not read the save list."), rc)};
+    for (int i = 0; i < count; ++i) {
+      const auto &v = entries[i];
+      const bool kept = v.save_data_type == FsSaveDataType_Account || v.save_data_type == FsSaveDataType_Device;
+      if (kept && v.save_data_space_id == FsSaveDataSpaceId_User && v.save_data_rank == 0) result.insert(v.application_id);
+    }
+    if (count < 32) break;
+  }
+  return {std::move(result), {}};
+#else
+  return {{}, {tr("Saves can be listed on the console.")}};
+#endif
+}
 Error removeInstalled(const RemovalRequest &request) {
 #ifdef __SWITCH__
   Error error;

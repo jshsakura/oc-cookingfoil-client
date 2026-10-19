@@ -372,10 +372,11 @@ void Application::dropboxAction(Action a) {
   if (a == Action::Accept) openDropboxGame();
 }
 
-// Installed games and games with Dropbox backups, as the 세이브 search keeps them.
+// The games Y's view lists (on Dropbox, or with this console's games that
+// have a save or backup to upload), as the 세이브 search keeps them.
 std::vector<DropboxRow> Application::dropboxGameRows() const {
   return dropboxRows(installed_.games, dropboxRemote_, [this](const std::string &id) { return findGroup(id); },
-                     savesQuery_);
+                     savesQuery_, DropboxView(savesSort_[2]), [this](uint64_t id) { return hasSaveWork(id); });
 }
 int Application::dropboxFocus(const std::vector<DropboxRow> &rows) const {
   for (int i = 0; i < int(rows.size()); ++i)
@@ -497,12 +498,16 @@ void Application::dropboxTab() {
   // Nothing at all to list yet: the console may still be reading its games.
   if (rows.empty()) {
     const float y = ListTop + RowStep - top * RowStep;
+    const bool withConsole = DropboxView(savesSort_[2]) == DropboxView::WithConsole;
     if (installed_.games.empty() && dropboxRemote_.empty() && deviceBusy_)
       for (int n = 0; n + 1 < Visible; ++n) paint_.skeleton(260, y + n * RowStep, 992, RowHeight, 16);
-    else if (installed_.games.empty() && dropboxRemote_.empty())
-      paint_.fonts.text(tr("No games to manage saves for."), 290, y + 20, 19, Secondary);
-    else
+    else if (!savesQuery_.empty())
       paint_.fonts.text(trf("No games match '{0}'.", {savesQuery_}), 290, y + 20, 19, Secondary);
+    else if (!withConsole)
+      paint_.fonts.wrapped(tr("No backups on Dropbox yet. Press Y to list this console's games and upload one."), 290,
+                           y + 20, 19, Secondary, 940, 2);
+    else
+      paint_.fonts.text(tr("No games to manage saves for."), 290, y + 20, 19, Secondary);
     unclip();
     return;
   }

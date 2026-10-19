@@ -351,13 +351,18 @@ int main(int argc, char **argv) {
       if (!app.screenshot(shot + "/08-dropbox-linked.png")) return 1;
       ui.action(foil::ui::Action::Up); ui.render(); // the account row, A disconnects
       if (!app.screenshot(shot + "/08-dropbox-account.png")) return 1;
+      // Newest backup first: the installed game, then the shop game not installed.
       ui.action(foil::ui::Action::Down);
       ui.action(foil::ui::Action::Accept); ui.render();
-      if (!app.screenshot(shot + "/08-dropbox-not-installed.png")) return 1;
-      ui.action(foil::ui::Action::Back);
-      ui.action(foil::ui::Action::Down); ui.action(foil::ui::Action::Accept); ui.render();
       if (!app.screenshot(shot + "/08-dropbox-game.png")) return 1;
       ui.action(foil::ui::Action::Back);
+      ui.action(foil::ui::Action::Down); ui.action(foil::ui::Action::Accept); ui.render();
+      if (!app.screenshot(shot + "/08-dropbox-not-installed.png")) return 1;
+      ui.action(foil::ui::Action::Back);
+      // Y twice: this console's games added, to upload one not on Dropbox yet.
+      ui.action(foil::ui::Action::Queue); ui.action(foil::ui::Action::Queue); ui.render();
+      if (!app.screenshot(shot + "/08-dropbox-with-console.png")) return 1;
+      ui.action(foil::ui::Action::Queue);
     }
     ui.screen(foil::ui::Screen::Settings);
     ui.render();

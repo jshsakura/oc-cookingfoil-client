@@ -1,12 +1,16 @@
 #pragma once
 #include <functional>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 #include "core/Installed.hpp"
 namespace foil::platform {
 Parsed<InstalledLibrary> readInstalled();
 Parsed<std::vector<SaveEntry>> readSaves(uint64_t applicationId);
+// Every game with a save on the console (an account's or the shared one),
+// read from one pass over the save list.
+Parsed<std::set<uint64_t>> savedApplications();
 Error removeInstalled(const RemovalRequest &request);
 // Closes this app and starts the installed game, as the HOME Menu would.
 // Only as an application (not opened from the Album).

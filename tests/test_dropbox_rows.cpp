@@ -60,5 +60,28 @@ int runDropboxRowsTests() {
   // No Dropbox list yet: the installed games alone, by name.
   const auto local = foil::ui::dropboxRows(games, {}, lookup);
   CHECK(local.size() == 3 && local[0].name == "amber Fields" && local[2].name == "Zephyr Trail");
+  // Y's views. Latest: only what is on Dropbox, newest backup first, the
+  // installed game too when it has backups there.
+  const auto latest = foil::ui::dropboxRows(games, remote, lookup, "", foil::ui::DropboxView::Latest);
+  CHECK(latest.size() == 3);
+  if (latest.size() == 3) {
+    CHECK(latest[0].name == "0100000000005000"); // 03-13
+    CHECK(latest[1].name == "Bramble Keep");     // 03-12
+    CHECK(latest[2].name == "Comet Run" && latest[2].installed && latest[2].newest == 1773219600);
+  }
+  // Name: the same games by name.
+  const auto named = foil::ui::dropboxRows(games, remote, lookup, "", foil::ui::DropboxView::Name);
+  CHECK(named.size() == 3 && named[1].name == "Bramble Keep" && named[2].name == "Comet Run");
+  // Nothing on Dropbox: those views list nothing, whatever is installed.
+  CHECK(foil::ui::dropboxRows(games, {}, lookup, "", foil::ui::DropboxView::Latest).empty());
+  // With this console: installed games that have a save or backup are added,
+  // the rest left out; Dropbox's own stay whatever the console holds.
+  const auto withConsole = foil::ui::dropboxRows(games, remote, lookup, "", foil::ui::DropboxView::WithConsole,
+                                                 [](uint64_t id) { return id == 0x0100000000002000ULL; });
+  CHECK(withConsole.size() == 4);
+  if (withConsole.size() == 4) {
+    CHECK(withConsole[2].name == "Comet Run"); // no save, but on Dropbox
+    CHECK(withConsole[3].name == "Zephyr Trail" && withConsole[3].remote == 0);
+  }
   return failures;
 }

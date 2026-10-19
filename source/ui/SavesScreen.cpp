@@ -2,6 +2,7 @@
 #include "ui/Application.hpp"
 #include "core/Log.hpp"
 #include "net/ShopSavesApi.hpp"
+#include "platform/Installed.hpp"
 #include "platform/Saves.hpp"
 #include <algorithm>
 #include <filesystem>
@@ -58,8 +59,9 @@ void Application::savesAction(Action a) {
     if (savesTab_ == 2) dropboxEnter();
     return;
   }
-  // Y: the order of 이 기기 or 서버 (as 내 게임's); - reads the list again.
-  if (a == Action::Queue && savesTab_ != 2) {
+  // Y: the order of the tab (as 내 게임's), 드롭박스's once linked; - reads
+  // the list again.
+  if (a == Action::Queue && (savesTab_ != 2 || dropboxLinked_)) {
     cycleSavesSort();
     return;
   }
@@ -76,7 +78,7 @@ void Application::savesAction(Action a) {
     sidebar_ = true;
     return;
   }
-  // X searches every tab, 드롭박스 too (Y unlinks there).
+  // X searches every tab, 드롭박스 too.
   if (a == Action::Search) {
     requestSearch();
     return;
@@ -102,8 +104,8 @@ void Application::savesAction(Action a) {
 void Application::savesScreen() {
   const bool shop = savesTab_ == 1;
   // As on 홈브류: search at the right end, the tabs left of it, then the
-  // order (Y) on 이 기기 and 서버. Dropbox has none and the title takes its
-  // room; the tabs stay put by the search.
+  // order (Y). Dropbox has none until linked and the title takes its room;
+  // the tabs stay put by the search.
   const float searchX = SearchX;
   searchBar(savesQuery_, searchX);
   const auto sort = savesSortLabel();
@@ -114,7 +116,8 @@ void Application::savesScreen() {
     if (n == 2) dropboxEnter();
   }, searchX - 16);
   const float sortX = tabsLeft - 12 - sortW;
-  if (savesTab_ != 2) {
+  const bool sorted = savesTab_ != 2 || dropboxLinked_;
+  if (sorted) {
     headerItem("sort", sortX, 24, sortW, 48, [this] { cycleSavesSort(); });
     paint_.rect(sortX, 24, sortW, 48, Surface, 12);
     paint_.key("Y", sortX + 18, 48);
@@ -125,7 +128,7 @@ void Application::savesScreen() {
             shop ? (shopSavesLoaded_ ? countLabel(shopSaveGroups().size(), savesQuery_) : std::string())
             : savesTab_ == 0 && installed_.installed.complete ? countLabel(saveGameRows().size(), savesQuery_)
                                                              : "",
-            savesTab_ == 2 ? tabsLeft : sortX);
+            sorted ? sortX : tabsLeft);
   if (savesTab_ == 2) {
     dropboxTab();
     return;
@@ -143,11 +146,12 @@ void Application::savesScreen() {
     notice(tr("Couldn't read installed games."), deviceError_.message, 25);
     return;
   }
-  if (installed_.games.empty()) {
+  const auto rows = saveGameRows();
+  // Only games with a save or a backup are listed; the search narrows that.
+  if (rows.empty() && (savesQuery_.empty() || saveGameRows("").empty())) {
     notice(tr("No games to manage saves for."), tr("Install a game and play it once to make a save."), 36);
     return;
   }
-  const auto rows = saveGameRows();
   if (rows.empty()) {
     notice(trf("No games match '{0}'.", {savesQuery_}), tr("Press B to clear the search."), 23);
     return;
@@ -233,8 +237,12 @@ bool Application::shopSaveTargetHere(const shopsaves::ShopSave &save) const {
   return std::any_of(installed_.games.begin(), installed_.games.end(),
                      [&](const auto &g) { return g.titleId == save.titleId; });
 }
-std::vector<int> Application::saveGameRows() const {
-  auto rows = gameRows(savesQuery_);
+std::vector<int> Application::saveGameRows() const { return saveGameRows(savesQuery_); }
+std::vector<int> Application::saveGameRows(const std::string &query) const {
+  auto rows = gameRows(query);
+  rows.erase(std::remove_if(rows.begin(), rows.end(),
+                            [this](int i) { return !hasSaveWork(installed_.games[size_t(i)].applicationId); }),
+             rows.end());
   const int sort = savesSort_[0];
   const auto newest = [this](uint64_t id) -> std::string {
     const auto found = backupSummary_.find(id);
@@ -260,10 +268,16 @@ std::string Application::savesSortLabel() const {
                                                   "Most backups|sort"};
   static const char *const Server[SavesSorts] = {"Installed first|sort", "Installed only|sort", "Name|sort",
                                                  "Recently added|sort"};
+  static const char *const Dropbox[DropboxSorts] = {"Latest backup|sort", "Name|sort", "With console|sort"};
+  if (savesTab_ == 2) return tr(Dropbox[savesSort_[2]]);
   return tr(savesTab_ == 1 ? Server[savesSort_[1]] : Console[savesSort_[0]]);
 }
 void Application::cycleSavesSort() {
-  if (savesTab_ == 2) return;
+  // The Dropbox cursor is a game's id, so it stays on that game when listed.
+  if (savesTab_ == 2) {
+    if (dropboxLinked_) savesSort_[2] = (savesSort_[2] + 1) % DropboxSorts;
+    return;
+  }
   if (savesTab_ == 1) {
     // The cursor stays on the game it was on, when that one is still listed.
     const auto groups = shopSaveGroups();
@@ -296,7 +310,11 @@ void Application::readBackupSummary() {
     return;
   }
   backupSummaryWorker_ = std::thread([this, root = saves::keeperRoot(sdRoot_)] {
-    guarded("backup summary", [&] { incomingSummary_ = saves::summarizeBackups(root); });
+    guarded("backup summary", [&] {
+      incomingSummary_ = saves::summarizeBackups(root);
+      auto saved = platform::savedApplications();
+      incomingSaved_ = saved.error ? std::nullopt : std::optional(std::move(saved.value));
+    });
     backupSummaryDone_ = true;
   });
 }
@@ -304,6 +322,8 @@ void Application::pollBackupSummary() {
   if (!backupSummaryDone_.exchange(false)) return;
   backupSummaryWorker_.join();
   backupSummary_ = std::move(incomingSummary_);
+  // A failed read keeps what was known, else every game when nothing was.
+  if (incomingSaved_) savedGames_ = std::move(incomingSaved_);
   if (std::exchange(backupSummaryAgain_, false)) readBackupSummary();
 }
 void Application::sortShopSaves() {

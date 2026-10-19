@@ -489,6 +489,13 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(saves.saveRowName(0) == "나 게임");
     saves.action(foil::ui::Action::Queue); // back to the first
     CHECK(saves.saveRowName(0) == "다 게임");
+    // Only games with a save on the console or a backup on the card are
+    // listed: 가 게임 has neither once the console says which have saves.
+    saves.previewSavedGames({games[1].applicationId});
+    CHECK(saves.saveRowName(0) == "다 게임" && saves.saveRowName(1) == "나 게임" && saves.saveRowName(2).empty());
+    saves.previewSavedGames({games[0].applicationId});
+    CHECK(saves.saveRowName(2) == "가 게임");
+    saves.render();
   }
   {
     // 세이브 > 드롭박스: 연결하기 when not linked, the QR code while the phone
@@ -518,11 +525,17 @@ int runUiTests(SDL_Renderer *renderer) {
     app.action(foil::ui::Action::Back);
     CHECK(!app.dropboxPopupOpen());
     // Up from the first game reaches the account row, then the tabs; Down
-    // comes back. A on the account asks to disconnect; Y does nothing here.
+    // comes back. A on the account asks to disconnect; Y changes the view,
+    // three of them, and opens nothing.
     app.action(foil::ui::Action::Up);
     CHECK(app.headerFocus().empty() && app.dropboxOnAccount());
+    CHECK(app.savesOrder() == foil::tr("Latest backup|sort"));
     app.action(foil::ui::Action::Queue);
-    CHECK(!app.dropboxPopupOpen());
+    CHECK(!app.dropboxPopupOpen() && app.savesOrder() == foil::tr("Name|sort"));
+    app.action(foil::ui::Action::Queue);
+    CHECK(app.savesOrder() == foil::tr("With console|sort"));
+    app.action(foil::ui::Action::Queue);
+    CHECK(app.savesOrder() == foil::tr("Latest backup|sort"));
     app.action(foil::ui::Action::Accept);
     CHECK(app.dropboxPopupOpen()); // 드롭박스 연결을 해제할까요?
     app.render();
@@ -555,8 +568,8 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(listed.size() == 2);
     const auto found = std::find_if(listed.begin(), listed.end(), [&](const auto &r) { return r.applicationId == elsewhere; });
     CHECK(found != listed.end() && !found->installed && found->remote == 1);
-    // Both have Dropbox backups, so by name: the title id shown for the one
-    // the shop does not know comes first, and the cursor stayed on the other.
+    // Both have Dropbox backups, the newest first: the one the shop does not
+    // know (named by its title id), and the cursor stayed on the other.
     CHECK(!listed.empty() && listed.front().applicationId == elsewhere);
     CHECK(app.dropboxFocused() == installed.applicationId);
     app.action(foil::ui::Action::Up);
@@ -596,9 +609,16 @@ int runUiTests(SDL_Renderer *renderer) {
       meta.userId = "device";
       meta.createdAt = 1773306000;
       CHECK(!foil::saves::writeMetaFile(backup + ".meta", meta));
-      // 드롭박스: the upload row opens the console's backups, even one.
+      // 드롭박스: nothing there lists nothing until Y adds this console's
+      // games; the upload row then opens the console's backups, even one.
       app.previewDropbox(true, {});
-      CHECK(app.savesTab() == 2);
+      CHECK(app.dropboxListed().empty());
+      app.render();
+      app.action(foil::ui::Action::Queue);
+      app.action(foil::ui::Action::Queue);
+      CHECK(app.dropboxListed().size() == 1);
+      app.action(foil::ui::Action::Down); // from the account row, where the empty list left it
+      CHECK(app.savesTab() == 2 && !app.dropboxOnAccount());
       app.action(foil::ui::Action::Accept);
       CHECK(app.dropboxPopupOpen());
       app.action(foil::ui::Action::Accept);

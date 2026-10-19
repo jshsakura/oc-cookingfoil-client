@@ -251,6 +251,9 @@ public:
     backupSummaryDone_ = false;
     backupSummary_ = std::move(summary);
   }
+  // Which games have a save on the console (the card's read leaves it unknown).
+  void previewSavedGames(std::set<uint64_t> ids) { savedGames_ = std::move(ids); }
+  std::string savesOrder() const { return savesSortLabel(); }
   std::string saveRowName(size_t i) const {
     const auto rows = saveGameRows();
     return i < rows.size() ? installed_.games[size_t(rows[i])].name : "";
@@ -549,11 +552,13 @@ private:
   std::vector<int> gameRows(const std::string &query) const; // installed_.games matching
   // 이 기기's games in the order Y picks (savesSort_[0]).
   std::vector<int> saveGameRows() const;
-  // Y on 이 기기 and 서버: the order (and on 서버 "installed only"), each tab
-  // its own. 이 기기: latest backup, name, updated, most backups. 서버:
-  // installed first, installed only, name, recently added.
-  int savesSort_[2] = {0, 0};
-  static constexpr int SavesSorts = 4;
+  std::vector<int> saveGameRows(const std::string &query) const;
+  // Y on each tab: the order (and on 서버 "installed only"), each tab its
+  // own. 이 기기: latest backup, name, updated, most backups. 서버:
+  // installed first, installed only, name, recently added. 드롭박스: latest
+  // backup, name, this console's games added (DropboxView).
+  int savesSort_[3] = {0, 0, 0};
+  static constexpr int SavesSorts = 4, DropboxSorts = 3;
   std::string savesSortLabel() const;
   void cycleSavesSort();
   // The labels shrink (down to 14pt) when the strip would start left of
@@ -1389,6 +1394,11 @@ private:
     const auto found = backupSummary_.find(id);
     return found == backupSummary_.end() ? 0 : found->second.count;
   }
+  // The games with a save on the console, read with the summary; unknown
+  // (the host, or a failed read) keeps every game.
+  std::optional<std::set<uint64_t>> savedGames_, incomingSaved_;
+  // A game worth listing in 세이브: a save on the console or a backup on the card.
+  bool hasSaveWork(uint64_t id) const { return backupsOf(id) > 0 || !savedGames_ || savedGames_->count(id); }
   std::optional<int> saveOpen_;          // index into saves_
   std::vector<saves::LocalBackup> backups_;
   int saveRow_ = 0;                      // 0 back up, 1..n backups, n+1 delete
