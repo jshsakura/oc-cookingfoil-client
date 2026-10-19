@@ -10,6 +10,7 @@
 #include "ui/Images.hpp"
 #include "ui/Painter.hpp"
 #include "ui/Qr.hpp"
+#include "platform/Seal.hpp"
 #include "ui/Sounds.hpp"
 #include "core/Installed.hpp"
 #include "core/SaveBackups.hpp"
@@ -710,10 +711,10 @@ private:
   bool raRead_ = false;        // asked this run
   std::string raSignedIn_;     // retroarch.cfg's signed-in user, "" when none
   bool raOpen_ = false;        // the sign-in popup
-  int raRow_ = 0;              // its focus: 0 id, 1 password, 2 the button (signed in: 0 the button)
+  int raRow_ = 0;              // its focus: 0 id, 1 password, 2 sign in, 3 the phone (signed in: 0 the button)
   int raField_ = -1;           // the field the keyboard types into
   std::string raUser_, raPassword_; // the password lives only until the sign-in runs
-  std::string raBusy_;         // "read", "signin", "signout", "game"
+  std::string raBusy_;         // "read", "signin", "signout", "game", "link", "linkwait"
   Error raError_;
   std::thread raWorker_;
   std::atomic<bool> raDone_{false};
@@ -723,6 +724,16 @@ private:
   std::string raListGame_;     // whose list is shown or coming
   achievements::Game raList_;
   Error raListError_;
+  // The phone sign-in: a key made for one QR and kept only in memory; the
+  // console waits for the phone's sealed envelope one long poll at a time.
+  bool raLinking_ = false;     // the QR shows in place of the fields
+  seal::Key raLinkKey_;
+  achievements::LinkStart raLink_;
+  std::string raLinkUrl_;
+  bool raLinkWrong_ = false;   // the phone sent a password RetroAchievements refused
+  uint32_t raLinkUntil_ = 0;   // SDL ticks when the QR expires
+  std::atomic<bool> raLinkStop_{false};
+  Qr raQr_;
   bool runRaJob(const std::string &busy, std::function<std::function<void()>()> job);
   void pollRa();
   void readRaAccount();
@@ -731,6 +742,10 @@ private:
   void raDialog();
   void raSignIn();
   void raSignOut();
+  void raPhone();          // opens the QR
+  void raLinkWait();       // one long poll for the phone's envelope
+  void raLinkClose();      // drops the QR and its key
+  void raLinkView(float x, float y, float w);
   float raHeaderButton(float right); // the header's X 업적; returns its left edge
   int raCard(int y);                 // the game page's achievements card
   void openRaList();

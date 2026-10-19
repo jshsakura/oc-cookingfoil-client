@@ -99,6 +99,7 @@ Application::~Application() {
     backupSummaryWorker_.join();
   if (dropboxWorker_.joinable())
     dropboxWorker_.join();
+  raLinkStop_ = true; // a phone sign-in waiting on the server lets go at once
   if (raWorker_.joinable())
     raWorker_.join();
   flushHistory();
@@ -755,6 +756,7 @@ void Application::screen(Screen screen) {
   // Dropbox's popups belong to the visit that opened them.
   dropboxOpen_ = dropboxUnlinkAsk_ = dropboxChoosing_ = false;
   raOpen_ = raListOpen_ = false; // RetroAchievements' too
+  raLinkClose();
   if (screen == Screen::Saves) {
     readBackupSummary();
     refreshInstalled();

@@ -59,4 +59,35 @@ std::string signedInUser(const std::string &configText);
 // The values that sign RetroArch in, and the ones that sign it out.
 std::map<std::string, std::string> signInValues(const std::string &user, const std::string &token);
 std::map<std::string, std::string> signOutValues();
+
+// The phone sign-in (/api/retro/achievements/link): the console shows a QR
+// with its one-time public key, the phone seals the id and password to it,
+// the server only carries the envelope and cannot open it.
+struct LinkStart {
+  std::string code, path; // path: "/ra-link?c=<code>"
+  int64_t expiresAt = 0;  // Unix seconds
+};
+LinkStart parseLinkStart(const std::string &json);
+// The QR: the server the console is on, the path, and the key after # so the
+// page reads it in the phone and the server never sees it.
+std::string linkUrl(const std::string &server, const std::string &path, const std::string &publicKey);
+struct Sealed {
+  std::string epk, iv, ct; // base64url as they came
+};
+Sealed parseSealed(const std::string &json);
+// The base64url (or plain base64) bytes; "" when it is not base64.
+std::string decodeBase64Url(const std::string &text);
+// HKDF-SHA256 (RFC 5869) with no salt, 32 bytes out.
+std::string hkdf(const std::string &ikm, const std::string &info);
+struct Credentials {
+  std::string user, password;
+};
+// Opens the envelope with the console's secret: ECDH with the phone's key,
+// HKDF, AES-256-GCM with the code as additional data. An error when anything
+// does not fit, which is also what a swapped or altered envelope gives.
+Parsed<Credentials> openEnvelope(const std::string &secret, const Sealed &sealed, const std::string &code);
+// POST .../result: {"ok":true,"username":...} or {"ok":false}.
+std::string linkResultBody(bool ok, const std::string &username);
+// Its answer: "done", "wrong" (the phone asks again) or "failed".
+std::string parseLinkState(const std::string &json);
 } // namespace foil::achievements

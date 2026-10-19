@@ -6,11 +6,15 @@
 #include "core/Json.hpp"
 #include "core/Log.hpp"
 #include "net/AchievementsApi.hpp"
+#include "net/DropboxUtil.hpp"
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 namespace foil::ui {
 namespace {
-constexpr int Fields = 2; // id, password; the button after them
+constexpr int Fields = 2; // id, password; then sign in and the phone, side by side
+constexpr int Phone = Fields + 1;
+constexpr uint32_t LinkLife = 5 * 60 * 1000; // the server drops a link after five minutes
 // The console's sign-in: retroarch.cfg with the given lines set.
 Error writeConfig(const std::string &sd, const std::map<std::string, std::string> &values) {
   const auto path = sd + "/" + achievements::ConfigPath;
@@ -82,12 +86,19 @@ void Application::raAction(Action a) {
     raListAction(a);
     return;
   }
-  if (raBusy_ == "signin" || raBusy_ == "signout") return; // it finishes before anything else
+  if (raLinking_) {
+    if (a == Action::Back) raLinkClose(); // back to the fields
+    return;
+  }
+  if (raBusy_ == "signin" || raBusy_ == "signout" || raBusy_ == "link" || raBusy_ == "linkwait")
+    return; // it finishes before anything else (a canceled wait lets go within a moment)
   const bool signedIn = !raSignedIn_.empty();
   const int last = signedIn ? 0 : Fields;
   if (a == Action::Back) raOpen_ = false;
-  if (a == Action::Up) raRow_ = std::max(0, raRow_ - 1);
-  if (a == Action::Down) raRow_ = std::min(last, raRow_ + 1);
+  if (a == Action::Up) raRow_ = raRow_ == Phone ? Fields - 1 : std::max(0, raRow_ - 1);
+  if (a == Action::Down && raRow_ < last) ++raRow_; // the phone's button sits beside sign in: already the last row
+  if (!signedIn && a == Action::Right && raRow_ == Fields) raRow_ = Phone;
+  if (!signedIn && a == Action::Left && raRow_ == Phone) raRow_ = Fields;
   if (a != Action::Accept || !settled()) return;
   if (signedIn) {
     raSignOut();
@@ -99,7 +110,8 @@ void Application::raAction(Action a) {
                                raRow_ == 0 ? raUser_ : "", raRow_ == 1, 64};
     return;
   }
-  raSignIn();
+  if (raRow_ == Phone) raPhone();
+  else raSignIn();
 }
 void Application::raSignIn() {
   if (raUser_.empty() || raPassword_.empty()) {
@@ -143,6 +155,96 @@ void Application::raSignOut() {
     };
   });
 }
+// The phone sign-in: the console makes a key for this QR alone, the phone
+// seals the id and password to it, and the server only passes the envelope on.
+void Application::raPhone() {
+  if (!session_ || !connected_) {
+    raError_.message = tr("Connect to the server to enter it on a phone.");
+    return;
+  }
+  if (raWorker_.joinable()) return; // the account read finishes first; pressed again it opens
+  const auto server = session_->server();
+  const auto state = state_;
+  raError_ = {};
+  raLinkStop_ = false;
+  runRaJob("link", [this, server, state]() -> std::function<void()> {
+    seal::Key key;
+    if (!seal::generate(key)) return [this] { raError_.message = tr("Could not make the key for the QR code."); };
+    const auto publicKey = net::dropbox::base64UrlEncode({key.point.begin(), key.point.end()});
+    bool old = false;
+    auto link = net::startAchievementsLink(server, state, publicKey, old);
+    if (link.error) return [this, error = link.error] { raError_ = error; };
+    return [this, key, link = link.value, url = achievements::linkUrl(server.url, link.value.path, publicKey)] {
+      if (!raOpen_) return; // closed while it was asked
+      raLinking_ = true;
+      raLinkKey_ = key;
+      raLink_ = link;
+      raLinkUrl_ = url;
+      raLinkWrong_ = false;
+      raLinkUntil_ = SDL_GetTicks() + LinkLife;
+      raLinkWait();
+    };
+  });
+}
+void Application::raLinkWait() {
+  if (!raLinking_ || !session_) return;
+  const auto server = session_->server();
+  const auto state = state_;
+  const auto code = raLink_.code, secret = raLinkKey_.secret, sd = sdRoot_;
+  // Ends one way or the other: whatever comes back, the link is this one.
+  const auto mine = [this, code] { return raLinking_ && raLink_.code == code; };
+  const auto stop = [this, mine](const Error &error) {
+    if (!mine()) return;
+    raLinkClose();
+    raError_ = error;
+  };
+  runRaJob("linkwait", [this, server, state, code, secret, sd, mine, stop]() -> std::function<void()> {
+    auto wait = net::waitSealed(server, state, code, &raLinkStop_);
+    if (raLinkStop_) return nullptr;
+    if (wait.error)
+      return [stop] { stop({tr("The connection dropped while waiting for the phone. Open a new QR code.")}); };
+    if (wait.value.gone) return [stop] { stop({tr("The QR code expired. Open a new one.")}); };
+    if (wait.value.waiting) return [this, mine] { if (mine()) raLinkWait(); };
+    auto credentials = achievements::openEnvelope(secret, wait.value.sealed, code);
+    if (credentials.error) return [stop, error = credentials.error] { stop(error); };
+    auto login = net::signInRetroAchievements(credentials.value.user, credentials.value.password);
+    std::fill(credentials.value.password.begin(), credentials.value.password.end(), '\0');
+    if (login.error && login.value.error.empty()) return [stop, error = login.error] { stop(error); };
+    if (login.error) {
+      // RetroAchievements refused it: the phone asks again (three tries in all).
+      auto result = net::sendLinkResult(server, state, code, false, "");
+      return [this, mine, stop, result] {
+        if (!mine()) return;
+        if (result.error || result.value != "wrong") {
+          stop({tr("RetroAchievements refused the password too many times. Open a new QR code.")});
+          return;
+        }
+        raLinkWrong_ = true;
+        raLinkWait();
+      };
+    }
+    if (auto error = writeConfig(sd, achievements::signInValues(login.value.user, login.value.token)))
+      return [stop, error] { stop(error); };
+    logLine("achievements: signed in on the console from a phone");
+    auto result = net::sendLinkResult(server, state, code, true, login.value.user);
+    return [this, user = login.value.user, result] {
+      raLinkClose();
+      raSignedIn_ = raUser_ = user;
+      if (!result.error) raAccount_.username = user;
+      raOpen_ = false;
+      message(result.error ? trf("Signed in to RetroAchievements. The server did not keep the id: {0}", {result.error.message})
+                           : std::string(tr("Signed in to RetroAchievements.")));
+    };
+  });
+}
+void Application::raLinkClose() {
+  raLinkStop_ = true;
+  raLinking_ = raLinkWrong_ = false;
+  std::fill(raLinkKey_.secret.begin(), raLinkKey_.secret.end(), '\0');
+  raLinkKey_ = {};
+  raLink_ = {};
+  raLinkUrl_.clear();
+}
 // X 업적 at the header's right end, one width whatever it says, so nothing
 // moves while the page loads or when the sign-in changes.
 float Application::raHeaderButton(float right) {
@@ -165,14 +267,22 @@ void Application::raDialog() {
     return;
   }
   if (!raOpen_) return;
-  const bool signedIn = !raSignedIn_.empty(), busy = raBusy_ == "signin" || raBusy_ == "signout";
+  const bool signedIn = !raSignedIn_.empty(), busy = raBusy_ == "signin" || raBusy_ == "signout" || raBusy_ == "link";
   constexpr float Text = 636, Row = 60, Gap = 10;
   const int rows = signedIn ? 1 : Fields + 1;
   const float bodyH = 24 + 128 + rows * (Row + Gap) + 44;
-  const auto accept = busy ? "" : signedIn ? tr("Sign out|achievements") : raRow_ < Fields ? tr("Enter") : tr("Sign in");
-  const auto body = modal(700, bodyH, "RetroAchievements", busy ? "" : tr("Close"), "", accept, 31);
+  const std::string accept = busy || raLinking_ ? NoAccept
+                      : signedIn         ? tr("Sign out|achievements")
+                      : raRow_ < Fields  ? tr("Enter")
+                      : raRow_ == Phone  ? tr("Show QR code")
+                                         : tr("Sign in");
+  const auto body = modal(700, bodyH, "RetroAchievements", busy ? "" : raLinking_ ? tr("Cancel") : tr("Close"), "", accept, 31);
   const float x = body.x + 32;
   float y = body.y + 24;
+  if (raLinking_) {
+    raLinkView(x, y, Text);
+    return;
+  }
   // What it is, where else the id goes, and what it needs.
   y += paint_.fonts.wrapped(tr("Earn achievements while you play retro games. Once signed in, RetroArch records them on RetroAchievements."),
                             x, y, 18, Ink, Text, 2) + 8;
@@ -181,18 +291,21 @@ void Application::raDialog() {
   paint_.fonts.wrapped(tr("The password signs in once and is kept neither on the console nor on the server."), x, y, 16,
                        Secondary, Text, 2);
   y = body.y + 24 + 128;
-  const auto row = [&](int n, const std::string &label, const std::string &value, bool button) {
+  const auto button = [&](int n, const std::string &label, float bx, float bw, float ry) {
+    hit(bx, ry, bw, Row, [this, n] {
+      raRow_ = n;
+      action(Action::Accept);
+    });
+    if (raRow_ == n) paint_.ring(bx, ry, bw, Row, 14); // under the button
+    paint_.rect(bx, ry, bw, Row, raRow_ == n ? Butter : Ground, 14);
+    paint_.fonts.centered(label, bx + bw / 2, ry + Row / 2 - 14, 20, Ink, bw, 1, true);
+  };
+  const auto field = [&](int n, const std::string &label, const std::string &value) {
     const float ry = y + n * (Row + Gap);
     hit(x, ry, Text, Row, [this, n] {
       raRow_ = n;
       action(Action::Accept);
     });
-    if (button) {
-      paint_.rect(x, ry, Text, Row, raRow_ == n ? Butter : Ground, 14);
-      paint_.fonts.centered(label, x + Text / 2, ry + Row / 2 - 14, 20, Ink, Text, 1, true);
-      if (raRow_ == n) paint_.ring(x, ry, Text, Row, 14);
-      return;
-    }
     if (raRow_ == n) paint_.focusRow(x, ry, Text, Row, Ground, 12);
     else paint_.rect(x, ry, Text, Row, Ground, 12);
     paint_.fonts.middle(label, x + 20, ry + Row / 2, 18, Secondary, true);
@@ -200,18 +313,40 @@ void Application::raDialog() {
   };
   if (signedIn) {
     paint_.fonts.middle(trf("This console is signed in as {0}.", {raSignedIn_}), x, y - 20, 18, Good, true, Text);
-    row(0, busy ? tr("Signing out") : tr("Sign out|achievements"), "", true);
+    button(0, busy ? tr("Signing out") : tr("Sign out|achievements"), x, Text, y);
   } else {
-    row(0, tr("Id|account"), raUser_.empty() ? std::string(tr("Press A to enter")) : raUser_, false);
-    row(1, tr("Password"), raPassword_.empty() ? std::string(tr("Press A to enter")) : std::string(raPassword_.size(), '*'),
-        false);
-    row(2, busy ? tr("Signing in") : tr("Sign in"), "", true);
+    field(0, tr("Id|account"), raUser_.empty() ? std::string(tr("Press A to enter")) : raUser_);
+    field(1, tr("Password"), raPassword_.empty() ? std::string(tr("Press A to enter")) : std::string(raPassword_.size(), '*'));
+    // Sign in here, or type the password on a phone instead of the console.
+    const float ry = y + Fields * (Row + Gap), half = (Text - Gap) / 2;
+    button(Fields, raBusy_ == "signin" ? tr("Signing in") : tr("Sign in"), x, half, ry);
+    button(Phone, raBusy_ == "link" ? tr("Making the QR code") : tr("Enter on a phone"), x + half + Gap, half, ry);
   }
   const float noteY = y + rows * (Row + Gap) + 6;
   if (raError_) paint_.fonts.wrapped(raError_.message, x, noteY, 16, Bad, Text, 2);
   else if (!raAccount_.enabled && raRead_ && raBusy_.empty())
     paint_.fonts.wrapped(tr("This server has no RetroAchievements key, so games' achievement lists do not show."), x,
                          noteY, 16, Secondary, Text, 2);
+}
+// The QR for the phone, what it does, and how long it lasts.
+void Application::raLinkView(float x, float y, float w) {
+  constexpr float Size = 260;
+  if (raQr_.encode(raLinkUrl_)) raQr_.draw(paint_.renderer, int(x), int(y + 8), int(Size));
+  const float tx = x + Size + 32, tw = w - Size - 32;
+  float ty = y + 8;
+  ty += paint_.fonts.wrapped(tr("Scan the QR code with your phone's camera and enter the RetroAchievements password there."),
+                             tx, ty, 19, Ink, tw, 4) + 12;
+  ty += paint_.fonts.wrapped(tr("The phone locks the password so only this console can open it. The phone has to reach this server's address."),
+                             tx, ty, 16, Secondary, tw, 5) + 16;
+  if (raLinkWrong_)
+    ty += paint_.fonts.wrapped(tr("RetroAchievements refused the password. Enter it again on the phone."), tx, ty, 17, Bad, tw, 3) + 8;
+  else
+    ty += paint_.fonts.wrapped(raBusy_ == "linkwait" ? tr("Waiting for the phone") : "", tx, ty, 17, Pending, tw, 2) + 8;
+  const uint32_t now = SDL_GetTicks();
+  const int left = raLinkUntil_ > now ? int((raLinkUntil_ - now + 999) / 1000) : 0;
+  char clock[16];
+  std::snprintf(clock, sizeof(clock), "%d:%02d", left / 60, left % 60);
+  paint_.fonts.text(trf("Expires in {0}", {clock}), tx, ty, 16, Secondary, false, tw);
 }
 // The game page's card, under its facts: how many achievements and points,
 // X for the list. A game matched by its title says the patch may not count.

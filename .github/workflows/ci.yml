@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
-      - run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev libjson-c-dev libcurl4-openssl-dev fonts-noto-cjk ripgrep
+      - run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev libjson-c-dev libcurl4-openssl-dev libssl-dev fonts-noto-cjk ripgrep
       - run: make test host
       - run: ./build-host/cookingfoil-host --fixture host/fixtures --shot out/
       - uses: actions/upload-artifact@v4

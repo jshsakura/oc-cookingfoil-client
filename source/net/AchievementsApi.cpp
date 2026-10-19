@@ -65,8 +65,58 @@ Parsed<achievements::Login> signInRetroAchievements(const std::string &user, con
   if (login.token.empty()) {
     // RetroAchievements answers a wrong password with 401 and its reason.
     if (login.error.empty()) login.error = trf("RetroAchievements did not sign in. HTTP {0}", {std::to_string(response.status)});
-    return {{}, {login.error}};
+    return {login, {login.error}};
   }
   return {login, {}};
+}
+namespace {
+constexpr const char *LinkPath = "/api/retro/achievements/link";
+Error linkError(const Response &response) {
+  if (!response.error.empty()) return {response.error};
+  if (response.status == 410) return {tr("The QR code expired. Open a new one.")};
+  return {trf("Could not reach the server's phone sign-in. HTTP {0}", {std::to_string(response.status)})};
+}
+} // namespace
+Parsed<achievements::LinkStart> startAchievementsLink(const Server &server, const State &state,
+                                                      const std::string &publicKey, bool &old) {
+  old = false;
+  const auto url = server.url + LinkPath;
+  auto headers = authHeaders(server, state, url);
+  headers.push_back("Content-Type: application/json");
+  PostOptions options;
+  options.timeout = 20;
+  options.body = "{\"publicKey\":\"" + publicKey + "\"}"; // base64url: nothing to escape
+  const auto response = post(url, headers, options);
+  if (response.status == 404) {
+    old = true;
+    return {{}, {tr("This server cannot take the password from a phone yet.")}};
+  }
+  if (!response.error.empty() || (response.status != 200 && response.status != 201)) return {{}, linkError(response)};
+  auto start = achievements::parseLinkStart(response.body);
+  if (start.code.empty()) return {{}, {tr("The server's answer could not be read.")}};
+  return {start, {}};
+}
+Parsed<SealedWait> waitSealed(const Server &server, const State &state, const std::string &code,
+                              const std::atomic<bool> *cancel) {
+  const auto url = server.url + LinkPath + "/" + dropbox::percentEncode(code) + "/sealed";
+  const auto response = get(url, authHeaders(server, state, url), "", cancel);
+  SealedWait wait;
+  if (response.status == 204) wait.waiting = true;
+  else if (response.status == 410) wait.gone = true;
+  else if (!response.error.empty() || response.status != 200) return {{}, linkError(response)};
+  else wait.sealed = achievements::parseSealed(response.body);
+  return {wait, {}};
+}
+Parsed<std::string> sendLinkResult(const Server &server, const State &state, const std::string &code, bool ok,
+                                   const std::string &username) {
+  const auto url = server.url + LinkPath + "/" + dropbox::percentEncode(code) + "/result";
+  auto headers = authHeaders(server, state, url);
+  headers.push_back("Content-Type: application/json");
+  PostOptions options;
+  options.timeout = 20;
+  options.body = achievements::linkResultBody(ok, username);
+  const auto response = post(url, headers, options);
+  if (!response.error.empty() || response.status != 200) return {{}, linkError(response)};
+  return {achievements::parseLinkState(response.body), {}};
 }
 } // namespace foil::net

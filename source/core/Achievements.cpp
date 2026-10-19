@@ -1,5 +1,8 @@
 #include "core/Achievements.hpp"
 #include "core/Json.hpp"
+#include "core/I18n.hpp"
+#include "core/Sha256.hpp"
+#include "platform/Seal.hpp"
 #include <algorithm>
 #include <set>
 #include <sstream>
@@ -146,5 +149,85 @@ std::map<std::string, std::string> signInValues(const std::string &user, const s
 }
 std::map<std::string, std::string> signOutValues() {
   return {{"cheevos_enable", "false"}, {"cheevos_token", ""}, {"cheevos_password", ""}};
+}
+LinkStart parseLinkStart(const std::string &json) {
+  LinkStart l;
+  Error ignored;
+  auto root = parseJson(json, ignored);
+  if (!root) return l;
+  l.code = stringField(root.get(), "code");
+  l.path = stringField(root.get(), "path");
+  l.expiresAt = std::max<int64_t>(0, integerField(root.get(), "expiresAt", 0));
+  // Only a path on the same server goes into the QR.
+  if (l.path.empty() || l.path[0] != '/' || l.path.rfind("//", 0) == 0) l.path = "/ra-link?c=" + l.code;
+  return l;
+}
+std::string linkUrl(const std::string &server, const std::string &path, const std::string &publicKey) {
+  auto base = server;
+  while (!base.empty() && base.back() == '/') base.pop_back();
+  return base + path + "#k=" + publicKey;
+}
+Sealed parseSealed(const std::string &json) {
+  Sealed s;
+  Error ignored;
+  auto root = parseJson(json, ignored);
+  if (!root) return s;
+  s.epk = stringField(root.get(), "epk");
+  s.iv = stringField(root.get(), "iv");
+  s.ct = stringField(root.get(), "ct");
+  return s;
+}
+std::string decodeBase64Url(const std::string &text) {
+  std::string out;
+  uint32_t bits = 0;
+  int held = 0;
+  for (const char c : text) {
+    int v = c >= 'A' && c <= 'Z' ? c - 'A' : c >= 'a' && c <= 'z' ? c - 'a' + 26 : c >= '0' && c <= '9' ? c - '0' + 52
+            : c == '-' || c == '+' ? 62 : c == '_' || c == '/' ? 63 : c == '=' ? -2 : -1;
+    if (v == -2) break; // padding ends it
+    if (v < 0) return "";
+    bits = (bits << 6) | uint32_t(v);
+    held += 6;
+    if (held >= 8) {
+      held -= 8;
+      out += char((bits >> held) & 0xFF);
+    }
+  }
+  return held >= 6 ? "" : out; // a lone sixth character is not base64
+}
+std::string hkdf(const std::string &ikm, const std::string &info) {
+  // One block: PRK = HMAC(zeros, IKM), OKM = HMAC(PRK, info | 0x01).
+  const auto prk = hexBytes(hmacSha256(std::string(32, '\0'), ikm));
+  return hexBytes(hmacSha256(prk, info + '\x01'));
+}
+Parsed<Credentials> openEnvelope(const std::string &secret, const Sealed &sealed, const std::string &code) {
+  const Error broken{tr("Could not open what the phone sent. Open a new QR code.")};
+  const auto epk = decodeBase64Url(sealed.epk), iv = decodeBase64Url(sealed.iv), ct = decodeBase64Url(sealed.ct);
+  if (epk.size() != seal::PointSize || iv.size() != 12 || ct.size() <= seal::TagSize) return {{}, broken};
+  const auto shared = seal::sharedX(secret, epk);
+  if (shared.empty()) return {{}, broken};
+  std::string plain;
+  if (!seal::open(hkdf(shared, "cookingfoil-ra-link"), iv, code, ct, plain)) return {{}, broken};
+  Error ignored;
+  auto root = parseJson(plain, ignored);
+  Credentials c;
+  if (root) {
+    c.user = stringField(root.get(), "u");
+    c.password = stringField(root.get(), "p");
+  }
+  std::fill(plain.begin(), plain.end(), '\0');
+  if (c.user.empty() || c.password.empty()) return {{}, broken};
+  return {c, {}};
+}
+std::string linkResultBody(bool ok, const std::string &username) {
+  Json root(json_object_new_object());
+  json_object_object_add(root.get(), "ok", json_object_new_boolean(ok));
+  if (ok) json_object_object_add(root.get(), "username", json_object_new_string(username.c_str()));
+  return json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PLAIN);
+}
+std::string parseLinkState(const std::string &json) {
+  Error ignored;
+  auto root = parseJson(json, ignored);
+  return root ? stringField(root.get(), "state") : "";
 }
 } // namespace foil::achievements

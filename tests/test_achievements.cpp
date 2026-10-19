@@ -2,6 +2,8 @@
 // retroarch.cfg lines that sign RetroArch in without touching the rest.
 #include "Test.hpp"
 #include "core/Achievements.hpp"
+#include "core/Sha256.hpp"
+#include "platform/Seal.hpp"
 namespace a = foil::achievements;
 int runAchievementsTests() {
   int failures = 0;
@@ -59,5 +61,41 @@ int runAchievementsTests() {
   // A missing file: the lines alone. A quote in a value cannot break the line.
   CHECK(a::signedInUser(a::setConfig("", a::signInValues("a\"b", "T"))) == "ab");
   CHECK(a::signedInUser("").empty());
+  // The phone sign-in. A vector sealed by Python's cryptography (the same
+  // primitives as the phone page): device scalar 0x11.., phone scalar 0x22..
+  const std::string secret(32, '\x11'), code = "K7Q2-M9XA";
+  const a::Sealed sealed{"BNZak5d8qj0bCBhS_1ennkZfFmBXcwS66tUF3TpIWJzzUBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU", // privacy-ok: fixed test vector
+                         "AAECAwQFBgcICQoL", "OSdgxFURo_dNP8QDVcAuAHQVpJKXQMIKLZtWIsdtJSyWxZ3M0x90PMsncdb0XvhN"}; // privacy-ok: fixed test vector
+  CHECK(foil::seal::sharedX(secret, a::decodeBase64Url(sealed.epk)) ==
+        foil::hexBytes("ccfc261f58193c98ca4ad4a53bbac6f0ee29bc4d48438090446908622ca79af6")); // privacy-ok: fixed test vector
+  CHECK(a::hkdf(foil::hexBytes("ccfc261f58193c98ca4ad4a53bbac6f0ee29bc4d48438090446908622ca79af6"), "cookingfoil-ra-link") == // privacy-ok: fixed test vector
+        foil::hexBytes("5b2c5cd4768737fd4335d8fb975f7644de9c6a360eca494865b37a02cdd6d513")); // privacy-ok: fixed test vector
+  const auto opened = a::openEnvelope(secret, sealed, code);
+  CHECK(!opened.error && opened.value.user == "player" && opened.value.password == "pa ss\"word");
+  // Another link's code, another key, or one changed byte: nothing opens.
+  CHECK(a::openEnvelope(secret, sealed, "K7Q2-M9XB").error);
+  CHECK(a::openEnvelope(std::string(32, '\x12'), sealed, code).error);
+  auto altered = sealed;
+  altered.ct[5] = altered.ct[5] == 'A' ? 'B' : 'A';
+  CHECK(a::openEnvelope(secret, altered, code).error);
+  CHECK(a::openEnvelope(secret, {"not a point", sealed.iv, sealed.ct}, code).error);
+  // A fresh key: a real point, and both sides reach the same secret.
+  foil::seal::Key one, two;
+  CHECK(foil::seal::generate(one) && foil::seal::generate(two));
+  CHECK(one.point.size() == 65 && one.point[0] == '\x04' && one.secret.size() == 32 && one.secret != two.secret);
+  CHECK(foil::seal::sharedX(one.secret, two.point) == foil::seal::sharedX(two.secret, one.point));
+  CHECK(foil::seal::sharedX(one.secret, std::string(65, '\x04')).empty()); // off the curve
+  // base64url, padded or not; a stray character is not base64.
+  CHECK(a::decodeBase64Url("AAECAwQFBgcICQoL") == std::string("\0\1\2\3\4\5\6\7\x08\t\n\x0b", 12));
+  CHECK(a::decodeBase64Url("_-8") == "\xff\xef" && a::decodeBase64Url("_-8=") == "\xff\xef");
+  CHECK(a::decodeBase64Url("ab$d").empty() && a::decodeBase64Url("A").empty());
+  // The server's answers, and the QR: the key after #, a path only on this server.
+  const auto link = a::parseLinkStart(R"({"code":"K7Q2","expiresAt":1760000300,"path":"/ra-link?c=K7Q2"})");
+  CHECK(link.code == "K7Q2" && link.expiresAt == 1760000300 && link.path == "/ra-link?c=K7Q2");
+  CHECK(a::parseLinkStart(R"({"code":"K7Q2","path":"//example.org/x"})").path == "/ra-link?c=K7Q2");
+  CHECK(a::linkUrl("http://192.0.2.10:8080/", link.path, "BAbc") == "http://192.0.2.10:8080/ra-link?c=K7Q2#k=BAbc");
+  CHECK(a::linkResultBody(true, "Player") == R"({"ok":true,"username":"Player"})");
+  CHECK(a::linkResultBody(false, "Player") == R"({"ok":false})");
+  CHECK(a::parseLinkState(R"({"state":"wrong"})") == "wrong");
   return failures;
 }
