@@ -74,8 +74,10 @@ void Application::openFileCleanup() {
   cleanupProgress_.stage = cleanupProgress_.done = cleanupProgress_.total = 0;
   cleanupProgress_.listed = false;
   cleanupProgress_.bytes = 0;
-  const bool leftovers = tidyLeftoversAllowed(), pieces = tidyPiecesAllowed();
-  tidyWorker_ = std::thread([this, leftovers, pieces, sd = sdRoot_] {
+  // The pieces are measured even while the queue runs, so the size shows;
+  // only deleting them waits for the queue.
+  const bool leftovers = tidyLeftoversAllowed();
+  tidyWorker_ = std::thread([this, leftovers, sd = sdRoot_] {
     const platform::OnCore off(platform::WriterCore); // the drawing core keeps the popup moving
     TidyFound found;
     if (!guarded("cleanup look", [&] {
@@ -83,7 +85,7 @@ void Application::openFileCleanup() {
             found.leftovers = platform::cleanOrphans(false, &cleanupProgress_, [this](const std::string &key) {
               return installer_.resumePoint(key).has_value();
             });
-          if (pieces && !sd.empty()) found.pieces = downloadPieces(sd);
+          if (!sd.empty()) found.pieces = downloadPieces(sd);
           for (const auto &[path, bytes] : found.pieces) found.pieceBytes += bytes;
         }))
       found.leftovers = {{}, {tr("Cleanup failed. Check log.txt.")}};
@@ -198,14 +200,16 @@ void Application::fileCleanupDialog() {
     const auto &line = lines[n];
     paint_.fonts.text(line.name, x + 56, y + 12, 21, line.allowed ? Ink : Secondary, true, w - 260);
     paint_.fonts.text(line.note, x + 56, y + 44, 17, Secondary, false, w - 260);
-    // How much, or what it is doing now.
-    const bool looking = n < 2 && line.allowed && !tidyKnown_;
+    // How much, or what it is doing now. The pieces show their size while
+    // the queue runs, greyed: they can be deleted once it is empty.
+    const bool measured = line.allowed || n == 1;
+    const bool looking = n < 2 && measured && !tidyKnown_;
     const std::string size = tidyDeleting_ && tidyRemoving_[n] ? std::string(tr("Deleting"))
-                             : !line.allowed                    ? std::string()
+                             : !measured                        ? std::string()
                              : looking                          ? std::string(tr("Checking|size"))
                              : tidyBytes(n) == 0                ? std::string(tr("Nothing|size"))
                                                                 : formatBytes(tidyBytes(n));
-    paint_.fonts.middle(size, x + w - 20 - paint_.fonts.measure(size, 19, true), mid, 19, looking ? Secondary : Ink, true);
+    paint_.fonts.middle(size, x + w - 20 - paint_.fonts.measure(size, 19, true), mid, 19, looking || !line.allowed ? Secondary : Ink, true);
     if (tidyPicked(n)) picked += tidyBytes(n);
   }
   // What A on X frees, and what stays.
