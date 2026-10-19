@@ -1,6 +1,7 @@
 #include "ui/Painter.hpp"
 #include <SDL2/SDL_image.h>
 #include "core/Json.hpp"
+#include "core/I18n.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iterator>
@@ -386,6 +387,7 @@ static const char *IconPaths[] = {
     R"(<path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>)", // 42 layers (versions)
     R"(<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>)", // 43 user (an account)
     R"(<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/>)", // 44 speaker
+    R"(<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>)", // 45 shield check (verified)
 };
 // Glyph-like marks read better a touch heavier than the menu icons.
 // Marks read a touch heavier than outline icons.
@@ -494,6 +496,29 @@ float Painter::keyChip(const std::string &name, const std::string &label, float 
   rect(x + 4, centerY - Badge / 2, badge, Badge, Ink, int(Badge / 2));
   fonts.middle(name, x + 4 + (badge - fonts.measure(name, KeySize, true)) / 2, centerY, KeySize, Surface, true);
   fonts.middle(label, x + 4 + badge + 7, centerY, LabelSize, Secondary, true);
+  return w;
+}
+float Painter::verifiedPill(float x, float y, bool dark, int size) {
+  // The shop's green: #3fbf83 on dark, #1e8e5a on light, filled at 14% and
+  // edged at 45% of it. On the page the two are mixed into its ground; on
+  // the detail's picture band only the fill, see-through like its pills.
+  const SDL_Color green = dark ? SDL_Color{63, 191, 131, 255} : Good;
+  const auto over = [&](float t) {
+    const auto mix = [&](Uint8 c, Uint8 g) { return Uint8(std::lround(g + (c - g) * t)); };
+    return SDL_Color{mix(green.r, Ground.r), mix(green.g, Ground.g), mix(green.b, Ground.b), 255};
+  };
+  const std::string text = tr("Verified|badge");
+  const float h = dark ? 35 : 26, mark = dark ? 18 : 15, pad = dark ? 12 : 7;
+  const int radius = dark ? 17 : 7;
+  const float w = pad + mark + 4 + fonts.measure(text, size, true) + pad;
+  if (dark)
+    rect(x, y, w, h, {green.r, green.g, green.b, 64}, radius);
+  else {
+    rect(x, y, w, h, over(0.45f), radius);
+    rect(x + 1, y + 1, w - 2, h - 2, over(0.14f), radius - 1);
+  }
+  icon(45, x + pad, y + (h - mark) / 2, green, int(mark));
+  fonts.middle(text, x + pad + mark + 4, y + h / 2.f, size, green, true);
   return w;
 }
 float Painter::pill(const std::string &s, float x, float y, bool dark,

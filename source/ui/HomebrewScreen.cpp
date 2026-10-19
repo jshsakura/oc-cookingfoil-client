@@ -822,7 +822,9 @@ void Application::homebrewScreen() {
     else paint_.fonts.text(app.name, x, y + 158, 18, Ink, false, 150);
     // Size first; the version beside it only when both fit under the icon.
     float px = x;
-    if (app.size) px += paint_.pill(formatBytes(app.size), px, y + 194) + 6;
+    if (app.verified) px += paint_.verifiedPill(px, y + 194) + 6;
+    if (app.size && px + paint_.fonts.measure(formatBytes(app.size), 15, true) + 18 <= x + 150)
+      px += paint_.pill(formatBytes(app.size), px, y + 194) + 6;
     const auto version = "v" + app.version;
     if (!app.version.empty() && px + paint_.fonts.measure(version, 15, true) + 18 <= x + 150)
       paint_.pill(version, px, y + 194);

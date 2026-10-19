@@ -40,6 +40,19 @@ int runHomebrewTests() {
     CHECK(a.iconUrl == "https://shop.example/api/homebrew/gh-9c9ef5794087/icon");
     CHECK(a.downloadUrl == "https://shop.example/api/homebrew/gh-9c9ef5794087/download");
     CHECK(a.source == "github" && a.repoUrl == "https://github.com/murat303/ytb-player");
+    // No verified field (an older server): no badge.
+    CHECK(!a.verified);
+  }
+  {
+    // The admin's 검수됨 mark, kept through the queue's copy of the app.
+    auto marked = entry;
+    marked.insert(marked.size() - 1, R"(,"verified":true,"verified_at":"2026-10-20T00:00:00Z")");
+    const auto verified = parse(R"({"homebrew":[)" + marked + "]}", "https://shop.example");
+    CHECK(verified.size() == 1 && verified.front().verified);
+    CHECK(!verified.empty() && parse(R"({"homebrew":[)" + serialize(verified.front()) + "]}", "").front().verified);
+    auto unmarked = entry;
+    unmarked.insert(unmarked.size() - 1, R"(,"verified":false,"verified_at":null)");
+    CHECK(!parse(R"({"homebrew":[)" + unmarked + "]}", "https://shop.example").front().verified);
   }
   // An entry that could write outside its folder, or lacks what is needed, is left out.
   const auto bad = [&](const std::string &from, const std::string &to) {

@@ -98,6 +98,8 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
     a.forwarderSize = uint64_t(std::max<int64_t>(0, integerField(o, "forwarder_size")));
     a.forwarderCores = integerField(o, "forwarder_cores", 3) == 4 ? 4 : 3;
     a.forwarderKey = stringField(o, "forwarder_key");
+    if (auto *v = json_object_object_get(o, "verified"); v && json_object_is_type(v, json_type_boolean))
+      a.verified = json_object_get_boolean(v);
     if (!forwarder::serverShortcutId(a.forwarderTitleId))
       a.forwarderUrl.clear(), a.forwarderTitleId.clear();
     a.kind = stringField(o, "kind") == "port" ? Kind::Port : Kind::Tool;
@@ -192,6 +194,7 @@ std::string serialize(const App &a) {
   json_object_object_add(o.get(), "forwarder_size", json_object_new_int64(int64_t(a.forwarderSize)));
   json_object_object_add(o.get(), "forwarder_cores", json_object_new_int(a.forwarderCores));
   add("forwarder_key", a.forwarderKey);
+  if (a.verified) json_object_object_add(o.get(), "verified", json_object_new_boolean(1));
   add("install_path", a.installPath);
   add("kind", a.kind == Kind::Port ? "port" : "tool");
   add("app", a.app);
