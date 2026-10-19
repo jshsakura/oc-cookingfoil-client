@@ -264,6 +264,10 @@ int runHomebrewCardTests() {
   // The folder goes whole, settings and all; nothing outside it.
   write(sd / "switch/ytb/ytb-player.nro", "x");
   write(sd / "switch/ytb/data/cache.bin", "x");
+  // A game's tree, as cstrike's: folders in folders, many files, an empty one.
+  for (int n = 0; n < 50; ++n) write(sd / ("switch/ytb/valve/maps/m" + std::to_string(n) + ".bsp"), "x");
+  write(sd / "switch/ytb/cstrike_downloads_bak/sound/a.wav", "x");
+  fs::create_directories(sd / "switch/ytb/cstrike/empty");
   CHECK(removeCardFolder(sd.string(), "switch/ytb", error));
   CHECK(!fs::exists(sd / "switch/ytb") && fs::exists(sd / "switch/fake.nro"));
   // Anything but switch/<one folder> is refused untouched.

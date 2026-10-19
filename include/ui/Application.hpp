@@ -440,7 +440,14 @@ private:
   // thousands of files (a game's data). Its name, and the error when it failed.
   std::thread homebrewFolderWorker_;
   std::atomic<bool> homebrewFolderDone_{false};
-  std::string homebrewFolderName_, homebrewFolderError_;
+  struct HomebrewRemoved {
+    bool file = false;              // the .nro went
+    std::vector<uint64_t> shortcuts; // the shortcuts that went
+    std::string shortcutError, folderError;
+  };
+  HomebrewRemoved homebrewRemoved_;
+  homebrew::App homebrewRemovedApp_;
+  void settleHomebrewRemoval();
   // The folder the app's file has to itself ("switch/<folder>"), offered for
   // removal with it; empty when there is none.
   std::string homebrewOwnFolder(const homebrew::App &app) const;
