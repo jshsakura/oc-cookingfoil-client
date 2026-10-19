@@ -1133,5 +1133,24 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(done.current() == foil::ui::Screen::Downloads);
     CHECK(done.alert() == std::string(foil::tr("The file no longer exists on the server.")));
   }
+  {
+    // Paused before it began, the top card still opens the game's page.
+    foil::ui::Application held(renderer, "", "", "host/fixtures/art");
+    CHECK(held.open());
+    held.setItems(parsed.value);
+    held.previewQueueOpen();
+    const auto &known = parsed.value.front();
+    foil::history::Entry waiting;
+    waiting.id = 7;
+    waiting.install.name = "waiting";
+    waiting.install.files = {known};
+    waiting.outcome = foil::history::Outcome::Queued;
+    held.previewHistory({waiting});
+    held.previewHeld(known, "waiting", 7);
+    held.screen(foil::ui::Screen::Downloads);
+    held.render();
+    CHECK(held.previewTopDetails());
+    CHECK(held.current() == foil::ui::Screen::Detail);
+  }
   return failures;
 }

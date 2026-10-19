@@ -169,6 +169,18 @@ public:
   Error previewPick(const std::vector<Item> &files, const std::string &name, std::vector<UserPatch> patches = {}) {
     return startInstall(files, name, "", "sd", std::move(patches));
   }
+  // A game paused before it began, its history row `entry`, on the top card.
+  void previewHeld(Item file, std::string name, uint64_t entry) {
+    installQueue_.push_back({std::move(file), std::move(name), "", "sd", 0, entry, "", ""});
+    queueHeld_ = true;
+  }
+  // The top card's 상세 정보, pressed: false when the card has none.
+  bool previewTopDetails() {
+    TopCard card;
+    if (!topCardNow(installer_.progress(), card) || !card.onDetails) return false;
+    card.onDetails();
+    return true;
+  }
   void previewQueueOpen() {
     resumeOffered_ = true;
     connected_ = true;
@@ -1468,6 +1480,7 @@ private:
   void queuePatchJobs(const std::vector<UserPatch> &patches, int group);
   Error launchJob(const QueuedInstall &next);
   bool startShortcut(const QueuedInstall &next); // false when it cannot start
+  std::function<void()> queuedDetails(const QueuedInstall &item); // its page, or null when it has none
   // Whether a download (of any kind) runs now; the next one waits for it.
   bool downloadRunning() const;
   // The installer, the queue and the screens see the order the rows run in.

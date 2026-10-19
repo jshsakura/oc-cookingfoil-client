@@ -165,7 +165,8 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
       return true;
     }
     card.onPause = [this, held] { pauseSmallDownload(!held); };
-    if (!held) card.onDetails = runningDetails();
+    // Paused, it still opens its page: the held item's own history row.
+    card.onDetails = held ? queuedDetails(installQueue_.front()) : runningDetails();
     card.onCancel = [this, held] {
       dialogFocus_ = 0;
       if (held) { // paused before it began: taken off the queue, after asking
@@ -381,6 +382,14 @@ std::function<void()> Application::runningDetails() {
   const auto *entry = runningEntry();
   if (!entry || !hasPage(*entry)) return nullptr;
   return [this, id = entry->id] {
+    for (const auto &e : history_)
+      if (e.id == id) return openHistoryRow(e);
+  };
+}
+std::function<void()> Application::queuedDetails(const QueuedInstall &item) {
+  const auto found = std::find_if(history_.begin(), history_.end(), [&](const auto &e) { return e.id == item.entry; });
+  if (found == history_.end() || !hasPage(*found)) return nullptr;
+  return [this, id = item.entry] {
     for (const auto &e : history_)
       if (e.id == id) return openHistoryRow(e);
   };
