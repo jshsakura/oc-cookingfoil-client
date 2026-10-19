@@ -17,13 +17,16 @@
 //   consoles downloading from it now (X-CookingFoil-Active-Downloads); a
 //   lower share applies at once.
 #include <cstdint>
+#include <map>
 #include <string>
 namespace foil::net {
 class ConnectionTuner {
 public:
   static constexpr double SpanSeconds = 7, Gain = 1.10, Shift = 0.30;
   static constexpr int TrySpans = 2, RetryAfter = 6, MostWait = 24;
-  explicit ConnectionTuner(int ceiling = 0);
+  // `remembered`: the count a run before found at this place; it starts
+  // there as found (the next try waits its turn) instead of at 2.
+  explicit ConnectionTuner(int ceiling = 0, int remembered = 0);
   int connections() const { return now_; }
   // The count is found: no try under way, and the last one went back (more
   // did not help), it is at the ceiling, or it backed off or was shared.
@@ -75,6 +78,14 @@ void tuneTrouble();
 std::string tuningSummary();
 // Whether the running download's count is found (true when none is tuned).
 bool tuningFound();
+// The counts found, kept in `path` on the card across runs: the first
+// download from a place after a launch starts at what was found there.
+// Read on the first download, written when a download ends with a count
+// found that differs from the one kept.
+void rememberTuningIn(const std::string &path);
+// "<place> <count>" a line, and back (lines that do not parse are skipped).
+std::string serializeFound(const std::map<std::string, int> &found);
+std::map<std::string, int> parseFound(const std::string &text);
 // X-CookingFoil-Active-Downloads: consoles downloading from the server now,
 // this one included; 0 when the server does not say.
 void heardActiveDownloads(int count);

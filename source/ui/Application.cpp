@@ -3,6 +3,7 @@
 #include "net/Socket.hpp"
 #include "net/Direct.hpp"
 #include "net/Segmented.hpp"
+#include "net/Tuner.hpp"
 #include "platform/Focus.hpp"
 #include "platform/Cores.hpp"
 #include "core/Config.hpp"
@@ -455,6 +456,7 @@ void Application::usePatchFolder(const std::string &sd) {
 // The app's records on the card: the homebrew ledger and 다운로드's list.
 void Application::openCardRecords(const std::string &sd) {
   sdRoot_ = sd;
+  net::rememberTuningIn(sd + "/switch/cookingfoil/tuning.txt");
   const auto ledgerFile = sd + "/switch/cookingfoil/homebrew.json";
   homebrewLedger_ = homebrew::parseLedger(readFile(ledgerFile));
   // An older ledger holds folder installs' file lists: they move to their
