@@ -498,6 +498,33 @@ int runUiTests(SDL_Renderer *renderer) {
     saves.render();
   }
   {
+    // The footer's 연결됨 follows the console's link: out of sleep with the
+    // Wi-Fi down it says so until the link or the server comes back. A link
+    // never read up (its connection test blocked) keeps 연결됨.
+    foil::ui::Application link(renderer, "", "", "host/fixtures/art");
+    CHECK(link.open());
+    link.previewSignal(3);
+    link.setItems(parsed.value);
+    CHECK(link.connectionLabel() == "Connected");
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    link.previewSignal(-1);
+    CHECK(link.connectionLabel() == "No internet");
+    link.render();
+    link.previewSignal(2);
+    CHECK(link.connectionLabel() == "Connected");
+    // The server answering after the drop wins over the console's check.
+    link.previewSignal(-1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    link.setItems(parsed.value);
+    CHECK(link.connectionLabel() == "Connected");
+    foil::ui::Application blocked(renderer, "", "", "host/fixtures/art");
+    CHECK(blocked.open());
+    blocked.previewSignal(-1);
+    blocked.setItems(parsed.value);
+    blocked.previewSignal(-1);
+    CHECK(blocked.connectionLabel() == "Connected");
+  }
+  {
     // 세이브 > 드롭박스: 연결하기 when not linked, the QR code while the phone
     // signs in (B gives up), then the games with their Dropbox backups.
     app.screen(foil::ui::Screen::Saves);

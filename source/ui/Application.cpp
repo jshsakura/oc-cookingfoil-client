@@ -652,6 +652,7 @@ void Application::setGroups(std::vector<Group> groups) {
   activeChips_.clear();
   ++catalogVersion_;
   connected_ = true;
+  serverAnsweredAt_ = SDL_GetTicks();
   selected_ = 0;
   logLine("catalog grouped " + std::to_string(SDL_GetTicks() - started) + "ms, " + std::to_string(groups_.size()) + " games");
 }
@@ -1233,6 +1234,7 @@ void Application::takeNetwork() {
   retries_ = 0;
   if (session_->unchanged() && !groups_.empty()) {
     connected_ = true;
+    serverAnsweredAt_ = SDL_GetTicks();
     error_ = {};
     return;
   }
@@ -2157,16 +2159,37 @@ void Application::shell() {
 // Shop connection (its state only) and free space, compact on the
 // footer's left.
 // Returns where it ends so the key hints can stay clear of it.
-float Application::statusBar() {
+void Application::noteSignal(int strength) {
+  if (strength >= 0) {
+    linkSeenUp_ = true;
+    linkDropAt_ = 0;
+  } else if (linkSeenUp_ && signal_ >= 0) {
+    linkDropAt_ = std::max<uint32_t>(1, SDL_GetTicks());
+  }
+  signal_ = strength;
+}
+const char *Application::connectionStatus() const {
   const bool offline = error_.message == net::offlineMessage();
   // The Korean status is a key: statusColor() reads it, tr() draws it.
-  const char *status = connected_                         ? "Connected" // i18n: keep
-                       : pairingPending_                  ? "Awaiting approval" // i18n: keep
-                       : session_ && network_.joinable()  ? "Connecting" // i18n: keep
-                       : offline                          ? "No internet" // i18n: keep
-                       : session_ && error_               ? "Failed|connection" // i18n: keep
-                       : session_                         ? "Connecting" // i18n: keep
-                                                          : "No server"; // i18n: keep
+  return linkDropped()                     ? "No internet" // i18n: keep
+         : connected_                      ? "Connected" // i18n: keep
+         : pairingPending_                 ? "Awaiting approval" // i18n: keep
+         : session_ && network_.joinable() ? "Connecting" // i18n: keep
+         : offline                         ? "No internet" // i18n: keep
+         : session_ && error_              ? "Failed|connection" // i18n: keep
+         : session_                        ? "Connecting" // i18n: keep
+                                           : "No server"; // i18n: keep
+}
+float Application::statusBar() {
+  const bool offline = error_.message == net::offlineMessage();
+  // The console's own link, read once a second (the placeholders' time
+  // too, so a drop is told from a link never up): a cut Wi-Fi shows at a
+  // glance, before any server error does.
+  if (SDL_GetTicks() - signalAt_ >= 1000 || !signalAt_) {
+    signalAt_ = SDL_GetTicks();
+    noteSignal(net::signalStrength());
+  }
+  const char *status = connectionStatus();
   constexpr float Mid = 690;
   float x = 28;
   // Until the server first answers: placeholders, as the menu and the
@@ -2178,15 +2201,10 @@ float Application::statusBar() {
     }
     return x;
   }
-  // First the console's own link, read once a second: a cut Wi-Fi shows
-  // at a glance, before any server error does. Then the state in its color.
-  if (SDL_GetTicks() - signalAt_ >= 1000 || !signalAt_) {
-    signalAt_ = SDL_GetTicks();
-    signal_ = net::signalStrength();
-  }
-  // A server that answers outranks the console's own check, which can read
-  // offline on a working network.
-  const bool cut = !connected_ && (signal_ < 0 || offline);
+  // The link's icon, then the state in its color. A server that answers
+  // outranks the console's own check, which can read offline on a working
+  // network; a link that dropped after that answer does not.
+  const bool cut = (!connected_ || linkDropped()) && (signal_ < 0 || offline);
   paint_.icon(cut ? 20 : 39, x, Mid - 10, cut ? Bad : signal_ >= 0 && signal_ <= 1 ? Pending : Ink, 20);
   x += 30;
   x = paint_.fonts.middle(tr(status), x, Mid, 17, statusColor(status), true) + 30;

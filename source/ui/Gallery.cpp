@@ -53,8 +53,10 @@ void Application::gallery() {
   hit(0, 0, 640, 660, [this] { action(Action::Previous); });
   hit(640, 0, 640, 660, [this] { action(Action::Next); });
   const auto name = galleryName();
+  // B 닫기 at the top right, a small white chip; a tap on it closes too.
+  const float close = paint_.keyChip("B", tr("Close"), 1240, 40);
   const float after = paint_.fonts.middle(tr("Screenshots"), 40, 40, 26, Surface, true);
-  paint_.fonts.middle(name, after + 16, 40, 19, {170, 170, 178, 255}, false, 1180 - after);
+  paint_.fonts.middle(name, after + 16, 40, 19, {170, 170, 178, 255}, false, 1240 - close - 24 - after - 16);
   // The full-screen photo at the screen's width, not the original.
   const auto url = thumbnailUrl(detail_.screenshots[screenshot_], "xl");
   if (images_->failed(url)) {
@@ -97,5 +99,7 @@ void Application::gallery() {
       paint_.icon(arrow.icon, arrow.x + (Size - 30) / 2, Middle - 15, Ink, 30);
     }
   }
+  // Over the halves' turns, so the chip closes rather than turns.
+  hit(1240 - close - 8, 18, close + 16, 44, [this] { action(Action::Back); });
 }
 } // namespace foil::ui

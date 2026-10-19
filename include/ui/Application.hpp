@@ -254,6 +254,12 @@ public:
   // Which games have a save on the console (the card's read leaves it unknown).
   void previewSavedGames(std::set<uint64_t> ids) { savedGames_ = std::move(ids); }
   std::string savesOrder() const { return savesSortLabel(); }
+  // The console's link read as `strength` (-1 offline), as the footer reads it.
+  void previewSignal(int strength) {
+    noteSignal(strength);
+    signalAt_ = SDL_GetTicks();
+  }
+  std::string connectionLabel() const { return connectionStatus(); }
   std::string saveRowName(size_t i) const {
     const auto rows = saveGameRows();
     return i < rows.size() ? installed_.games[size_t(rows[i])].name : "";
@@ -658,6 +664,15 @@ private:
   bool retroDownloading() const { return !retroBusy_.empty(); }
   int signal_ = 3;          // net::signalStrength(), refreshed by statusBar
   uint32_t signalAt_ = 0;
+  // The console's link going down after it was up (out of sleep, out of
+  // range), and the server's last answer: a drop newer than the answer
+  // turns 연결됨 off until either comes back. A console that never reads
+  // online (its connection test blocked) never drops.
+  bool linkSeenUp_ = false;
+  uint32_t linkDropAt_ = 0, serverAnsweredAt_ = 0;
+  void noteSignal(int strength);
+  bool linkDropped() const { return connected_ && linkDropAt_ && linkDropAt_ > serverAnsweredAt_; }
+  const char *connectionStatus() const; // the footer's state, an untranslated key
   bool installRetroShortcut(const retro::Game &game);
   bool installShortcut(const std::string &name, const std::string &icon, const std::string &url,
                        const std::string &titleId, uint64_t size, bool justDownloaded = true);
