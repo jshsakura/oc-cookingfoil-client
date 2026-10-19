@@ -210,7 +210,7 @@ std::string Application::homebrewIcon(const homebrew::App &app) {
   const auto file = homebrewFile(app);
   const auto nro = std::find_if(homebrewCard_.begin(), homebrewCard_.end(),
                                 [&](const homebrew::CardNro &entry) { return entry.path == file; });
-  const auto key = nro == homebrewCard_.end() || nro->icon.empty() ? std::string() : "card:" + nro->path;
+  const auto key = nro == homebrewCard_.end() || nro->icon.empty() ? std::string() : homebrew::cardIconKey(*nro);
   const auto icon = homebrew::tileIcon(app, nro != homebrewCard_.end(), key);
   if (icon == key && !key.empty()) images_->provide(key, nro->icon);
   return icon;

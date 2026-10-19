@@ -55,6 +55,10 @@ const App *matchCard(const std::vector<App> &apps, const std::string &path);
 // file there (`cardKey`; empty when the file has none, and the tile draws
 // the name's initial), never the server's; one not on the card the server's.
 std::string tileIcon(const App &app, bool onCard, const std::string &cardKey);
+// The image key of a card file's icon. The file's size and time are in it,
+// so a file written again (an update, a reinstall) shows its new icon in
+// the same run instead of the one the key was first given.
+std::string cardIconKey(const CardNro &nro);
 // For a listed app with no ledger entry but a file on the card: Installed
 // when the versions agree ("v" in front ignored) or either is unknown.
 Status cardStatus(const std::string &appVersion, const std::string &cardVersion);

@@ -215,6 +215,9 @@ const App *matchCard(const std::vector<App> &apps, const std::string &path) {
 std::string tileIcon(const App &app, bool onCard, const std::string &cardKey) {
   return onCard || app.cardOnly ? cardKey : app.iconUrl;
 }
+std::string cardIconKey(const CardNro &nro) {
+  return "card:" + nro.path + "#" + std::to_string(nro.size) + "-" + std::to_string(nro.mtime);
+}
 Status cardStatus(const std::string &appVersion, const std::string &cardVersion) {
   const auto a = bare(appVersion), c = bare(cardVersion);
   return a.empty() || c.empty() || a == c ? Status::Installed : Status::Update;

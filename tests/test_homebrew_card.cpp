@@ -195,6 +195,13 @@ int runHomebrewCardTests() {
     local.cardOnly = true;
     CHECK(tileIcon(local, true, "card:switch/a.nro") == "card:switch/a.nro");
     CHECK(tileIcon(local, true, "").empty());
+    // The same path written again is another picture.
+    CardNro before{"switch/a/a.nro", "a", "", "1", "old", 100, 1000};
+    CardNro after = before;
+    after.size = 120, after.mtime = 2000;
+    CHECK(cardIconKey(before).rfind("card:", 0) == 0);
+    CHECK(cardIconKey(before) != cardIconKey(after));
+    CHECK(cardIconKey(before) == cardIconKey(CardNro{before}));
   }
   // The scan on a real folder: depth, exclusions, files that are no .nro.
   namespace fs = std::filesystem;
