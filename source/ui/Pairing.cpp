@@ -14,6 +14,7 @@ void Application::askPairMessage() {
   request.maxLength = int(net::PairMessageLimit);
   textRequest_ = request;
   textField_ = -1;
+  raField_ = -1; // the keyboard is this field's now
   pairMessageField_ = true;
 }
 void Application::setPairMessage(const std::string &text) {

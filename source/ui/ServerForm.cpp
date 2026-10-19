@@ -62,6 +62,7 @@ void Application::askServerField(int field) {
   request.maxLength = lengths[field];
   textRequest_ = request;
   textField_ = field;
+  raField_ = -1; // the keyboard is this field's now
   pairMessageField_ = false;
 }
 void Application::enterText(const std::string &text) {

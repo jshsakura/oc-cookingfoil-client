@@ -100,8 +100,8 @@ Application::~Application() {
   if (dropboxWorker_.joinable())
     dropboxWorker_.join();
   raLinkStop_ = true; // a phone sign-in waiting on the server lets go at once
-  if (raWorker_.joinable())
-    raWorker_.join();
+  raJob_.join();
+  raListJob_.join();
   flushHistory();
   if (storageWorker_.joinable())
     storageWorker_.join();
@@ -976,7 +976,8 @@ void Application::poll() {
   pollShopSaves();
   pollBackupSummary();
   pollDropbox();
-  pollRa();
+  raJob_.poll();
+  raListJob_.poll();
   laps.lap("server saves");
   pollPatches();
   pollPatchCheck();
@@ -1633,6 +1634,7 @@ void Application::action(Action a) {
       request.maxLength = 300;
       textRequest_ = request;
       textField_ = -1;
+      raField_ = -1; // the keyboard is this field's now
       bugMessageField_ = true;
     }
     if (a == Action::Back) bugAsk_ = false;

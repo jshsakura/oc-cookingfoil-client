@@ -86,8 +86,9 @@ struct Credentials {
 // HKDF, AES-256-GCM with the code as additional data. An error when anything
 // does not fit, which is also what a swapped or altered envelope gives.
 Parsed<Credentials> openEnvelope(const std::string &secret, const Sealed &sealed, const std::string &code);
-// POST .../result: {"ok":true,"username":...} or {"ok":false}.
-std::string linkResultBody(bool ok, const std::string &username);
+// POST .../result: {"ok":true,"username":...}, or {"ok":false} with the
+// reason when there is one.
+std::string linkResultBody(bool ok, const std::string &username, const std::string &reason = "");
 // Its answer: "done", "wrong" (the phone asks again) or "failed".
 std::string parseLinkState(const std::string &json);
 } // namespace foil::achievements

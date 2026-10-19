@@ -219,10 +219,11 @@ Parsed<Credentials> openEnvelope(const std::string &secret, const Sealed &sealed
   if (c.user.empty() || c.password.empty()) return {{}, broken};
   return {c, {}};
 }
-std::string linkResultBody(bool ok, const std::string &username) {
+std::string linkResultBody(bool ok, const std::string &username, const std::string &reason) {
   Json root(json_object_new_object());
   json_object_object_add(root.get(), "ok", json_object_new_boolean(ok));
   if (ok) json_object_object_add(root.get(), "username", json_object_new_string(username.c_str()));
+  else if (!reason.empty()) json_object_object_add(root.get(), "reason", json_object_new_string(reason.c_str()));
   return json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PLAIN);
 }
 std::string parseLinkState(const std::string &json) {

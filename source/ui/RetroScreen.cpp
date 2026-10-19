@@ -659,17 +659,17 @@ void Application::retroAction(Action a) {
     raAction(a);
     return;
   }
-  // X on the shelves: RetroAchievements (search is the system list's).
-  if (a == Action::Search && retroView_ == RetroView::Home) {
-    openRaPopup();
-    return;
-  }
   if (retroArchAsking_) {
     if (a == Action::Back) retroArchAsking_ = false;
     if (a == Action::Accept || a == Action::Queue) {
       retroArchAsking_ = false;
       syncRetroArch(a == Action::Queue);
     }
+    return;
+  }
+  // X on the shelves: RetroAchievements (search is the system list's).
+  if (a == Action::Search && retroView_ == RetroView::Home) {
+    openRaPopup();
     return;
   }
   if (a == Action::Queue && retroView_ == RetroView::List) {

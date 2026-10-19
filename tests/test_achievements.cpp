@@ -96,6 +96,7 @@ int runAchievementsTests() {
   CHECK(a::linkUrl("http://192.0.2.10:8080/", link.path, "BAbc") == "http://192.0.2.10:8080/ra-link?c=K7Q2#k=BAbc");
   CHECK(a::linkResultBody(true, "Player") == R"({"ok":true,"username":"Player"})");
   CHECK(a::linkResultBody(false, "Player") == R"({"ok":false})");
+  CHECK(a::linkResultBody(false, "", "unreadable") == R"({"ok":false,"reason":"unreadable"})");
   CHECK(a::parseLinkState(R"({"state":"wrong"})") == "wrong");
   return failures;
 }

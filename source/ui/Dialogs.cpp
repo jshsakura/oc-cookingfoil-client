@@ -267,7 +267,9 @@ void Application::dialogs() {
     languageDialog();
   } else if (retroArchAsking_) {
     retroArchConfirm();
-  } else if (raModal()) {
+  } else if (raListOpen_) {
+    raListDialog();
+  } else if (raOpen_) {
     raDialog();
   } else if (saveNeedsGame_) {
     saveNeedsGameDialog();

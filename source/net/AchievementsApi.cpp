@@ -22,7 +22,7 @@ Parsed<achievements::Account> achievementsAccount(const Server &server, const St
   return {achievements::parseAccount(response.body), {}};
 }
 Parsed<achievements::Account> setAchievementsAccount(const Server &server, const State &state,
-                                                     const std::string &username) {
+                                                     const std::string &username, const std::atomic<bool> *cancel) {
   const auto url = server.url + AccountPath;
   auto headers = authHeaders(server, state, url);
   PostOptions options;
@@ -34,7 +34,7 @@ Parsed<achievements::Account> setAchievementsAccount(const Server &server, const
     options.body = achievements::accountBody(username);
     headers.push_back("Content-Type: application/json");
   }
-  const auto response = post(url, headers, options);
+  const auto response = post(url, headers, options, cancel);
   if (!response.error.empty() || response.status < 200 || response.status >= 300) return {{}, accountError(response)};
   // DELETE may answer with no body: the id is gone, the key as before.
   auto account = achievements::parseAccount(response.body);
@@ -54,20 +54,22 @@ Parsed<achievements::Game> gameAchievements(const Server &server, const State &s
   if (!response.error.empty() || response.status != 200) return {{}, accountError(response)};
   return {achievements::parseGame(response.body, server.url), {}};
 }
-Parsed<achievements::Login> signInRetroAchievements(const std::string &user, const std::string &password) {
+Parsed<achievements::Login> signInRetroAchievements(const std::string &user, const std::string &password,
+                                                    const std::atomic<bool> *cancel) {
   PostOptions options;
   options.timeout = 20;
   options.body = "r=login2&u=" + dropbox::percentEncode(user) + "&p=" + dropbox::percentEncode(password);
   const auto response = post("https://retroachievements.org/dorequest.php",
-                             {"Content-Type: application/x-www-form-urlencoded"}, options);
+                             {"Content-Type: application/x-www-form-urlencoded"}, options, cancel);
+  std::fill(options.body.begin(), options.body.end(), '\0');
   if (!response.error.empty()) return {{}, {response.error}};
   auto login = achievements::parseLogin(response.body);
-  if (login.token.empty()) {
-    // RetroAchievements answers a wrong password with 401 and its reason.
-    if (login.error.empty()) login.error = trf("RetroAchievements did not sign in. HTTP {0}", {std::to_string(response.status)});
-    return {login, {login.error}};
-  }
-  return {login, {}};
+  if (!login.token.empty()) return {login, {}};
+  // Refused with RetroAchievements' own reason (a wrong password answers
+  // 401 with one); anything else, such as 503 or an error page, is RetroAchievements
+  // being unreachable, not the password.
+  if (!login.error.empty()) return {login, {login.error}};
+  return {{}, {trf("RetroAchievements did not sign in. HTTP {0}", {std::to_string(response.status)})}};
 }
 namespace {
 constexpr const char *LinkPath = "/api/retro/achievements/link";
@@ -108,14 +110,15 @@ Parsed<SealedWait> waitSealed(const Server &server, const State &state, const st
   return {wait, {}};
 }
 Parsed<std::string> sendLinkResult(const Server &server, const State &state, const std::string &code, bool ok,
-                                   const std::string &username) {
+                                   const std::string &username, const std::string &reason,
+                                   const std::atomic<bool> *cancel) {
   const auto url = server.url + LinkPath + "/" + dropbox::percentEncode(code) + "/result";
   auto headers = authHeaders(server, state, url);
   headers.push_back("Content-Type: application/json");
   PostOptions options;
   options.timeout = 20;
-  options.body = achievements::linkResultBody(ok, username);
-  const auto response = post(url, headers, options);
+  options.body = achievements::linkResultBody(ok, username, reason);
+  const auto response = post(url, headers, options, cancel);
   if (!response.error.empty() || response.status != 200) return {{}, linkError(response)};
   return {achievements::parseLinkState(response.body), {}};
 }

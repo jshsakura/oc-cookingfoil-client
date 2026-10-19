@@ -9,6 +9,7 @@
 #include "ui/DropboxRows.hpp"
 #include "ui/Images.hpp"
 #include "ui/Painter.hpp"
+#include "ui/Job.hpp"
 #include "ui/Qr.hpp"
 #include "platform/Seal.hpp"
 #include "ui/Sounds.hpp"
@@ -28,6 +29,7 @@
 #include <future>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <set>
 #include <cmath>
 #include <unordered_map>
@@ -714,41 +716,47 @@ private:
   int raRow_ = 0;              // its focus: 0 id, 1 password, 2 sign in, 3 the phone (signed in: 0 the button)
   int raField_ = -1;           // the field the keyboard types into
   std::string raUser_, raPassword_; // the password lives only until the sign-in runs
-  std::string raBusy_;         // "read", "signin", "signout", "game", "link", "linkwait"
   Error raError_;
-  std::thread raWorker_;
-  std::atomic<bool> raDone_{false};
-  std::function<void()> raFinish_;
+  // The account's jobs (read, sign in and out, the phone link) one at a time;
+  // a game's list on its own, so neither waits on the other.
+  Job raJob_, raListJob_;
   bool raListOpen_ = false;    // a game's achievements
   int raListRow_ = 0;
   std::string raListGame_;     // whose list is shown or coming
+  std::string raListAsked_;    // whose list was asked for (a fetch for another game finishes first)
   achievements::Game raList_;
   Error raListError_;
   // The phone sign-in: a key made for one QR and kept only in memory; the
   // console waits for the phone's sealed envelope one long poll at a time.
-  bool raLinking_ = false;     // the QR shows in place of the fields
-  seal::Key raLinkKey_;
-  achievements::LinkStart raLink_;
-  std::string raLinkUrl_;
-  bool raLinkWrong_ = false;   // the phone sent a password RetroAchievements refused
-  uint32_t raLinkUntil_ = 0;   // SDL ticks when the QR expires
+  struct RaLink {
+    seal::Key key;
+    achievements::LinkStart start;
+    std::string url;
+    std::string note;   // why the phone is asked again, "" while it is first awaited
+    uint32_t until = 0; // SDL ticks when the QR expires
+  };
+  std::optional<RaLink> raLink_; // the QR shows in place of the fields
   std::atomic<bool> raLinkStop_{false};
   Qr raQr_;
-  bool runRaJob(const std::string &busy, std::function<std::function<void()>()> job);
-  void pollRa();
+  bool raRunning() const { return raJob_.busy(); }
   void readRaAccount();
   void openRaPopup();
   void raAction(Action a);
   void raDialog();
   void raSignIn();
   void raSignOut();
+  // Both sign-ins end here: the console is signed in as `user`; `serverError`
+  // says the server did not keep the id.
+  void raSignedIn(const std::string &user, const Error &serverError);
   void raPhone();          // opens the QR
   void raLinkWait();       // one long poll for the phone's envelope
+  void raLinkAgain(const std::string &code, const std::string &note); // the phone asks again
   void raLinkClose();      // drops the QR and its key
   void raLinkView(float x, float y, float w);
   float raHeaderButton(float right); // the header's X 업적; returns its left edge
   int raCard(int y);                 // the game page's achievements card
   void openRaList();
+  void raListFetch(); // asks for raListGame_'s list once nothing else is being fetched
   void raListAction(Action a);
   void raListDialog();
   bool raModal() const { return raOpen_ || raListOpen_; }
