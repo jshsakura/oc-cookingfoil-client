@@ -217,9 +217,15 @@ Error makeShortcut(const ShortcutRequest &request, uint64_t &id) {
 void refreshShortcutIcon(uint64_t id) {
   // ns application manager InvalidateApplicationControlCache, cmd 404, as
   // sphaira's ns.cpp.
-  if (R_FAILED(nsInitialize())) return;
-  if (Service *ns = nsGetServiceSession_ApplicationManagerInterface()) serviceDispatchIn(ns, 404, id);
-  nsExit();
+  Result rc = nsInitialize();
+  if (R_SUCCEEDED(rc)) {
+    Service *ns = nsGetServiceSession_ApplicationManagerInterface();
+    rc = ns ? serviceDispatchIn(ns, 404, id) : MAKERESULT(Module_Libnx, LibnxError_NotInitialized);
+    nsExit();
+  }
+  char code[16];
+  std::snprintf(code, sizeof code, "0x%08X", rc);
+  logLine("shortcut refresh " + forwarder::hexId(id) + " " + code);
 }
 Error removeShortcut(uint64_t id) {
   Services services;
