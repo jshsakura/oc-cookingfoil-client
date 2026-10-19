@@ -51,7 +51,6 @@ bool Runtime::open(int width, int height, bool offscreen) {
   }
   if (!renderer_)
     return false;
-  logLine("runtime ready"); // SDL, window and renderer: the heap they took
   SDL_GetRendererOutputSize(renderer_, &width, &height);
   // Explicit scale avoids the SDL console port's logical-size letterboxing.
   SDL_RenderSetScale(renderer_, width / float(Width), height / float(Height));

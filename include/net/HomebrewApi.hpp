@@ -15,10 +15,11 @@ bool homebrewList(const Server &server, const State &state, std::string &etag, s
 // `received` counts files already on the card as they are passed, for the
 // progress; `kept`, when given, counts those alone, so a speed can leave
 // them out (they came from the card, not the network).
-// How far the check of the files already on the card has come (total 0
-// once it is done), for the screen.
+// How far the check of the files already on the card has come, in bytes
+// (total 0 once it is done), for the screen. Bytes, not files: one big file
+// takes as long as thousands of small ones.
 struct CheckProgress {
-  std::atomic<int> done{0}, total{0};
+  std::atomic<uint64_t> done{0}, total{0};
 };
 // A folder install's files the list left out (App::filesCount), read from
 // App::filesUrl into app.files; true at once when it has them already.

@@ -174,7 +174,6 @@ void Application::takeHomebrewLedgerCheck() {
     }
   for (const auto &id : check.followed)
     logLine("homebrew " + id + ": the card's file is not the one installed; the ledger follows the card");
-  if (check.hashed) logLine("homebrew ledger: hashed " + std::to_string(check.hashed) + " file(s) whose size or time changed");
   homebrewLedgerLooked_.clear();
   if (changed) saveHomebrewLedger();
 }
@@ -359,7 +358,7 @@ bool Application::runHomebrew(const homebrew::App &app) {
         // A port's files come with it now, not with the list; the ledger keeps them.
         auto app = listed;
         const bool ok = net::homebrewFilesOf(server, state, app, error, &retroCancel_) &&
-                        net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_, &homebrewCheck_);
+                        net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_, &cardCheck_);
         // The older copies go here, off the drawing thread.
         std::vector<std::string> removed;
         for (const auto &old : ok ? stale : std::vector<std::string>{})
@@ -388,12 +387,8 @@ bool Application::runHomebrew(const homebrew::App &app) {
             alert_ = error.message;
             return;
           }
-          const uint32_t settling = SDL_GetTicks();
           settleHomebrew(app, seen, fileSha, removed);
-          const uint32_t shortcut = SDL_GetTicks();
           const bool queued = autoHomebrewShortcut(app);
-          if (const uint32_t now = SDL_GetTicks(); now - settling >= 100)
-            logLine("homebrew end: settle " + std::to_string(shortcut - settling) + "ms, shortcut " + std::to_string(now - shortcut) + "ms");
           if (queued) return;
           // Why it ended so soon: only the changed files came.
           message(trf("Downloaded {0}. Open it from hbmenu.", {app.name}) +

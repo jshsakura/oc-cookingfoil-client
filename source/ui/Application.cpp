@@ -222,8 +222,6 @@ bool Application::open() {
   // The first steps run on the main thread; the slow ones (the SD card, the
   // server settings, the console's games) on a thread of their own while
   // this one keeps the butter bouncing and lets the console handle HOME.
-  // Each says how long the one before it took: all in one line at the end
-  // (a "start" with no "startup" after it stopped on the way).
   {
     int w = 0, h = 0;
     SDL_GetRendererOutputSize(paint_.renderer, &w, &h);
@@ -231,11 +229,6 @@ bool Application::open() {
   }
   const uint32_t shownAt = SDL_GetTicks();
   const auto seconds = [&] { return (SDL_GetTicks() - shownAt) / 1000.f; };
-  auto stepAt = SDL_GetTicks();
-  std::string stepName = "window", steps;
-  const auto took = [&] {
-    steps += (steps.empty() ? "" : ", ") + stepName + " " + std::to_string(SDL_GetTicks() - stepAt) + "ms";
-  };
   float progressShown = 0.03f;
   // What the loading thread is on, for the frames drawn meanwhile.
   std::mutex shownLock;
@@ -244,11 +237,8 @@ bool Application::open() {
   // the bar sized to how long it takes on a console (the server settings
   // about half): `from` where it starts, `to` where the next one does.
   float stepFrom = 0.03f, stepTo = 0.06f;
-  const auto background = [&](const std::string &text, float from, float to, const char *name) {
+  const auto background = [&](const std::string &text, float from, float to) {
     std::lock_guard<std::mutex> lock(shownLock);
-    took();
-    stepAt = SDL_GetTicks();
-    stepName = name;
     caption = text;
     stepFrom = from;
     stepTo = to;
@@ -264,7 +254,7 @@ bool Application::open() {
   // Everything after this is read on the loading thread. It never draws:
   // the fonts are the screen's once open, and the language it sets is
   // applied to them when it is done.
-  background("", 0.03f, 0.14f, "fonts");
+  background("", 0.03f, 0.14f);
   loading_ = true;
   std::atomic<bool> loaded{false}, fontsOpen{false}, fontsFailed{false};
   std::thread loader([&] {
@@ -280,7 +270,7 @@ bool Application::open() {
       fontsOpen = true;
       // The saved language is read now so the captions are already in it;
       // reload() sets it again with the config as the last fallback.
-      background(tr("Reading the app's records on the SD card."), 0.14f, 0.38f, "records");
+      background(tr("Reading the app's records on the SD card."), 0.14f, 0.38f);
       if (!statePath_.empty()) {
         const auto saved = loadState(statePath_).value;
         state_.language = saved.language;
@@ -290,11 +280,10 @@ bool Application::open() {
       sounds_.setOn(state_.sounds);
       // Each step says what it is doing under the logo, so a slow SD card or
       // server shows where the time goes.
-      background(tr("Preparing the image cache"), 0.38f, 0.40f, "images");
+      background(tr("Preparing the image cache"), 0.38f, 0.40f);
       images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
       images_->source({}, {}, imageCacheFolder(), fixture_);
-      // Two steps under one caption, so the log tells which of them is slow.
-      background(tr("Reading patches and download history on the SD card"), 0.40f, 0.62f, "downloads");
+      background(tr("Reading patches and download history on the SD card"), 0.40f, 0.62f);
 #ifdef __SWITCH__
       const std::string sd = "sdmc:";
 #else
@@ -302,15 +291,15 @@ bool Application::open() {
 #endif
       if (!sd.empty() && !patchWorker_.joinable()) {
         openCardRecords(sd);
-        background(tr("Reading patches and download history on the SD card"), 0.62f, 0.66f, "patches");
+        background(tr("Reading patches and download history on the SD card"), 0.62f, 0.66f);
         openPatchStore(sd);
       }
       if (!configPath_.empty()) {
-        background(tr("Reading the server settings"), 0.66f, 0.86f, "config");
+        background(tr("Reading the server settings"), 0.66f, 0.86f);
         reload();
       }
 #ifdef __SWITCH__
-      background(tr("Reading the games on this console"), 0.86f, 0.92f, "installed");
+      background(tr("Reading the games on this console"), 0.86f, 0.92f);
       refreshInstalled();
       // Album (applet mode) gets a few hundred MB and no title rights: say so
       // before something big fails, and how to open it properly.
@@ -320,11 +309,6 @@ bool Application::open() {
       }
 #endif
     });
-    // The last step ends here, not after the wait for the start cue below.
-    {
-      std::lock_guard<std::mutex> lock(shownLock);
-      took();
-    }
     loaded = true;
   });
   // The steps' shares follow what they take on the console (records and
@@ -374,7 +358,6 @@ bool Application::open() {
   if (fontsFailed)
     return false;
   paint_.fonts.preferChinese(language() == Language::Chinese);
-  logLine("startup " + steps);
   // The bar runs on to its end before the app shows, rather than the app
   // popping up from part way: a fill, then a moment full to read the last
   // word.
@@ -612,24 +595,6 @@ void Application::localizeNames() {
   }
 }
 namespace {
-// A poll that held the drawing thread long enough to feel (keys and taps
-// wait on it) says which of its steps took the time, in the log.
-struct Laps {
-  static constexpr uint32_t SlowMs = 150, StepMs = 30;
-  uint32_t start = SDL_GetTicks(), at = start;
-  std::string steps;
-  void lap(const char *name) {
-    const uint32_t now = SDL_GetTicks();
-    if (now - at >= StepMs) steps += std::string(" ") + name + " " + std::to_string(now - at) + "ms";
-    at = now;
-  }
-  ~Laps() {
-    static uint32_t loggedAt = 0; // a run of them says so once a second
-    const uint32_t total = SDL_GetTicks() - start;
-    if (total >= SlowMs && SDL_GetTicks() - loggedAt >= 1000 && (loggedAt = SDL_GetTicks()))
-      logLine("slow poll " + std::to_string(total) + "ms:" + (steps.empty() ? " (no single step)" : steps));
-  }
-};
 // Groups copy each item into files (and the base into representative);
 // only the base, or the representative without one, needs its names.
 std::vector<Group> groupedCatalog(std::vector<Item> items) {
@@ -648,7 +613,6 @@ std::vector<Group> groupedCatalog(std::vector<Item> items) {
 } // namespace
 void Application::setItems(std::vector<Item> items) { setGroups(groupedCatalog(std::move(items))); }
 void Application::setGroups(std::vector<Group> groups) {
-  const auto started = SDL_GetTicks();
   groups_ = std::move(groups);
   groupIndex_.clear();
   groupIndex_.reserve(groups_.size());
@@ -663,7 +627,6 @@ void Application::setGroups(std::vector<Group> groups) {
   connected_ = true;
   serverAnsweredAt_ = SDL_GetTicks();
   selected_ = 0;
-  logLine("catalog grouped " + std::to_string(SDL_GetTicks() - started) + "ms, " + std::to_string(groups_.size()) + " games");
 }
 const Group *Application::findGroup(const std::string &id) const {
   const auto found = groupIndex_.find(id);
@@ -966,33 +929,25 @@ void Application::waitForState(int prefer) {
   });
 }
 void Application::poll() {
-  Laps laps;
   if (stateReady_.exchange(false)) {
     stateWorker_.join();
     stateWaiting_ = false;
     reload(statePrefer_);
-    laps.lap("reload");
   }
   pollDevice();
-  laps.lap("device");
   pollSaveJob();
-  laps.lap("save job");
   pollRetro();
-  laps.lap("retro");
   pollShopSaves();
   pollBackupSummary();
   pollDropbox();
   raJob_.poll();
   raListJob_.poll();
   raGamesJob_.poll();
-  laps.lap("server saves");
   pollPatches();
   pollPatchCheck();
-  laps.lap("patches");
   pollFileCleanup();
   pollAppUpdate();
   pollClock();
-  laps.lap("cleanup/update/clock");
   // The keys were made again at a load (core/State): said once.
   if (const auto why = statePath_.empty() ? Rebound::None : takeRebound(); why != Rebound::None) {
     alertTitle_ = tr("Approve this console again");
@@ -1002,9 +957,7 @@ void Application::poll() {
   }
   pollLog();
   pollHomebrew();
-  laps.lap("homebrew");
   pollResumeCheck();
-  laps.lap("resume check");
   // No dimming or auto-sleep while something downloads.
   const bool downloading = installer_.running() || retroDownloading() || (patchWorker_.joinable() && !patchBusy_.empty()) ||
                            !patchQueue_.empty() ||
@@ -1015,7 +968,6 @@ void Application::poll() {
   keepResumeChanges();
   serverRestartNotice();
   followTakeBack();
-  laps.lap("resume points");
   const auto installStatus = installer_.progress().status;
   if (installStatus == install::Status::Running) {
     const auto bytes = net::receivedBytes();
@@ -1132,7 +1084,6 @@ void Application::poll() {
       message(installer_.progress().name + " · " + installer_.progress().error);
     }
   }
-  laps.lap("install end");
   // A patch job whose patch the worker finished (or skipped) ends its row.
   if (!patchWorker_.joinable() && patchQueue_.empty())
     settlePatchJob(false, "");
@@ -1141,7 +1092,6 @@ void Application::poll() {
   if (resumeOffered_ || ended)
     if (auto error = launchQueued())
       alert_ = error.message;
-  laps.lap("next download");
   if (!done_.exchange(false)) {
     // Waiting for approval: asked every 5 seconds for 5 minutes, then - asks again.
     constexpr uint32_t PairWaitMs = 5 * 60 * 1000;
@@ -1165,7 +1115,6 @@ void Application::poll() {
     return;
   }
   takeNetwork();
-  laps.lap("catalog");
 }
 // What the network thread brought: a detail, the approval state or the catalog.
 void Application::takeNetwork() {
@@ -1424,31 +1373,8 @@ std::string Application::selectedName() const {
   }
   return "";
 }
-// A press or tap that held the thread, as a slow draw is told: the screen
-// waits on it, and neither the draw nor the poll counts it.
-// Steps of 30 ms or more go in the line, as a slow poll's do.
-void Application::notePress(const std::string &what, uint32_t from) {
-  if (const uint32_t took = SDL_GetTicks() - from; took >= 150)
-    logLine("slow press " + std::to_string(took) + "ms: " + what + " on screen " + std::to_string(int(screen_)) +
-            pressSteps_);
-  pressSteps_.clear();
-  pressAt_ = SDL_GetTicks();
-}
-void Application::pressLap(const char *name) {
-  const uint32_t now = SDL_GetTicks();
-  if (now - pressAt_ >= 30) pressSteps_ += std::string(" ") + name + " " + std::to_string(now - pressAt_) + "ms";
-  pressAt_ = now;
-}
 void Application::action(Action a) {
   poll();
-  pressSteps_.clear();
-  pressAt_ = SDL_GetTicks();
-  struct Held {
-    Application &app;
-    std::string what;
-    uint32_t from = SDL_GetTicks();
-    ~Held() { app.notePress(what, from); }
-  } held{*this, "action " + std::to_string(int(a))};
   if (a == Action::Up || a == Action::Down || a == Action::Left || a == Action::Right || a == Action::Previous ||
       a == Action::Next)
     sounds_.play(Cue::Move);
@@ -2262,7 +2188,6 @@ float Application::statusBar() {
 }
 void Application::render() {
   poll();
-  const uint32_t drawStart = SDL_GetTicks();
   // An alert that comes up says so once with the error cue.
   if (alert_.empty()) alertHeard_ = false;
   else if (!std::exchange(alertHeard_, true)) sounds_.play(Cue::Error);
@@ -2527,12 +2452,6 @@ void Application::render() {
         paint_.rect(pressed_.x - Pad, pressed_.y - Pad, pressed_.w + 2 * Pad, pressed_.h + 2 * Pad, {0, 0, 0, 36}, 18);
     }
   }
-  // Drawing that held the thread (keys and taps wait on it), once a second.
-  static uint32_t slowLoggedAt = 0;
-  if (const uint32_t took = SDL_GetTicks() - drawStart; took >= 150 && !loading_ && SDL_GetTicks() - slowLoggedAt >= 1000) {
-    slowLoggedAt = SDL_GetTicks();
-    logLine("slow draw " + std::to_string(took) + "ms on screen " + std::to_string(int(screen_)));
-  }
   SDL_RenderPresent(paint_.renderer);
 }
 
@@ -2793,22 +2712,17 @@ bool Application::queueJob(const std::string &kind, const std::string &name, con
   const auto id = history::add(history_, std::move(row));
   if (first)
     history::takeFirstTurn(history_, id);
-  pressLap("queue add");
   saveHistory();
-  pressLap("queue save");
   rebuildQueue();
-  pressLap("queue order");
   // Patches picked with a game are queued as part of it, before it runs.
   if (group)
     return true;
   const bool waits = downloadRunning() || installQueue_.size() > 1;
   const auto launched = launchQueued();
-  pressLap("queue launch");
   if (auto error = launched)
     alert_ = error.message;
   else {
     sounds_.play(Cue::Add);
-    pressLap("queue sound");
     // A shortcut made at once says so itself when it is in.
     if (waits || kind != "shortcut") message(waits ? tr("Added to the download queue.") : tr("Download started."));
   }
@@ -3060,27 +2974,16 @@ std::string Application::failureText(const std::string &error) {
 // 다운로드's records live in cookingfoil.db; the downloads.json of earlier
 // versions moves in once and goes.
 void Application::openDownloads(const std::string &sd) {
-  // At the start the log says which part of this step took the time.
-  uint32_t mark = SDL_GetTicks();
-  std::string parts;
-  const auto part = [&](const char *name) {
-    const uint32_t at = SDL_GetTicks();
-    parts += std::string(parts.empty() ? "" : ", ") + name + " " + std::to_string(at - mark) + "ms";
-    mark = at;
-  };
   makeDirectories(std::filesystem::path(sd + "/switch/cookingfoil").string());
   std::string error;
   const bool opened = store_.open(sd + "/switch/cookingfoil/cookingfoil.db", error);
-  part("open");
   if (!opened) {
     logLine("downloads: " + error);
     history_.clear();
     return;
   }
   history_ = store_.load();
-  part("load");
   installer_.loadResumePoints(store_.resumePoints());
-  part("resume");
   checkResumePoints();
   const auto old = sd + "/switch/cookingfoil/downloads.json";
   if (history_.empty() && std::filesystem::exists(old)) {
@@ -3098,9 +3001,6 @@ void Application::openDownloads(const std::string &sd) {
                                    [](const history::Entry &e) { return e.outcome == history::Outcome::Running; });
   history::settle(history_);
   if (running) saveHistory();
-  part("settle");
-  if (loading_)
-    logLine("downloads " + std::to_string(history_.size()) + " rows: " + parts);
 }
 // The points were written beside the console's placeholders, which can go
 // without them (a system cleanup, another installer); a point with nothing

@@ -145,11 +145,10 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
     card.bytes = got;
     card.left = total > got ? total - got : 0;
     card.paused = held;
-    const int checking = retroToCheck_ ? retroToCheck_.load() : homebrewCheck_.total.load();
-    const int checked = retroToCheck_ ? retroCheckDone_.load() : homebrewCheck_.done.load();
+    const uint64_t checking = cardCheck_.total, checked = std::min<uint64_t>(cardCheck_.done, checking);
     card.phase = held        ? std::string(tr("Paused."))
                  : checking  ? trf("Checking the files already on the card ({0} / {1})",
-                                   {std::to_string(checked), std::to_string(checking)})
+                                   {formatBytes(checked), formatBytes(checking)})
                  : total     ? formatBytes(got) + " / " + formatBytes(total)
                              : std::string(tr("Checking which files to get"));
     // Nothing comes in while it checks: no speed to measure yet.

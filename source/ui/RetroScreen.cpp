@@ -85,7 +85,6 @@ bool Application::runRetroJob(const std::string &busy, std::function<std::functi
   if (retroWorker_.joinable()) return false;
   retroBusy_ = busy;
   retroReceived_ = retroKept_ = 0;
-  pressLap("retro job");
   retroWorker_ = std::thread([this, job = std::move(job)] {
     // Off the drawing core: checking the files already on the card (their
     // hashes) and writing them took frames from the screen.
@@ -96,19 +95,13 @@ bool Application::runRetroJob(const std::string &busy, std::function<std::functi
     retroFinish_ = std::move(finish);
     retroDone_ = true;
   });
-  pressLap("retro thread");
   return true;
 }
 void Application::pollRetro() {
   if (retroDone_.exchange(false)) {
-    // How long the end of a job held the screen, and in which part.
-    const uint32_t from = SDL_GetTicks();
     retroWorker_.join();
-    const uint32_t joined = SDL_GetTicks();
-    const auto busy = std::exchange(retroBusy_, std::string());
+    retroBusy_.clear();
     if (retroFinish_) std::exchange(retroFinish_, nullptr)();
-    if (const uint32_t now = SDL_GetTicks(); now - from >= 150)
-      logLine("slow " + busy + " end: join " + std::to_string(joined - from) + "ms, finish " + std::to_string(now - joined) + "ms");
   }
   if (!retroListDone_.exchange(false)) {
     if (!retroListWorker_.joinable()) startRetroDetail(); // one wanted while a list was loading
@@ -369,7 +362,6 @@ bool Application::getRetroGame(const retro::Game &game, bool again) {
                                : tr("You already have this game. Press Y to get RetroArch and play it."));
     return false;
   }
-  pressLap("retro checks");
   if (sdFree_ && *sdFree_ < game.size + game.size / 10 + (8u << 20)) {
     alertTitle_ = tr("Cannot get the game");
     alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(game.size)});
@@ -378,10 +370,8 @@ bool Application::getRetroGame(const retro::Game &game, bool again) {
   // RetroArch or the game's core missing: the base pack goes in the queue
   // first, so the game (and its shortcut) only come once it can start.
   const bool ready = retroReady(game);
-  pressLap("retro ready");
   if (!ready && !retroArchPending() && syncRetroArch(false))
     message(tr("RetroArch comes first, then the game: it needs RetroArch's files to start."));
-  pressLap("retro sync");
   // Its turn comes in 다운로드's queue, behind whatever downloads now.
   return queueJob("retro", game.name, game.iconUrl, game.bundleUrl, game.size, retro::serializeGame(game));
 }
@@ -405,18 +395,7 @@ bool Application::runRetroGame(const retro::Game &game) {
   }
   if (!runRetroJob(game.id, [this, server, state, sd, game]() -> std::function<void()> {
         Error error;
-        const auto started = std::chrono::steady_clock::now();
-        const uint64_t before = retroReceived_;
         const bool ok = net::retroBundle(server, state, game, sd, retroReceived_, error, &retroCancel_);
-        {
-          // What the bundle took, as a game's download line says it.
-          const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-          const double mb = double(retroReceived_ - std::min<uint64_t>(before, retroReceived_)) / (1024 * 1024);
-          char line[160];
-          std::snprintf(line, sizeof line, "retro bundle %.1f MB in %.0f s = %.1f MB/s%s: ", mb, seconds,
-                        seconds > 0 ? mb / seconds : 0, ok ? "" : " (stopped)");
-          logLine(line + game.name);
-        }
         // A ROM cut off part way would read as there; it goes, and so does
         // its bezel, so the card never lists half a game.
         if (!ok) {
@@ -566,23 +545,24 @@ bool Application::runRetroArch(bool full) {
         // are the server's, which spares fetching the whole pack again.
         if (!full) {
           int adopted = 0;
-          // Counted for the card ("checking 120 / 1800"): no bytes come in
-          // while it runs, and on a slow card it takes a while.
-          int toCheck = 0;
+          // Counted in bytes for the card: no bytes come in while it runs,
+          // and on a slow card a big core takes a while.
+          uint64_t toCheck = 0;
           for (const auto &file : pack.value.files)
-            toCheck += !record.files.count(file.path) && !file.sha256.empty();
-          retroCheckDone_ = 0;
-          retroToCheck_ = toCheck;
+            if (!record.files.count(file.path) && !file.sha256.empty()) toCheck += file.size;
+          cardCheck_.done = 0;
+          cardCheck_.total = toCheck;
           for (const auto &file : pack.value.files) {
             if (retroCancel_ || stop_) break;
             if (record.files.count(file.path) || file.sha256.empty()) continue;
-            ++retroCheckDone_;
+            const uint64_t before = cardCheck_.done;
             const auto local = sd + "/" + file.path;
-            if (!fileExists(local) || fileSize(local) != file.size) continue;
-            if (sha256File(local, &retroCancel_) == file.sha256) {
+            if (fileExists(local) && fileSize(local) == file.size &&
+                sha256File(local, &retroCancel_, &cardCheck_.done) == file.sha256) {
               record.files[file.path] = file.sha256;
               ++adopted;
             }
+            cardCheck_.done = before + file.size;
           }
           if (adopted) {
             logLine("retroarch: " + std::to_string(adopted) + " files already on the card kept");
@@ -590,7 +570,7 @@ bool Application::runRetroArch(bool full) {
             atomicWrite(sd + PackRecordPath, retro::serializePackRecord(record), kept);
           }
         }
-        retroToCheck_ = 0;
+        cardCheck_.total = 0;
         // Stopped while checking: nothing is planned or asked for.
         const auto plan = retroCancel_ || stop_ ? retro::PackPlan{} : retro::planPack(pack.value, record, fileExists, fileSize, sd);
         retroBytes_ = plan.bytes;

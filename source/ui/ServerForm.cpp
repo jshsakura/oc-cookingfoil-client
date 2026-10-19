@@ -202,7 +202,6 @@ bool Application::writeServers(const Config &next, int prefer, const std::string
     alert_ = trf("Could not write config.json. {0}", {error});
     return false;
   }
-  logLine("config saved: " + std::to_string(next.servers.size()) + " servers");
   // A connection still running finishes first; - reads the new file then.
   if (network_.joinable() && !done_) {
     message(tr("Saved the server. Press - to refresh once the connection finishes."));

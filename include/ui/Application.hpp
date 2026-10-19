@@ -987,7 +987,7 @@ private:
   double topCardMovedAt_ = 0; // when its byte count last moved
   double cardChangedAt_ = -10, cardShownAt_ = -10; // a new card's rise; the last frame with one
   TopCard lastCard_; // drawn on in the moment between one job and the next
-  net::CheckProgress homebrewCheck_; // an app's files on the card checked before it downloads
+  net::CheckProgress cardCheck_; // an app's or RetroArch's files on the card checked before it downloads
   double resumedNoteUntil_ = 0; // its bar went back: "중단되었던 블록부터…" until then
   // A paused app or retro game sits on the card, not again in the list.
   size_t queueSkip() const { return queueHeld_ && !installQueue_.empty() && !installer_.running() && !retroDownloading() ? 1 : 0; }
@@ -1355,10 +1355,6 @@ private:
   void cardChanged();
   void followTakeBack();
   bool takenBack_ = false; // heard while a refresh ran: the next poll refreshes
-  void notePress(const std::string &what, uint32_t from);
-  void pressLap(const char *name);
-  std::string pressSteps_;
-  uint32_t pressAt_ = 0;
   bool exitAfterDevice_ = false; // + pressed while the console was being read
   bool cancelRetro_ = false; // the cancel popup is about the retro download
   bool confirmCancel_ = false, confirmExit_ = false, exitAfterCancel_ = false,
@@ -1482,7 +1478,6 @@ private:
   std::atomic<uint64_t> retroReceived_{0};
   std::atomic<uint64_t> retroKept_{0}; // of retroReceived_, files already on the card (not the network)
   std::atomic<uint64_t> retroBytes_{0}; // what the running download expects
-  std::atomic<int> retroCheckDone_{0}, retroToCheck_{0}; // RetroArch's files on the card checked before it downloads
   std::thread retroWorker_;
   std::atomic<bool> retroDone_{false};
   // Paused: a homebrew or retro download stops with its part kept and goes

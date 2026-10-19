@@ -75,7 +75,6 @@ int startTuning(int ceiling, const std::string &place);
 void stopTuning(int id);
 int tunedConnections();
 void tuneTrouble();
-std::string tuningSummary();
 // Whether the running download's count is found (true when none is tuned).
 bool tuningFound();
 // The counts found, kept in `path` on the card across runs: the first

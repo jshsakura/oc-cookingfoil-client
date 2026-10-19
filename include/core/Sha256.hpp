@@ -35,8 +35,10 @@ private:
 };
 // A file's SHA-256 as 64 lowercase hex digits; "" when it cannot be read.
 // Empty when it cannot be read, or when `stop` turns true part way (checked
-// between 1 MB reads, so a big file does not hold up a cancel).
-std::string sha256File(const std::string &path, const std::atomic<bool> *stop = nullptr);
+// between 1 MB reads, so a big file does not hold up a cancel). `read`,
+// when given, counts the bytes as they are read, for a progress bar.
+std::string sha256File(const std::string &path, const std::atomic<bool> *stop = nullptr,
+                       std::atomic<uint64_t> *read = nullptr);
 // The bytes a lowercase or uppercase hex string spells; empty when it is not
 // hex of whole bytes.
 std::string hexBytes(const std::string &hex);

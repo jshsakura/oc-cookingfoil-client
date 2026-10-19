@@ -109,7 +109,6 @@ struct Tuning {
 std::vector<Tuning> runs; // oldest first; the first leads
 int lastId = 0;
 ConnectionTuner *tuner = nullptr;
-ConnectionTuner idle;
 Clock::time_point spanStart;
 uint64_t spanBytes = 0;
 std::atomic<int> active{0};
@@ -224,10 +223,6 @@ void tuneTrouble() {
 bool tuningFound() {
   std::lock_guard<std::mutex> held(lock);
   return runs.empty() || !tuner || tuner->found();
-}
-std::string tuningSummary() {
-  std::lock_guard<std::mutex> held(lock);
-  return (tuner ? *tuner : idle).summary(active.load());
 }
 void heardActiveDownloads(int count) { active = std::clamp(count, 0, 64); }
 int activeDownloads() { return active.load(); }

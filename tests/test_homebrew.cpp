@@ -3,6 +3,9 @@
 #include "core/Homebrew.hpp"
 #include "core/HomebrewCard.hpp"
 #include "core/Sha256.hpp"
+#include <atomic>
+#include <cstdio>
+#include <filesystem>
 using namespace foil::homebrew;
 int runHomebrewTests() {
   int failures = 0;
@@ -273,6 +276,19 @@ int runHomebrewTests() {
   hasher.update("a", 1);
   hasher.update("bc", 2);
   CHECK(hasher.hex() == foil::update::sha256Hex("abc"));
+  {
+    // A file's hash counts its bytes as it reads them: the card check's bar
+    // moves through a big file instead of waiting for its end.
+    const auto path = (std::filesystem::temp_directory_path() / "cookingfoil-sha-read.bin").string();
+    const std::string body(3 << 20, 'x');
+    std::FILE *out = std::fopen(path.c_str(), "wb");
+    std::fwrite(body.data(), 1, body.size(), out);
+    std::fclose(out);
+    std::atomic<uint64_t> read{5};
+    CHECK(foil::sha256File(path, nullptr, &read) == foil::update::sha256Hex(body));
+    CHECK(read == 5 + body.size());
+    std::remove(path.c_str());
+  }
   // The ledger round trips; states follow the hash and the file.
   Ledger ledger{{"gh-9c9ef5794087", {"sha256:fb7d", "1.1.0", "switch/ytb-player/ytb-player.nro", {}, {}, {}}}};
   const auto read = parseLedger(serializeLedger(ledger));
