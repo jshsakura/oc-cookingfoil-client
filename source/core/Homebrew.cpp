@@ -383,6 +383,38 @@ std::vector<std::string> movedAway(const std::string &oldFile, const std::vector
     if (!used.count(file)) out.push_back(file);
   return out;
 }
+std::string verifiedPath(const std::string &id) { return "switch/cookingfoil/homebrew-files/" + id + ".seen"; }
+// One line a file: hash, size, time, then the path (which may hold spaces).
+std::string serializeVerified(const VerifiedFiles &files) {
+  std::string out;
+  for (const auto &[path, file] : files)
+    out += file.sha256 + " " + std::to_string(file.seen.size) + " " + std::to_string(file.seen.mtime) + " " + path + "\n";
+  return out;
+}
+VerifiedFiles parseVerified(const std::string &text) {
+  VerifiedFiles out;
+  size_t at = 0;
+  while (at < text.size()) {
+    const auto end = std::min(text.find('\n', at), text.size());
+    const auto line = text.substr(at, end - at);
+    at = end + 1;
+    const auto a = line.find(' '), b = a == std::string::npos ? a : line.find(' ', a + 1),
+               c = b == std::string::npos ? b : line.find(' ', b + 1);
+    if (c == std::string::npos || a != 64) continue;
+    const auto path = line.substr(c + 1);
+    if (!pathAllowed(path)) continue;
+    try {
+      out[path] = {line.substr(0, a), {std::stoull(line.substr(a + 1, b - a - 1)), std::stoll(line.substr(b + 1, c - b - 1))}};
+    } catch (...) {
+    }
+  }
+  return out;
+}
+bool stillVerified(const VerifiedFiles &files, const std::string &path, const std::string &sha256,
+                   const std::optional<CardFile> &now) {
+  const auto found = files.find(path);
+  return now && !sha256.empty() && found != files.end() && found->second.sha256 == sha256 && found->second.seen == *now;
+}
 std::optional<CardFile> cardFile(const std::string &fullPath) {
   struct stat st {};
   if (::stat(fullPath.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) return std::nullopt;

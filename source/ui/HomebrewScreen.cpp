@@ -548,6 +548,8 @@ void Application::removeHomebrew(const homebrew::App &picked, bool folder) {
             }
             homebrew::removeEmptyFolders(sd, file);
           }
+          std::error_code gone;
+          std::filesystem::remove(sd + "/" + homebrew::verifiedPath(id), gone);
           for (const auto shortcut : shortcutIds)
             if (const auto failed = platform::removeShortcut(shortcut)) done.shortcutError = failed.message;
             else done.shortcuts.push_back(shortcut);

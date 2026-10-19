@@ -321,12 +321,38 @@ bool homebrewFiles(const Server &server, const State &state, const homebrew::App
     CheckProgress *check;
     ~Done() { if (check) check->total = 0; }
   } done{check};
+  // The files checked by their hash, here or as they came, are written down
+  // with their size and time however this ends; the next check passes them
+  // unread while they stay so. What the bundle wrote is hashed next time.
+  struct Checked {
+    const std::string &sd;
+    const homebrew::App &app;
+    homebrew::VerifiedFiles files;
+    std::vector<char> ok;
+    std::mutex lock;
+    void mark(size_t i) {
+      std::lock_guard<std::mutex> held(lock);
+      ok[i] = 1;
+    }
+    ~Checked() {
+      for (size_t i = 0; i < app.files.size(); ++i)
+        if (ok[i])
+          if (const auto now = homebrew::cardFile(sd + "/" + app.files[i].path))
+            files[app.files[i].path] = {app.files[i].sha256, *now};
+      std::string error;
+      if (!atomicWrite(sd + "/" + homebrew::verifiedPath(app.id), homebrew::serializeVerified(files), error))
+        logLine("homebrew " + app.id + ": checked files not kept: " + error);
+    }
+  } checked{sd, app, homebrew::parseVerified(readFile(sd + "/" + homebrew::verifiedPath(app.id))),
+            std::vector<char>(app.files.size()), {}};
   for (size_t i = 0; i < app.files.size(); ++i) {
     if (cancel && *cancel) return false;
     const auto &file = app.files[i];
     total += file.size;
     const uint64_t before = check ? check->done.load() : 0;
-    have[i] = alreadyThere(sd + "/" + file.path, file.size, file.sha256, cancel, check ? &check->done : nullptr);
+    have[i] = homebrew::stillVerified(checked.files, file.path, file.sha256, homebrew::cardFile(sd + "/" + file.path)) ||
+              alreadyThere(sd + "/" + file.path, file.size, file.sha256, cancel, check ? &check->done : nullptr);
+    if (have[i]) checked.mark(i);
     if (have[i]) {
       kept.insert(file.path);
       received += file.size;
@@ -381,6 +407,7 @@ bool homebrewFiles(const Server &server, const State &state, const homebrew::App
       const auto &file = app.files[i];
       if (have[i]) continue; // counted above
       if (alreadyThere(sd + "/" + file.path, file.size, file.sha256, cancel, nullptr)) { // the bundle wrote it before it gave out
+        checked.mark(i);
         received += file.size;
         passed(file.size);
         continue;
@@ -393,6 +420,7 @@ bool homebrewFiles(const Server &server, const State &state, const homebrew::App
         if (wait) busy = wait;
         return;
       }
+      if (!file.sha256.empty()) checked.mark(i);
     }
   };
   std::vector<std::thread> threads;
