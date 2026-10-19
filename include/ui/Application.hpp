@@ -770,6 +770,17 @@ private:
   void raLinkCard();                       // the QR while the phone is awaited
   void raAccountRow(float y, bool loading); // signed in: the account, its points and sign-out
   void raGamesPage();                      // either of those, then the games, scrolling as one
+  // What to do when there is nothing to show yet, set out as a manual
+  // page: an icon, what is missing, why, and numbered steps.
+  struct RaGuide {
+    int icon = 33;
+    std::string title, body;
+    std::vector<std::string> steps;
+    bool bad = false;
+  };
+  std::optional<RaGuide> raGuide() const;
+  float raGuideHeight(const RaGuide &guide);
+  void raGuideCard(float y, const RaGuide &guide);
   std::vector<std::pair<std::string, std::string>> raPageHints() const;
   float raHeaderButton(float right); // the header's X 업적; returns its left edge
   int raCard(int y);                 // the game page's achievements card

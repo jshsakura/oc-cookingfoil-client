@@ -12,6 +12,8 @@ namespace {
 constexpr float Top = 90, Bottom = 660, CardHeight = 466, RowHeight = 84, RowStep = 96;
 // The connect card above the games, and the line naming them under it.
 constexpr float ConnectHeight = 324, HeadingRoom = 56;
+// A guide card: its title, the lines of why, then a step a row.
+constexpr float GuideBody = 60, GuideLine = 24, GuideStep = 40, GuideGap = 16, GuideWidth = 860;
 } // namespace
 
 void Application::openRaPage() {
@@ -44,6 +46,10 @@ void Application::raGamesFetch() {
     return [this, games] {
       raGamesError_ = games.error;
       if (!games.error) raGames_ = games.value;
+      // Games matched by their file first: those are the ones that earn.
+      // Matched by title (mostly translations) may not, so they follow, in
+      // the server's order within each.
+      std::stable_partition(raGames_.list.begin(), raGames_.list.end(), [](const auto &g) { return !g.byTitle; });
       raPageRow_ = std::clamp(raPageRow_, 0, int(raGames_.list.size()));
     };
   }, [this] { raGamesError_.message = tr("Something went wrong with RetroAchievements. Check log.txt."); });
@@ -172,13 +178,12 @@ void Application::raAccountRow(float y, bool loading) {
   paint_.rect(278, y + 10, 64, 64, Ground, 32);
   paint_.icon(31, 278 + 18, y + 10 + 18, Ink, 28);
   paint_.fonts.text(raSignedIn_, 360, y + 12, 21, Ink, true, 560);
-  const std::string status = !raAccount_.enabled ? std::string(tr("This server has no RetroAchievements key, so games' achievement lists do not show."))
-                             : loading           ? std::string(tr("Loading the achievements."))
-                             : raGamesError_     ? raGamesError_.message
-                             : raGames_.hasUser  ? trf("{0} points · {1} games with achievements",
-                                                       {std::to_string(raGames_.userPoints), std::to_string(raGames_.list.size())})
-                                                 : std::string(tr("The server has no id registered, so progress does not show."));
-  paint_.fonts.text(status, 360, y + 46, 16, raGamesError_ && !loading ? Bad : Secondary, false, 640);
+  // What the account has earned; what is missing is said by the card below.
+  const std::string status = loading            ? std::string(tr("Loading the achievements."))
+                             : raGames_.hasUser ? trf("{0} points · {1} games with achievements",
+                                                      {std::to_string(raGames_.userPoints), std::to_string(raGames_.list.size())})
+                                                : std::string(tr("Signed in on this console."));
+  paint_.fonts.text(status, 360, y + 46, 16, Secondary, false, 640);
   const std::string out = tr("Sign out|achievements");
   const float bw = paint_.fonts.measure(out, 17, true) + 36;
   paint_.rect(1230 - bw, y + 22, bw, 40, focused ? Butter : Ground, 12);
@@ -191,12 +196,14 @@ void Application::raGamesPage() {
   const bool signedIn = !raSignedIn_.empty();
   const auto &rows = raGames_.list;
   const bool loading = raAccount_.enabled && (raGamesJob_.busy() || !raGamesAsked_);
-  // Not signed in with no key on the server, there is nothing to list.
-  const bool listed = signedIn || raAccount_.enabled;
-  const float head = signedIn ? RowStep : ConnectHeight + (listed ? HeadingRoom : 0);
+  const auto guide = raGuide();
+  // Not signed in, the games are named under the card when there are any.
+  const bool heading = !signedIn && !rows.empty();
+  const float head = (signedIn ? RowStep : ConnectHeight + GuideGap) + (guide ? raGuideHeight(*guide) + GuideGap : 0) +
+                     (heading ? HeadingRoom - GuideGap : 0);
   raPageRow_ = std::clamp(raPageRow_, 0, int(rows.size()));
   const float view = Bottom - Top;
-  const float body = !listed ? 0 : rows.empty() ? (loading ? 3 * RowStep : RowStep) : float(rows.size()) * RowStep;
+  const float body = loading && rows.empty() ? 3 * RowStep : float(rows.size()) * RowStep;
   const float content = head + body, max = std::max(0.f, content - view);
   const float target = raPageRow_ == 0 ? 0 : std::clamp(head + (raPageRow_ - 1) * RowStep + RowHeight / 2 - view / 2, 0.f, max);
   const float offset = glide("raPage", 232, Top, 1048, view, target, max, 1);
@@ -205,23 +212,20 @@ void Application::raGamesPage() {
   const float y = Top - offset;
   if (signedIn) raAccountRow(y, loading);
   else raConnectCard(y);
-  if (!listed) {
-    unclip();
-    return;
+  float under = y + (signedIn ? RowStep : ConnectHeight + GuideGap);
+  if (guide) {
+    raGuideCard(under, *guide);
+    under += raGuideHeight(*guide) + GuideGap;
   }
-  if (!signedIn) {
-    const float mid = y + ConnectHeight + HeadingRoom / 2 + 2;
+  if (heading) {
+    const float mid = under + HeadingRoom / 2 - GuideGap;
     const float end = paint_.fonts.middle(tr("Games with achievements on this server"), 270, mid, 20, Ink, true);
-    if (!rows.empty()) paint_.pill(std::to_string(rows.size()), end + 12, mid - 13);
+    paint_.pill(std::to_string(rows.size()), end + 12, mid - 13);
   }
   const float listTop = y + head;
   if (rows.empty()) {
     if (loading)
       for (int n = 0; n < 3; ++n) paint_.skeleton(260, listTop + n * RowStep, 992, RowHeight, 16);
-    else if (raGamesError_ && !signedIn)
-      paint_.fonts.text(raGamesError_.message, 270, listTop + 16, 18, Bad, false, 960);
-    else if (!raGamesError_)
-      paint_.fonts.text(tr("No retro games on this server have achievements yet."), 270, listTop + 16, 18, Secondary);
     unclip();
     return;
   }
@@ -259,11 +263,58 @@ void Application::raGamesPage() {
       right -= 8;
     };
     badge(trf("{0} pts", {std::to_string(g.points)}), false);
+    if (g.earnedHardcore > 0) badge(trf("Hardcore {0}", {std::to_string(g.earnedHardcore)}), true);
     // With no id to count by, how many there are to earn.
     if (raGames_.hasUser) badge(trf("{0}/{1} earned", {std::to_string(g.earned), std::to_string(g.count)}), g.earned > 0);
     else badge(trf("{0} achievements", {std::to_string(g.count)}), false);
   }
   unclip();
+}
+// The one guide the page needs, if any: the server's key first (nothing
+// lists without it), then a list that failed, then the id the server
+// counts progress by, then a list that is empty.
+std::optional<Application::RaGuide> Application::raGuide() const {
+  const bool loading = raAccount_.enabled && (raGamesJob_.busy() || !raGamesAsked_);
+  if (!raAccount_.enabled)
+    return RaGuide{34, tr("The server needs a RetroAchievements key"),
+                   tr("The server fetches each game's achievements and your progress from RetroAchievements, and it needs an API key to do so. Signing in on this console works without it."),
+                   {tr("Ask the server's admin to open the admin dashboard."),
+                    tr("Under Integrations, register a RetroAchievements API key."),
+                    tr("Refresh this screen.")}};
+  if (loading) return std::nullopt;
+  if (raGamesError_)
+    return RaGuide{25, tr("Could not load the achievements"), raGamesError_.message, {tr("Refresh this screen in a moment.")}, true};
+  if (!raSignedIn_.empty() && !raGames_.hasUser)
+    return RaGuide{13, tr("Register your RetroAchievements id on the server"),
+                   tr("This console is signed in, but the server has no id for you, so it cannot show how far you are in each game."),
+                   {tr("Open the server's web page on a phone or computer."),
+                    tr("Register your RetroAchievements id there."),
+                    tr("Refresh this screen.")}};
+  if (raGames_.list.empty())
+    return RaGuide{30, tr("No games are matched yet"),
+                   tr("The server is fetching RetroAchievements' game lists by system and matching them with its ROMs. Only games with achievements appear here."),
+                   {tr("Refresh this screen in a few minutes.")}};
+  return std::nullopt;
+}
+float Application::raGuideHeight(const RaGuide &guide) {
+  const int lines = paint_.fonts.lineCount(guide.body, 17, GuideWidth, 2);
+  return GuideBody + lines * GuideLine + 22 + guide.steps.size() * GuideStep + 18;
+}
+void Application::raGuideCard(float y, const RaGuide &guide) {
+  const float height = raGuideHeight(guide);
+  const float stepsTop = y + GuideBody + paint_.fonts.lineCount(guide.body, 17, GuideWidth, 2) * GuideLine + 22;
+  paint_.rect(260, y, 992, height, Surface, 20);
+  paint_.rect(284, y + 24, 56, 56, guide.bad ? SDL_Color{Bad.r, Bad.g, Bad.b, 36} : Ground, 28);
+  paint_.icon(guide.icon, 284 + 14, y + 24 + 14, guide.bad ? Bad : Ink, 28);
+  constexpr float Text = 364, Width = GuideWidth;
+  paint_.fonts.text(guide.title, Text, y + 24, 22, Ink, true, Width);
+  paint_.fonts.wrapped(guide.body, Text, y + 60, 17, Secondary, Width, 2);
+  for (size_t i = 0; i < guide.steps.size(); ++i) {
+    const float top = stepsTop + i * GuideStep;
+    paint_.rect(Text, top, 28, 28, Butter, 14);
+    paint_.fonts.centered(std::to_string(i + 1), Text + 14, top + 2, 16, Ink, 28, 1, true);
+    paint_.fonts.middle(guide.steps[i], Text + 42, top + 14, 18, Ink, false, Width - 42);
+  }
 }
 void Application::raPageAction(Action a) {
   if (a == Action::Back) {
