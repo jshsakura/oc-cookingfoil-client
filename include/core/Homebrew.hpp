@@ -152,6 +152,21 @@ std::vector<std::string> parseFileList(const std::string &json);
 // files its last install listed there that the new one does not use. Empty
 // while it stays in its folder, where an unlisted file may be its settings.
 std::vector<std::string> movedAway(const std::string &oldFile, const std::vector<std::string> &oldFiles, const App &app);
+// A folder install's files as last checked on the card: the hash they
+// matched, at the size and time they had. One still at that size and time
+// is taken as checked without reading it again (thousands of small files
+// were read whole at every update). From the SD card root.
+struct Verified {
+  std::string sha256;
+  CardFile seen;
+};
+using VerifiedFiles = std::map<std::string, Verified>; // by path
+std::string verifiedPath(const std::string &id);
+std::string serializeVerified(const VerifiedFiles &files);
+VerifiedFiles parseVerified(const std::string &text);
+// Whether `path` was checked at this hash and is still as it was then.
+bool stillVerified(const VerifiedFiles &files, const std::string &path, const std::string &sha256,
+                   const std::optional<CardFile> &now);
 // The size and modified time of a file at a full path, or nothing.
 std::optional<CardFile> cardFile(const std::string &fullPath);
 // The ledger checked against the card. A file with the size and time it was

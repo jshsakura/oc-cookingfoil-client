@@ -127,10 +127,13 @@ std::string sha256File(const std::string &path, const std::atomic<bool> *stop, s
   std::unique_ptr<FILE, int (*)(FILE *)> in(std::fopen(path.c_str(), "rb"), std::fclose);
   if (!in) return "";
   Sha256 sha;
-  std::vector<char> buffer(1 << 20);
-  for (size_t n; (n = std::fread(buffer.data(), 1, buffer.size(), in.get())) > 0;) {
+  // One buffer a thread, made once and not cleared: a new zeroed megabyte a
+  // file cost more than reading a folder of small files.
+  constexpr size_t Size = 1 << 20;
+  thread_local const std::unique_ptr<char[]> buffer(new char[Size]);
+  for (size_t n; (n = std::fread(buffer.get(), 1, Size, in.get())) > 0;) {
     if (stop && *stop) return "";
-    sha.update(buffer.data(), n);
+    sha.update(buffer.get(), n);
     if (read) *read += n;
   }
   return std::ferror(in.get()) ? "" : sha.hex();

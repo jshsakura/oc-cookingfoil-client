@@ -314,6 +314,22 @@ int runHomebrewTests() {
     CHECK(fileListPath("gh-1") == "switch/cookingfoil/homebrew-files/gh-1.json");
   }
   {
+    // A folder install's checked files: kept by hash, size and time; one
+    // touched, resized or listed at another hash is read again.
+    const std::string sha(64, 'a');
+    VerifiedFiles files{{"switch/cs/valve/a b.bsp", {sha, {100, 1000}}}, {"switch/cs/x.wav", {sha, {5, 7}}}};
+    const auto back = parseVerified(serializeVerified(files));
+    CHECK(back.size() == 2 && back.at("switch/cs/valve/a b.bsp").seen == (CardFile{100, 1000}));
+    CHECK(stillVerified(back, "switch/cs/valve/a b.bsp", sha, CardFile{100, 1000}));
+    CHECK(!stillVerified(back, "switch/cs/valve/a b.bsp", sha, CardFile{100, 1001}));
+    CHECK(!stillVerified(back, "switch/cs/valve/a b.bsp", sha, CardFile{101, 1000}));
+    CHECK(!stillVerified(back, "switch/cs/valve/a b.bsp", std::string(64, 'b'), CardFile{100, 1000}));
+    CHECK(!stillVerified(back, "switch/cs/valve/a b.bsp", sha, std::nullopt));
+    CHECK(!stillVerified(back, "switch/cs/other.bin", sha, CardFile{100, 1000}));
+    CHECK(parseVerified("garbage\n" + sha + " 1 2 ../escape\n").empty());
+    CHECK(verifiedPath("gh-1") == "switch/cookingfoil/homebrew-files/gh-1.seen");
+  }
+  {
     // Renamed on the server: the old folder's listed files go, not the ones
     // the new install uses, and nothing while the folder stays the same.
     App moved;
