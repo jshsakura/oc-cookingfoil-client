@@ -192,6 +192,7 @@ const Translation rows[] = {
     {"No games are matched yet", "아직 업적과 연결된 게임이 없습니다", "実績と結び付いたゲームはまだありません", "还没有与成就关联的游戏"},
     {"The server is fetching RetroAchievements' game lists by system and matching them with its ROMs. Only games with achievements appear here.", "서버가 RetroAchievements의 기종별 게임 목록을 받아 이 서버의 롬과 맞추는 중입니다. 업적이 있는 게임만 여기에 나옵니다.", "サーバーがRetroAchievementsの機種別ゲーム一覧を受け取り、このサーバーのROMと照らし合わせています。実績のあるゲームだけがここに表示されます。", "服务器正在获取 RetroAchievements 的各机种游戏列表，并与本服务器的 ROM 匹配。这里只显示有成就的游戏。"},
     {"Refresh this screen in a few minutes.", "몇 분 뒤 이 화면을 새로고침합니다.", "数分後に、この画面を再読み込みします。", "几分钟后刷新此页面。"},
+    {"Achievements {0}", "업적 {0}", "実績 {0}", "成就 {0}"},
     {"Sign out|achievements", "연결 해제", "接続解除", "断开连接"},
     {"Something went wrong with RetroAchievements. Check log.txt.", "RetroAchievements 처리 중 문제가 생겼습니다. log.txt를 확인해 주세요.", "RetroAchievementsの処理で問題が起きました。log.txtを確認してください。", "处理 RetroAchievements 时出错，请查看 log.txt。"},
     {"The id can be registered on the server's web page too. A ROM changed from the original, such as a translation, may not earn achievements.", "아이디는 서버 웹에서도 등록할 수 있습니다. 번역판처럼 원본에서 바뀐 롬은 업적이 쌓이지 않을 수 있습니다.", "IDはサーバーのWebページでも登録できます。翻訳版など元から変更されたROMでは実績が記録されないことがあります。", "账号也可以在服务器网页上登记。翻译版等改动过原版的 ROM 可能无法获得成就。"},

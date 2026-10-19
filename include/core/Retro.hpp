@@ -33,6 +33,8 @@ struct Game {
   int variants = 1;    // versions of it the server has (a list shows one, its pick)
   // Its bezel: one made for this game, the system's default, or none.
   enum class Bezel { None, System, Game } bezel = Bezel::None;
+  // Its RetroAchievements match; count 0 when it has none.
+  achievements::Summary achievements;
 };
 // One version of a game, as its detail lists them: picking one means its id.
 struct Variant {

@@ -174,6 +174,7 @@ void Application::retroHome() {
       // One line under the cover, as on 홈's shelves; the focused name runs.
       if (on) marquee(game.name, cx, cy + 158, 18, Card, false);
       else paint_.fonts.text(game.name, cx, cy + 158, 18, Ink, false, Card);
+      achievementLabel(game.achievements, cx, cy + 186, 22, 13); // under the name, when it has any
     }
     unclip();
   }

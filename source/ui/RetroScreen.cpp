@@ -745,6 +745,15 @@ void Application::retroAction(Action a) {
 }
 // What a game is: its file format, a bezel, its score; for the list's
 // labels and the info popup.
+float Application::achievementLabel(const achievements::Summary &a, float x, float top, float height, int size) {
+  if (a.count <= 0) return 0;
+  const auto text = trf("Achievements {0}", {std::to_string(a.count)});
+  const float icon = float(size), w = 8 + icon + 4 + paint_.fonts.measure(text, size, true) + 10;
+  paint_.rect(x, top, w, height, a.byTitle ? Line : Butter, int(height / 3));
+  paint_.icon(28, x + 8, top + (height - icon) / 2, Ink, size);
+  paint_.fonts.middle(text, x + 8 + icon + 4, top + height / 2, size, Ink, true);
+  return w;
+}
 std::vector<std::string> Application::retroLabels(const retro::Game &game, bool detail) const {
   std::vector<std::string> out;
   if (const auto dot = game.file.rfind('.'); dot != std::string::npos) {
@@ -900,8 +909,10 @@ void Application::retroList() {
     paint_.region(game.region, 278 + 64 - 23, y + 10 + 64 - 16, 20, 13);
     if (inContent() && i == selected_) marquee(game.name, 360, y + 12, 21, 620);
     else paint_.fonts.text(game.name, 360, y + 12, 21, Ink, true, 620);
-    // Under the name, labels: its format, a bezel, its score.
+    // Under the name, labels: its achievements first, then its format, a
+    // bezel, its score.
     float at = 360;
+    if (const float w = achievementLabel(game.achievements, at, y + 46, 26, 15)) at += w + 6;
     for (const auto &label : retroLabels(game)) at += paint_.pill(label, at, y + 46) + 6;
     at += versionsBadge(game.variants, at, y + 46, false); // with the labels: the cover is too small for it
     const float right = 1230;

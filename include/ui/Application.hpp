@@ -401,6 +401,9 @@ private:
   // A retro game's other versions: a stack and how many. Dark and small on
   // a cover; light, as a label pill, in a list row. Returns its width.
   float versionsBadge(int count, float x, float y, bool dark);
+  // A trophy and 업적 40, butter when the ROM itself earns them, grey when
+  // only its title matched; nothing (0) for a game without any.
+  float achievementLabel(const achievements::Summary &a, float x, float top, float height, int size);
   void shell();
   float statusBar();
   // Before the shop approves this device only 홈 (the approval page) and

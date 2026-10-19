@@ -7,6 +7,7 @@
 #include <map>
 #include <string>
 #include <vector>
+struct json_object;
 namespace foil::achievements {
 // GET/PUT /api/retro/achievements/account. `enabled`: the server has a key.
 struct Account {
@@ -22,6 +23,8 @@ struct Summary {
 };
 // The detail's "achievements" object; raGameId 0 when there is none.
 Summary parseSummary(const std::string &detailJson);
+// The same object where a list sends it on each game (null: none).
+Summary parseSummary(json_object *object);
 struct Achievement {
   int64_t id = 0;
   std::string title, description;

@@ -109,6 +109,7 @@ Game parseGame(json_object *object, const std::string &base) {
     else if (kind.empty() && json_object_get_boolean(field(bezel, "hasBezel")))
       g.bezel = json_object_get_boolean(field(bezel, "generic")) ? Game::Bezel::System : Game::Bezel::Game;
   }
+  g.achievements = achievements::parseSummary(field(object, "achievements"));
   if (g.bundleUrl.empty()) g.id.clear();
   if (g.name.empty()) g.name = g.file;
   return g;
@@ -352,6 +353,14 @@ std::string serializeGame(const Game &game) {
   json_object_object_add(install, "rom", json_object_new_string(game.romPath.c_str()));
   json_object_object_add(install, "bezelPng", json_object_new_string(game.bezelPath.c_str()));
   json_object_object_add(root.get(), "install", install);
+  if (game.achievements.count > 0) {
+    auto *ra = json_object_new_object();
+    json_object_object_add(ra, "raGameId", json_object_new_int64(game.achievements.raGameId));
+    json_object_object_add(ra, "count", json_object_new_int(game.achievements.count));
+    json_object_object_add(ra, "points", json_object_new_int(game.achievements.points));
+    json_object_object_add(ra, "matchedBy", json_object_new_string(game.achievements.byTitle ? "title" : "hash"));
+    json_object_object_add(root.get(), "achievements", ra);
+  }
   auto *bezel = json_object_new_object();
   json_object_object_add(bezel, "hasBezel", json_object_new_boolean(game.bezel != Game::Bezel::None));
   json_object_object_add(bezel, "generic", json_object_new_boolean(game.bezel == Game::Bezel::System));

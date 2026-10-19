@@ -319,7 +319,7 @@ int Application::raCard(int y) {
   const float height = summary.byTitle ? 92 : 64;
   hit(X, y, W, height, [this] { openRaList(); });
   paint_.rect(X, y, W, height, Surface, 16);
-  paint_.icon(31, X + 20, y + 20, Ink, 24);
+  paint_.icon(28, X + 20, y + 20, Ink, 24);
   paint_.fonts.middle(trf("{0} achievements · {1} points", {std::to_string(summary.count), std::to_string(summary.points)}),
                       X + 56, y + 32, 19, Ink, true, W - 260);
   paint_.keyChip("X", tr("See achievements"), X + W - 20, y + 32);

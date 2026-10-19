@@ -60,6 +60,7 @@ Account parseAccount(const std::string &json) {
   a.username = stringField(root.get(), "username");
   return a;
 }
+Summary parseSummary(json_object *object) { return summaryOf(object); }
 Summary parseSummary(const std::string &detailJson) {
   Error ignored;
   auto root = parseJson(detailJson, ignored);

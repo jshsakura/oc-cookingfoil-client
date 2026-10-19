@@ -83,7 +83,7 @@ void Application::raConnectCard(float y) {
   paint_.rect(260, y, 992, ConnectHeight, Surface, 20);
   constexpr float Left = 300;
   const float titleMid = y + 48;
-  paint_.icon(31, Left, titleMid - 18, Ink, 36);
+  paint_.icon(28, Left, titleMid - 18, Ink, 36);
   paint_.fonts.middle(tr("Collect achievements with RetroAchievements"), Left + 52, titleMid, 26, Ink, true, 860);
   paint_.fonts.wrapped(tr("Earn achievements while you play retro games. Once signed in, RetroArch records them on RetroAchievements."),
                        Left, y + 80, 19, Secondary, 920, 1);
@@ -176,7 +176,7 @@ void Application::raAccountRow(float y, bool loading) {
   if (focused) paint_.ring(260, y, 992, RowHeight, 16);
   paint_.rect(260, y, 992, RowHeight, Surface, 16);
   paint_.rect(278, y + 10, 64, 64, Ground, 32);
-  paint_.icon(31, 278 + 18, y + 10 + 18, Ink, 28);
+  paint_.icon(28, 278 + 18, y + 10 + 18, Ink, 28);
   paint_.fonts.text(raSignedIn_, 360, y + 12, 21, Ink, true, 560);
   // What the account has earned; what is missing is said by the card below.
   const std::string status = loading            ? std::string(tr("Loading the achievements."))

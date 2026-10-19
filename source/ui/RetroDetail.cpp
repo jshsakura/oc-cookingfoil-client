@@ -322,6 +322,7 @@ void Application::retroDetail() {
   paint_.fonts.text(subtitle, 208, Top + 62, 19, {228, 228, 234, 255}, false, 960);
   constexpr float PillsRight = 806;
   float x = 208;
+  if (const float w = achievementLabel(game.achievements, x, Top + 100, 35, 17)) x += w + 10;
   for (const auto &label : retroLabels(game, true)) {
     if (x + paint_.fonts.measure(label, 17) + 28 > PillsRight) break;
     x += paint_.pill(label, x, Top + 100, true, 17) + 10;

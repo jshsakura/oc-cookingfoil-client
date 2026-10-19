@@ -62,6 +62,16 @@ int runRetroTests() {
       CHECK(parseGameJson(serializeGame(g)).edition.source == "patch");
       CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","edition":{"source":"bootleg","from":"xx"}})").edition.source.empty());
     }
+    {
+      // Its RetroAchievements match, as lists send it; none without the field.
+      const auto g = parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","achievements":{"raGameId":228,"count":40,"points":400,"matchedBy":"hash"}})");
+      CHECK(g.achievements.raGameId == 228 && g.achievements.count == 40 && g.achievements.points == 400 && !g.achievements.byTitle);
+      const auto kept = parseGameJson(serializeGame(g)).achievements;
+      CHECK(kept.raGameId == 228 && kept.count == 40 && kept.points == 400 && !kept.byTitle);
+      CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","achievements":{"raGameId":9,"count":3,"matchedBy":"title"}})").achievements.byTitle);
+      CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b"})").achievements.count == 0);
+      CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","achievements":{"count":-5}})").achievements.count == 0);
+    }
     // A game's core on the card, by RetroArch's own file names.
     CHECK(corePath("fbneo") == "retroarch/cores/fbneo_libretro_libnx.nro");
     CHECK(corePath("").empty() && corePath("../x").empty() && corePath("a/b").empty());
