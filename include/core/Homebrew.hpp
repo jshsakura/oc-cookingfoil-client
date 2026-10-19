@@ -67,6 +67,9 @@ struct App {
   // shortcut; titleId is 16 upper-case hex digits.
   bool title = false;
   std::string titleId;
+  // The admin ran it on a console and checked it: a badge only (absent on
+  // an older server, read as false).
+  bool verified = false;
   // The page's wide backdrop (empty: the icon, blurred) and its screenshots
   // (at most 8), as a game's page shows them.
   std::string bannerUrl;

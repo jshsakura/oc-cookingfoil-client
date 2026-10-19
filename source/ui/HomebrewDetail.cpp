@@ -117,6 +117,7 @@ void Application::homebrewDetail() {
     if (px + paint_.fonts.measure(text, 17) + 28 > 806) return;
     px += paint_.pill(text, px, Top + 100, true, 17) + 10;
   };
+  if (app.verified) px += paint_.verifiedPill(px, Top + 100, true, 17) + 10;
   if (status == homebrew::Status::Update)
     pill(onCard.empty() ? std::string(tr("Update|item")) : "v" + onCard + " → v" + app.version);
   else if (status == homebrew::Status::Installed)

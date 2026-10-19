@@ -68,6 +68,9 @@ public:
   float keyChipWidth(const std::string &name, const std::string &label);
   float pill(const std::string &text, float x, float y, bool dark = false,
              int size = 15);
+  // The green 검수됨 capsule (a shield check and the word), as the web shop
+  // draws it; `dark` on the detail's dark band. Returns its width.
+  float verifiedPill(float x, float y, bool dark = false, int size = 15);
 
 private:
   struct ScrollSeen {
