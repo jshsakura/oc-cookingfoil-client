@@ -97,9 +97,16 @@ void Application::installAppUpdate() {
     guarded("update", [&] {
       // Asked again right before the download: the build on the server may
       // have changed since the app last looked.
-      net::ClientUpdateReply reply;
-      if (auto fresh = net::latestClient(server, state, reply, &updateCancel_)) release = *fresh;
-      ok = net::installClient(server, state, release, target, updateReceived_, error, &updateCancel_);
+      // A build put on the server while this one came down makes it differ
+      // from what was asked: the newest is asked for and taken once more.
+      for (int tries = 0; tries < 2 && !ok && !updateCancel_; ++tries) {
+        net::ClientUpdateReply reply;
+        const auto fresh = net::latestClient(server, state, reply, &updateCancel_);
+        if (tries && (!fresh || fresh->sha256 == release.sha256)) break; // the same build: a real mismatch
+        if (fresh) release = *fresh;
+        updateReceived_ = 0;
+        ok = net::installClient(server, state, release, target, updateReceived_, error, &updateCancel_);
+      }
     });
     logLine(ok ? "update: " + release.version + " -> " + target : "update failed: " + error.message);
     const bool cancelled = updateCancel_;

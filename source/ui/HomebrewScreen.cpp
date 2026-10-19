@@ -354,8 +354,26 @@ bool Application::runHomebrew(const homebrew::App &app) {
         Error error;
         // A port's files come with it now, not with the list; the ledger keeps them.
         auto app = listed;
-        const bool ok = net::homebrewFilesOf(server, state, app, error, &retroCancel_) &&
-                        net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_, &cardCheck_);
+        bool ok = net::homebrewFilesOf(server, state, app, error, &retroCancel_) &&
+                  net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_, &cardCheck_);
+        // A build put on the server after the list was read makes the file
+        // differ from it: the list is asked again and the new build taken once.
+        if (!ok && !retroCancel_) {
+          std::string etag;
+          std::vector<homebrew::App> now;
+          bool unchanged = false;
+          Error listError;
+          if (net::homebrewList(server, state, etag, now, unchanged, listError, &retroCancel_))
+            for (const auto &fresh : now)
+              if (fresh.id == app.id && fresh.hash != listed.hash) {
+                logLine("homebrew: " + app.name + " changed on the server, fetching the new build");
+                app = fresh;
+                error = {};
+                retroReceived_ = 0;
+                ok = net::homebrewFilesOf(server, state, app, error, &retroCancel_) &&
+                     net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_, &cardCheck_);
+              }
+        }
         // The older copies go here, off the drawing thread.
         std::vector<std::string> removed;
         for (const auto &old : ok ? stale : std::vector<std::string>{})
