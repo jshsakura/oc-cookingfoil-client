@@ -984,7 +984,7 @@ int runUiTests(SDL_Renderer *renderer) {
     foil::Item shortcut;
     shortcut.name = "S shortcut";
     shortcut.url = "https://shop.example/api/homebrew/gh-1/forwarder";
-    shortcut.titleId = shortcut.baseId = "055EF4A1A6C24000";
+    shortcut.titleId = shortcut.baseId = "0500000000001000";
     shortcut.size = 1000;
     shortcut.type = "shortcut";
     foil::ui::Application starting(renderer, "", "", "host/fixtures/art");
