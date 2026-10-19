@@ -242,17 +242,17 @@ void Application::raLinkClose() {
 // X 업적 at the header's right end, one width whatever it says, so nothing
 // moves while the page loads or when the sign-in changes.
 float Application::raHeaderButton(float right) {
+  // X 업적 alone, like the header's other buttons: the page says the rest.
+  // Lit while its page is open, where it goes back to the shelves.
   const auto label = tr("Achievements");
-  constexpr float NameRoom = 120;
-  const float w = paint_.keyLabelWidth("X", label, 19, true) + 40 + NameRoom, x = right - w;
-  const bool ready = retroArchPresent();
-  headerItem("achievements", x, 24, w, 48, [this] { openRaPage(); });
-  paint_.rect(x, 24, w, 48, Surface, 12);
-  const float end = paint_.keyLabel("X", label, x + 20, 48, 19, ready ? Ink : Secondary, true, ready);
-  const std::string state = !ready                 ? tr("After RetroArch")
-                            : !raSignedIn_.empty() ? raSignedIn_
-                                                   : tr("Not signed in");
-  paint_.fonts.middle(state, end + 12, 48, 16, !raSignedIn_.empty() && ready ? Good : Secondary, true, x + w - 16 - end - 12);
+  const float w = paint_.keyLabelWidth("X", label, 19, true) + 40, x = right - w;
+  const bool ready = retroArchPresent(), open = retroView_ == RetroView::Achievements;
+  headerItem("achievements", x, 24, w, 48, [this] {
+    if (retroView_ == RetroView::Achievements) leaveRaPage();
+    else openRaPage();
+  });
+  paint_.rect(x, 24, w, 48, open ? Butter : Surface, 12);
+  paint_.keyLabel("X", label, x + 20, 48, 19, ready ? Ink : Secondary, true, ready);
   return x;
 }
 void Application::raDialog() {

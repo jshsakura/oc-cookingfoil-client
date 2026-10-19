@@ -186,6 +186,7 @@ void Application::loadRetroHome() {
 }
 void Application::openRetroList(int system) {
   if (system < 0 || system >= int(retroSystems_.size())) return;
+  raLinkClose(); // from 업적: its QR goes
   retroView_ = RetroView::List;
   retroSystem_ = system;
   retroQuery_.clear();
@@ -667,7 +668,17 @@ void Application::retroAction(Action a) {
     }
     return;
   }
-  if (retroView_ == RetroView::Achievements) {
+  // On 업적 the header keeps its keys: X goes back, L R open the systems
+  // and Y is RetroArch's, as on the shelves.
+  if (retroView_ == RetroView::Achievements && a == Action::Search) {
+    leaveRaPage();
+    return;
+  }
+  if (retroView_ == RetroView::Achievements && (a == Action::Previous || a == Action::Next)) {
+    if (!retroShelves_.empty()) openRetroList(retroRow_);
+    return;
+  }
+  if (retroView_ == RetroView::Achievements && a != Action::Queue) {
     raPageAction(a);
     return;
   }

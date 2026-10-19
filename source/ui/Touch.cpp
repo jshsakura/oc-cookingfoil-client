@@ -118,7 +118,7 @@ bool Application::contentAtTop() const {
     return downloadsRow_ <= 0;
   case Screen::Retro:
     return retroView_ == RetroView::Home           ? retroRow_ <= 0
-           : retroView_ == RetroView::Achievements ? raPageRow_ <= 0
+           : retroView_ == RetroView::Achievements ? raSignedIn_.empty() || raPageRow_ <= 0 // the buttons are one row
                                                    : selected_ <= 0;
   case Screen::Saves:
     return savesTab_ == 0 ? selected_ <= 0 : savesTab_ == 1 ? shopSaveRow_ <= 0 : (!dropboxLinked_ || dropboxOnAccount_); // the account row is the first

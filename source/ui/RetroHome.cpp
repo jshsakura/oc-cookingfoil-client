@@ -7,14 +7,13 @@ namespace {
 constexpr float ShelfHeight = 262, BannerHeight = 64, CardStep = 170, Card = 150;
 constexpr int Columns = 6;
 } // namespace
-// The retro home: RetroArch first while it is missing, then one shelf per
-// system with its best rated games and a 모두 보기 card at the end.
-void Application::retroHome() {
+// The retro header, the same on the home and on 업적: the title with every
+// system's games, and L R 시스템별, Y RetroArch and X 업적 on the right.
+void Application::retroHeader() {
   // Every system's games together, beside the title.
   int roms = 0;
   for (const auto &shelf : retroShelves_) roms += shelf.system.romCount;
   pageTitle(tr("Retro games"), std::to_string(roms), 0);
-  readRaAccount(); // once a run, and again after 새로고침
   // X 업적 at the right end (where search sits elsewhere), Y RetroArch left
   // of it. Both are there from the first frame, one width whatever they
   // say, so the page loading or a label changing moves nothing.
@@ -43,6 +42,12 @@ void Application::retroHome() {
     paint_.fonts.middle(systems, textX, 48, 19, Ink, true);
     paint_.key("R", sysX + sysW - 12 - paint_.keyWidth("R"), 48);
   }
+}
+// The retro home: RetroArch first while it is missing, then one shelf per
+// system with its best rated games and a 모두 보기 card at the end.
+void Application::retroHome() {
+  readRaAccount(); // once a run, and again after 새로고침
+  retroHeader();
   const int rows = int(retroShelves_.size());
   retroRow_ = std::clamp(retroRow_, 0, std::max(0, rows - 1));
   if (retroRow_ >= 0 && retroRow_ < rows)

@@ -1,5 +1,6 @@
-// 업적: X on the retro home opens it, laid out as Dropbox is. Not signed in,
-// a card with the steps, A for the phone and Y for the keyboard; while the
+// 업적: X on the retro home opens it under the same header, laid out as
+// Dropbox is. Not signed in, a card with the steps and two buttons the
+// d-pad picks between (the phone, or the keyboard); while the
 // phone is awaited, its QR on that card; signed in, the account and then
 // the server's retro games with achievements and the player's progress.
 #include "ui/Application.hpp"
@@ -24,6 +25,11 @@ void Application::openRaPage() {
   headerFocus_.clear();
   unglide();
 }
+void Application::leaveRaPage() {
+  raLinkClose();
+  retroView_ = RetroView::Home;
+  raError_ = {};
+}
 // Once a run, when the server keeps a RetroAchievements key (새로고침 and a
 // sign-in ask again).
 void Application::raGamesFetch() {
@@ -42,8 +48,8 @@ void Application::raGamesFetch() {
   }, [this] { raGamesError_.message = tr("Something went wrong with RetroAchievements. Check log.txt."); });
 }
 void Application::raPage() {
-  pageTitle(tr("Achievements"));
   readRaAccount();
+  retroHeader();
   if (!retroArchPresent()) {
     notice(tr("Install RetroArch to sign in to RetroAchievements."), "", 25);
     return;
@@ -64,7 +70,8 @@ void Application::raPage() {
 }
 void Application::raConnectCard() {
   const bool making = raJob_.is("link") || raJob_.is("signin");
-  if (inContent() && !raModal()) paint_.ring(260, Top, 992, CardHeight, 20);
+  const bool focusable = inContent() && !raModal();
+  raPageRow_ = std::clamp(raPageRow_, 0, 1);
   paint_.rect(260, Top, 992, CardHeight, Surface, 20);
   // The icon beside the title, what it is for, the three steps with
   // numbered dots, and the buttons the first step names.
@@ -85,22 +92,28 @@ void Application::raConnectCard() {
     paint_.fonts.middle(step, Left + 46, mid, 20, Ink, false, 880);
   }
   constexpr float ButtonY = Top + 346, ButtonH = 60;
-  const float phoneW = paint_.keyLabelWidth("A", tr("Connect with a phone"), 21, true) + 64;
-  paint_.rect(Left, ButtonY, phoneW, ButtonH, making ? Line : Butter, 14);
-  paint_.keyLabel("A", tr("Connect with a phone"), Left + 32, ButtonY + ButtonH / 2, 21, Ink, true, !making);
-  const float handX = Left + phoneW + 16;
-  const float handW = paint_.keyLabelWidth("Y", tr("Enter here"), 21, true) + 64;
-  hit(handX, ButtonY, handW, ButtonH, [this] {
+  // Plain buttons the d-pad moves between, A on the one picked.
+  const float phoneW = paint_.fonts.measure(tr("Connect with a phone"), 21, true) + 64;
+  // Each button answers its own tap (the card under them has none, or it
+  // would take 직접 입력's taps as well).
+  buttonHit({Left, ButtonY, phoneW, ButtonH}, 14, [this] {
     sidebar_ = false;
-    action(Action::Queue);
-  });
-  paint_.rect(handX, ButtonY, handW, ButtonH, Ground, 14);
-  paint_.keyLabel("Y", tr("Enter here"), handX + 32, ButtonY + ButtonH / 2, 21, Ink, true, !making);
-  // A or a tap on the card connects with the phone.
-  hit(260, Top, 992, CardHeight, [this] {
-    sidebar_ = false;
+    raPageRow_ = 0;
     action(Action::Accept);
   });
+  if (focusable && raPageRow_ == 0) paint_.ring(Left, ButtonY, phoneW, ButtonH, 14);
+  paint_.rect(Left, ButtonY, phoneW, ButtonH, making ? Line : Butter, 14);
+  paint_.fonts.middle(tr("Connect with a phone"), Left + 32, ButtonY + ButtonH / 2, 21, making ? Secondary : Ink, true);
+  const float handX = Left + phoneW + 16;
+  const float handW = paint_.fonts.measure(tr("Enter here"), 21, true) + 64;
+  buttonHit({handX, ButtonY, handW, ButtonH}, 14, [this] {
+    sidebar_ = false;
+    raPageRow_ = 1;
+    action(Action::Accept);
+  });
+  if (focusable && raPageRow_ == 1) paint_.ring(handX, ButtonY, handW, ButtonH, 14);
+  paint_.rect(handX, ButtonY, handW, ButtonH, Ground, 14);
+  paint_.fonts.middle(tr("Enter here"), handX + 32, ButtonY + ButtonH / 2, 21, making ? Secondary : Ink, true);
   const float noteX = handX + handW + 28;
   if (raJob_.is("link"))
     paint_.fonts.middle(tr("Making the QR code"), noteX, ButtonY + ButtonH / 2, 19, Secondary, true, 1220 - noteX);
@@ -129,7 +142,17 @@ void Application::raLinkCard() {
   const int left = raLink_->until > now ? int((raLink_->until - now + 999) / 1000) : 0;
   char clock[16];
   std::snprintf(clock, sizeof(clock), "%d:%02d", left / 60, left % 60);
-  paint_.fonts.text(trf("Expires in {0}", {clock}), 290, Top + CardHeight - 50, 18, Secondary);
+  // B, or a tap here, drops the QR.
+  constexpr float CancelH = 52;
+  const float cancelY = Top + CardHeight - 30 - CancelH;
+  const float cancelW = paint_.keyLabelWidth("B", tr("Cancel"), 19, true) + 48;
+  buttonHit({290, cancelY, cancelW, CancelH}, 12, [this] {
+    sidebar_ = false;
+    action(Action::Back);
+  });
+  paint_.rect(290, cancelY, cancelW, CancelH, Ground, 12);
+  paint_.keyLabel("B", tr("Cancel"), 290 + 24, cancelY + CancelH / 2, 19, Ink, true);
+  paint_.fonts.middle(trf("Expires in {0}", {clock}), 290 + cancelW + 20, cancelY + CancelH / 2, 18, Secondary);
   if (raQr_.encode(raLink_->url)) raQr_.draw(paint_.renderer, 908, int(Top + 75), 300);
 }
 // Signed in: the account first, then the games. The account row is the
@@ -216,20 +239,31 @@ void Application::raAccountList() {
 }
 void Application::raPageAction(Action a) {
   if (a == Action::Back) {
-    if (raLink_) raLinkClose(); // the QR first, then the page
-    else retroView_ = RetroView::Home;
-    raError_ = {};
+    if (raLink_) {
+      raLinkClose(); // the QR first, then the page
+      raError_ = {};
+    } else
+      leaveRaPage();
+    return;
+  }
+  if (raLink_ || !retroArchPresent()) {
+    if (a == Action::Left) sidebar_ = true;
+    return;
+  }
+  if (raSignedIn_.empty()) {
+    // The two buttons side by side: left past the first is the menu.
+    if (a == Action::Left) {
+      if (raPageRow_ > 0) raPageRow_ = 0;
+      else sidebar_ = true;
+    }
+    if (a == Action::Right) raPageRow_ = 1;
+    if (a != Action::Accept || raJob_.busy() || !settled()) return; // reading the account, or the QR on its way
+    if (raPageRow_ == 0) raPhone();
+    else openRaPopup();
     return;
   }
   if (a == Action::Left) {
     sidebar_ = true;
-    return;
-  }
-  if (raLink_ || !retroArchPresent()) return;
-  if (raSignedIn_.empty()) {
-    if (raJob_.busy() || !settled()) return; // reading the account, or the QR on its way
-    if (a == Action::Accept) raPhone();
-    if (a == Action::Queue) openRaPopup();
     return;
   }
   const int last = int(raGames_.list.size());
@@ -251,7 +285,7 @@ void Application::raPageAction(Action a) {
 std::vector<std::pair<std::string, std::string>> Application::raPageHints() const {
   if (raLink_) return {{"B", tr("Cancel")}};
   if (raSignedIn_.empty())
-    return {{"A", tr("Connect with a phone")}, {"Y", tr("Enter here")}, {"B", tr("Back")}};
+    return {{"A", raPageRow_ == 0 ? tr("Connect with a phone") : tr("Enter here")}, {"B", tr("Back")}};
   if (raPageRow_ == 0) return {{"A", tr("Sign out|achievements")}, {"B", tr("Back")}};
   return {{"A", tr("Details")}, {"B", tr("Back")}};
 }

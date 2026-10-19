@@ -617,6 +617,7 @@ private:
   enum class RetroView { Home, List, Achievements };
   void retroScreen();
   void retroHome();
+  void retroHeader();
   void retroList();
   void retroBanner(float y);
   void retroAction(Action action);
@@ -760,6 +761,7 @@ private:
   Job raGamesJob_;
   int raPageRow_ = 0;         // signed in: 0 the account, then its games
   void openRaPage();
+  void leaveRaPage();
   void raPage();
   void raPageAction(Action a);
   void raGamesFetch();
