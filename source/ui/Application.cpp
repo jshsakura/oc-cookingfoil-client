@@ -3195,6 +3195,15 @@ void Application::offerResume() {
   }
   if (installQueue_.empty())
     return;
+  // Only HOME Menu shortcuts left: the last step of downloads that finished
+  // (the app closed right after their message). They go on by themselves;
+  // nothing the player left part way is waiting.
+  if (std::all_of(installQueue_.begin(), installQueue_.end(), [](const QueuedInstall &q) {
+        return q.kind == "shortcut" || forwarder::shortcutId(forwarder::parseHexId(q.file.titleId));
+      })) {
+    if (auto error = launchQueued()) logLine("resume: shortcuts wait, " + error.message);
+    return;
+  }
   // Asked, now that it can go on: A picks the queue up where it stopped;
   // B leaves it paused in 다운로드, where A goes on with it.
   confirmResume_ = true;
