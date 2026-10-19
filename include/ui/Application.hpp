@@ -759,15 +759,17 @@ private:
   Error raGamesError_;
   bool raGamesAsked_ = false; // asked this run (새로고침 and a sign-in ask again)
   Job raGamesJob_;
-  int raPageRow_ = 0;         // signed in: 0 the account, then its games
+  int raPageRow_ = 0;         // 0 the account or the connect card, then the games
+  int raConnectButton_ = 0;   // on the connect card: 0 the phone, 1 the keyboard
   void openRaPage();
   void leaveRaPage();
   void raPage();
   void raPageAction(Action a);
   void raGamesFetch();
-  void raConnectCard();       // not signed in: the steps and the buttons
-  void raLinkCard();          // the QR while the phone is awaited
-  void raAccountList();       // signed in: the account row and the games
+  void raConnectCard(float y);             // not signed in: the steps and the buttons
+  void raLinkCard();                       // the QR while the phone is awaited
+  void raAccountRow(float y, bool loading); // signed in: the account, its points and sign-out
+  void raGamesPage();                      // either of those, then the games, scrolling as one
   std::vector<std::pair<std::string, std::string>> raPageHints() const;
   float raHeaderButton(float right); // the header's X 업적; returns its left edge
   int raCard(int y);                 // the game page's achievements card

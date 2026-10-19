@@ -65,6 +65,7 @@ public:
   // sit inside content (a row's "R See all") rather than in the footer.
   // Draws right-aligned to `right`; returns its width.
   float keyChip(const std::string &name, const std::string &label, float right, float centerY);
+  float keyChipWidth(const std::string &name, const std::string &label);
   float pill(const std::string &text, float x, float y, bool dark = false,
              int size = 15);
 

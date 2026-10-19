@@ -9,8 +9,9 @@
 #include <cstdio>
 namespace foil::ui {
 namespace {
-constexpr float Top = 90, CardHeight = 466, RowHeight = 84, RowStep = 96;
-constexpr int Visible = 6; // rows in view, down to the footer
+constexpr float Top = 90, Bottom = 660, CardHeight = 466, RowHeight = 84, RowStep = 96;
+// The connect card above the games, and the line naming them under it.
+constexpr float ConnectHeight = 324, HeadingRoom = 56;
 } // namespace
 
 void Application::openRaPage() {
@@ -19,7 +20,7 @@ void Application::openRaPage() {
     return;
   }
   retroView_ = RetroView::Achievements;
-  raPageRow_ = 0;
+  raPageRow_ = raConnectButton_ = 0;
   raError_ = {};
   sidebar_ = false;
   headerFocus_.clear();
@@ -60,67 +61,69 @@ void Application::raPage() {
     paint_.skeleton(260, Top, 992, RowHeight, 16);
     return;
   }
-  if (raSignedIn_.empty()) {
-    if (raLink_) raLinkCard();
-    else raConnectCard();
+  if (raLink_) {
+    raLinkCard();
     return;
   }
   raGamesFetch();
-  raAccountList();
+  raGamesPage();
 }
-void Application::raConnectCard() {
+// Not signed in, at `y` (it scrolls with the games under it): what it is
+// for, the three steps side by side, and the two buttons.
+void Application::raConnectCard(float y) {
   const bool making = raJob_.is("link") || raJob_.is("signin");
-  const bool focusable = inContent() && !raModal();
-  raPageRow_ = std::clamp(raPageRow_, 0, 1);
-  paint_.rect(260, Top, 992, CardHeight, Surface, 20);
-  // The icon beside the title, what it is for, the three steps with
-  // numbered dots, and the buttons the first step names.
-  constexpr float Left = 300, TitleMid = Top + 62;
-  paint_.icon(31, Left, TitleMid - 20, Ink, 40);
-  paint_.fonts.middle(tr("Collect achievements with RetroAchievements"), Left + 58, TitleMid, 28, Ink, true, 860);
+  const bool focusable = inContent() && !raModal() && raPageRow_ == 0;
+  raConnectButton_ = std::clamp(raConnectButton_, 0, 1);
+  paint_.rect(260, y, 992, ConnectHeight, Surface, 20);
+  constexpr float Left = 300;
+  const float titleMid = y + 48;
+  paint_.icon(31, Left, titleMid - 18, Ink, 36);
+  paint_.fonts.middle(tr("Collect achievements with RetroAchievements"), Left + 52, titleMid, 26, Ink, true, 860);
   paint_.fonts.wrapped(tr("Earn achievements while you play retro games. Once signed in, RetroArch records them on RetroAchievements."),
-                       Left, TitleMid + 40, 20, Secondary, 920, 2);
+                       Left, y + 80, 19, Secondary, 920, 1);
+  paint_.fonts.wrapped(tr("The id can be registered on the server's web page too. A ROM changed from the original, such as a translation, may not earn achievements."),
+                       Left, y + 110, 16, Secondary, 920, 1);
   const char *steps[] = {"1. Press Connect with a phone below.",
-                         "2. Scan the QR code with your phone and enter the RetroAchievements password.",
+                         "2. Scan the QR code with your phone and enter the password.",
                          "3. This console finishes signing in on its own."};
+  constexpr float StepWidth = 304;
   for (int i = 0; i < 3; ++i) {
-    const float mid = Top + 188 + i * 50;
-    paint_.rect(Left, mid - 15, 30, 30, Butter, 15);
-    paint_.fonts.centered(std::to_string(i + 1), Left + 15, mid - 13, 17, Ink, 30, 1, true);
+    const float x = Left + i * StepWidth, top = y + 152;
+    paint_.rect(x, top, 28, 28, Butter, 14);
+    paint_.fonts.centered(std::to_string(i + 1), x + 14, top + 2, 16, Ink, 28, 1, true);
     std::string step = tr(steps[i]);
     if (const auto dot = step.find(". "); dot != std::string::npos && dot <= 2) step = step.substr(dot + 2);
-    paint_.fonts.middle(step, Left + 46, mid, 20, Ink, false, 880);
+    paint_.fonts.wrapped(step, x + 40, top + 3, 17, Ink, StepWidth - 60, 2);
   }
-  constexpr float ButtonY = Top + 346, ButtonH = 60;
-  // Plain buttons the d-pad moves between, A on the one picked.
-  const float phoneW = paint_.fonts.measure(tr("Connect with a phone"), 21, true) + 64;
-  // Each button answers its own tap (the card under them has none, or it
-  // would take 직접 입력's taps as well).
-  buttonHit({Left, ButtonY, phoneW, ButtonH}, 14, [this] {
+  // Plain buttons the d-pad moves between, A on the one picked; each
+  // answers its own tap.
+  const float buttonY = y + 244;
+  constexpr float ButtonH = 56;
+  const float phoneW = paint_.fonts.measure(tr("Connect with a phone"), 20, true) + 60;
+  buttonHit({Left, buttonY, phoneW, ButtonH}, 14, [this] {
+    sidebar_ = false;
+    raPageRow_ = raConnectButton_ = 0;
+    action(Action::Accept);
+  });
+  if (focusable && raConnectButton_ == 0) paint_.ring(Left, buttonY, phoneW, ButtonH, 14);
+  paint_.rect(Left, buttonY, phoneW, ButtonH, making ? Line : Butter, 14);
+  paint_.fonts.middle(tr("Connect with a phone"), Left + 30, buttonY + ButtonH / 2, 20, making ? Secondary : Ink, true);
+  const float handX = Left + phoneW + 16;
+  const float handW = paint_.fonts.measure(tr("Enter here"), 20, true) + 60;
+  buttonHit({handX, buttonY, handW, ButtonH}, 14, [this] {
     sidebar_ = false;
     raPageRow_ = 0;
+    raConnectButton_ = 1;
     action(Action::Accept);
   });
-  if (focusable && raPageRow_ == 0) paint_.ring(Left, ButtonY, phoneW, ButtonH, 14);
-  paint_.rect(Left, ButtonY, phoneW, ButtonH, making ? Line : Butter, 14);
-  paint_.fonts.middle(tr("Connect with a phone"), Left + 32, ButtonY + ButtonH / 2, 21, making ? Secondary : Ink, true);
-  const float handX = Left + phoneW + 16;
-  const float handW = paint_.fonts.measure(tr("Enter here"), 21, true) + 64;
-  buttonHit({handX, ButtonY, handW, ButtonH}, 14, [this] {
-    sidebar_ = false;
-    raPageRow_ = 1;
-    action(Action::Accept);
-  });
-  if (focusable && raPageRow_ == 1) paint_.ring(handX, ButtonY, handW, ButtonH, 14);
-  paint_.rect(handX, ButtonY, handW, ButtonH, Ground, 14);
-  paint_.fonts.middle(tr("Enter here"), handX + 32, ButtonY + ButtonH / 2, 21, making ? Secondary : Ink, true);
+  if (focusable && raConnectButton_ == 1) paint_.ring(handX, buttonY, handW, ButtonH, 14);
+  paint_.rect(handX, buttonY, handW, ButtonH, Ground, 14);
+  paint_.fonts.middle(tr("Enter here"), handX + 30, buttonY + ButtonH / 2, 20, making ? Secondary : Ink, true);
   const float noteX = handX + handW + 28;
   if (raJob_.is("link"))
-    paint_.fonts.middle(tr("Making the QR code"), noteX, ButtonY + ButtonH / 2, 19, Secondary, true, 1220 - noteX);
+    paint_.fonts.middle(tr("Making the QR code"), noteX, buttonY + ButtonH / 2, 19, Secondary, true, 1220 - noteX);
   else if (raError_)
-    paint_.fonts.wrapped(raError_.message, noteX, ButtonY + 6, 18, Bad, 1220 - noteX, 2);
-  paint_.fonts.wrapped(tr("The id can be registered on the server's web page too. A ROM changed from the original, such as a translation, may not earn achievements."),
-                       270, Top + CardHeight + 18, 17, Secondary, 972, 2);
+    paint_.fonts.wrapped(raError_.message, noteX, buttonY + 4, 17, Bad, 1220 - noteX, 2);
 }
 // The phone is awaited: the QR on the card, what to do with it, and how
 // long it lasts. B drops it with its key.
@@ -155,62 +158,85 @@ void Application::raLinkCard() {
   paint_.fonts.middle(trf("Expires in {0}", {clock}), 290 + cancelW + 20, cancelY + CancelH / 2, 18, Secondary);
   if (raQr_.encode(raLink_->url)) raQr_.draw(paint_.renderer, 908, int(Top + 75), 300);
 }
-// Signed in: the account first, then the games. The account row is the
-// games' height and scrolls with them; A on it signs out (after asking).
-void Application::raAccountList() {
+// Signed in: the account row at `y`, the games' height; A on it signs out
+// (after asking).
+void Application::raAccountRow(float y, bool loading) {
+  hit(260, y, 992, RowHeight, [this] {
+    if (inContent() && raPageRow_ == 0) action(Action::Accept);
+    sidebar_ = false;
+    raPageRow_ = 0;
+  });
+  const bool focused = inContent() && !raModal() && raPageRow_ == 0;
+  if (focused) paint_.ring(260, y, 992, RowHeight, 16);
+  paint_.rect(260, y, 992, RowHeight, Surface, 16);
+  paint_.rect(278, y + 10, 64, 64, Ground, 32);
+  paint_.icon(31, 278 + 18, y + 10 + 18, Ink, 28);
+  paint_.fonts.text(raSignedIn_, 360, y + 12, 21, Ink, true, 560);
+  const std::string status = !raAccount_.enabled ? std::string(tr("This server has no RetroAchievements key, so games' achievement lists do not show."))
+                             : loading           ? std::string(tr("Loading the achievements."))
+                             : raGamesError_     ? raGamesError_.message
+                             : raGames_.hasUser  ? trf("{0} points · {1} games with achievements",
+                                                       {std::to_string(raGames_.userPoints), std::to_string(raGames_.list.size())})
+                                                 : std::string(tr("The server has no id registered, so progress does not show."));
+  paint_.fonts.text(status, 360, y + 46, 16, raGamesError_ && !loading ? Bad : Secondary, false, 640);
+  const std::string out = tr("Sign out|achievements");
+  const float bw = paint_.fonts.measure(out, 17, true) + 36;
+  paint_.rect(1230 - bw, y + 22, bw, 40, focused ? Butter : Ground, 12);
+  paint_.fonts.middle(out, 1230 - bw + 18, y + 42, 17, Ink, true);
+}
+// The account (or, not signed in, the connect card and a line naming the
+// games), then the server's retro games with achievements, scrolling as
+// one: the focused game is kept in the middle, the head at the top.
+void Application::raGamesPage() {
+  const bool signedIn = !raSignedIn_.empty();
   const auto &rows = raGames_.list;
-  const int count = int(rows.size()) + 1;
-  raPageRow_ = std::clamp(raPageRow_, 0, count - 1);
-  const bool focusable = inContent() && !raModal();
-  const float top = glide("raPage", 232, Top, 1048, 660 - Top, float(std::clamp(raPageRow_ - Visible / 2, 0, std::max(0, count - Visible))),
-                          float(count - Visible), RowStep);
-  const int first = int(top);
-  paint_.scrollbar(1266, Top, RowStep * Visible - 12, top, Visible, float(count));
-  clipTo(232, Top - 8, 1048, 660 - Top + 8);
   const bool loading = raAccount_.enabled && (raGamesJob_.busy() || !raGamesAsked_);
-  {
-    const float y = Top - top * RowStep;
-    hit(260, y, 992, RowHeight, [this] {
-      if (inContent() && raPageRow_ == 0) action(Action::Accept);
-      sidebar_ = false;
-      raPageRow_ = 0;
-    });
-    const bool focused = focusable && raPageRow_ == 0;
-    if (focused) paint_.ring(260, y, 992, RowHeight, 16);
-    paint_.rect(260, y, 992, RowHeight, Surface, 16);
-    paint_.rect(278, y + 10, 64, 64, Ground, 32);
-    paint_.icon(31, 278 + 18, y + 10 + 18, Ink, 28);
-    paint_.fonts.text(raSignedIn_, 360, y + 12, 21, Ink, true, 560);
-    const std::string status = !raAccount_.enabled ? std::string(tr("This server has no RetroAchievements key, so games' achievement lists do not show."))
-                               : loading           ? std::string(tr("Loading the achievements."))
-                               : raGamesError_     ? raGamesError_.message
-                               : raGames_.hasUser  ? trf("{0} points · {1} games with achievements",
-                                                         {std::to_string(raGames_.userPoints), std::to_string(rows.size())})
-                                                   : std::string(tr("The server has no id registered, so progress does not show."));
-    paint_.fonts.text(status, 360, y + 46, 16, raGamesError_ && !loading ? Bad : Secondary, false, 640);
-    const std::string out = tr("Sign out|achievements");
-    const float bw = paint_.fonts.measure(out, 17, true) + 36;
-    paint_.rect(1230 - bw, y + 22, bw, 40, focused ? Butter : Ground, 12);
-    paint_.fonts.middle(out, 1230 - bw + 18, y + 42, 17, Ink, true);
-  }
-  if (rows.empty()) {
-    const float y = Top + RowStep - top * RowStep;
-    if (loading)
-      for (int n = 0; n + 1 < Visible; ++n) paint_.skeleton(260, y + n * RowStep, 992, RowHeight, 16);
-    else if (raAccount_.enabled && !raGamesError_)
-      paint_.fonts.text(tr("No retro games on this server have achievements yet."), 290, y + 20, 19, Secondary);
+  // Not signed in with no key on the server, there is nothing to list.
+  const bool listed = signedIn || raAccount_.enabled;
+  const float head = signedIn ? RowStep : ConnectHeight + (listed ? HeadingRoom : 0);
+  raPageRow_ = std::clamp(raPageRow_, 0, int(rows.size()));
+  const float view = Bottom - Top;
+  const float body = !listed ? 0 : rows.empty() ? (loading ? 3 * RowStep : RowStep) : float(rows.size()) * RowStep;
+  const float content = head + body, max = std::max(0.f, content - view);
+  const float target = raPageRow_ == 0 ? 0 : std::clamp(head + (raPageRow_ - 1) * RowStep + RowHeight / 2 - view / 2, 0.f, max);
+  const float offset = glide("raPage", 232, Top, 1048, view, target, max, 1);
+  if (max > 0) paint_.scrollbar(1266, Top, view - 12, offset, view, content);
+  clipTo(232, Top - 8, 1048, view + 8);
+  const float y = Top - offset;
+  if (signedIn) raAccountRow(y, loading);
+  else raConnectCard(y);
+  if (!listed) {
     unclip();
     return;
   }
-  // Game n is row n + 1, under the account.
-  for (int n = std::max(0, first - 1); n < int(rows.size()) && n + 1 <= first + Visible + 1; ++n) {
-    const auto &g = rows[size_t(n)];
-    const float y = Top + (n + 1 - top) * RowStep;
-    hit(260, y, 992, RowHeight, [this, n] {
+  if (!signedIn) {
+    const float mid = y + ConnectHeight + HeadingRoom / 2 + 2;
+    const float end = paint_.fonts.middle(tr("Games with achievements on this server"), 270, mid, 20, Ink, true);
+    if (!rows.empty()) paint_.pill(std::to_string(rows.size()), end + 12, mid - 13);
+  }
+  const float listTop = y + head;
+  if (rows.empty()) {
+    if (loading)
+      for (int n = 0; n < 3; ++n) paint_.skeleton(260, listTop + n * RowStep, 992, RowHeight, 16);
+    else if (raGamesError_ && !signedIn)
+      paint_.fonts.text(raGamesError_.message, 270, listTop + 16, 18, Bad, false, 960);
+    else if (!raGamesError_)
+      paint_.fonts.text(tr("No retro games on this server have achievements yet."), 270, listTop + 16, 18, Secondary);
+    unclip();
+    return;
+  }
+  const bool focusable = inContent() && !raModal();
+  // Game n is row n + 1, under the head; only those on screen are drawn.
+  for (int n = 0; n < int(rows.size()); ++n) {
+    if (listTop + n * RowStep + RowHeight < Top - 8) continue;
+    if (listTop + n * RowStep > Bottom) break;
+    hit(260, listTop + n * RowStep, 992, RowHeight, [this, n] {
       if (inContent() && raPageRow_ == n + 1) action(Action::Accept);
       sidebar_ = false;
       raPageRow_ = n + 1;
     });
+    const auto &g = rows[size_t(n)];
+    const float y = listTop + n * RowStep;
     const bool focused = focusable && raPageRow_ == n + 1;
     if (focused) paint_.ring(260, y, 992, RowHeight, 16);
     paint_.rect(260, y, 992, RowHeight, Surface, 16);
@@ -233,7 +259,9 @@ void Application::raAccountList() {
       right -= 8;
     };
     badge(trf("{0} pts", {std::to_string(g.points)}), false);
-    badge(trf("{0}/{1} earned", {std::to_string(g.earned), std::to_string(g.count)}), g.earned > 0);
+    // With no id to count by, how many there are to earn.
+    if (raGames_.hasUser) badge(trf("{0}/{1} earned", {std::to_string(g.earned), std::to_string(g.count)}), g.earned > 0);
+    else badge(trf("{0} achievements", {std::to_string(g.count)}), false);
   }
   unclip();
 }
@@ -250,20 +278,16 @@ void Application::raPageAction(Action a) {
     if (a == Action::Left) sidebar_ = true;
     return;
   }
-  if (raSignedIn_.empty()) {
-    // The two buttons side by side: left past the first is the menu.
-    if (a == Action::Left) {
-      if (raPageRow_ > 0) raPageRow_ = 0;
-      else sidebar_ = true;
-    }
-    if (a == Action::Right) raPageRow_ = 1;
-    if (a != Action::Accept || raJob_.busy() || !settled()) return; // reading the account, or the QR on its way
-    if (raPageRow_ == 0) raPhone();
-    else openRaPopup();
+  const bool signedIn = !raSignedIn_.empty();
+  // The connect card's two buttons sit side by side: left past the first
+  // is the menu, as anywhere else.
+  if (a == Action::Left) {
+    if (!signedIn && raPageRow_ == 0 && raConnectButton_ > 0) raConnectButton_ = 0;
+    else sidebar_ = true;
     return;
   }
-  if (a == Action::Left) {
-    sidebar_ = true;
+  if (a == Action::Right) {
+    if (!signedIn && raPageRow_ == 0) raConnectButton_ = 1;
     return;
   }
   const int last = int(raGames_.list.size());
@@ -271,7 +295,11 @@ void Application::raPageAction(Action a) {
   if (a == Action::Down) raPageRow_ = std::min(last, raPageRow_ + 1);
   if (a != Action::Accept || !settled()) return;
   if (raPageRow_ == 0) {
-    openRaPopup(); // asks before signing out
+    if (signedIn) openRaPopup(); // asks before signing out
+    else if (!raJob_.busy()) { // not while the account is read or the QR is on its way
+      if (raConnectButton_ == 0) raPhone();
+      else openRaPopup();
+    }
     return;
   }
   const auto &row = raGames_.list[size_t(raPageRow_ - 1)];
@@ -283,10 +311,11 @@ void Application::raPageAction(Action a) {
   openRetroDetail(game); // its page fills in the rest
 }
 std::vector<std::pair<std::string, std::string>> Application::raPageHints() const {
+  // B says where it goes: back to the shelves.
+  const std::pair<std::string, std::string> back{"B", tr("Retro games")};
   if (raLink_) return {{"B", tr("Cancel")}};
-  if (raSignedIn_.empty())
-    return {{"A", raPageRow_ == 0 ? tr("Connect with a phone") : tr("Enter here")}, {"B", tr("Back")}};
-  if (raPageRow_ == 0) return {{"A", tr("Sign out|achievements")}, {"B", tr("Back")}};
-  return {{"A", tr("Details")}, {"B", tr("Back")}};
+  if (raPageRow_ > 0) return {{"A", tr("Details")}, back};
+  if (!raSignedIn_.empty()) return {{"A", tr("Sign out|achievements")}, back};
+  return {{"A", raConnectButton_ == 0 ? tr("Connect with a phone") : tr("Enter here")}, back};
 }
 } // namespace foil::ui

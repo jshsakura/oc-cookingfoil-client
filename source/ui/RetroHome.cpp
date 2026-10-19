@@ -13,7 +13,16 @@ void Application::retroHeader() {
   // Every system's games together, beside the title.
   int roms = 0;
   for (const auto &shelf : retroShelves_) roms += shelf.system.romCount;
-  pageTitle(tr("Retro games"), std::to_string(roms), 0);
+  if (retroView_ == RetroView::Achievements) {
+    // On 업적 the title says where it is and the way back: ‹ 레트로 게임
+    // goes to the shelves, as B does.
+    constexpr float Mid = 48;
+    paint_.icon(7, 258, Mid - 11, Secondary, 22);
+    const float end = paint_.fonts.middle(tr("Retro games"), 284, Mid, 22, Secondary, true);
+    hit(252, Mid - 22, end - 252 + 8, 44, [this] { leaveRaPage(); }, {252, Mid - 22, end - 252 + 8, 44}, 12);
+    paint_.fonts.middle(tr("Achievements"), end + 20, Mid, 30, Ink, true);
+  } else
+    pageTitle(tr("Retro games"), std::to_string(roms), 0);
   // X 업적 at the right end (where search sits elsewhere), Y RetroArch left
   // of it. Both are there from the first frame, one width whatever they
   // say, so the page loading or a label changing moves nothing.
@@ -99,7 +108,11 @@ void Application::retroHome() {
     x = paint_.fonts.middle(retro::systemName(shelf.system, languageCode()), x, y + HeaderMid, 26, Ink, true, 600);
     paint_.pill(std::to_string(shelf.system.romCount), x + 12, y + HeaderMid - 13);
     if (focused) paint_.keyChip("R", tr("See all"), 1252, y + HeaderMid);
-    hit(1100, y, 160, 34, [this, n] { openRetroList(n); });
+    {
+      // A finger gets the chip's size and a little more; pressed, the chip darkens.
+      const float chipW = paint_.keyChipWidth("R", tr("See all"));
+      hit(1252 - chipW - 6, y, chipW + 12, 34, [this, n] { openRetroList(n); }, {1252 - chipW, y + HeaderMid - 14, chipW, 28}, 14);
+    }
     const int count = int(shelf.games.size());
     // Sideways like 홈's shelves: the cursor's place, or the finger's while it
     // glides, resting on whole cards; the last card (모두 보기) counts as one.

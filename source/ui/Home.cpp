@@ -209,7 +209,11 @@ void Application::home() {
     paint_.fonts.middle(row.theme.title, 296, y + HeaderMid, 26, Ink, true);
     if (focused)
       paint_.keyChip("R", tr("See all"), 1252, y + HeaderMid);
-    hit(1100, y, 160, 34, [this, n] { openTheme(n); });
+    {
+      // A finger gets the chip's size and a little more; pressed, the chip darkens.
+      const float chipW = paint_.keyChipWidth("R", tr("See all"));
+      hit(1252 - chipW - 6, y, chipW + 12, 34, [this, n] { openTheme(n); }, {1252 - chipW, y + HeaderMid - 14, chipW, 28}, 14);
+    }
     const int count = int(row.items.size());
     // Sideways the shelf follows the cursor, or the finger while it glides;
     // its last card (모두 보기) counts as one more.

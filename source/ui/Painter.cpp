@@ -475,12 +475,20 @@ float Painter::keyLabelWidth(const std::string &name, const std::string &label,
                              int size, bool bold) {
   return keyWidth(name) + 10 + fonts.measure(label, size, bold);
 }
+namespace {
+constexpr float ChipHeight = 28, ChipBadge = 20;
+constexpr int ChipKeySize = 12, ChipLabelSize = 15;
+} // namespace
+float Painter::keyChipWidth(const std::string &name, const std::string &label) {
+  const float badge = std::max(ChipBadge, fonts.measure(name, ChipKeySize, true) + 10);
+  return 4 + badge + 7 + fonts.measure(label, ChipLabelSize, true) + 12;
+}
 float Painter::keyChip(const std::string &name, const std::string &label, float right,
                        float centerY) {
-  constexpr float Height = 28, Badge = 20;
-  constexpr int KeySize = 12, LabelSize = 15;
+  constexpr float Height = ChipHeight, Badge = ChipBadge;
+  constexpr int KeySize = ChipKeySize, LabelSize = ChipLabelSize;
   const float badge = std::max(Badge, fonts.measure(name, KeySize, true) + 10);
-  const float w = 4 + badge + 7 + fonts.measure(label, LabelSize, true) + 12;
+  const float w = keyChipWidth(name, label);
   const float x = right - w;
   rect(x, centerY - Height / 2, w, Height, Surface, int(Height / 2));
   rect(x + 4, centerY - Badge / 2, badge, Badge, Ink, int(Badge / 2));
