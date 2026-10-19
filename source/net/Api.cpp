@@ -381,7 +381,6 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
     curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent().c_str());
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 512L * 1024); // fewer, larger writes on the way to the card
-    curl_easy_setopt(curl, CURLOPT_SOCKOPTFUNCTION, &tuneSocket);
     // Large patches take minutes; only a stalled transfer gives up.
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
@@ -1304,16 +1303,8 @@ bool Session::refresh(Error& error) {
         }
     }
     const auto url = server_.url + "/api/shop/sections";
-    // How long the first screen waits, in the log: the list's download,
-    // then reading it.
-    const auto asked = std::chrono::steady_clock::now();
     auto response = get(url, authHeaders(server_, state_, url), etag_, cancel_);
     followDirectNaming(url, response);
-    const auto since = [](std::chrono::steady_clock::time_point from) {
-        return std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - from).count()) + "ms";
-    };
-    if (response.status == 200)
-        logLine("catalog download " + since(asked) + " " + std::to_string(response.body.size() >> 10) + "KB");
     if (!response.error.empty()) { error.message = response.error; return false; }
     unchanged_ = response.status == 304;
     if (unchanged_) return true;
@@ -1327,7 +1318,6 @@ bool Session::refresh(Error& error) {
     featured_ = std::move(parsed.value.featured);
     genres_ = std::move(parsed.value.genres);
     scoreLabels_ = std::move(parsed.value.scoreLabels);
-    logLine("catalog read " + since(asked) + " total, " + std::to_string(items_.size()) + " items");
     etag_ = response.etag;
     return true;
 }

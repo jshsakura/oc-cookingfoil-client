@@ -973,6 +973,39 @@ int runUiTests(SDL_Renderer *renderer) {
     foil::platform::setHostSpace(0);
   }
   {
+    // Only a finished download's HOME Menu shortcut left (the app closed
+    // right after its message): it goes on, nothing is asked.
+    std::atomic<bool> release{false};
+    foil::install::setHostInstall([&](const foil::Item &) {
+      for (int waited = 0; waited < 500 && !release; ++waited)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    });
+    foil::platform::setHostSpace(64ull << 30);
+    foil::Item shortcut;
+    shortcut.name = "S shortcut";
+    shortcut.url = "https://shop.example/api/homebrew/gh-1/forwarder";
+    shortcut.titleId = shortcut.baseId = "0500000000001000";
+    shortcut.size = 1000;
+    shortcut.type = "shortcut";
+    foil::ui::Application starting(renderer, "", "", "host/fixtures/art");
+    CHECK(starting.open());
+    const auto waitFor = [&](foil::ui::Application &on, const std::function<bool()> &done) {
+      for (int i = 0; i < 300 && !done(); ++i) {
+        on.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      return done();
+    };
+    starting.previewQueued(shortcut, "S shortcut", "");
+    starting.previewOfferResume();
+    CHECK(!starting.previewResumeAsked());
+    CHECK(waitFor(starting, [&] { return !starting.installingName().empty(); }));
+    release = true;
+    CHECK(waitFor(starting, [&] { return starting.installingName().empty(); }));
+    foil::install::setHostInstall(nullptr);
+    foil::platform::setHostSpace(0);
+  }
+  {
     // What was cut off is asked about once the server answers, not started
     // at once: B leaves it paused in 다운로드, A there goes on with it, and
     // leaving while it is paused asks nothing (its place is kept).

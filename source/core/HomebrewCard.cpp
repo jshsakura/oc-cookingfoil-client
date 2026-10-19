@@ -215,6 +215,9 @@ const App *matchCard(const std::vector<App> &apps, const std::string &path) {
 std::string tileIcon(const App &app, bool onCard, const std::string &cardKey) {
   return onCard || app.cardOnly ? cardKey : app.iconUrl;
 }
+std::string cardIconKey(const CardNro &nro) {
+  return "card:" + nro.path + "#" + std::to_string(nro.size) + "-" + std::to_string(nro.mtime);
+}
 Status cardStatus(const std::string &appVersion, const std::string &cardVersion) {
   const auto a = bare(appVersion), c = bare(cardVersion);
   return a.empty() || c.empty() || a == c ? Status::Installed : Status::Update;
@@ -260,13 +263,32 @@ bool removeCardFolder(const std::string &sdRoot, const std::string &folder, std:
     error = folder;
     return false;
   }
-  const auto full = sdRoot + "/" + folder;
+  // Listed whole first, then removed deepest first: the console's card
+  // stops listing a folder that changes under it, which left remove_all
+  // half done.
+  namespace fs = std::filesystem;
+  const fs::path full = sdRoot + "/" + folder;
+  std::vector<fs::path> files, folders{full};
   std::error_code ec;
-  std::filesystem::remove_all(full, ec);
-  if (ec && std::filesystem::exists(full)) {
-    error = ec.message();
+  for (fs::recursive_directory_iterator it(full, fs::directory_options::skip_permission_denied, ec), end;
+       !ec && it != end; it.increment(ec))
+    (it->is_directory(ec) && !it->is_symlink(ec) ? folders : files).push_back(it->path());
+  if (ec && fs::exists(full)) {
+    error = folder + ": " + ec.message();
     return false;
   }
-  return true;
+  for (const auto &file : files)
+    if (!fs::remove(file, ec) && ec) {
+      error = file.string() + ": " + ec.message();
+      return false;
+    }
+  std::sort(folders.begin(), folders.end(),
+            [](const fs::path &a, const fs::path &b) { return a.native().size() > b.native().size(); });
+  for (const auto &dir : folders)
+    if (!fs::remove(dir, ec) && ec) {
+      error = dir.string() + ": " + ec.message();
+      return false;
+    }
+  return !fs::exists(full);
 }
 } // namespace foil::homebrew

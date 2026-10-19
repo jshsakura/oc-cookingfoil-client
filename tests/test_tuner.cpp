@@ -150,5 +150,22 @@ int runTunerTests() {
     fresh.carryOn(4);
     CHECK(fresh.summary(0) == "connections 2 (kept)");
   }
+  {
+    // A count found in a run before: it starts there, found, and waits its
+    // turn before trying more; never above the ceiling now.
+    ConnectionTuner again(8, 5);
+    CHECK(again.connections() == 5);
+    CHECK(again.found());
+    CHECK(again.summary(0) == "connections 5 (remembered)");
+    CHECK(run(again, 5, 30 * MB) == 5);
+    CHECK(again.span(30 * MB, 7, 0) == 6); // its try, on time
+    CHECK(ConnectionTuner(3, 5).connections() == 3);
+    CHECK(ConnectionTuner(4, 0).connections() == 2);
+    // Kept on the card as lines, read back; anything else is skipped.
+    const std::map<std::string, int> found{{"https://a.example.com", 4}, {"http://192.0.2.1:8080", 2}};
+    CHECK(foil::net::parseFound(foil::net::serializeFound(found)) == found);
+    CHECK(foil::net::parseFound("bad\nhttps://b.example.com 0\nhttps://c.example.com 99\n").empty());
+    CHECK(foil::net::serializeFound({{"has space", 3}}).empty());
+  }
   return failures;
 }

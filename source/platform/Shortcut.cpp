@@ -217,9 +217,22 @@ Error makeShortcut(const ShortcutRequest &request, uint64_t &id) {
 void refreshShortcutIcon(uint64_t id) {
   // ns application manager InvalidateApplicationControlCache, cmd 404, as
   // sphaira's ns.cpp.
-  if (R_FAILED(nsInitialize())) return;
-  if (Service *ns = nsGetServiceSession_ApplicationManagerInterface()) serviceDispatchIn(ns, 404, id);
-  nsExit();
+  // From 3.0.0 libnx leaves that session unopened (0xE401, an invalid
+  // handle): it is asked for its own, as CyberFoil's nsextInitialize does.
+  Result rc = nsInitialize();
+  if (R_SUCCEEDED(rc)) {
+    if (hosversionBefore(3, 0, 0)) {
+      rc = serviceDispatchIn(nsGetServiceSession_ApplicationManagerInterface(), 404, id);
+    } else {
+      Service manager{};
+      if (R_SUCCEEDED(rc = nsGetApplicationManagerInterface(&manager))) {
+        rc = serviceDispatchIn(&manager, 404, id);
+        serviceClose(&manager);
+      }
+    }
+    nsExit();
+  }
+  logLine("shortcut refresh " + forwarder::hexId(id) + " " + code(rc));
 }
 Error removeShortcut(uint64_t id) {
   Services services;

@@ -195,6 +195,13 @@ int runHomebrewCardTests() {
     local.cardOnly = true;
     CHECK(tileIcon(local, true, "card:switch/a.nro") == "card:switch/a.nro");
     CHECK(tileIcon(local, true, "").empty());
+    // The same path written again is another picture.
+    CardNro before{"switch/a/a.nro", "a", "", "1", "old", 100, 1000};
+    CardNro after = before;
+    after.size = 120, after.mtime = 2000;
+    CHECK(cardIconKey(before).rfind("card:", 0) == 0);
+    CHECK(cardIconKey(before) != cardIconKey(after));
+    CHECK(cardIconKey(before) == cardIconKey(CardNro{before}));
   }
   // The scan on a real folder: depth, exclusions, files that are no .nro.
   namespace fs = std::filesystem;
@@ -257,6 +264,10 @@ int runHomebrewCardTests() {
   // The folder goes whole, settings and all; nothing outside it.
   write(sd / "switch/ytb/ytb-player.nro", "x");
   write(sd / "switch/ytb/data/cache.bin", "x");
+  // A game's tree, as cstrike's: folders in folders, many files, an empty one.
+  for (int n = 0; n < 50; ++n) write(sd / ("switch/ytb/valve/maps/m" + std::to_string(n) + ".bsp"), "x");
+  write(sd / "switch/ytb/cstrike_downloads_bak/sound/a.wav", "x");
+  fs::create_directories(sd / "switch/ytb/cstrike/empty");
   CHECK(removeCardFolder(sd.string(), "switch/ytb", error));
   CHECK(!fs::exists(sd / "switch/ytb") && fs::exists(sd / "switch/fake.nro"));
   // Anything but switch/<one folder> is refused untouched.

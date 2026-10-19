@@ -1,10 +1,10 @@
 #include "core/Homebrew.hpp"
 #include "core/Forwarder.hpp"
-#include <set>
 #include "core/HomebrewCard.hpp"
 #include "core/Json.hpp"
 #include "core/TitleGuard.hpp"
 #include <algorithm>
+#include <set>
 #include <sys/stat.h>
 #include <cctype>
 namespace foil::homebrew {
@@ -370,6 +370,17 @@ std::vector<std::string> parseFileList(const std::string &json) {
     if (json_object_is_type(path, json_type_string) && pathAllowed(json_object_get_string(path)))
       out.push_back(json_object_get_string(path));
   }
+  return out;
+}
+std::vector<std::string> movedAway(const std::string &oldFile, const std::vector<std::string> &oldFiles, const App &app) {
+  const auto folder = [](const std::string &path) { return path.substr(0, path.rfind('/') + 1); };
+  if (oldFile.empty() || folder(oldFile) == folder(app.installPath)) return {};
+  std::set<std::string> used{app.installPath};
+  for (const auto &file : app.files) used.insert(file.path);
+  for (const auto &entry : app.archive.entries) used.insert(entry.path);
+  std::vector<std::string> out;
+  for (const auto &file : oldFiles)
+    if (!used.count(file)) out.push_back(file);
   return out;
 }
 std::optional<CardFile> cardFile(const std::string &fullPath) {

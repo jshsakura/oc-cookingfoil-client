@@ -86,12 +86,7 @@ void Application::pollHomebrew() {
     if (shortcutsUnasked()) scanHomebrewCard(); // the list came while it looked
     if (screen_ == Screen::Homebrew && sidebar_ && autoSidebar_ && hasFocusable()) sidebar_ = autoSidebar_ = false;
   }
-  if (homebrewFolderDone_.exchange(false)) {
-    homebrewFolderWorker_.join();
-    cardChanged();
-    if (homebrewFolderError_.empty()) message(trf("Removed {0}.", {homebrewFolderName_}));
-    else alert_ = trf("Could not delete the folder: {0}", {homebrewFolderError_});
-  }
+  if (homebrewFolderDone_.exchange(false)) settleHomebrewRemoval();
   if (!homebrewDone_.exchange(false)) return;
   homebrewWorker_.join();
   if (homebrewFinish_) std::exchange(homebrewFinish_, nullptr)();
@@ -174,7 +169,6 @@ void Application::takeHomebrewLedgerCheck() {
     }
   for (const auto &id : check.followed)
     logLine("homebrew " + id + ": the card's file is not the one installed; the ledger follows the card");
-  if (check.hashed) logLine("homebrew ledger: hashed " + std::to_string(check.hashed) + " file(s) whose size or time changed");
   homebrewLedgerLooked_.clear();
   if (changed) saveHomebrewLedger();
 }
@@ -211,7 +205,7 @@ std::string Application::homebrewIcon(const homebrew::App &app) {
   const auto file = homebrewFile(app);
   const auto nro = std::find_if(homebrewCard_.begin(), homebrewCard_.end(),
                                 [&](const homebrew::CardNro &entry) { return entry.path == file; });
-  const auto key = nro == homebrewCard_.end() || nro->icon.empty() ? std::string() : "card:" + nro->path;
+  const auto key = nro == homebrewCard_.end() || nro->icon.empty() ? std::string() : homebrew::cardIconKey(*nro);
   const auto icon = homebrew::tileIcon(app, nro != homebrewCard_.end(), key);
   if (icon == key && !key.empty()) images_->provide(key, nro->icon);
   return icon;
@@ -354,12 +348,32 @@ bool Application::runHomebrew(const homebrew::App &app) {
   const auto sd = sdRoot_;
   retroBytes_ = bytes;
   retroCancel_ = false;
-  if (!runRetroJob("homebrew:" + app.id, [this, server, state, sd, listed = app, stale = homebrewStale(app)]() -> std::function<void()> {
+  const auto ledgered = homebrewLedger_.find(app.id);
+  const auto before = ledgered == homebrewLedger_.end() ? std::optional<homebrew::Record>() : ledgered->second;
+  if (!runRetroJob("homebrew:" + app.id, [this, server, state, sd, listed = app, stale = homebrewStale(app), before]() -> std::function<void()> {
         Error error;
         // A port's files come with it now, not with the list; the ledger keeps them.
         auto app = listed;
-        const bool ok = net::homebrewFilesOf(server, state, app, error, &retroCancel_) &&
-                        net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_, &homebrewCheck_);
+        bool ok = net::homebrewFilesOf(server, state, app, error, &retroCancel_) &&
+                  net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_, &cardCheck_);
+        // A build put on the server after the list was read makes the file
+        // differ from it: the list is asked again and the new build taken once.
+        if (!ok && !retroCancel_) {
+          std::string etag;
+          std::vector<homebrew::App> now;
+          bool unchanged = false;
+          Error listError;
+          if (net::homebrewList(server, state, etag, now, unchanged, listError, &retroCancel_))
+            for (const auto &fresh : now)
+              if (fresh.id == app.id && fresh.hash != listed.hash) {
+                logLine("homebrew: " + app.name + " changed on the server, fetching the new build");
+                app = fresh;
+                error = {};
+                retroReceived_ = 0;
+                ok = net::homebrewFilesOf(server, state, app, error, &retroCancel_) &&
+                     net::homebrewDownload(server, state, app, sd, retroReceived_, error, &retroCancel_, &retroKept_, &cardCheck_);
+              }
+        }
         // The older copies go here, off the drawing thread.
         std::vector<std::string> removed;
         for (const auto &old : ok ? stale : std::vector<std::string>{})
@@ -369,13 +383,34 @@ bool Application::runHomebrew(const homebrew::App &app) {
             homebrew::removeEmptyFolders(sd, old);
             removed.push_back(old);
           }
+        // Renamed on the server: what its last install put in the old folder
+        // goes too, and the shortcut made here for the old file.
+        uint64_t oldShortcut = 0;
+        if (ok && before && before->file != app.installPath) {
+          auto oldList = before->files;
+          if (oldList.empty()) oldList = homebrew::parseFileList(readFile(sd + "/" + homebrew::fileListPath(app.id)));
+          for (const auto &old : homebrew::movedAway(before->file, oldList, app)) {
+            std::error_code ec;
+            std::filesystem::remove(sd + "/" + old, ec);
+            homebrew::removeEmptyFolders(sd, old);
+          }
+          homebrew::removeEmptyFolders(sd, before->file);
+          oldShortcut = forwarder::titleId(forwarder::loaderPath(before->file));
+          if (oldShortcut == forwarder::titleId(forwarder::loaderPath(app.installPath))) oldShortcut = 0;
+        }
         const bool cancelled = retroCancel_;
         const uint64_t received = retroReceived_, kept = retroKept_;
         // The new file as written, so the next card check needs no hash.
         const auto seen = ok ? homebrew::cardFile(sd + "/" + app.installPath) : std::nullopt;
         const auto fileSha = seen ? sha256File(sd + "/" + app.installPath) : std::string();
-        return [this, ok, error, app, cancelled, received, kept, seen, fileSha, removed] {
+        return [this, ok, error, app, cancelled, received, kept, seen, fileSha, removed, oldShortcut] {
           cardChanged();
+          if (forwarder::shortcutId(oldShortcut)) {
+            shortcuts_.erase(oldShortcut);
+            refreshInstalled([oldShortcut] {
+              if (const auto error = platform::removeShortcut(oldShortcut)) logLine("shortcut: the old one stays: " + error.message);
+            });
+          }
           if (finishRetroEntry("homebrew", ok ? history::Outcome::Done : cancelled ? history::Outcome::Cancelled : history::Outcome::Failed,
                            ok || cancelled ? "" : error.message, received, kept))
             return;
@@ -388,12 +423,8 @@ bool Application::runHomebrew(const homebrew::App &app) {
             alert_ = error.message;
             return;
           }
-          const uint32_t settling = SDL_GetTicks();
           settleHomebrew(app, seen, fileSha, removed);
-          const uint32_t shortcut = SDL_GetTicks();
           const bool queued = autoHomebrewShortcut(app);
-          if (const uint32_t now = SDL_GetTicks(); now - settling >= 100)
-            logLine("homebrew end: settle " + std::to_string(shortcut - settling) + "ms, shortcut " + std::to_string(now - shortcut) + "ms");
           if (queued) return;
           // Why it ended so soon: only the changed files came.
           message(trf("Downloaded {0}. Open it from hbmenu.", {app.name}) +
@@ -475,7 +506,7 @@ void Application::removeHomebrew(const homebrew::App &picked, bool folder) {
   }
   const auto app = picked; // a card row goes away with its file
   const auto ownFolder = folder ? homebrewOwnFolder(app) : std::string();
-  if (folder && (ownFolder.empty() || homebrewFolderWorker_.joinable())) {
+  if (homebrewFolderWorker_.joinable() || (folder && ownFolder.empty())) {
     message(tr("Try again in a moment."));
     return;
   }
@@ -486,62 +517,80 @@ void Application::removeHomebrew(const homebrew::App &picked, bool folder) {
                                   [&](const homebrew::CardNro &nro) { return nro.path == file; });
   if (!ledgered && !onCard) return;
   // Its shortcut would only open an error once the file is gone.
-  const std::vector<uint64_t> shortcutIds{homebrewShortcutId(app), homebrewServerShortcut(app)};
-  std::error_code ec;
-  bool removed = true;
-  if (ledgered) {
-    const auto path = sdRoot_ + "/" + file;
-    std::filesystem::remove(path, ec);
-    removed = !ec || !fileExists(path);
-  } else {
-    std::string error;
-    removed = homebrew::removeCardFile(sdRoot_, file, error);
-    if (!removed) logLine("homebrew remove: " + error);
-  }
-  if (!removed) {
-    alert_ = trf("Could not delete the file: {0}", {file});
+  std::vector<uint64_t> shortcutIds;
+  for (const auto id : {homebrewShortcutId(app), homebrewServerShortcut(app)})
+    if (forwarder::shortcutId(id) && shortcuts_.count(id)) shortcutIds.push_back(id);
+  // The card is written on the writer core: a folder of thousands of files
+  // would hold the screen still for as long.
+  homebrewRemoved_ = {};
+  message(trf("Deleting {0}", {app.name}));
+  homebrewFolderWorker_ = std::thread([this, sd = sdRoot_, id = app.id, file, ledgered,
+                                       extras = ledgered ? found->second.files : std::vector<std::string>{}, ownFolder,
+                                       shortcutIds]() mutable {
+    const platform::OnCore off(platform::WriterCore);
+    HomebrewRemoved done;
+    if (!guarded("homebrew remove", [&] {
+          std::string error;
+          if (ledgered) {
+            std::error_code ec;
+            std::filesystem::remove(sd + "/" + file, ec);
+            done.file = !ec || !fileExists(sd + "/" + file);
+          } else if (!(done.file = homebrew::removeCardFile(sd, file, error)))
+            logLine("homebrew remove: " + error);
+          if (!done.file) return;
+          if (ledgered) {
+            // Installed in an earlier run: its list is on the card, not in memory.
+            if (extras.empty()) extras = homebrew::parseFileList(readFile(sd + "/" + homebrew::fileListPath(id)));
+            for (const auto &extra : extras) {
+              std::error_code ec;
+              std::filesystem::remove(sd + "/" + extra, ec);
+              homebrew::removeEmptyFolders(sd, extra);
+            }
+            homebrew::removeEmptyFolders(sd, file);
+          }
+          for (const auto shortcut : shortcutIds)
+            if (const auto failed = platform::removeShortcut(shortcut)) done.shortcutError = failed.message;
+            else done.shortcuts.push_back(shortcut);
+          if (!ownFolder.empty() && !homebrew::removeCardFolder(sd, ownFolder, error)) {
+            logLine("homebrew remove folder: " + error);
+            done.folderError = ownFolder;
+          }
+        }))
+      done.folderError = ownFolder.empty() ? file : ownFolder;
+    homebrewRemoved_ = std::move(done);
+    homebrewFolderDone_ = true;
+  });
+  homebrewRemovedApp_ = app;
+}
+// The worker's end: what the screens know of the card follows what went.
+void Application::settleHomebrewRemoval() {
+  homebrewFolderWorker_.join();
+  const auto app = std::exchange(homebrewRemovedApp_, {});
+  const auto done = std::exchange(homebrewRemoved_, {});
+  cardChanged();
+  if (!done.file) {
+    alert_ = trf("Could not delete the file: {0}", {homebrewFile(app)});
     return;
   }
-  if (ledgered) {
-    // Installed in an earlier run: its list is on the card, not in memory.
-    auto extras = found->second.files;
-    if (extras.empty()) extras = homebrew::parseFileList(readFile(sdRoot_ + "/" + homebrew::fileListPath(app.id)));
-    for (const auto &extra : extras) {
-      std::filesystem::remove(sdRoot_ + "/" + extra, ec);
-      homebrew::removeEmptyFolders(sdRoot_, extra);
-    }
-    homebrew::removeEmptyFolders(sdRoot_, file);
-  }
-  if (found != homebrewLedger_.end()) {
+  const auto file = homebrewFile(app);
+  if (const auto found = homebrewLedger_.find(app.id); found != homebrewLedger_.end()) {
     homebrewOnCard_.erase(found->second.file);
     queueFileList(found->first, {});
     homebrewLedger_.erase(found);
     saveHomebrewLedger();
   }
-  removeShortcuts(shortcutIds, app.name);
+  for (const auto id : done.shortcuts) shortcuts_.erase(id);
   homebrewCard_.erase(std::remove_if(homebrewCard_.begin(), homebrewCard_.end(),
                                      [&](const homebrew::CardNro &nro) { return nro.path == file; }),
                       homebrewCard_.end());
   matchHomebrewCard();
-  // What the screens read of the card goes with it: RetroArch removed here
-  // reads as gone on the retro pages, which then offer it again.
-  cardChanged();
-  if (ownFolder.empty()) {
+  if (!done.shortcutError.empty()) {
+    alertTitle_ = tr("Could not delete the shortcut");
+    alert_ = done.shortcutError;
+  } else if (!done.folderError.empty())
+    alert_ = trf("Could not delete the folder: {0}", {done.folderError});
+  else
     message(trf("Removed {0}.", {app.name}));
-    return;
-  }
-  homebrewFolderName_ = app.name;
-  homebrewFolderError_.clear();
-  homebrewFolderWorker_ = std::thread([this, sd = sdRoot_, ownFolder] {
-    const platform::OnCore off(platform::WriterCore);
-    std::string error;
-    if (!guarded("homebrew folder", [&] {
-          if (!homebrew::removeCardFolder(sd, ownFolder, error)) logLine("homebrew remove folder: " + error);
-        }))
-      error = ownFolder;
-    homebrewFolderError_ = error.empty() ? std::string() : ownFolder;
-    homebrewFolderDone_ = true;
-  });
 }
 void Application::homebrewAction(Action a) {
   const auto rows = homebrewRows();

@@ -35,10 +35,6 @@ constexpr auto SleepGap = std::chrono::seconds(10);
 std::atomic<uint64_t> checkpointAsked{0}, checkpointGiven{0};
 std::atomic<int> live{0}; // segmentedFetch calls under way
 
-// How long the download stood still because the card (or the install
-// behind it) had not taken what came: the log tells a slow card from a slow
-// line with it.
-std::atomic<uint64_t> heldMicros{0};
 // The writer thread: bytes in place, in the order they were handed over,
 // at most `limit` bytes held. A failed write stops everything.
 class Writer {
@@ -50,11 +46,7 @@ public:
   bool put(uint64_t offset, std::vector<char> &&data, std::function<void()> done) {
     std::unique_lock<std::mutex> held(lock_);
     const auto room = [&] { return held_ + data.size() <= limit_ || queue_.empty() || failed_; };
-    if (!room()) {
-      const auto from = std::chrono::steady_clock::now();
-      changed_.wait(held, room);
-      heldMicros += uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - from).count());
-    }
+    changed_.wait(held, room);
     if (failed_)
       return false;
     held_ += data.size();
@@ -299,7 +291,6 @@ std::string rangeOf(uint64_t from, uint64_t end, bool openEnded) {
 }
 } // namespace
 
-double cardHeldSeconds() { return double(heldMicros.load()) / 1e6; }
 void checkpointSoon() { ++checkpointAsked; }
 uint64_t checkpointsAsked() { return checkpointAsked.load(); }
 uint64_t checkpointsServed() { return checkpointGiven.load(); }
@@ -381,7 +372,6 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
       curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
       curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 512L * 1024);
-      curl_easy_setopt(curl, CURLOPT_SOCKOPTFUNCTION, &tuneSocket);
       curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
       curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
       shareConnections(curl); // the last file's connections, still warm

@@ -146,7 +146,7 @@ bool Application::autoHomebrewShortcut(const homebrew::App &app) {
 }
 bool Application::makeHomebrewShortcutHere(const homebrew::App &app) {
   if (!platform::canMakeShortcuts() || !homebrew::cardNroPath(homebrewFile(app))) return false;
-  queueShortcut(app.name, homebrewIcon(app),
+  queueShortcut(app.name, app.iconUrl,
                 serializePlan({homebrewFile(app), "", "", app.name, "", app.name, app.iconUrl, homebrewServerShortcut(app),
                                app.forwarderCores, app.id, app.forwarderKey}));
   return true;
@@ -214,14 +214,20 @@ bool Application::startShortcut(const QueuedInstall &next) {
     plan = {homebrewFile(app), "", "", app.name, "", app.name, app.iconUrl, homebrewServerShortcut(app)};
   }
   const auto server = session_ ? session_->server() : Server{};
-  // The picture the screen showed, as the image cache keeps it: those bytes
-  // were read on this console already.
-  const auto cached = images_ && plan.iconUrl.rfind("http", 0) == 0 ? images_->cachedPath(plan.iconUrl) : std::string();
+  // The picture as the server gives it now: the row was queued with the
+  // address of its time, and the picture may have changed since.
+  for (const auto &app : homebrew_)
+    if (!plan.app.empty() && app.id == plan.app && !app.iconUrl.empty()) plan.iconUrl = app.iconUrl;
+  for (const auto &game : retroGames_)
+    if (plan.replaces && plan.app.empty() && forwarder::serverShortcutId(game.forwarderTitleId) == plan.replaces &&
+        !game.iconUrl.empty())
+      plan.iconUrl = game.iconUrl;
   retroBytes_ = 0; // nothing to download: no percent on its row
   // The server's for the same app goes once this one is made, so the HOME
-  // Menu shows it once; asked here, removed on the worker.
-  const bool replace = plan.replaces && shortcuts_.count(plan.replaces);
-  return runRetroJob("shortcut", [this, plan, server, cached, replace, state = state_, sd = sdRoot_,
+  // Menu shows it once; removed on the worker whether or not the last look
+  // saw it (a missing one is no error).
+  const bool replace = plan.replaces != 0;
+  return runRetroJob("shortcut", [this, plan, server, replace, state = state_, sd = sdRoot_,
                                   languages = homebrew::nacpLanguages(languageCode())]() -> std::function<void()> {
     logLine("shortcut: making " + plan.display); // a crash after this line is the shortcut's
     Error error;
@@ -230,11 +236,12 @@ bool Application::startShortcut(const QueuedInstall &next) {
     if (!homebrew::readNroFile(sd + forwarder::loaderPath(plan.file), languages, info))
       error.message = trf("Could not read the app file: {0}", {plan.file});
     else {
-      // The server's picture, as the web shows it now (its address carries
-      // the version): the screen's copy in the image cache, else fetched as
-      // the screen fetches it. The .nro's own when neither can be had.
-      std::string icon, picture = cached.empty() ? std::string() : readFile(cached), from = "cache";
-      if (picture.empty() && plan.iconUrl.rfind("http", 0) == 0) {
+      // The server's picture, fetched now and never from the image cache, so
+      // a picture changed on the web is the one the HOME Menu shows. The
+      // .nro's own icon only when the server's does not come; a retro game's
+      // would be RetroArch's.
+      std::string icon, picture, from = "no address";
+      if (plan.iconUrl.rfind("http", 0) == 0) {
         auto headers = net::authHeaders(server, state, plan.iconUrl);
         headers.push_back("Accept: image/webp,image/*;q=0.8");
         const auto got = net::get(plan.iconUrl, headers);
@@ -245,7 +252,7 @@ bool Application::startShortcut(const QueuedInstall &next) {
       if (!icon.empty())
         logLine("shortcut: " + plan.display + " icon from the server's picture (" + from + ", " +
                 std::to_string(picture.size() >> 10) + "KB -> " + std::to_string(icon.size() >> 10) + "KB)");
-      else if (plan.iconUrl.rfind("http", 0) == 0)
+      else
         logLine("shortcut: " + plan.display + " keeps the app's own icon (" + from + ")");
       platform::ShortcutRequest request;
       request.nroPath = forwarder::loaderPath(plan.launch.empty() ? plan.file : plan.launch);

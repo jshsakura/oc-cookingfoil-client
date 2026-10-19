@@ -125,9 +125,8 @@ void nativeInstall(const Item &item, const std::string &target,
   // Applet mode has a few hundred MB in all, so it gets a small ring.
   tin::data::NUM_BUFFER_SEGMENTS =
       appletGetAppletType() == AppletType_Application ? ApplicationSegments : AppletSegments;
-  // Large files come down on several connections at once (each a 4 MB or
-  // 2 MB piece held until its turn): 4 x 4 MB as an application, 4 x 2 MB
-  // from the album, whose heap is small. A single connection rarely fills a
+  // Large files come down on several connections at once, each piece held
+  // until its turn (sizes below); the album's heap is small. A single connection rarely fills a
   // path with real latency, such as a player outside the server's network.
   // As many connections as the server recommends (else 2 on a private
   // network, 4 outside), at most 4 from the album. NCZ, which must be
@@ -168,29 +167,6 @@ void nativeInstall(const Item &item, const std::string &target,
     int id;
     ~Tuning() { foil::net::stopTuning(id); }
   } tuning{foil::net::startTuning(current.connections, originOf(foil::net::routeDownload(from)))};
-  // One line in the log per file once it is in: size, time, average speed,
-  // the connections it ended with and why, compressed or not, and where
-  // from (the server's direct address, or its own).
-  struct Summary {
-    std::string name;
-    bool compressed;
-    std::string route;
-    uint64_t bytes = foil::net::receivedBytes(), tick = svcGetSystemTick();
-    double held = foil::net::cardHeldSeconds();
-    ~Summary() {
-      const double seconds = double(svcGetSystemTick() - tick) / 19200000.0;
-      const double mb = double(foil::net::receivedBytes() - bytes) / (1024 * 1024);
-      // How long of it the network waited on the card and the install.
-      const double waited = foil::net::cardHeldSeconds() - held;
-      char line[320];
-      std::snprintf(line, sizeof(line), "download %.1f MB in %.0f s = %.1f MB/s, %s, %s, %s, waited on the card %.0f s: ",
-                    mb, seconds, seconds > 0 ? mb / seconds : 0, foil::net::tuningSummary().c_str(),
-                    compressed ? "compressed" : "plain", route.c_str(), waited);
-      logLine(line + name);
-    }
-  } summary{item.name,
-            path.size() >= 4 && (path.substr(path.size() - 4) == ".nsz" || path.substr(path.size() - 4) == ".xcz"),
-            foil::net::routeName(from)};
   if (path.size() >= 4 && (path.substr(path.size() - 4) == ".xci" ||
                            path.substr(path.size() - 4) == ".xcz")) {
     auto file = std::make_shared<tin::install::xci::HTTPXCI>(from);

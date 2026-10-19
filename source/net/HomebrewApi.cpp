@@ -89,16 +89,11 @@ bool fetchFile(const Server &server, const State &state, const std::string &url,
   return true;
 }
 // A file already on the card with the listed size and hash: nothing to fetch.
-bool alreadyThere(const std::string &target, uint64_t size, const std::string &sha256) {
+bool alreadyThere(const std::string &target, uint64_t size, const std::string &sha256, const std::atomic<bool> *cancel,
+                  std::atomic<uint64_t> *read) {
   std::error_code ec;
   if (sha256.empty() || !size || std::filesystem::file_size(target, ec) != size || ec) return false;
-  std::unique_ptr<FILE, int (*)(FILE *)> in(std::fopen(target.c_str(), "rb"), std::fclose);
-  if (!in) return false;
-  Sha256 hash;
-  std::vector<char> chunk(256 * 1024);
-  size_t n;
-  while ((n = std::fread(chunk.data(), 1, chunk.size(), in.get())) > 0) hash.update(chunk.data(), n);
-  return hash.hex() == sha256;
+  return sha256File(target, cancel, read) == sha256;
 }
 // A folder install as one tar stream: one request at full speed, and a cut
 // goes on from the last whole file (kept in switch/cookingfoil/resume). Only
@@ -316,7 +311,12 @@ bool homebrewFiles(const Server &server, const State &state, const homebrew::App
   std::set<std::string> kept;
   uint64_t total = 0, missing = 0;
   size_t missingFiles = 0;
-  if (check) check->done = 0, check->total = int(app.files.size());
+  if (check) {
+    uint64_t bytes = 0;
+    for (const auto &file : app.files) bytes += file.size;
+    check->done = 0;
+    check->total = bytes;
+  }
   struct Done {
     CheckProgress *check;
     ~Done() { if (check) check->total = 0; }
@@ -325,14 +325,15 @@ bool homebrewFiles(const Server &server, const State &state, const homebrew::App
     if (cancel && *cancel) return false;
     const auto &file = app.files[i];
     total += file.size;
-    have[i] = alreadyThere(sd + "/" + file.path, file.size, file.sha256);
+    const uint64_t before = check ? check->done.load() : 0;
+    have[i] = alreadyThere(sd + "/" + file.path, file.size, file.sha256, cancel, check ? &check->done : nullptr);
     if (have[i]) {
       kept.insert(file.path);
       received += file.size;
       passed(file.size);
     } else
       missing += file.size, ++missingFiles;
-    if (check) ++check->done;
+    if (check) check->done = before + file.size; // a file passed by its size counts whole
   }
   if (check) check->total = 0;
   if (!missingFiles) return true;
@@ -379,7 +380,7 @@ bool homebrewFiles(const Server &server, const State &state, const homebrew::App
       if (i >= app.files.size()) return;
       const auto &file = app.files[i];
       if (have[i]) continue; // counted above
-      if (alreadyThere(sd + "/" + file.path, file.size, file.sha256)) { // the bundle wrote it before it gave out
+      if (alreadyThere(sd + "/" + file.path, file.size, file.sha256, cancel, nullptr)) { // the bundle wrote it before it gave out
         received += file.size;
         passed(file.size);
         continue;

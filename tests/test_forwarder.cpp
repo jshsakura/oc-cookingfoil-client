@@ -463,6 +463,11 @@ int runShortcutUiTests(SDL_Renderer *renderer) {
     CHECK(!app.appPopupOpen() && !app.askingShortcutRemoval());
     settle(app);
     app.action(Action::Accept);
+    // Removed on a worker: the screen takes the result a frame later.
+    for (int n = 0; n < 40 && app.hasShortcut(demo); ++n) {
+      SDL_Delay(25);
+      app.render();
+    }
     CHECK(!app.hasShortcut(demo) && !std::filesystem::exists(sd + "/switch/demo/demo.nro"));
   }
   std::filesystem::remove_all(sd);

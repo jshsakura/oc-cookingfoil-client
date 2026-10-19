@@ -47,8 +47,6 @@ struct SegmentedResult {
 // again with 0 written when the server's file changed and it starts over);
 // `write(offset, data, size)` puts bytes in place, from a writer thread, in
 // any order. Either returning false stops the download.
-// Seconds, all told, that downloads waited on the card to take their bytes.
-double cardHeldSeconds();
 // Asks every running download to hand its parts to its checkpoint on its
 // next turn (within a tenth of a second) instead of at its usual cadence:
 // the app is about to leave the screen or the console to sleep.

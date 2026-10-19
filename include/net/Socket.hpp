@@ -12,9 +12,6 @@
 namespace foil::net {
 void setReceiveWindow(int bytes);
 int receiveWindow();
-// For CURLOPT_SOCKOPTFUNCTION: leaves the window to grow on its own and logs
-// (the first time only) the size it starts from and the most it may reach.
-int tuneSocket(void *user, int socket, int purpose);
 // Every byte a download's connections take in, counted as curl hands it
 // over: the download screen's speed reads this, so it moves while pieces
 // that must arrive in order are still filling.

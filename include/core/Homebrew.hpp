@@ -148,6 +148,10 @@ std::string serializeLedger(const Ledger &ledger);
 std::string fileListPath(const std::string &id);
 std::string serializeFileList(const std::vector<std::string> &files);
 std::vector<std::string> parseFileList(const std::string &json);
+// An app whose install moved to another folder (renamed on the server): the
+// files its last install listed there that the new one does not use. Empty
+// while it stays in its folder, where an unlisted file may be its settings.
+std::vector<std::string> movedAway(const std::string &oldFile, const std::vector<std::string> &oldFiles, const App &app);
 // The size and modified time of a file at a full path, or nothing.
 std::optional<CardFile> cardFile(const std::string &fullPath);
 // The ledger checked against the card. A file with the size and time it was

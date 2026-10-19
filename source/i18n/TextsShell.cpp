@@ -160,6 +160,7 @@ const Translation rows[] = {
     {"Estimating time left", "남은 시간 계산 중", "残り時間を計算中", "正在计算剩余时间"},
     {"{0} in progress", "{0} 진행 중", "{0} 処理中", "{0} 进行中"},
     {"{0} queued", "{0} 대기", "{0} 待機", "{0} 等待中"},
+    {"Deleting {0}", "{0} 삭제 중", "{0}を削除中", "正在删除 {0}"},
     {"A download was in progress", "진행 중이던 다운로드가 있습니다", "進行中だったダウンロードがあります", "有一个进行中的下载"},
     {"The download resumes from where it stopped.", "중지되어 있는 부분부터 다운로드를 재개합니다.", "中断した位置からダウンロードを再開します。", "将从中断处继续下载。"},
     {"To continue later, resume it from the Downloads menu.", "나중에 이어 하시려면 다운로드 메뉴에서 이어서 받을 수 있습니다.", "あとで続ける場合は、ダウンロードメニューから再開できます。", "如需稍后继续，可在“下载”菜单中继续下载。"},

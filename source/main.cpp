@@ -144,8 +144,7 @@ int main(int argc, char **argv) {
       PadHistory history;
       padConfigureInput(1, HidNpadStyleSet_NpadStandard);
       padInitializeDefault(&pad);
-      uint32_t repeatAt = 0, stickAt = 0, heartbeatAt = 0;
-      auto shownScreen = ui.current();
+      uint32_t repeatAt = 0, stickAt = 0;
       float touchX = 0, touchY = 0, lastX = 0, lastY = 0;
       bool dragging = false;
       // Past its startup and running a moment: a build just updated to is
@@ -271,19 +270,6 @@ int main(int argc, char **argv) {
         if (const auto request = ui.takeTextRequest())
           openTextKeyboard(ui, *request);
         ui.render();
-        // One line a minute; logLine appends used/total memory, so a slow leak
-        // shows up in log.txt before it becomes a crash.
-        constexpr uint32_t HeartbeatMs = 5 * 60000; // a frozen app shows as a gap
-        if (SDL_GetTicks() - heartbeatAt >= HeartbeatMs) {
-          heartbeatAt = SDL_GetTicks();
-          foil::logLine(std::string("heartbeat ") + foil::ui::screenLabel(ui.current()));
-        }
-        // Each screen's memory on arrival, so the log shows which one grows
-        // the heap (an album launch has little of it to spare).
-        if (ui.current() != shownScreen) {
-          shownScreen = ui.current();
-          foil::logLine(std::string("screen ") + foil::ui::screenLabel(shownScreen));
-        }
         if (ui.shouldQuit())
           break;
       }
