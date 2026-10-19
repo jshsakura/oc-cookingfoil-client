@@ -185,6 +185,7 @@ Detail parseDetail(const std::string &json, const std::string &base) {
     }
   // Shop paths and full addresses, as the game's other pictures.
   m.screenshots = urlList(root.get(), "screenshots", base, 8);
+  m.achievements = achievements::parseSummary(json);
   auto *list = field(root.get(), "variants");
   if (!json_object_is_type(list, json_type_array)) return d;
   for (size_t i = 0; i < json_object_array_length(list) && d.variants.size() < 100; ++i) {

@@ -703,6 +703,40 @@ private:
   // detail: the get popup, which also names the version a flag stands for.
   std::vector<std::string> retroLabels(const retro::Game &game, bool detail = false) const;
   bool retroArchAsking_ = false;
+  // RetroAchievements (레트로 게임's X): the id the server keeps, read once a
+  // run (again after 새로고침) with the card's sign-in in retroarch.cfg; the
+  // popup that signs in on the console; a game's achievements from its page.
+  achievements::Account raAccount_;
+  bool raRead_ = false;        // asked this run
+  std::string raSignedIn_;     // retroarch.cfg's signed-in user, "" when none
+  bool raOpen_ = false;        // the sign-in popup
+  int raRow_ = 0;              // its focus: 0 id, 1 password, 2 the button (signed in: 0 the button)
+  int raField_ = -1;           // the field the keyboard types into
+  std::string raUser_, raPassword_; // the password lives only until the sign-in runs
+  std::string raBusy_;         // "read", "signin", "signout", "game"
+  Error raError_;
+  std::thread raWorker_;
+  std::atomic<bool> raDone_{false};
+  std::function<void()> raFinish_;
+  bool raListOpen_ = false;    // a game's achievements
+  int raListRow_ = 0;
+  std::string raListGame_;     // whose list is shown or coming
+  achievements::Game raList_;
+  Error raListError_;
+  bool runRaJob(const std::string &busy, std::function<std::function<void()>()> job);
+  void pollRa();
+  void readRaAccount();
+  void openRaPopup();
+  void raAction(Action a);
+  void raDialog();
+  void raSignIn();
+  void raSignOut();
+  float raHeaderButton(float right); // the header's X 업적; returns its left edge
+  int raCard(int y);                 // the game page's achievements card
+  void openRaList();
+  void raListAction(Action a);
+  void raListDialog();
+  bool raModal() const { return raOpen_ || raListOpen_; }
   void retroArchConfirm(); // Y with RetroArch already there
   // On the card from before the shop had its bezel: getting it again adds it.
   bool retroBezelMissing(const retro::Game &game) const;

@@ -66,6 +66,7 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
 // followed, as in get().
 struct PostOptions {
     std::string body, uploadFile, saveTo;
+    std::string method; // "PUT" or "DELETE" in place of POST; empty for POST
     long timeout = 60; // seconds; 0 for no limit, only a 30 second stall
 };
 Response post(const std::string& url, const std::vector<std::string>& headers, const PostOptions& options,

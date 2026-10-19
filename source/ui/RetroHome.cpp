@@ -14,20 +14,28 @@ void Application::retroHome() {
   int roms = 0;
   for (const auto &shelf : retroShelves_) roms += shelf.system.romCount;
   pageTitle(tr("Retro games"), std::to_string(roms), 0);
+  readRaAccount(); // once a run, and again after 새로고침
+  // X 업적 at the right end (where search sits elsewhere), Y RetroArch left
+  // of it. Both are there from the first frame, one width whatever they
+  // say, so the page loading or a label changing moves nothing.
+  const float raX = raHeaderButton(1252);
   // Y gets RetroArch, or checks it for new files once it is there.
   const std::string get = retroBusy_ == "pack"  ? tr("Cancel install")
                           : retroArchPresent() ? tr("Update RetroArch")
                                                : tr("Install RetroArch");
-  const float getW = paint_.keyLabelWidth("Y", get, 19, true) + 40;
-  headerItem("retroarch", 1252 - getW, 24, getW, 48, [this] { action(Action::Queue); });
-  paint_.rect(1252 - getW, 24, getW, 48, Surface, 12);
-  paint_.keyLabel("Y", get, 1272 - getW, 48, 19, Ink, true);
+  float getW = 0;
+  for (const char *label : {"Cancel install", "Update RetroArch", "Install RetroArch"})
+    getW = std::max(getW, paint_.keyLabelWidth("Y", tr(label), 19, true) + 40);
+  const float getX = raX - 16 - getW;
+  headerItem("retroarch", getX, 24, getW, 48, [this] { action(Action::Queue); });
+  paint_.rect(getX, 24, getW, 48, Surface, 12);
+  paint_.keyLabel("Y", get, getX + 20, 48, 19, Ink, true);
   // L and R open the focused shelf's system, where they then step through
   // the systems; said here, since nothing else shows it.
   if (!retroShelves_.empty()) {
     const auto systems = tr("By system");
     const float sysW = paint_.keyWidth("L") + paint_.keyWidth("R") + paint_.fonts.measure(systems, 19, true) + 56,
-                sysX = 1252 - getW - 16 - sysW;
+                sysX = getX - 16 - sysW;
     headerItem("systems", sysX, 24, sysW, 48, [this] { openRetroList(retroRow_); });
     paint_.rect(sysX, 24, sysW, 48, Surface, 12);
     paint_.key("L", sysX + 12, 48);

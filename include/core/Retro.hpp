@@ -1,6 +1,7 @@
 #pragma once
 // Retro games served by the shop (/api/retro): systems, paged game lists,
 // per-game bundles (a tar from the SD root) and the RetroArch base pack.
+#include "core/Achievements.hpp"
 #include "core/Types.hpp"
 #include <map>
 namespace foil::retro {
@@ -47,6 +48,7 @@ struct Meta {
   int releaseDate = 0; // YYYYMMDD, or YYYY0000 when only the year is known
   int players = 0;
   std::vector<std::string> genres, screenshots;
+  achievements::Summary achievements; // raGameId 0: not matched on RetroAchievements
 };
 // /api/retro/games/:id: the game in full, with its versions (when it has more than one).
 struct Detail {

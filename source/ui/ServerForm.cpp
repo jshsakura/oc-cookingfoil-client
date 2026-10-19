@@ -65,6 +65,11 @@ void Application::askServerField(int field) {
   pairMessageField_ = false;
 }
 void Application::enterText(const std::string &text) {
+  if (const int field = std::exchange(raField_, -1); field >= 0) {
+    (field == 0 ? raUser_ : raPassword_) = text;
+    raError_ = {};
+    return;
+  }
   if (std::exchange(bugMessageField_, false)) {
     bugMessage_ = text;
     return;

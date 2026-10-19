@@ -655,6 +655,15 @@ bool Application::runRetroArch(bool full) {
   return true;
 }
 void Application::retroAction(Action a) {
+  if (raModal()) {
+    raAction(a);
+    return;
+  }
+  // X on the shelves: RetroAchievements (search is the system list's).
+  if (a == Action::Search && retroView_ == RetroView::Home) {
+    openRaPopup();
+    return;
+  }
   if (retroArchAsking_) {
     if (a == Action::Back) retroArchAsking_ = false;
     if (a == Action::Accept || a == Action::Queue) {

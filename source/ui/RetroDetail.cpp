@@ -41,7 +41,7 @@ void Application::openRetroDetail(const retro::Game &game) {
   detail_ = {};
   descriptionScroll_ = 0;
   descriptionFocus_ = false;
-  galleryOpen_ = false;
+  galleryOpen_ = raListOpen_ = false;
   screenshot_ = 0;
   retroPart_ = ButtonPart; // on the button, as a shop game's page opens
   retroDetailLoading_ = true;
@@ -167,6 +167,15 @@ void Application::getRetroChecked() {
     message(tr("Try again in a moment."));
 }
 void Application::retroDetailAction(Action a) {
+  if (raListOpen_) {
+    raListAction(a);
+    return;
+  }
+  // X: the game's achievements, when RetroAchievements has it.
+  if (a == Action::Search) {
+    openRaList();
+    return;
+  }
   const int rows = int(retroVersionList().size());
   retroPart_ = std::min(retroPart_, rows); // the button stays the button as versions arrive
   if (a == Action::Back) {
@@ -342,6 +351,7 @@ void Application::retroDetail() {
     y += Height + 16;
   }
   y = int(retroInfoCard(float(y))) + 22;
+  y = raCard(y);
   y = screenshotStrip(y);
   descriptionHeight_ = std::max(0, y + offset - (BandBottom - Pad));
   {

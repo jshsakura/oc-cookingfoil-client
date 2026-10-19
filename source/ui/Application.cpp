@@ -99,6 +99,8 @@ Application::~Application() {
     backupSummaryWorker_.join();
   if (dropboxWorker_.joinable())
     dropboxWorker_.join();
+  if (raWorker_.joinable())
+    raWorker_.join();
   flushHistory();
   if (storageWorker_.joinable())
     storageWorker_.join();
@@ -752,6 +754,7 @@ void Application::screen(Screen screen) {
     checkAppUpdate();
   // Dropbox's popups belong to the visit that opened them.
   dropboxOpen_ = dropboxUnlinkAsk_ = dropboxChoosing_ = false;
+  raOpen_ = raListOpen_ = false; // RetroAchievements' too
   if (screen == Screen::Saves) {
     readBackupSummary();
     refreshInstalled();
@@ -971,6 +974,7 @@ void Application::poll() {
   pollShopSaves();
   pollBackupSummary();
   pollDropbox();
+  pollRa();
   laps.lap("server saves");
   pollPatches();
   pollPatchCheck();
@@ -1579,7 +1583,7 @@ void Application::action(Action a) {
     savesAction(a);
     return;
   }
-  if (screen_ == Screen::Retro && (retroArchAsking_ || (!sidebar_ && (a != Action::Back || retroView_ == RetroView::List)) || a == Action::Queue ||
+  if (screen_ == Screen::Retro && (retroArchAsking_ || raModal() || (!sidebar_ && (a != Action::Back || retroView_ == RetroView::List)) || a == Action::Queue ||
                                    a == Action::Previous || a == Action::Next)) {
     retroAction(a);
     return;
@@ -2547,6 +2551,7 @@ void Application::refreshAll() {
 #endif
   if (screen_ == Screen::Patches) patchError_ = {};
   homebrewLoaded_ = false; // 홈브류 asks the server again when it shows
+  raRead_ = false;         // the achievements id and sign-in too, on 레트로 게임
   // 레트로 게임 starts over from its first screen and loads again.
   retroView_ = retroHomeMissing_ ? RetroView::List : RetroView::Home;
   retroShelves_.clear();

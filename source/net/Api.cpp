@@ -468,6 +468,7 @@ Response postOnce(const std::string& url, const std::vector<std::string>& header
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, userAgent().c_str());
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    if (!options.method.empty()) curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, options.method.c_str());
     if (in) {
         curl_easy_setopt(curl, CURLOPT_READFUNCTION, readUpload);
         curl_easy_setopt(curl, CURLOPT_READDATA, in.get());
