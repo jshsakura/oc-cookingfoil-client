@@ -1,4 +1,5 @@
-// RetroAchievements: 레트로 게임's X opens the sign-in. The console signs in
+// RetroAchievements: 레트로 게임's X opens its page (RetroAchievementsPage.cpp);
+// the keyboard sign-in and the sign-out ask in a popup here. The console signs in
 // with RetroAchievements itself and keeps the token in retroarch.cfg (the
 // password is used once and kept nowhere); the server keeps only the id, so
 // it can list a game's achievements with the player's progress.
@@ -13,8 +14,7 @@
 #include <filesystem>
 namespace foil::ui {
 namespace {
-constexpr int Fields = 2; // id, password; then sign in and the phone, side by side
-constexpr int Phone = Fields + 1;
+constexpr int Fields = 2; // id, password; then the sign-in button
 constexpr uint32_t LinkLife = 5 * 60 * 1000; // the server drops a link after five minutes
 // The console's sign-in: retroarch.cfg with the given lines set. A file that
 // is there but did not read is left alone rather than replaced by them.
@@ -50,14 +50,6 @@ ConsoleSignIn signInOnConsole(const std::string &sd, const std::string &user, st
 Job::Finish crashed(Error &error) {
   return [&error] { error.message = tr("Something went wrong with RetroAchievements. Check log.txt."); };
 }
-std::string day(int64_t at) {
-  const std::time_t t = at;
-  std::tm local{};
-  localtime_r(&t, &local);
-  char text[16];
-  std::strftime(text, sizeof(text), "%Y-%m-%d", &local);
-  return text;
-}
 } // namespace
 
 // Once a run (새로고침 asks again): the server's id and the card's sign-in.
@@ -90,10 +82,6 @@ void Application::openRaPopup() {
   if (raUser_.empty()) raUser_ = !raSignedIn_.empty() ? raSignedIn_ : raAccount_.username;
 }
 void Application::raAction(Action a) {
-  if (raLink_) {
-    if (a == Action::Back) raLinkClose(); // back to the fields
-    return;
-  }
   if (raJob_.is("signin") || raJob_.is("signout") || raJob_.is("link")) return; // it finishes before anything else
   const bool signedIn = !raSignedIn_.empty();
   const int last = signedIn ? 0 : Fields;
@@ -103,10 +91,8 @@ void Application::raAction(Action a) {
     raPassword_.clear();
     return;
   }
-  if (a == Action::Up) raRow_ = raRow_ == Phone ? Fields - 1 : std::max(0, raRow_ - 1);
-  if (a == Action::Down && raRow_ < last) ++raRow_; // the phone's button sits beside sign in: already the last row
-  if (!signedIn && a == Action::Right && raRow_ == Fields) raRow_ = Phone;
-  if (!signedIn && a == Action::Left && raRow_ == Phone) raRow_ = Fields;
+  if (a == Action::Up) raRow_ = std::max(0, raRow_ - 1);
+  if (a == Action::Down) raRow_ = std::min(last, raRow_ + 1);
   if (a != Action::Accept || !settled()) return;
   if (!signedIn && raRow_ < Fields) {
     raField_ = raRow_;
@@ -116,7 +102,6 @@ void Application::raAction(Action a) {
   }
   if (raJob_.busy()) return; // the account is still being read: the note says so, and A works once it is done
   if (signedIn) raSignOut();
-  else if (raRow_ == Phone) raPhone();
   else raSignIn();
 }
 void Application::raSignIn() {
@@ -146,6 +131,8 @@ void Application::raSignOut() {
     if (auto error = writeConfig(sd, achievements::signOutValues())) return [this, error] { raError_ = error; };
     return [this] {
       raSignedIn_.clear();
+      raGames_ = {};
+      raPageRow_ = 0;
       raOpen_ = false;
       raRow_ = 0;
       message(tr("Signed out of RetroAchievements on this console."));
@@ -156,6 +143,7 @@ void Application::raSignedIn(const std::string &user, const Error &serverError) 
   raLinkClose();
   raSignedIn_ = raUser_ = user;
   if (!serverError && raAccount_.enabled) raAccount_.username = user;
+  raGamesAsked_ = false; // the list again, now with this id's progress
   raOpen_ = false;
   message(serverError ? trf("Signed in to RetroAchievements. The server did not keep the id: {0}", {serverError.message})
                       : std::string(tr("Signed in to RetroAchievements.")));
@@ -179,7 +167,7 @@ void Application::raPhone() {
     auto link = net::startAchievementsLink(server, state, publicKey, old);
     if (link.error) return [this, error = link.error] { raError_ = error; };
     return [this, key, link = link.value, url = achievements::linkUrl(server.url, link.value.path, publicKey)] {
-      if (!raOpen_) return; // closed while it was asked
+      if (screen_ != Screen::Retro || retroView_ != RetroView::Achievements) return; // left while it was asked
       raLink_ = RaLink{key, link, url, "", SDL_GetTicks() + LinkLife};
       raLinkWait();
     };
@@ -229,7 +217,11 @@ void Application::raLinkWait() {
         return [stop] { stop({tr("RetroAchievements refused the password too many times. Open a new QR code.")}); };
       return [this, code] { raLinkAgain(code, tr("RetroAchievements refused the password. Enter it again on the phone.")); };
     }
-    if (signedIn.error) return [stop, error = signedIn.error] { stop(error); };
+    if (signedIn.error) {
+      // Not the password: the phone says to look at the console, which says why.
+      net::sendLinkResult(server, state, code, false, "", "console", &stop_);
+      return [stop, error = signedIn.error] { stop(error); };
+    }
     const auto result = net::sendLinkResult(server, state, code, true, signedIn.user, "", &stop_);
     return [this, user = signedIn.user, error = result.error] { raSignedIn(user, error); };
   }, [this] {
@@ -254,7 +246,7 @@ float Application::raHeaderButton(float right) {
   constexpr float NameRoom = 120;
   const float w = paint_.keyLabelWidth("X", label, 19, true) + 40 + NameRoom, x = right - w;
   const bool ready = retroArchPresent();
-  headerItem("achievements", x, 24, w, 48, [this] { openRaPopup(); });
+  headerItem("achievements", x, 24, w, 48, [this] { openRaPage(); });
   paint_.rect(x, 24, w, 48, Surface, 12);
   const float end = paint_.keyLabel("X", label, x + 20, 48, 19, ready ? Ink : Secondary, true, ready);
   const std::string state = !ready                 ? tr("After RetroArch")
@@ -268,18 +260,13 @@ void Application::raDialog() {
   constexpr float Text = 636, Row = 60, Gap = 10;
   const int rows = signedIn ? 1 : Fields + 1;
   const float bodyH = 24 + 128 + rows * (Row + Gap) + 44;
-  const std::string accept = busy || raLink_ ? NoAccept
-                      : signedIn         ? tr("Sign out|achievements")
-                      : raRow_ < Fields  ? tr("Enter")
-                      : raRow_ == Phone  ? tr("Show QR code")
-                                         : tr("Sign in");
-  const auto body = modal(700, bodyH, "RetroAchievements", busy ? "" : raLink_ ? tr("Cancel") : tr("Close"), "", accept, 31);
+  const std::string accept = busy        ? NoAccept
+                            : signedIn    ? tr("Sign out|achievements")
+                            : raRow_ < Fields ? tr("Enter")
+                                              : tr("Sign in");
+  const auto body = modal(700, bodyH, "RetroAchievements", busy ? "" : tr("Close"), "", accept, 31);
   const float x = body.x + 32;
   float y = body.y + 24;
-  if (raLink_) {
-    raLinkView(x, y, Text);
-    return;
-  }
   // What it is, where else the id goes, and what it needs.
   y += paint_.fonts.wrapped(tr("Earn achievements while you play retro games. Once signed in, RetroArch records them on RetroAchievements."),
                             x, y, 18, Ink, Text, 2) + 8;
@@ -314,10 +301,7 @@ void Application::raDialog() {
   } else {
     field(0, tr("Id|account"), raUser_.empty() ? std::string(tr("Press A to enter")) : raUser_);
     field(1, tr("Password"), raPassword_.empty() ? std::string(tr("Press A to enter")) : std::string(raPassword_.size(), '*'));
-    // Sign in here, or type the password on a phone instead of the console.
-    const float ry = y + Fields * (Row + Gap), half = (Text - Gap) / 2;
-    button(Fields, raJob_.is("signin") ? tr("Signing in") : tr("Sign in"), x, half, ry);
-    button(Phone, raJob_.is("link") ? tr("Making the QR code") : tr("Enter on a phone"), x + half + Gap, half, ry);
+    button(Fields, raJob_.is("signin") ? tr("Signing in") : tr("Sign in"), x, Text, y + Fields * (Row + Gap));
   }
   const float noteY = y + rows * (Row + Gap) + 6;
   if (raError_) paint_.fonts.wrapped(raError_.message, x, noteY, 16, Bad, Text, 2);
@@ -325,24 +309,6 @@ void Application::raDialog() {
   else if (!raAccount_.enabled && raRead_ && !raJob_.busy())
     paint_.fonts.wrapped(tr("This server has no RetroAchievements key, so games' achievement lists do not show."), x,
                          noteY, 16, Secondary, Text, 2);
-}
-// The QR for the phone, what it does, and how long it lasts.
-void Application::raLinkView(float x, float y, float w) {
-  constexpr float Size = 260;
-  if (raQr_.encode(raLink_->url)) raQr_.draw(paint_.renderer, int(x), int(y + 8), int(Size));
-  const float tx = x + Size + 32, tw = w - Size - 32;
-  float ty = y + 8;
-  ty += paint_.fonts.wrapped(tr("Scan the QR code with your phone's camera and enter the RetroAchievements password there."),
-                             tx, ty, 19, Ink, tw, 4) + 12;
-  ty += paint_.fonts.wrapped(tr("The phone locks the password so only this console can open it. The phone has to reach this server's address."),
-                             tx, ty, 16, Secondary, tw, 5) + 16;
-  if (!raLink_->note.empty()) ty += paint_.fonts.wrapped(raLink_->note, tx, ty, 17, Bad, tw, 3) + 8;
-  else ty += paint_.fonts.wrapped(tr("Waiting for the phone"), tx, ty, 17, Pending, tw, 2) + 8;
-  const uint32_t now = SDL_GetTicks();
-  const int left = raLink_->until > now ? int((raLink_->until - now + 999) / 1000) : 0;
-  char clock[16];
-  std::snprintf(clock, sizeof(clock), "%d:%02d", left / 60, left % 60);
-  paint_.fonts.text(trf("Expires in {0}", {clock}), tx, ty, 16, Secondary, false, tw);
 }
 // The game page's card, under its facts: how many achievements and points,
 // X for the list. A game matched by its title says the patch may not count.
@@ -445,7 +411,7 @@ void Application::raListDialog() {
     const float pw = paint_.pill(points, right - paint_.fonts.measure(points, 15, true) - 18, ry + 12);
     std::string state;
     if (a.earned) state = a.earnedHardcore ? tr("Earned · hardcore") : tr("Earned");
-    if (a.earned && a.earnedAt) state += " · " + day(a.earnedAt);
+    if (a.earned && a.earnedAt) state += " · " + achievements::localDay(a.earnedAt);
     if (!state.empty()) paint_.fonts.middle(state, right - paint_.fonts.measure(state, 14, true), ry + Row - 18, 14, Good, true);
     const float textW = right - pw - 12 - tx;
     paint_.fonts.text(a.title, tx, ry + 10, 19, a.earned ? Ink : Secondary, true, textW);

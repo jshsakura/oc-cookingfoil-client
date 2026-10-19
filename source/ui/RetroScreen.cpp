@@ -667,9 +667,13 @@ void Application::retroAction(Action a) {
     }
     return;
   }
+  if (retroView_ == RetroView::Achievements) {
+    raPageAction(a);
+    return;
+  }
   // X on the shelves: RetroAchievements (search is the system list's).
   if (a == Action::Search && retroView_ == RetroView::Home) {
-    openRaPopup();
+    openRaPage();
     return;
   }
   if (a == Action::Queue && retroView_ == RetroView::List) {
@@ -776,6 +780,7 @@ void Application::retroScreen() {
   }
   if (!retroLoaded_ && connected_ && !retroListWorker_.joinable()) loadRetroHome();
   if (retroView_ == RetroView::Home) retroHome();
+  else if (retroView_ == RetroView::Achievements) raPage();
   else retroList();
 }
 // RetroArch's state in a strip: there or not (Y gets it), and that each

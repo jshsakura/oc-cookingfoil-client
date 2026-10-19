@@ -102,6 +102,7 @@ Application::~Application() {
   raLinkStop_ = true; // a phone sign-in waiting on the server lets go at once
   raJob_.join();
   raListJob_.join();
+  raGamesJob_.join();
   flushHistory();
   if (storageWorker_.joinable())
     storageWorker_.join();
@@ -255,6 +256,10 @@ bool Application::open() {
   // touches the renderer); the cues are made on their own thread meanwhile.
   paint_.splash("", progressShown, seconds());
   sounds_.open();
+  // Set to play now, not after the records are read: a card that takes
+  // longer than the first landing would push the whole cue a beat late.
+  // The records turn it off again if sounds are off.
+  sounds_.playStart(shownAt);
   // Everything after this is read on the loading thread. It never draws:
   // the fonts are the screen's once open, and the language it sets is
   // applied to them when it is done.
@@ -282,7 +287,6 @@ bool Application::open() {
       }
       applyStartupLanguage();
       sounds_.setOn(state_.sounds);
-      sounds_.playStart(shownAt); // as soon as it is made, on a landing, if sounds are on
       // Each step says what it is doing under the logo, so a slow SD card or
       // server shows where the time goes.
       background(tr("Preparing the image cache"), 0.38f, 0.40f, "images");
@@ -789,7 +793,7 @@ bool Application::hasFocusable() const {
   case Screen::Homebrew:
     return !homebrewRows().empty();
   case Screen::Retro:
-    return retroView_ == RetroView::List || !retroShelves_.empty();
+    return retroView_ != RetroView::Home || !retroShelves_.empty();
   case Screen::Saves:
     return savesTab_ == 2 ? dropboxFocusable() : savesTab_ == 1 ? !shopSaveGroups().empty() : !deviceBusy_ && !saveGameRows().empty();
   case Screen::Settings:
@@ -978,6 +982,7 @@ void Application::poll() {
   pollDropbox();
   raJob_.poll();
   raListJob_.poll();
+  raGamesJob_.poll();
   laps.lap("server saves");
   pollPatches();
   pollPatchCheck();
@@ -1586,7 +1591,7 @@ void Application::action(Action a) {
     savesAction(a);
     return;
   }
-  if (screen_ == Screen::Retro && (retroArchAsking_ || raModal() || (!sidebar_ && (a != Action::Back || retroView_ == RetroView::List)) || a == Action::Queue ||
+  if (screen_ == Screen::Retro && (retroArchAsking_ || raModal() || (!sidebar_ && (a != Action::Back || retroView_ != RetroView::Home)) || a == Action::Queue ||
                                    a == Action::Previous || a == Action::Next)) {
     retroAction(a);
     return;
@@ -2448,6 +2453,8 @@ void Application::render() {
     using Hints = std::vector<std::pair<std::string, std::string>>;
     if (sidebar_)
       footer({{"B", tr("Back")}});
+    else if (retroView_ == RetroView::Achievements)
+      footer(raPageHints());
     else if (retroView_ == RetroView::List)
       // X is on the search box; the footer keeps A and B.
       footer(retroGames_.empty() ? Hints{{"B", tr("Back")}} : Hints{{"A", tr("Details")}, {"B", tr("Back")}});
@@ -2556,8 +2563,9 @@ void Application::refreshAll() {
   if (screen_ == Screen::Patches) patchError_ = {};
   homebrewLoaded_ = false; // 홈브류 asks the server again when it shows
   raRead_ = false;         // the achievements id and sign-in too, on 레트로 게임
-  // 레트로 게임 starts over from its first screen and loads again.
-  retroView_ = retroHomeMissing_ ? RetroView::List : RetroView::Home;
+  raGamesAsked_ = false;   // and its games with achievements
+  // 레트로 게임 starts over from its first screen and loads again; 업적 stays.
+  if (retroView_ != RetroView::Achievements) retroView_ = retroHomeMissing_ ? RetroView::List : RetroView::Home;
   retroShelves_.clear();
   retroGames_.clear();
   retroListSystem_.clear();

@@ -36,6 +36,20 @@ int runAchievementsTests() {
     CHECK(!game.list[1].earned && game.list[1].earnedAt == 0 && game.list[1].badge.empty());
   }
   CHECK(!a::parseGame(R"({"raGameId":1,"user":null,"list":[]})", "").hasUser);
+  // The games with achievements: progress clamped, a title match marked,
+  // rows without an id or a name left out, the icon made absolute.
+  const auto games = a::parseGames(R"({"user":{"username":"player","points":420},"list":[
+    {"gameId":"g1","title":"Alpha","system":"snes","raGameId":12,"count":40,"points":400,"earned":45,"earnedHardcore":50,
+     "matchedBy":"hash","lastEarnedAt":1760000000,"iconUrl":"/media/g1.png"},
+    {"gameId":"g2","title":"Beta","raGameId":13,"count":10,"points":100,"earned":0,"matchedBy":"title","lastEarnedAt":null},
+    {"gameId":"","title":"No id"},{"gameId":"g4"}]})", "http://192.0.2.10:8080");
+  CHECK(games.hasUser && games.username == "player" && games.userPoints == 420 && games.list.size() == 2);
+  if (games.list.size() == 2) {
+    CHECK(games.list[0].earned == 40 && games.list[0].earnedHardcore == 40 && !games.list[0].byTitle);
+    CHECK(games.list[0].icon == "http://192.0.2.10:8080/media/g1.png" && games.list[0].lastEarnedAt == 1760000000);
+    CHECK(games.list[1].byTitle && games.list[1].lastEarnedAt == 0 && games.list[1].icon.empty());
+  }
+  CHECK(!a::parseGames(R"({"user":null,"list":[]})", "").hasUser);
   // RetroAchievements' login: the token, or its reason.
   const auto login = a::parseLogin(R"({"Success":true,"User":"Player","Token":"AAAA0000","Score":10})");
   CHECK(login.user == "Player" && login.token == "AAAA0000" && login.error.empty());

@@ -4,6 +4,7 @@
 #include "core/Sha256.hpp"
 #include "platform/Seal.hpp"
 #include <algorithm>
+#include <ctime>
 #include <set>
 #include <sstream>
 namespace foil::achievements {
@@ -98,6 +99,47 @@ Game parseGame(const std::string &json, const std::string &base) {
     g.list.push_back(std::move(a));
   }
   return g;
+}
+Games parseGames(const std::string &json, const std::string &base) {
+  Games g;
+  Error ignored;
+  auto root = parseJson(json, ignored);
+  if (!root) return g;
+  auto *user = field(root.get(), "user");
+  if (user && json_object_is_type(user, json_type_object)) {
+    g.hasUser = true;
+    g.username = stringField(user, "username");
+    g.userPoints = count(user, "points");
+  }
+  auto *list = field(root.get(), "list");
+  if (!json_object_is_type(list, json_type_array)) return g;
+  for (size_t i = 0; i < json_object_array_length(list) && g.list.size() < 5000; ++i) {
+    auto *object = json_object_array_get_idx(list, i);
+    if (!json_object_is_type(object, json_type_object)) continue;
+    GameRow r;
+    r.gameId = stringField(object, "gameId");
+    r.title = stringField(object, "title");
+    if (r.gameId.empty() || r.title.empty()) continue;
+    r.system = stringField(object, "system");
+    r.icon = urlField(object, "iconUrl", base);
+    r.raGameId = std::max<int64_t>(0, integerField(object, "raGameId", 0));
+    r.count = count(object, "count");
+    r.points = count(object, "points");
+    r.earned = std::min(count(object, "earned"), r.count); // never more earned than there are
+    r.earnedHardcore = std::min(count(object, "earnedHardcore"), r.earned);
+    r.byTitle = stringField(object, "matchedBy") == "title";
+    r.lastEarnedAt = std::max<int64_t>(0, integerField(object, "lastEarnedAt", 0));
+    g.list.push_back(std::move(r));
+  }
+  return g;
+}
+std::string localDay(int64_t at) {
+  const std::time_t t = at;
+  std::tm local{};
+  localtime_r(&t, &local);
+  char text[16];
+  std::strftime(text, sizeof(text), "%Y-%m-%d", &local);
+  return text;
 }
 Login parseLogin(const std::string &json) {
   Login l;

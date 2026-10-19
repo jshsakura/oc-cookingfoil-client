@@ -40,6 +40,24 @@ struct Game {
   std::vector<Achievement> list;
 };
 Game parseGame(const std::string &json, const std::string &base);
+// GET /api/retro/achievements/games: the server's retro games that have
+// achievements, with the player's progress (all 0 without a registered id).
+struct GameRow {
+  std::string gameId, title, system, icon; // icon: a full address, empty when none
+  int64_t raGameId = 0;
+  int count = 0, points = 0, earned = 0, earnedHardcore = 0;
+  bool byTitle = false;     // matched by the title: the console's ROM may not earn them
+  int64_t lastEarnedAt = 0; // Unix seconds, 0 when nothing is earned
+};
+struct Games {
+  bool hasUser = false;
+  std::string username;
+  int userPoints = 0;
+  std::vector<GameRow> list;
+};
+Games parseGames(const std::string &json, const std::string &base);
+// Unix seconds as the console's local date, "2026-10-19".
+std::string localDay(int64_t at);
 // RetroAchievements' dorequest.php?r=login2 answer: the token, or why not.
 struct Login {
   std::string user, token, error;

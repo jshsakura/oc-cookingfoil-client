@@ -27,7 +27,9 @@ public:
   // set to play. Its fanfare's chord comes FanfareMs after that.
   uint32_t startHeardAt() const { return startHeardAt_; }
   static constexpr uint32_t FanfareMs = 2270;
-  void setOn(bool on) { on_.store(on); }
+  // Off also stops what is playing or waiting to (the start cue, set to
+  // play before the setting is read off the card).
+  void setOn(bool on);
   bool on() const { return on_; }
 
 private:

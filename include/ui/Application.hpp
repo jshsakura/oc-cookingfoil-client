@@ -614,7 +614,7 @@ private:
   // 레트로 게임: a home of shelves, one per system, best rated first
   // (RetroHome.cpp); R or 모두 보기 opens a system's whole list, where L R
   // moves between systems and X searches (RetroScreen.cpp).
-  enum class RetroView { Home, List };
+  enum class RetroView { Home, List, Achievements };
   void retroScreen();
   void retroHome();
   void retroList();
@@ -713,7 +713,7 @@ private:
   bool raRead_ = false;        // asked this run
   std::string raSignedIn_;     // retroarch.cfg's signed-in user, "" when none
   bool raOpen_ = false;        // the sign-in popup
-  int raRow_ = 0;              // its focus: 0 id, 1 password, 2 sign in, 3 the phone (signed in: 0 the button)
+  int raRow_ = 0;              // its focus: 0 id, 1 password, 2 sign in (signed in: 0 the button)
   int raField_ = -1;           // the field the keyboard types into
   std::string raUser_, raPassword_; // the password lives only until the sign-in runs
   Error raError_;
@@ -735,7 +735,7 @@ private:
     std::string note;   // why the phone is asked again, "" while it is first awaited
     uint32_t until = 0; // SDL ticks when the QR expires
   };
-  std::optional<RaLink> raLink_; // the QR shows in place of the fields
+  std::optional<RaLink> raLink_; // the page shows its QR
   std::atomic<bool> raLinkStop_{false};
   Qr raQr_;
   bool raRunning() const { return raJob_.busy(); }
@@ -752,7 +752,21 @@ private:
   void raLinkWait();       // one long poll for the phone's envelope
   void raLinkAgain(const std::string &code, const std::string &note); // the phone asks again
   void raLinkClose();      // drops the QR and its key
-  void raLinkView(float x, float y, float w);
+  // 업적 (X on the retro home): how to sign in, then the account and the
+  // server's retro games with achievements and the player's progress.
+  achievements::Games raGames_;
+  Error raGamesError_;
+  bool raGamesAsked_ = false; // asked this run (새로고침 and a sign-in ask again)
+  Job raGamesJob_;
+  int raPageRow_ = 0;         // signed in: 0 the account, then its games
+  void openRaPage();
+  void raPage();
+  void raPageAction(Action a);
+  void raGamesFetch();
+  void raConnectCard();       // not signed in: the steps and the buttons
+  void raLinkCard();          // the QR while the phone is awaited
+  void raAccountList();       // signed in: the account row and the games
+  std::vector<std::pair<std::string, std::string>> raPageHints() const;
   float raHeaderButton(float right); // the header's X 업적; returns its left edge
   int raCard(int y);                 // the game page's achievements card
   void openRaList();

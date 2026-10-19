@@ -63,6 +63,13 @@ void Sounds::playStart(uint32_t beatAt) {
   SDL_UnlockAudioDevice(device_);
   if (ready) play(Cue::Start);
 }
+void Sounds::setOn(bool on) {
+  on_.store(on);
+  if (on || !device_) return;
+  SDL_LockAudioDevice(device_);
+  voices_.clear();
+  SDL_UnlockAudioDevice(device_);
+}
 void Sounds::play(Cue cue) {
   if (!device_ || !on_) return;
   const auto now = SDL_GetTicks();

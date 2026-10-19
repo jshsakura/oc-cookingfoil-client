@@ -54,6 +54,19 @@ Parsed<achievements::Game> gameAchievements(const Server &server, const State &s
   if (!response.error.empty() || response.status != 200) return {{}, accountError(response)};
   return {achievements::parseGame(response.body, server.url), {}};
 }
+Parsed<achievements::Games> achievementGames(const Server &server, const State &state, bool &old,
+                                             const std::atomic<bool> *cancel) {
+  old = false;
+  const auto url = server.url + "/api/retro/achievements/games";
+  const auto response = get(url, authHeaders(server, state, url), "", cancel);
+  if (response.status == 404) {
+    old = true;
+    return {{}, {tr("This server cannot list achievements yet.")}};
+  }
+  if (response.status == 502) return {{}, {tr("RetroAchievements did not answer. Try again shortly.")}};
+  if (!response.error.empty() || response.status != 200) return {{}, accountError(response)};
+  return {achievements::parseGames(response.body, server.url), {}};
+}
 Parsed<achievements::Login> signInRetroAchievements(const std::string &user, const std::string &password,
                                                     const std::atomic<bool> *cancel) {
   PostOptions options;
