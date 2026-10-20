@@ -41,6 +41,8 @@ float sample(Wave wave, float f, float t) {
     const float phase = f * t - std::floor(f * t);
     return 4 * std::fabs(phase - 0.5f) - 1;
   }
+  case Wave::Pluck: // a string of its own, made in chime()
+    break;
   }
   return 0;
 }
