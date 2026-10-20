@@ -763,6 +763,7 @@ std::vector<history::Entry> DownloadStore::load(size_t finishedPage) {
     return {};
   known_ = std::move(ids);
   more_ = std::move(more);
+  publishMore();
   topId_ = top;
   return out;
 }
@@ -785,16 +786,16 @@ std::vector<history::Entry> DownloadStore::older(history::Outcome outcome, int64
   known_.insert(ids.begin(), ids.end());
   if (more) more_.insert(outcome);
   else more_.erase(outcome);
+  publishMore();
   return out;
 }
-bool DownloadStore::moreOf(history::Outcome outcome) const {
-  std::lock_guard<std::mutex> held(lock_);
-  return more_.count(outcome) > 0;
+void DownloadStore::publishMore() {
+  uint32_t mask = 0;
+  for (const auto outcome : more_) mask |= 1u << unsigned(outcome);
+  moreMask_ = mask;
 }
-uint64_t DownloadStore::topId() const {
-  std::lock_guard<std::mutex> held(lock_);
-  return topId_;
-}
+bool DownloadStore::moreOf(history::Outcome outcome) const { return (moreMask_ >> unsigned(outcome)) & 1u; }
+uint64_t DownloadStore::topId() const { return topId_; }
 bool DownloadStore::removeAll(history::Outcome outcome, std::string &error) {
   std::lock_guard<std::mutex> held(lock_);
   if (!file_.empty() && readOnly_) {
@@ -807,7 +808,10 @@ bool DownloadStore::removeAll(history::Outcome outcome, std::string &error) {
     remove.text(1, outcomeName(outcome));
     return remove.step() == SQLITE_DONE;
   });
-  if (ok) more_.erase(outcome);
+  if (ok) {
+    more_.erase(outcome);
+    publishMore();
+  }
   return ok;
 }
 bool DownloadStore::save(const std::vector<history::Entry> &entries, std::string &error) {
@@ -885,7 +889,7 @@ bool DownloadStore::save(const std::vector<history::Entry> &entries, std::string
   });
   // Nothing of a failed save stays: its transaction never committed.
   if (ok) {
-    for (const auto id : now) topId_ = std::max(topId_, id);
+    for (const auto id : now) topId_ = std::max(topId_.load(), id);
     known_ = std::move(now);
   }
   return ok;

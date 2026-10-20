@@ -127,6 +127,11 @@ private:
   std::atomic<bool> open_{false}, readOnly_{false};
   std::set<uint64_t> known_; // rows this instance loaded or wrote: the only ones its saves delete
   std::set<history::Outcome> more_; // endings with older rows not read yet
-  uint64_t topId_ = 0;
+  // What the screen reads: copies of the two above, kept up to date under
+  // the lock but read without it, so the drawing thread never waits for a
+  // save that holds the lock while the card is busy.
+  void publishMore();
+  std::atomic<uint32_t> moreMask_{0};
+  std::atomic<uint64_t> topId_{0};
 };
 } // namespace foil

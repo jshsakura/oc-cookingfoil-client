@@ -44,7 +44,9 @@ void Application::pollDevice() {
   installedAt_ = SDL_GetTicks();
   updatesStale_ = true;
   installed_.games = sortInstalled(std::move(installed_.games), installedSort_);
-  rebuildHome();
+  // The home is built from the whole shop: only when what is on the console
+  // changed, not after every finished download (an update or a DLC does not).
+  if (installedMaskNow() != installedMask_) rebuildHome();
   if (screen_ == Screen::Installed)
     selected_ = std::clamp(selected_, 0, std::max(0, int(installed_.games.size()) - 1));
   if (removalOperation_) {
