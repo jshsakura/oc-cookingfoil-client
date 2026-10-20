@@ -198,7 +198,10 @@ std::vector<std::string> downloadHeaders(const Server& server, const State& stat
     const auto origin = originOf(url);
     if (origin != originOf(server.url) && !anotherServers(server, origin) && url.rfind("https://", 0) == 0 &&
         (direct.empty() || origin == direct))
-        if (const auto token = downloadToken(server.url); !token.empty()) headers.push_back("Authorization: Bearer " + token);
+        if (const auto token = downloadToken(server.url); !token.empty()) {
+            if (origin != direct) lendToken(server.url, url);
+            headers.push_back("Authorization: Bearer " + token);
+        }
     return headers;
 }
 // Compared by value (error_.message == offlineMessage()), so both sides go through tr().

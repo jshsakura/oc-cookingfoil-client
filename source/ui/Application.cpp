@@ -179,7 +179,7 @@ void Application::serverRestartNotice() {
 // changed): a refresh, where the session drops the old key and asks for
 // approval again, so the QR code shows instead of each screen failing.
 void Application::followTakeBack() {
-  if (!net::takeConsoleRevoked().empty()) takenBack_ = true;
+  if (session_ && net::takeConsoleRevoked(session_->server().url)) takenBack_ = true;
   if (!takenBack_ || !session_ || network_.joinable()) return;
   takenBack_ = false;
   logLine("the server took this console back; refreshing to ask for approval again");

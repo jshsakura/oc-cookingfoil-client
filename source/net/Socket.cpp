@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <curl/curl.h>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <string>
@@ -36,25 +37,48 @@ struct Link {
   bool restarting = false;
   uint64_t sessionRefusals = 0;
   int activeDownloads = 0, recommended = 0;
+  // One ask for a token at a time, per server: the others wait for its
+  // token, and a slow server holds up no other.
+  std::shared_ptr<std::mutex> renewing = std::make_shared<std::mutex>();
 };
 std::mutex linkLock;
-std::map<std::string, Link> links; // by the server's own origin
-std::mutex renewLock;              // one ask at a time; the others wait for its token
+std::map<std::string, Link> links;      // by the server's own origin
+std::map<std::string, std::string> lent; // a host off a server given its token, to that server
 std::atomic<uint64_t> restarts{0};
 std::set<std::string> revoked; // servers that took this console back, until taken; under linkLock
-// Under linkLock: the server `url` belongs to, by its own address or the
-// direct one it named.
+bool isConfigured(const std::string &origin) {
+  const auto known = knownServers();
+  return known && std::any_of(known->begin(), known->end(), [&](const std::string &s) { return originOf(s) == origin; });
+}
+// Under linkLock: the server `url` belongs to. A configured server's own
+// address is always its own; else the server that named it as its direct
+// address, or that gave a host there its token; else the address itself.
+// Empty for a URL with no origin, which belongs to none.
 std::string ownerOf(const std::string &url) {
   const auto origin = originOf(url);
+  if (origin.empty() || isConfigured(origin)) return origin;
   for (const auto &[server, link] : links)
     if (link.direct == origin && server != origin) return server;
-  return origin;
+  const auto host = lent.find(origin);
+  return host == lent.end() ? origin : host->second;
 }
-Link &linkOf(const std::string &url) { return links[ownerOf(url)]; }
+// A server's state: read (a server not heard from reads as one with
+// nothing said) or changed.
 template <typename Read>
-auto readLink(const std::string &url, Read read) {
+auto peekLink(const std::string &url, Read read) {
   std::lock_guard<std::mutex> held(linkLock);
-  return read(linkOf(url));
+  const auto found = links.find(ownerOf(url));
+  return found == links.end() ? read(Link{}) : read(found->second);
+}
+template <typename Change>
+auto changeLink(const std::string &url, Change change) {
+  std::lock_guard<std::mutex> held(linkLock);
+  const auto owner = ownerOf(url);
+  if (owner.empty()) {
+    Link none;
+    return change(none);
+  }
+  return change(links[owner]);
 }
 // A reply's header block, in the thread curl reads it on: whether it is a
 // success so far and has no restart header.
@@ -71,6 +95,7 @@ std::string serverOf(const std::string &url) {
   return ownerOf(url);
 }
 void heardHeader(const std::string &url, const char *data, size_t bytes) {
+  if (originOf(url).empty()) return; // from no server
   std::string line(data, bytes);
   while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
     line.pop_back();
@@ -81,7 +106,7 @@ void heardHeader(const std::string &url, const char *data, size_t bytes) {
     return;
   }
   if (line.empty()) { // the block ended: a success with no restart header means it is back
-    if (replyOk) readLink(url, [](Link &link) { link.restarting = false; });
+    if (replyOk) changeLink(url, [](Link &link) { link.restarting = false; });
     replyOk = false;
     return;
   }
@@ -97,7 +122,7 @@ void heardHeader(const std::string &url, const char *data, size_t bytes) {
   if (key == "x-cookingfoil-download-token") {
     const auto value = trimmed();
     if (!value.empty() && value.find_first_of(" \t\r\n") == std::string::npos)
-      readLink(url, [&](Link &link) {
+      changeLink(url, [&](Link &link) {
         link.token = value;
         link.rejected = link.signInRefused = false;
       });
@@ -111,13 +136,15 @@ void heardHeader(const std::string &url, const char *data, size_t bytes) {
     const auto origin = value.rfind("https://", 0) == 0 && value.find_first_of(" \t\r\n/", 8) == std::string::npos
                             ? originOf(value)
                             : std::string();
-    // Never another configured server's own address: that would take its
-    // replies and send it this server's token.
-    const auto known = knownServers();
-    const bool taken = known && std::any_of(known->begin(), known->end(), [&](const std::string &other) {
-                         return originOf(other) == origin && originOf(other) != serverOf(url);
-                       });
-    if (!origin.empty() && !taken) readLink(url, [&](Link &link) { link.direct = origin; });
+    // Never another server's address, its own or the direct one it named:
+    // that would take its replies and send it this server's token.
+    if (!origin.empty()) {
+      std::lock_guard<std::mutex> held(linkLock);
+      const auto owner = ownerOf(url);
+      const bool taken = (origin != owner && (isConfigured(origin) || links.count(origin))) ||
+                         std::any_of(links.begin(), links.end(), [&](const auto &l) { return l.first != owner && l.second.direct == origin; });
+      if (!owner.empty() && !taken) links[owner].direct = origin;
+    }
     return;
   }
   // How many connections the server takes from a console now; the next
@@ -135,16 +162,17 @@ void heardHeader(const std::string &url, const char *data, size_t bytes) {
   }
   if (key == "x-cookingfoil-session") { // the session token refused: expired | revoked | invalid
     const auto value = trimmed();
-    {
+    const auto owner = serverOf(url);
+    changeLink(url, [](Link &link) { ++link.sessionRefusals; });
+    if (value == "revoked" && !owner.empty()) {
       std::lock_guard<std::mutex> held(linkLock);
-      ++linkOf(url).sessionRefusals;
-      if (value == "revoked") revoked.insert(ownerOf(url));
+      revoked.insert(owner);
     }
     logLine("session token " + (value == "expired" || value == "revoked" || value == "invalid" ? value : std::string("refused")));
     return;
   }
   if (key == "x-cookingfoil-token") { // a download refused: expired or revoked
-    readLink(url, [](Link &link) { link.rejected = true; });
+    changeLink(url, [](Link &link) { link.rejected = true; });
     return;
   }
   if (key != "x-cookingfoil-restarting") return;
@@ -156,7 +184,7 @@ void heardHeader(const std::string &url, const char *data, size_t bytes) {
     id = value.substr(at + 3);
     id = id.substr(0, id.find_first_of(" ;,\t"));
   }
-  readLink(url, [&](Link &link) {
+  changeLink(url, [&](Link &link) {
     // Down for at most the server's estimate and a minute more: a restart
     // that never ends does not keep a download waiting for good.
     link.restartUntil = std::chrono::steady_clock::now() + std::chrono::seconds(seconds + 60);
@@ -169,7 +197,7 @@ void heardHeader(const std::string &url, const char *data, size_t bytes) {
   });
 }
 bool serverRestarting(const std::string &url) {
-  return readLink(url, [](Link &link) { return link.restarting && std::chrono::steady_clock::now() < link.restartUntil; });
+  return peekLink(url, [](const Link &link) { return link.restarting && std::chrono::steady_clock::now() < link.restartUntil; });
 }
 bool serverRestarting() {
   std::lock_guard<std::mutex> held(linkLock);
@@ -178,16 +206,16 @@ bool serverRestarting() {
 }
 uint64_t restartSerial() { return restarts; }
 std::string downloadToken(const std::string &url) {
-  return readLink(url, [](Link &link) { return link.token; });
+  return peekLink(url, [](const Link &link) { return link.token; });
 }
 bool downloadTokenRejected(const std::string &url) {
-  return readLink(url, [](Link &link) { return link.rejected; });
+  return peekLink(url, [](const Link &link) { return link.rejected; });
 }
 std::string downloadTokenOrigin(const std::string &url) {
-  return readLink(url, [](Link &link) { return link.direct; });
+  return peekLink(url, [](const Link &link) { return link.direct; });
 }
 void forgetDownloadToken(const std::string &url) {
-  readLink(url, [](Link &link) {
+  changeLink(url, [](Link &link) {
     link.token.clear();
     link.direct.clear();
     link.rejected = false;
@@ -196,22 +224,29 @@ void forgetDownloadToken(const std::string &url) {
 void forgetLinks() {
   std::lock_guard<std::mutex> held(linkLock);
   links.clear();
+  lent.clear();
   revoked.clear();
 }
+void lendToken(const std::string &serverUrl, const std::string &url) {
+  const auto origin = originOf(url);
+  std::lock_guard<std::mutex> held(linkLock);
+  const auto server = ownerOf(serverUrl);
+  if (!origin.empty() && !server.empty() && origin != server && !isConfigured(origin)) lent[origin] = server;
+}
 void setTokenRenewer(const std::string &serverUrl, std::function<long()> renew) {
-  std::lock_guard<std::mutex> held(renewLock);
-  readLink(serverUrl, [&](Link &link) {
+  changeLink(serverUrl, [&](Link &link) {
     link.renewer = std::move(renew);
     link.askedOnce = false;
   });
 }
 bool renewDownloadToken(const std::string &url, const std::string &sent) {
   if (isSessionToken(sent)) return renewSession(sent);
-  std::lock_guard<std::mutex> held(renewLock);
+  const auto renewing = changeLink(url, [](Link &link) { return link.renewing; });
+  std::lock_guard<std::mutex> held(*renewing);
   // Another part already got a newer one.
   if (const auto now = downloadToken(url); !now.empty() && now != sent && !downloadTokenRejected(url)) return true;
   const auto at = std::chrono::steady_clock::now();
-  const auto renew = readLink(url, [&](Link &link) -> std::function<long()> {
+  const auto renew = changeLink(url, [&](Link &link) -> std::function<long()> {
     if (!link.renewer || (link.askedOnce && at - link.lastAsk < std::chrono::seconds(RenewGapSeconds))) return {};
     link.askedOnce = true;
     link.lastAsk = at;
@@ -221,24 +256,24 @@ bool renewDownloadToken(const std::string &url, const std::string &sent) {
   const long status = renew();
   const auto now = downloadToken(url);
   const bool fresh = !now.empty() && now != sent && !downloadTokenRejected(url);
-  if (!fresh && (status == 401 || status == 403)) readLink(url, [](Link &link) { link.signInRefused = true; });
+  if (!fresh && (status == 401 || status == 403)) changeLink(url, [](Link &link) { link.signInRefused = true; });
   logLine(fresh ? "download token renewed" : "download token not renewed: status " + std::to_string(status));
   return fresh;
 }
 bool downloadSignInRefused(const std::string &url) {
-  return readLink(url, [](Link &link) { return link.signInRefused; });
+  return peekLink(url, [](const Link &link) { return link.signInRefused; });
 }
 void recommendConnections(const std::string &url, int most) {
-  readLink(url, [&](Link &link) { link.recommended = most > 0 ? std::min(most, 8) : 0; });
+  changeLink(url, [&](Link &link) { link.recommended = most > 0 ? std::min(most, 8) : 0; });
 }
 int recommendedConnections(const std::string &url) {
-  return readLink(url, [](Link &link) { return link.recommended; });
+  return peekLink(url, [](const Link &link) { return link.recommended; });
 }
 void heardActiveDownloads(const std::string &url, int count) {
-  readLink(url, [&](Link &link) { link.activeDownloads = std::clamp(count, 0, 64); });
+  changeLink(url, [&](Link &link) { link.activeDownloads = std::clamp(count, 0, 64); });
 }
 int activeDownloads(const std::string &url) {
-  return readLink(url, [](Link &link) { return link.activeDownloads; });
+  return peekLink(url, [](const Link &link) { return link.activeDownloads; });
 }
 static const std::string BearerLead = "Authorization: Bearer ";
 std::string bearerOf(const std::vector<std::string> &headers) {
@@ -345,9 +380,9 @@ void askSession(const std::string &origin, SessionEntry &entry) {
   // 403: this server keeps the sign-in; 401: the sign-in itself is wrong
   // (the console taken back), and the request it was for says so. 429 is
   // the lock, not asked again.
-  if (grant.status == 401) {
+  if (const auto owner = serverOf(origin); grant.status == 401 && !owner.empty()) {
     std::lock_guard<std::mutex> held(linkLock);
-    revoked.insert(ownerOf(origin));
+    revoked.insert(owner);
   }
   entry.refused = true;
   logLine("session token for " + origin + " not given: status " + std::to_string(grant.status) + "; signing in as before");
@@ -403,11 +438,11 @@ bool isSessionToken(const std::string &token) {
   return owner(token) != nullptr;
 }
 uint64_t sessionRefusals(const std::string &url) {
-  return readLink(url, [](Link &link) { return link.sessionRefusals; });
+  return peekLink(url, [](const Link &link) { return link.sessionRefusals; });
 }
-std::set<std::string> takeConsoleRevoked() {
+bool takeConsoleRevoked(const std::string &serverUrl) {
   std::lock_guard<std::mutex> held(linkLock);
-  return std::exchange(revoked, {});
+  return revoked.erase(ownerOf(serverUrl)) > 0;
 }
 void forgetSessions() {
   std::lock_guard<std::mutex> held(sessionLock);

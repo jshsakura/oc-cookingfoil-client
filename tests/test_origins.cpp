@@ -9,6 +9,9 @@
 #include "net/Segments.hpp"
 #include "net/Socket.hpp"
 #include <algorithm>
+#include <atomic>
+#include <mutex>
+#include <thread>
 namespace {
 void hear(const std::string &from, const std::string &line) { foil::net::heardHeader(from, line.data(), line.size()); }
 void reply(const std::string &from, const std::vector<std::string> &lines) {
@@ -103,12 +106,73 @@ int runOriginTests() {
     reply(a + "/api/x", {"X-CookingFoil-Max-Connections: 2", "X-CookingFoil-Active-Downloads: 3"});
     CHECK(connectionsFor(a + "/api/get/x", 0) == 2 && connectionsFor(b + "/api/get/x", 0) == 4);
     CHECK(activeDownloads(a) == 3 && activeDownloads(b) == 0);
-    takeConsoleRevoked();
     hear(b + "/api/x", "HTTP/1.1 401 Unauthorized\r\n");
     hear(b + "/api/x", "X-CookingFoil-Session: revoked\r\n");
     hear(b + "/api/x", "\r\n");
-    CHECK(takeConsoleRevoked() == std::set<std::string>{b} && takeConsoleRevoked().empty());
+    CHECK(!takeConsoleRevoked(a) && takeConsoleRevoked(b) && !takeConsoleRevoked(b));
     CHECK(sessionRefusals(b) == 1 && sessionRefusals(a) == 0);
+  }
+  {
+    // A server that names no direct address and serves its files from
+    // another host: that host's refusal is the server's, and renewing
+    // through a file there asks the server.
+    forgetLinks();
+    reply(a + "/api/shop/sections", {"X-CookingFoil-Download-Token: lent"});
+    CHECK(hasBearer(downloadHeaders(serverA, state, "https://cdn.example/f.nsz"), "lent"));
+    reply("https://cdn.example/f.nsz", {"X-CookingFoil-Token: expired"});
+    CHECK(downloadTokenRejected(a) && serverOf("https://cdn.example/f.nsz") == a);
+    int asked = 0;
+    setTokenRenewer(a, [&] {
+      ++asked;
+      reply(a + "/api/shop/info", {"X-CookingFoil-Download-Token: lent2"});
+      return 200L;
+    });
+    CHECK(renewDownloadToken("https://cdn.example/f.nsz", "lent") && asked == 1 && !downloadTokenRejected(a));
+    setTokenRenewer(a, {});
+  }
+  {
+    // A direct address one server named is not taken by another, in
+    // either order, and a server added later keeps its own address.
+    forgetLinks();
+    reply(b + "/api/shop/sections", {"X-CookingFoil-Download-Token: tb", "X-CookingFoil-Download-Origin: https://dl-b.example"});
+    reply(a + "/api/shop/sections", {"X-CookingFoil-Download-Token: ta", "X-CookingFoil-Download-Origin: https://dl-b.example"});
+    CHECK(downloadTokenOrigin(a).empty() && serverOf("https://dl-b.example/x") == b);
+    CHECK(headersFor("https://dl-b.example/api/get/1", {}) == std::vector<std::string>{"Authorization: Bearer tb"});
+    foil::setKnownServers(std::vector<std::string>{a});
+    reply(a + "/api/shop/sections", {"X-CookingFoil-Download-Origin: https://c.example"});
+    foil::setKnownServers(std::vector<std::string>{a, "https://c.example"});
+    CHECK(serverOf("https://c.example/api/x") == "https://c.example");
+    foil::setKnownServers(std::vector<std::string>{a, b});
+  }
+  {
+    // A reply from no address belongs to no server.
+    forgetLinks();
+    reply(a + "/api/x", {"X-CookingFoil-Download-Token: kept"});
+    reply("", {"X-CookingFoil-Token: expired", "X-CookingFoil-Download-Token: stray"});
+    CHECK(!downloadTokenRejected(a) && downloadToken(a) == "kept" && serverOf("").empty());
+  }
+  {
+    // One server's ask for a token does not wait on another's.
+    forgetLinks();
+    std::mutex gate;
+    std::unique_lock<std::mutex> held(gate);
+    std::atomic<bool> inside{false};
+    setTokenRenewer(a, [&] {
+      inside = true;
+      std::lock_guard<std::mutex> wait(gate);
+      return 401L;
+    });
+    setTokenRenewer(b, [&] {
+      reply(b + "/api/shop/info", {"X-CookingFoil-Download-Token: quick"});
+      return 200L;
+    });
+    std::thread slow([&] { renewDownloadToken(a + "/f", ""); });
+    while (!inside) std::this_thread::yield();
+    CHECK(renewDownloadToken(b + "/f", "") && downloadToken(b) == "quick");
+    held.unlock();
+    slow.join();
+    setTokenRenewer(a, {});
+    setTokenRenewer(b, {});
   }
   foil::setKnownServers(std::nullopt);
   forgetLinks();

@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 #include <functional>
-#include <set>
 namespace foil::net {
 void setReceiveWindow(int bytes);
 int receiveWindow();
@@ -46,6 +45,9 @@ bool downloadTokenRejected(const std::string &url);
 // the token goes there and nowhere else.
 std::string downloadTokenOrigin(const std::string &url);
 void forgetDownloadToken(const std::string &url);
+// `serverUrl`'s token went to `url`, a host off it that is no server (the
+// server named no direct address): that host's replies are the server's.
+void lendToken(const std::string &serverUrl, const std::string &url);
 void forgetLinks(); // tests: every server's
 // How a fresh token is asked for (the app sets it with its server; it
 // returns the reply's status), and asking after a 401 for a request sent
@@ -109,9 +111,9 @@ bool isSessionToken(const std::string &token);
 uint64_t sessionRefusals(const std::string &url);
 // The server took this console back (its account turned off or removed, its
 // password changed): a reply said X-CookingFoil-Session: revoked, or asking
-// for a session token was refused (401). Each server's origin once per
-// take-back, for the screen to refresh it and ask for approval again.
-std::set<std::string> takeConsoleRevoked();
+// for a session token was refused (401). True once per take-back of the
+// server `serverUrl`, for the screen to refresh it and ask for approval again.
+bool takeConsoleRevoked(const std::string &serverUrl);
 // Tests: every session forgotten.
 void forgetSessions();
 } // namespace foil::net
