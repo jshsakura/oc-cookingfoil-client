@@ -310,15 +310,22 @@ void Application::raDialog() {
     paint_.fonts.wrapped(tr("This server has no RetroAchievements key, so games' achievement lists do not show."), x,
                          noteY, 16, Secondary, Text, 2);
 }
-// The game page's way to its achievements, at the band's top right as the
-// photo viewer's 닫기 is: ZL and 업적 보기. The count is the 업적 pill under
-// the name. None when RetroAchievements has no match.
+// The game page's way to its achievements, at the band's top right on the
+// line of the way back: ZL, a trophy and 업적 보기 on a white chip. The count
+// is the 업적 pill under the name. None when RetroAchievements has no match.
 float Application::raChip(float right) {
   if (!retroMeta_.achievements.raGameId) return right;
-  constexpr float Mid = 25;
-  const float w = paint_.keyChip("ZL", tr("See achievements"), right, Mid);
-  hit(right - w - 8, Mid - 22, w + 16, 44, [this] { openRaList(); });
-  return right - w;
+  constexpr float Mid = 24, Height = 32, Badge = 22, Mark = 18;
+  const std::string label = tr("See achievements");
+  const float badge = std::max(Badge, paint_.fonts.measure("ZL", 12, true) + 10);
+  const float w = 5 + badge + 8 + Mark + 6 + paint_.fonts.measure(label, 15, true) + 14, x = right - w;
+  hit(x - 4, Mid - 22, w + 8, 44, [this] { openRaList(); });
+  paint_.rect(x, Mid - Height / 2, w, Height, Surface, int(Height / 2));
+  paint_.rect(x + 5, Mid - Badge / 2, badge, Badge, Ink, int(Badge / 2));
+  paint_.fonts.middle("ZL", x + 5 + (badge - paint_.fonts.measure("ZL", 12, true)) / 2, Mid, 12, Surface, true);
+  paint_.icon(28, x + 5 + badge + 8, Mid - Mark / 2, Ink, int(Mark));
+  paint_.fonts.middle(label, x + 5 + badge + 8 + Mark + 6, Mid, 15, Ink, true);
+  return x;
 }
 void Application::openRaList() {
   if (!retroMeta_.achievements.raGameId || !session_) return;
