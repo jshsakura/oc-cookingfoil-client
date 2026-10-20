@@ -58,6 +58,9 @@ std::vector<ShopSave> parse(const std::string &json, const std::string &base) {
     s.size = uint64_t(std::max<int64_t>(integerField(object, "size"), 0));
     s.files = int(std::clamp<int64_t>(integerField(object, "files"), 0, 1 << 20));
     s.updatedAt = integerField(object, "updatedAt");
+    auto *verified = field(object, "verified");
+    s.verified = json_object_is_type(verified, json_type_boolean) && json_object_get_boolean(verified);
+    s.votes = votes::fromItem(object);
     if (auto *game = field(object, "game"); json_object_is_type(game, json_type_object)) {
       s.gameName = stringField(game, "name");
       s.gameIcon = url(game, "icon", base);

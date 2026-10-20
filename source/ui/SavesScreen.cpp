@@ -570,7 +570,9 @@ void Application::savePickDialog() {
     });
     if (n == savePickRow_) paint_.focusRow(x, y, w, Row, Ground, 12);
     else paint_.rect(x, y, w, Row, Ground, 12);
-    paint_.fonts.text(save.name, x + 20, y + 10, 20, Ink, true, w - 160);
+    paint_.fonts.text(save.name, x + 20, y + 10, 20, Ink, true, w - 300);
+    if (save.verified)
+      paint_.verifiedPill(x + 20 + std::min(paint_.fonts.measure(save.name, 20, true), w - 300) + 10, y + 10);
     std::string meta;
     // When it was put on the server, then which game build it is for.
     if (save.updatedAt > 0) {
@@ -582,6 +584,7 @@ void Application::savePickDialog() {
       meta = day;
     }
     if (!save.gameVersion.empty() && save.homebrewApp.empty()) meta += (meta.empty() ? "" : " · ") + trf("for game {0}", {save.gameVersion});
+    if (const auto votes = voteSummary(save.votes); !votes.empty()) meta += (meta.empty() ? "" : " · ") + votes;
     if (!save.description.empty()) meta += (meta.empty() ? "" : " · ") + save.description;
     paint_.fonts.text(meta, x + 20, y + 40, 16, Secondary, false, w - 160);
     const auto size = formatBytes(save.size);

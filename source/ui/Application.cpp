@@ -105,6 +105,7 @@ Application::~Application() {
   raListJob_.join();
   raGamesJob_.join();
   keysJob_.join();
+  voteJob_.join();
   historyPageJob_.join(); // reads and clears the store, which closes after
   flushHistory();
   if (storageWorker_.joinable())
@@ -949,6 +950,7 @@ void Application::poll() {
   raJob_.poll();
   historyPageJob_.poll();
   keysJob_.poll();
+  voteJob_.poll();
   raListJob_.poll();
   raGamesJob_.poll();
   adminJob_.poll();
@@ -2306,6 +2308,12 @@ void Application::render() {
     footer({{"Y", tr("Write message")}, {"B", tr("Back")}});
   else if (adminFocused())
     footer({{"A", tr("Admin edit")}, {"B", tr("Back")}});
+  else if (voteFocus_ && voteTarget()) {
+    const auto mine = voteTarget()->votes.mine;
+    const bool up = voteFocus_ == 1;
+    footer({{"A", mine == (up ? "up" : "down") ? tr("Take back the vote") : up ? tr("Works") : tr("Doesn't work")},
+            {"B", tr("Back")}});
+  }
   else if (!headerFocus_.empty())
     footer({{"A", headerFocus_.rfind("tab", 0) == 0 ? tr("Next tab") : tr("Select")}, {"B", tr("Back")}}); // on a header button
   else if (screen_ == Screen::Library)

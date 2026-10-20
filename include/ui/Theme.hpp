@@ -6,6 +6,7 @@ namespace foil::ui {
 constexpr int Width = 1280, Height = 720, Sidebar = 232, Footer = 60;
 // A detail page's top line: the way back on the left, its chips on the right.
 constexpr float BackLine = 30;
+constexpr float BandRight = 1248; // the band's chips end here
 constexpr SDL_Color Ground{242, 241, 238, 255}, Surface{255, 255, 255, 255};
 constexpr SDL_Color Ink{22, 22, 26, 255}, Secondary{85, 85, 94, 255};
 constexpr SDL_Color Line{226, 224, 218, 255}, Butter{255, 194, 61, 255};

@@ -22,6 +22,7 @@
 #include "core/ClientUpdate.hpp"
 #include "core/Patches.hpp"
 #include "core/ProdKeys.hpp"
+#include "core/Votes.hpp"
 #include "core/CardPatches.hpp"
 #include "core/I18n.hpp"
 #include "core/AdminEdit.hpp"
@@ -545,6 +546,22 @@ private:
   void adminEditDialog();
   AdminEdit adminEdit_;
   bool adminFocus_ = false;
+  // 잘 돼요 / 안 돼요 on a homebrew or retro page: chips on the band beside
+  // the admin one, reached the same way (up from the page's top). A vote
+  // sent shows its answer until the lists are read again.
+  struct VoteTarget {
+    std::string kind, id;
+    votes::Votes votes;
+  };
+  std::optional<VoteTarget> voteTarget() const;
+  bool voteAction(Action a, bool atTop);
+  float voteChips(float right); // their left edge, or `right` when not drawn
+  void castVote(const std::string &vote);
+  // "잘 돼요 5 · 안 돼요 1" for a row; "" when nobody voted yet.
+  static std::string voteSummary(const votes::Votes &votes);
+  int voteFocus_ = 0; // 0 none, 1 잘 돼요, 2 안 돼요
+  std::map<std::string, votes::Votes> votesCast_; // "kind/id"
+  Job voteJob_;
   Job adminJob_;
   std::optional<std::vector<admin::Field>> adminPreview_;
   // HOME Menu shortcuts (platform/Shortcut): the ids the console has, as the

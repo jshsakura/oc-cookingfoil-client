@@ -538,6 +538,9 @@ std::vector<UserPatch> parsePatches(json_object* array) {
         p.size = positive(object, "size");
         p.files = int(std::min<uint64_t>(positive(object, "files"), INT32_MAX));
         p.updatedAt = integerField(object, "updated_at");
+        auto* verified = field(object, "verified");
+        p.verified = json_object_is_type(verified, json_type_boolean) && json_object_get_boolean(verified);
+        p.votes = votes::fromItem(object);
         if (auto* number = field(object, "update_version"); json_object_is_type(number, json_type_int))
             p.updateVersion = std::max<int64_t>(-1, json_object_get_int64(number));
         if (auto* game = field(object, "game"); json_object_is_type(game, json_type_object)) {

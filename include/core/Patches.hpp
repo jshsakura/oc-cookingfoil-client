@@ -1,4 +1,5 @@
 #pragma once
+#include "core/Votes.hpp"
 #include "core/ArchiveWriter.hpp"
 #include <atomic>
 #include <chrono>
@@ -23,6 +24,8 @@ struct UserPatch {
   // number, 2097152 for v2); -1 when the server does not say.
   int64_t updateVersion = -1;
   bool required = false; // the game does not run without it
+  bool verified = false; // an admin checked it
+  votes::Votes votes;
   // The game the patch is for, from the server's titledb, for games the
   // shop itself does not list. Names are ko, en, ja, zh; any may be empty.
   std::string gameName, gameIcon;

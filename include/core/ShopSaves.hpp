@@ -1,4 +1,5 @@
 #pragma once
+#include "core/Votes.hpp"
 // Save files the shop offers (/api/saves, feature shop-saves), such as an
 // all-unlocked save. One entry is a whole save folder sent as a tar.
 #include "core/Types.hpp"
@@ -8,6 +9,8 @@ struct ShopSave {
   uint64_t size = 0;
   int files = 0;
   int64_t updatedAt = 0;
+  bool verified = false; // an admin checked it
+  votes::Votes votes;
   std::string gameName, gameIcon;
   std::vector<std::string> gameNames; // ko, en, ja, zh; any may be empty
   // An app's save has no Title ID: its files go as files into installRoot

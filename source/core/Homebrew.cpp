@@ -101,6 +101,7 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
     a.forwarderKey = stringField(o, "forwarder_key");
     if (auto *v = json_object_object_get(o, "verified"); v && json_object_is_type(v, json_type_boolean))
       a.verified = json_object_get_boolean(v);
+    a.votes = votes::fromItem(o);
     if (!forwarder::serverShortcutId(a.forwarderTitleId))
       a.forwarderUrl.clear(), a.forwarderTitleId.clear();
     a.kind = stringField(o, "kind") == "port" ? Kind::Port : Kind::Tool;
