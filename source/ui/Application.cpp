@@ -891,6 +891,10 @@ void Application::refresh() {
     return;
   // The approval note may have changed since the session last asked.
   session_->setPairMessage(pairMessage());
+  // A menu drawn before the server named its features (a failed first try)
+  // was a guess, 레트로 게임 and 홈브류 left out: the next try shows the
+  // placeholders again until it answers. A known menu stays as it is.
+  if (features_.empty()) menuKnown_ = false;
   network_ = std::thread([this] {
     // Reading the catalog (seconds of JSON) stays off the drawing core too.
     const platform::OnCore off(platform::NetworkCore);
