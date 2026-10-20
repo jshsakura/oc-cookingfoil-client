@@ -372,6 +372,10 @@ void Application::dropboxAction(Action a) {
   if (a == Action::Accept) openDropboxGame();
 }
 
+bool Application::dropboxHas(uint64_t id) const {
+  const auto found = dropboxRemote_.find(id);
+  return found != dropboxRemote_.end() && !found->second.empty();
+}
 // The games Y's view lists (on Dropbox, or with this console's games that
 // have a save or backup to upload), as the 세이브 search keeps them.
 std::vector<DropboxRow> Application::dropboxGameRows() const {

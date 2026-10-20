@@ -1556,8 +1556,15 @@ private:
   // The games with a save on the console, read with the summary; unknown
   // (the host, or a failed read) keeps every game.
   std::optional<std::set<uint64_t>> savedGames_, incomingSaved_;
-  // A game worth listing in 세이브: a save on the console or a backup on the card.
-  bool hasSaveWork(uint64_t id) const { return backupsOf(id) > 0 || !savedGames_ || savedGames_->count(id); }
+  // A game worth listing in 세이브: a save on the console, a backup on the
+  // card or one on Dropbox.
+  bool hasSaveWork(uint64_t id) const {
+    return backupsOf(id) > 0 || !savedGames_ || savedGames_->count(id) || dropboxHas(id);
+  }
+  bool dropboxHas(uint64_t id) const;
+  // The console's saves are being read for the first time: the list waits
+  // (placeholders) rather than show every game and then drop most.
+  bool savesUnread() const { return !savedGames_ && backupSummaryWorker_.joinable(); }
   std::optional<int> saveOpen_;          // index into saves_
   std::vector<saves::LocalBackup> backups_;
   int saveRow_ = 0;                      // 0 back up, 1..n backups, n+1 delete

@@ -138,7 +138,7 @@ void Application::savesScreen() {
     if (managedGame_) management();
     return;
   }
-  if (deviceBusy_ && !managedGame_) {
+  if ((deviceBusy_ || savesUnread()) && !managedGame_) {
     for (int n = 0; n < Visible; ++n) paint_.skeleton(260, Top + n * RowStep, 992, RowHeight, 16);
     return;
   }
