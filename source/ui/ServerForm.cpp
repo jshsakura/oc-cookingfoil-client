@@ -3,6 +3,7 @@
 #include "core/Json.hpp"
 #include "core/Log.hpp"
 #include "net/Api.hpp"
+#include "net/ProdKeysApi.hpp"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -40,6 +41,62 @@ std::string &fieldOf(Server &server, std::string &note, int field) {
   }
 }
 } // namespace
+bool Application::keysRowShown() const {
+  if (!serverForm_ || serverForm_->index < 0 || !features_.count("keys-upload")) return false;
+  if (keysPreview_) return true;
+  return session_ && connected_ && session_->server().url == config_.servers[size_t(serverForm_->index)].url;
+}
+namespace {
+// Where Lockpick_RCM writes it, then the card's root.
+const char *const KeysPaths[] = {"/switch/prod.keys", "/prod.keys"};
+constexpr uintmax_t KeysLimit = 64 * 1024;
+} // namespace
+void Application::readKeysStatus() {
+  if (keysPreview_) keysStatus_ = keysPreview_;
+  if (!keysRowShown() || keysJob_.busy() || keysPreview_) return;
+  keysJob_.run("keys", [this, server = session_->server(), state = state_]() -> Job::Finish {
+    auto read = net::keysStatus(server, state, &stop_);
+    return [this, read = std::move(read)] {
+      if (read.error) keysNote_ = read.error.message;
+      else keysStatus_ = read.value;
+    };
+  }, [this] { keysNote_ = tr("Something went wrong. Check log.txt."); });
+}
+// Read off the drawing thread from the card, sealed for this server alone;
+// the text is wiped once sent.
+void Application::sendProdKeys() {
+  if (keysPreview_) keysNote_ = tr("Sent prod.keys to this server.");
+  if (!keysRowShown() || keysJob_.busy() || keysPreview_) return;
+  keysNote_ = tr("Sending prod.keys.");
+  keysSending_ = true;
+  keysJob_.run("keys", [this, server = session_->server(), state = state_, sd = sdRoot_]() -> Job::Finish {
+    std::string text;
+    for (const auto *path : KeysPaths) {
+      std::error_code error;
+      const auto size = std::filesystem::file_size(sd + path, error);
+      if (error) continue;
+      if (size > KeysLimit) return [this] { keysSending_ = false; keysNote_ = tr("This prod.keys is too large."); };
+      text = readFile(sd + path);
+      break;
+    }
+    if (text.empty()) return [this] { keysSending_ = false; keysNote_ = tr("No prod.keys on the SD card (/switch/prod.keys)."); };
+    if (!prodkeys::looksLikeKeys(text)) return [this] { keysSending_ = false; keysNote_ = tr("This prod.keys has no header_key."); };
+    auto sent = net::sendKeys(server, state, text, &stop_);
+    std::fill(text.begin(), text.end(), '\0');
+    return [this, sent = std::move(sent)] {
+      keysSending_ = false;
+      if (sent.error) {
+        keysNote_ = sent.error.message;
+        return;
+      }
+      keysStatus_ = sent.value;
+      keysNote_ = tr("Sent prod.keys to this server.");
+    };
+  }, [this] {
+    keysSending_ = false;
+    keysNote_ = tr("Something went wrong. Check log.txt.");
+  });
+}
 void Application::openServerForm(int index) {
   ServerForm form;
   // A new server starts empty; nothing is filled in for the player.
@@ -50,6 +107,9 @@ void Application::openServerForm(int index) {
       form.note = found->second;
   }
   serverForm_ = form;
+  keysStatus_.reset();
+  keysNote_.clear();
+  readKeysStatus();
   textField_ = -1;
 }
 void Application::askServerField(int field) {
@@ -91,10 +151,18 @@ void Application::serverFormAction(Action a) {
     else if (a == Action::Accept && settled()) deleteServerForm();
     return;
   }
+  if (form.confirmKeys) {
+    if (a == Action::Back) form.confirmKeys = false;
+    else if (a == Action::Accept && settled()) {
+      form.confirmKeys = false;
+      sendProdKeys();
+    }
+    return;
+  }
   const bool existing = form.index >= 0;
   switch (a) {
   case Action::Up: form.row = std::max(0, form.row - 1); break;
-  case Action::Down: form.row = std::min(ServerFields, form.row + 1); break;
+  case Action::Down: form.row = std::min(serverFormRows() - 1, form.row + 1); break;
   // The last row is the dot's colour: left and right, or A, step through them.
   case Action::Left:
   case Action::Right:
@@ -102,6 +170,7 @@ void Application::serverFormAction(Action a) {
     break;
   case Action::Accept:
     if (form.row == ServerFields) stepServerColor(1);
+    else if (form.row == KeysRow) form.confirmKeys = !keysJob_.busy();
     else askServerField(form.row);
     break;
   // X deletes a server already there.
@@ -232,14 +301,52 @@ bool Application::writeServers(const Config &next, int prefer, const std::string
   message(done);
   return true;
 }
+// What the server holds: none, its own file, or the upload and its date.
+void Application::keysRow(float x, float y, float w, float h, float valueX, float valueW) {
+  const float mid = y + h / 2;
+  hit(x, y, w, h, [this] {
+    serverForm_->row = KeysRow;
+    action(Action::Accept);
+  });
+  if (serverForm_->row == KeysRow) paint_.focusRow(x, y, w, h, Ground, 12);
+  else paint_.rect(x, y, w, h, Ground, 12);
+  paint_.fonts.middle("prod.keys", x + 20, mid, 18, Secondary, true, 140);
+  std::string held;
+  if (keysJob_.busy() && !keysStatus_) held = tr("Checking the server.");
+  else if (!keysStatus_) held = "";
+  else if (!keysStatus_->present) held = tr("None on the server");
+  else if (keysStatus_->source == "upload" && keysStatus_->uploadedAt > 0) {
+    // Seconds or milliseconds, whichever the server sends.
+    const int64_t at = keysStatus_->uploadedAt > 100000000000 ? keysStatus_->uploadedAt / 1000 : keysStatus_->uploadedAt;
+    const time_t when = time_t(at);
+    std::tm local{};
+    localtime_r(&when, &local);
+    char day[32];
+    std::strftime(day, sizeof(day), "%Y.%m.%d", &local);
+    held = trf("On the server · sent {0}", {day});
+  } else held = tr("On the server · its own file");
+  const bool good = keysStatus_ && keysStatus_->present;
+  const std::string send = keysSending_ ? tr("Sending") : tr("Send|prod.keys");
+  const float bw = paint_.fonts.measure(send, 17, true) + 36;
+  paint_.fonts.middle(held, valueX, mid, 19, good ? Good : Secondary, good, valueW - bw - 16);
+  paint_.rect(x + w - 16 - bw, mid - 20, bw, 40, serverForm_->row == KeysRow ? Butter : Surface, 12);
+  paint_.fonts.middle(send, x + w - 16 - bw + 18, mid, 17, Ink, true);
+}
 void Application::serverFormDialog() {
   auto &form = *serverForm_;
   const bool existing = form.index >= 0;
   constexpr float Width = 760, Row = 56, Gap = 8;
   const float errorSpace = form.error.empty() ? 0 : 30;
-  const float bodyH = 20 + (ServerFields + 1) * (Row + Gap) - Gap + 18 + 50 + errorSpace + 18;
+  // With the prod.keys row the server is already approved, so its line
+  // takes the place of the approval hint.
+  const bool keys = keysRowShown();
+  const int rows = serverFormRows();
+  const float bodyH = 20 + rows * (Row + Gap) - Gap + 18 + (keys ? 26 : 50) + errorSpace + 18;
   const auto body = modal(Width, bodyH, existing ? tr("Edit server") : tr("Add server"), tr("Cancel"), tr("Save"),
-                          form.row == ServerFields ? tr("Change|admin") : tr("Type"), 21, existing ? tr("Delete") : "");
+                          form.row == ServerFields ? tr("Change|admin")
+                          : form.row == KeysRow    ? tr("Send|prod.keys")
+                                                   : tr("Type"),
+                          21, existing ? tr("Delete") : "");
   const float x = body.x + 32, w = body.w - 64, valueX = x + 170, valueW = w - 190;
   const char *labels[ServerFields] = {tr("Address"), tr("Username"), tr("Password"), tr("Name"), tr("Message")};
   for (int field = 0; field < ServerFields; ++field) {
@@ -287,13 +394,29 @@ void Application::serverFormDialog() {
       });
     }
   }
-  float lineY = body.y + 20 + (ServerFields + 1) * (Row + Gap) - Gap + 18;
+  if (keys) keysRow(x, body.y + 20 + KeysRow * (Row + Gap), w, Row, valueX, valueW);
+  float lineY = body.y + 20 + rows * (Row + Gap) - Gap + 18;
   if (!form.error.empty()) {
     paint_.fonts.text(form.error, x, lineY, 18, Bad, true, w);
     lineY += errorSpace;
   }
-  paint_.fonts.wrapped(tr("For a server that uses device approval, enter only the address and save to go to the QR approval screen; the message goes to the admin with the request."),
-                       x, lineY, 17, Secondary, w, 2);
+  if (keys)
+    paint_.fonts.text(keysNote_.empty() ? std::string(tr("Sent sealed for this server alone; only an admin console can send it."))
+                                        : keysNote_,
+                      x, lineY, 17, Secondary, false, w);
+  else
+    paint_.fonts.wrapped(tr("For a server that uses device approval, enter only the address and save to go to the QR approval screen; the message goes to the admin with the request."),
+                         x, lineY, 17, Secondary, w, 2);
+  if (form.confirmKeys) {
+    paint_.rect(0, 0, 1280, 720, {0, 0, 0, 120});
+    blockTouch();
+    const auto ask = modal(640, 24 + 70 + 16, tr("Send prod.keys to this server?"), tr("Cancel"), "", tr("Send|prod.keys"), 21);
+    paint_.fonts.text(form.server.title.empty() ? hostOf(form.server.url) : form.server.title, ask.x + 32, ask.y + 24, 21,
+                      Ink, true, ask.w - 64);
+    paint_.fonts.text(tr("The SD card's prod.keys replaces what the server holds."), ask.x + 32, ask.y + 62, 19,
+                      Secondary, false, ask.w - 64);
+    return;
+  }
   if (!form.confirmDelete) return;
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 120});
   blockTouch();

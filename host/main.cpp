@@ -1,5 +1,6 @@
 #include "core/Retro.hpp"
 #include "core/AdminEdit.hpp"
+#include "core/ProdKeys.hpp"
 #include "core/Config.hpp"
 #include "core/Json.hpp"
 #include "core/State.hpp"
@@ -231,6 +232,9 @@ int main(int argc, char **argv) {
   // 관리자 편집 as an admin console sees it.
   if (servePort && !fixture.empty() && std::filesystem::exists(fixture + "/admin.json"))
     ui.previewAdminEdit(foil::admin::parseFields(foil::readFile(fixture + "/admin.json")));
+  // prod.keys in 서버 편집 as an admin console sees it.
+  if (servePort && !fixture.empty() && std::filesystem::exists(fixture + "/keys.json"))
+    ui.previewKeys(foil::prodkeys::parseStatus(foil::readFile(fixture + "/keys.json")));
   // 진행 중 with a game coming down, as in the screenshots.
   if (servePort && !fixture.empty() && std::filesystem::exists(fixture + "/progress.json"))
     previewDownloads(ui, fixture);

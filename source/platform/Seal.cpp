@@ -12,6 +12,7 @@
 #include <openssl/ecdh.h>
 #include <openssl/evp.h>
 #include <openssl/obj_mac.h>
+#include <openssl/rand.h>
 #endif
 namespace foil::seal {
 namespace {
@@ -82,6 +83,24 @@ bool open(const std::string &key, const std::string &iv, const std::string &aad,
   mbedtls_platform_zeroize(out.data(), out.size());
   return ok;
 }
+bool close(const std::string &key, const std::string &iv, const std::string &aad, const std::string &plain,
+           std::string &sealed) {
+  if (key.size() != 32 || iv.empty()) return false;
+  std::vector<unsigned char> out(plain.size() + TagSize);
+  mbedtls_gcm_context gcm;
+  mbedtls_gcm_init(&gcm);
+  const bool ok = mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, bytes(key), 256) == 0 &&
+                  mbedtls_gcm_crypt_and_tag(&gcm, MBEDTLS_GCM_ENCRYPT, plain.size(), bytes(iv), iv.size(), bytes(aad),
+                                            aad.size(), bytes(plain), out.data(), TagSize,
+                                            out.data() + plain.size()) == 0;
+  mbedtls_gcm_free(&gcm);
+  if (ok) sealed.assign(reinterpret_cast<char *>(out.data()), out.size());
+  return ok;
+}
+std::string random(size_t size) {
+  std::string out(size, '\0');
+  return R_SUCCEEDED(csrngGetRandomBytes(out.data(), size)) ? out : "";
+}
 #else
 namespace {
 EC_KEY *keyFor(const std::string &secret) {
@@ -138,6 +157,28 @@ bool open(const std::string &key, const std::string &iv, const std::string &aad,
   if (ok) plain.assign(reinterpret_cast<char *>(out.data()), size_t(length + last));
   OPENSSL_cleanse(out.data(), out.size());
   return ok;
+}
+bool close(const std::string &key, const std::string &iv, const std::string &aad, const std::string &plain,
+           std::string &sealed) {
+  if (key.size() != 32 || iv.empty()) return false;
+  std::vector<unsigned char> out(plain.size() + 16 + TagSize);
+  EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+  int length = 0, last = 0;
+  const bool ok =
+      ctx && EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1 &&
+      EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, int(iv.size()), nullptr) == 1 &&
+      EVP_EncryptInit_ex(ctx, nullptr, nullptr, bytes(key), bytes(iv)) == 1 &&
+      (aad.empty() || EVP_EncryptUpdate(ctx, nullptr, &length, bytes(aad), int(aad.size())) == 1) &&
+      EVP_EncryptUpdate(ctx, out.data(), &length, bytes(plain), int(plain.size())) == 1 &&
+      EVP_EncryptFinal_ex(ctx, out.data() + length, &last) == 1 &&
+      EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, int(TagSize), out.data() + length + last) == 1;
+  EVP_CIPHER_CTX_free(ctx);
+  if (ok) sealed.assign(reinterpret_cast<char *>(out.data()), size_t(length + last) + TagSize);
+  return ok;
+}
+std::string random(size_t size) {
+  std::string out(size, '\0');
+  return RAND_bytes(reinterpret_cast<unsigned char *>(out.data()), int(size)) == 1 ? out : "";
 }
 #endif
 } // namespace foil::seal

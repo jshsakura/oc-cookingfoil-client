@@ -104,6 +104,7 @@ Application::~Application() {
   raJob_.join();
   raListJob_.join();
   raGamesJob_.join();
+  keysJob_.join();
   historyPageJob_.join(); // reads and clears the store, which closes after
   flushHistory();
   if (storageWorker_.joinable())
@@ -947,6 +948,7 @@ void Application::poll() {
   pollDropbox();
   raJob_.poll();
   historyPageJob_.poll();
+  keysJob_.poll();
   raListJob_.poll();
   raGamesJob_.poll();
   adminJob_.poll();
