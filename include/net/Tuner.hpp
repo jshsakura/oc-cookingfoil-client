@@ -85,8 +85,4 @@ void rememberTuningIn(const std::string &path);
 // "<place> <count>" a line, and back (lines that do not parse are skipped).
 std::string serializeFound(const std::map<std::string, int> &found);
 std::map<std::string, int> parseFound(const std::string &text);
-// X-CookingFoil-Active-Downloads: consoles downloading from the server now,
-// this one included; 0 when the server does not say.
-void heardActiveDownloads(int count);
-int activeDownloads();
 } // namespace foil::net

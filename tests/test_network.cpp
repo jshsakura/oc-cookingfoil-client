@@ -264,13 +264,13 @@ int runNetworkTests() {
         // A server restart, heard from any reply's header: downloads treat it
         // as the way being down (they wait), it counts once per id, and a
         // success without the header ends it.
-        const auto hear = [](const std::string &line) { foil::net::heardHeader(line.data(), line.size()); };
+        const auto hear = [](const std::string &line) { foil::net::heardHeader("https://shop.example/api/x", line.data(), line.size()); };
         const auto before = foil::net::restartSerial();
         CHECK(!foil::net::serverRestarting());
         hear("HTTP/1.1 503 Service Unavailable\r\n");
         hear("X-CookingFoil-Restarting: 20; id=r1\r\n");
         hear("\r\n");
-        CHECK(foil::net::serverRestarting() && foil::net::linkDown());
+        CHECK(foil::net::serverRestarting() && foil::net::linkDown("https://shop.example/a"));
         CHECK(foil::net::restartSerial() == before + 1);
         // The same restart on a piece still coming (206 with the header): still on, not counted again.
         hear("HTTP/1.1 206 Partial Content\r\n");
@@ -281,7 +281,7 @@ int runNetworkTests() {
         hear("HTTP/1.1 200 OK\r\n");
         hear("Content-Length: 2\r\n");
         hear("\r\n");
-        CHECK(!foil::net::serverRestarting() && !foil::net::linkDown());
+        CHECK(!foil::net::serverRestarting() && !foil::net::linkDown("https://shop.example/a"));
         // A later restart is a new one.
         hear("HTTP/1.1 503 Service Unavailable\r\n");
         hear("X-CookingFoil-Restarting: 20; id=r2\r\n");
@@ -297,11 +297,11 @@ int runNetworkTests() {
         // and the server's own keys never go there. A refusal is noted until
         // a new token comes. Every request to the server says what the client
         // can do.
-        const auto hear = [](const std::string &line) { foil::net::heardHeader(line.data(), line.size()); };
+        const auto hear = [](const std::string &line) { foil::net::heardHeader("https://shop.example/api/x", line.data(), line.size()); };
         hear("HTTP/1.1 200 OK\r\n");
         hear("X-CookingFoil-Download-Token: abc.def.ghi\r\n");
         hear("\r\n");
-        CHECK(foil::net::downloadToken() == "abc.def.ghi" && !foil::net::downloadTokenRejected());
+        CHECK(foil::net::downloadToken("https://shop.example") == "abc.def.ghi" && !foil::net::downloadTokenRejected("https://shop.example"));
         foil::Server shop;
         shop.url = "https://shop.example";
         shop.username = "user";
@@ -323,25 +323,25 @@ int runNetworkTests() {
         hear("HTTP/1.1 401 Unauthorized\r\n");
         hear("X-CookingFoil-Token: expired\r\n");
         hear("\r\n");
-        CHECK(foil::net::downloadTokenRejected());
+        CHECK(foil::net::downloadTokenRejected("https://shop.example"));
         hear("HTTP/1.1 304 Not Modified\r\n");
         hear("X-CookingFoil-Download-Token: new.token.x\r\n");
         hear("\r\n");
-        CHECK(foil::net::downloadToken() == "new.token.x" && !foil::net::downloadTokenRejected());
+        CHECK(foil::net::downloadToken("https://shop.example") == "new.token.x" && !foil::net::downloadTokenRejected("https://shop.example"));
         // Once the server names the direct address, the token goes there
         // only: a mirror in the list gets nothing.
         hear("HTTP/1.1 200 OK\r\n");
         hear("X-CookingFoil-Download-Origin: https://dl.example:38443\r\n");
         hear("\r\n");
-        CHECK(foil::net::downloadTokenOrigin() == "https://dl.example:38443");
+        CHECK(foil::net::downloadTokenOrigin("https://shop.example") == "https://dl.example:38443");
         CHECK(has(foil::net::downloadHeaders(shop, state, "https://dl.example:38443/games/x.nsz"), "Bearer new.token.x"));
         CHECK(!has(foil::net::downloadHeaders(shop, state, "https://mirror.example/games/x.nsz"), "Bearer"));
         CHECK(!has(foil::net::downloadHeaders(shop, state, "https://dl.example/games/x.nsz"), "Bearer"));
         // Anything but a bare https origin is not taken.
         hear("X-CookingFoil-Download-Origin: http://evil.example\r\n");
         hear("X-CookingFoil-Download-Origin: https://evil.example/path\r\n");
-        CHECK(foil::net::downloadTokenOrigin() == "https://dl.example:38443");
-        foil::net::forgetDownloadToken();
+        CHECK(foil::net::downloadTokenOrigin("https://shop.example") == "https://dl.example:38443");
+        foil::net::forgetLinks();
     }
     return failures;
 }

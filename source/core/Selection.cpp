@@ -1,4 +1,5 @@
 #include "core/Selection.hpp"
+#include <algorithm>
 #include <limits>
 namespace foil {
 Selection::Selection(const Group &group, std::string storage)
@@ -81,10 +82,33 @@ uint64_t Selection::total() const {
 }
 std::vector<Item> Selection::files() const {
   std::vector<Item> files;
-  for (size_t i = 0; i < parts_.size(); ++i)
-    if (selected_[i])
-      files.push_back(parts_[i]);
+  for (size_t i = 0; i < parts_.size(); ++i) {
+    if (!selected_[i]) continue;
+    auto file = parts_[i];
+    for (const auto &copy : parts_[i].alsoOn)
+      if (copy.server == server) {
+        file.url = copy.url;
+        file.server = copy.server;
+      }
+    files.push_back(std::move(file));
+  }
   return files;
+}
+std::vector<std::string> Selection::servers() const {
+  std::vector<std::string> common;
+  bool first = true;
+  for (size_t i = 0; i < parts_.size(); ++i) {
+    if (!selected_[i]) continue;
+    std::vector<std::string> here{parts_[i].server};
+    for (const auto &copy : parts_[i].alsoOn) here.push_back(copy.server);
+    if (first) common = std::move(here);
+    else
+      common.erase(std::remove_if(common.begin(), common.end(),
+                                  [&](const std::string &s) { return std::find(here.begin(), here.end(), s) == here.end(); }),
+                   common.end());
+    first = false;
+  }
+  return common;
 }
 std::vector<UserPatch> Selection::patchesOn() const {
   std::vector<UserPatch> on;

@@ -19,7 +19,12 @@ struct ShopSave {
   // "device" for a shared save every account plays on, "account" for one
   // account's; empty when the server does not say, and then either fits.
   std::string saveType;
+  std::string server; // the configured server it came from (its url)
 };
+// Several servers' save lists as one: each names its server, and the same
+// save (hash) on several is listed once, from the first. `lists` in the
+// servers' order, as {server url, its saves}.
+std::vector<ShopSave> mergeServers(std::vector<std::pair<std::string, std::vector<ShopSave>>> lists);
 // `base` resolves "/api/..." URLs; entries without an id, Title ID (or an
 // app with its switch/<app> root) or URL are dropped.
 std::vector<ShopSave> parse(const std::string &json, const std::string &base);

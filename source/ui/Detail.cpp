@@ -75,8 +75,10 @@ void Application::openDetail(size_t group) {
 void Application::fetchDetail() {
   if (!session_)
     return;
-  const auto found =
-      details_.find(session_->server().url + groups_[detailGroup_].id);
+  // The game's own server: the one its base (or its first file) came from.
+  const auto &group = groups_[detailGroup_];
+  auto *session = sessionFor(group.base ? group.base->server : group.representative.server);
+  const auto found = details_.find(session->server().url + group.id);
   if (found != details_.end() && SDL_GetTicks() - found->second.at < 60000) {
     detail_ = found->second.detail;
     syncDetailPatches();
@@ -88,9 +90,10 @@ void Application::fetchDetail() {
   detailLoading_ = true;
   detailRequest_ = true;
   const auto id = groups_[detailGroup_].id;
-  network_ = std::thread([this, id] {
-    const bool ok = guarded("detail", [this, &id] {
-      auto result = session_->detail(id);
+  detailServer_ = session->server().url;
+  network_ = std::thread([this, id, session] {
+    const bool ok = guarded("detail", [this, &id, session] {
+      auto result = session->detail(id);
       incomingError_ = result.error;
       incomingDetail_ = std::move(result.value);
     });
@@ -140,6 +143,12 @@ void Application::detail() {
     pill(tr("Required patch"));
   if (const int integrity = groupIntegrity(g))
     pill(integrity == 2 ? tr("May be damaged") : tr("Modified file"));
+  // With several servers, the ones it is on by name, its own first.
+  if (manyServers()) {
+    std::string on;
+    for (const auto &url : groupServers(g)) on += (on.empty() ? "" : " · ") + serverFor(url).title;
+    pill(on);
+  }
   const auto &languages = item.languages;
   if (std::find(languages.begin(), languages.end(), "ko") != languages.end())
     pill(tr("Korean"));

@@ -49,7 +49,7 @@ std::vector<Application::PatchRow> Application::homebrewPatchRows(const homebrew
   return rows;
 }
 void Application::needHomebrewList() {
-  if (!homebrewLoaded_ && !homebrewWorker_.joinable() && connected_ && features_.count("homebrew")) loadHomebrew();
+  if (!homebrewLoaded_ && !homebrewWorker_.joinable() && connected_ && !serversWith("homebrew").empty()) loadHomebrew();
 }
 std::vector<int> Application::homebrewSaveRows(const homebrew::App &app) const {
   std::vector<int> rows;
@@ -215,7 +215,7 @@ void Application::applyHomebrewSave(const shopsaves::ShopSave &save) {
     return;
   }
   if (!session_) return;
-  const auto server = session_->server();
+  const auto server = serverFor(save.server);
   const auto state = state_;
   const auto sd = sdRoot_;
   runPatchJob(save.id, Getting,

@@ -41,6 +41,15 @@ std::vector<Entry> parse(const std::string &json) {
   }
   return out;
 }
+bool moveServer(std::vector<Entry> &entries, const std::string &from, const std::string &to) {
+  bool moved = false;
+  for (auto &entry : entries)
+    if (!from.empty() && entry.install.server == from) {
+      entry.install.server = to;
+      moved = true;
+    }
+  return moved;
+}
 std::string serialize(const std::vector<Entry> &entries) {
   Json list(json_object_new_array());
   for (const auto &e : entries) {

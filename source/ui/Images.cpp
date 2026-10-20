@@ -1,4 +1,5 @@
 #include "ui/Images.hpp"
+#include "core/Config.hpp"
 #include "platform/Cores.hpp"
 #include "platform/Storage.hpp"
 #include "core/Json.hpp"
@@ -185,6 +186,10 @@ void Images::source(Server server, State state, std::string cache,
   for (int i = 0; i < Workers; ++i)
     threads_.emplace_back(&Images::worker, this);
 }
+void Images::alsoFrom(std::vector<Server> servers) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  others_ = std::move(servers);
+}
 void Images::updateState(State state) {
   std::lock_guard<std::mutex> lock(mutex_);
   state_ = std::move(state);
@@ -257,6 +262,7 @@ void Images::worker() {
   while (!stop_) {
     std::string url;
     State state;
+    Server owner;
     {
       std::unique_lock<std::mutex> lock(mutex_);
       wake_.wait(lock, [&] { return stop_ || !jobs_.empty(); });
@@ -265,6 +271,9 @@ void Images::worker() {
       url = jobs_.front();
       jobs_.pop_front();
       state = state_;
+      owner = server_;
+      for (const auto &other : others_)
+        if (originOf(other.url) == originOf(url)) owner = other;
       // A card's picture comes only through provide(); there is nothing to
       // fetch, and failing it here would hide the bytes given meanwhile.
       if (url.rfind("card:", 0) == 0)
@@ -287,7 +296,7 @@ void Images::worker() {
     // fetched; there is nothing on the server under that name.
     if (bytes.empty() && fixture_.empty() && url.rfind("http", 0) == 0) {
       // WebP when the server has it (a third smaller), JPEG otherwise.
-      auto headers = net::authHeaders(server_, state, url);
+      auto headers = net::authHeaders(owner, state, url);
       headers.push_back("Accept: image/webp,image/*;q=0.8");
       waitOutLimit();
       const auto result = net::get(url, headers, "", &stop_);

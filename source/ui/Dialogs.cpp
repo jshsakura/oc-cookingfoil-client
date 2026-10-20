@@ -318,7 +318,12 @@ void Application::dialogs() {
     serverFormDialog(); // a failed save's alert shows over it instead
   } else if (confirmInstall_ && selection_ && detailGroup_ < groups_.size()) {
     const auto &g = groups_[detailGroup_];
-    const auto body = modal(700, 24 + 96 + 24, tr("Install this game?"), tr("Cancel"), "", tr("Install"), 4);
+    // More than one server has every file: a row to pick which sends them.
+    const auto servers = selection_->servers();
+    const bool pick = servers.size() > 1;
+    constexpr float PickRow = 64;
+    const auto body = modal(700, 24 + 96 + 24 + (pick ? PickRow : 0), tr("Install this game?"), tr("Cancel"), "",
+                            tr("Install"), 4);
     const float x = body.x + 32, y = body.y + 24;
     cover(g.representative.icon, x, y, 96, false, g.representative.name);
     paint_.fonts.text(g.representative.name, x + 116, y + 4, 22, Ink, true, body.w - 180);
@@ -327,6 +332,22 @@ void Application::dialogs() {
                       x + 116, y + 42, 19, Secondary);
     paint_.fonts.text(selection_->target == "nand" ? tr("Installs to the console.") : tr("Installs to the SD card."),
                       x + 116, y + 70, 19, Secondary);
+    if (pick) {
+      const float top = y + 96 + 20, mid = top + 24, right = body.x + body.w - 32;
+      paint_.fonts.middle(tr("Download from"), x, mid, 19, Ink, true);
+      // ‹ ● 서버 이름 › with the d-pad (or a tap on either side) stepping.
+      constexpr float Width = 360;
+      const float left = right - Width;
+      paint_.ring(left, top, Width, 48, 12);
+      paint_.rect(left, top, Width, 48, Ground, 12);
+      hit(left, top, Width / 2, 48, [this] { stepInstallServer(-1); });
+      hit(left + Width / 2, top, Width / 2, 48, [this] { stepInstallServer(1); });
+      paint_.icon(7, left + 10, mid - 12, Secondary, 24);
+      paint_.icon(9, right - 34, mid - 12, Secondary, 24);
+      const auto chosen = serverFor(selection_->server);
+      paint_.rect(left + 48, mid - 6, 12, 12, serverDot(chosen.url), 6);
+      paint_.fonts.middle(chosen.title, left + 70, mid, 19, Ink, true, Width - 70 - 44);
+    }
   } else if (!alert_.empty()) {
     const auto body = modal(700, 24 + 84 + 16, alertTitle_.empty() ? std::string(tr("Cannot install")) : alertTitle_,
                             tr("Close"), "", tr("OK"), 25);

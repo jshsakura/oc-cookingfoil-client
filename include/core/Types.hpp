@@ -39,6 +39,15 @@ struct Item {
     // only languages whose art differs from icon are sent.
     std::vector<std::string> icons;
     Tags languages, categories;
+    // The configured server it came from (its url); empty: the one in use.
+    std::string server;
+    // Other configured servers that hold the same file (same title, kind and
+    // version), with its address there: it can be downloaded from any of them.
+    struct Copy {
+        std::string server, url;
+        bool operator==(const Copy& o) const { return server == o.server && url == o.url; }
+    };
+    std::vector<Copy> alsoOn;
 };
 inline constexpr int ServerColorCount = 12;
 struct Server {

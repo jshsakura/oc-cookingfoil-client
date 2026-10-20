@@ -179,7 +179,7 @@ void Application::serverRestartNotice() {
 // changed): a refresh, where the session drops the old key and asks for
 // approval again, so the QR code shows instead of each screen failing.
 void Application::followTakeBack() {
-  if (net::takeConsoleRevoked()) takenBack_ = true;
+  if (session_ && net::takeConsoleRevoked(session_->server().url)) takenBack_ = true;
   if (!takenBack_ || !session_ || network_.joinable()) return;
   takenBack_ = false;
   logLine("the server took this console back; refreshing to ask for approval again");
@@ -874,6 +874,18 @@ void Application::connect(size_t index) {
   session_ = std::make_unique<net::Session>(config_.servers[index], state_,
                                             statePath_, &stop_);
   session_->setConfigPath(configPath_);
+  others_.clear();
+  serverItems_.clear();
+  serverStatus_.clear();
+  std::vector<Server> others;
+  for (size_t i = 0; i < config_.servers.size(); ++i) {
+    const auto &server = config_.servers[i];
+    if (i == index || !server.enabled) continue;
+    others_.push_back(std::make_unique<net::Session>(server, state_, statePath_, &stop_));
+    others_.back()->setConfigPath(configPath_);
+    renewTokensWith(server);
+    others.push_back(server);
+  }
   if (keep) {
     // The covers already drawn stay; only the keys may be new.
     images_->updateState(state_);
@@ -882,12 +894,12 @@ void Application::connect(size_t index) {
     images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
     images_->source(config_.servers[index], state_, imageCacheFolder(), fixture_);
   }
+  images_->alsoFrom(others);
   renewTokensWith(config_.servers[index]);
   refresh();
 }
 void Application::renewTokensWith(const Server &server) {
-  net::setTokenRenewer([server, state = state_] { return net::renewDownloadToken(server, state); });
-  net::setShopOrigin(server.url); // its files may come from its direct address
+  net::setTokenRenewer(server.url, [server, state = state_] { return net::renewDownloadToken(server, state); });
 }
 void Application::refresh() {
   if (!session_ || network_.joinable())
@@ -902,12 +914,24 @@ void Application::refresh() {
     // Reading the catalog (seconds of JSON) stays off the drawing core too.
     const platform::OnCore off(platform::NetworkCore);
     incomingError_ = {};
+    incomingCatalog_ = false;
     const bool ok = guarded("catalog", [this] {
-      if (session_->refresh(incomingError_) && !session_->unchanged())
-      {
-        // Grouped here, off the drawing thread: it takes a few hundred
-        // milliseconds for a large catalog, which stopped the screen.
-        incomingGroups_ = groupedCatalog(session_->takeItems());
+      const bool read = session_->refresh(incomingError_);
+      const bool changed = read && !session_->unchanged();
+      // Grouped here, off the drawing thread: it takes a few hundred
+      // milliseconds for a large catalog, which stopped the screen.
+      if (read && readOthers(changed)) {
+        incomingCatalog_ = true;
+        incomingGroups_ = groupedCatalog(mergeServers([&] {
+          std::vector<ServerItems> lists{{session_->server().url, serverItems_[session_->server().url]}};
+          for (const auto &other : others_)
+            if (const auto kept = serverItems_.find(other->server().url); kept != serverItems_.end())
+              lists.push_back({other->server().url, kept->second});
+          return lists;
+        }()));
+      } else if (changed && others_.empty()) {
+        incomingCatalog_ = true;
+        incomingGroups_ = groupedCatalog(mergeServers({{session_->server().url, session_->takeItems()}}));
       }
     });
     if (!ok)
@@ -1067,7 +1091,7 @@ void Application::poll() {
         return app.title && std::any_of(parts.begin(), parts.end(), [&](const Item &f) { return f.url == app.downloadUrl; });
       });
       if (titleApp) {
-        homebrewEtag_.clear();
+        homebrewEtags_.clear();
         loadHomebrew();
       }
       for (const auto &part : parts)
@@ -1139,7 +1163,7 @@ void Application::takeNetwork() {
   if (detailRequest_) {
     detailLoading_ = false;
     if (!incomingError_) {
-      details_[session_->server().url + requestedId_] = {incomingDetail_,
+      details_[detailServer_ + requestedId_] = {incomingDetail_,
                                                          SDL_GetTicks()};
       if (screen_ == Screen::Detail && detailGroup_ < groups_.size() &&
           groups_[detailGroup_].id == requestedId_)
@@ -1199,15 +1223,40 @@ void Application::takeNetwork() {
     state_.sounds = mine.sounds;
     state_.installTarget = mine.installTarget;
     state_.pairMessages = mine.pairMessages;
+    // Each other server's keys come from its own session.
+    for (const auto &other : others_) {
+      const auto &url = other->server().url;
+      const auto &theirs = other->state();
+      if (const auto key = theirs.accessKeys.find(url); key != theirs.accessKeys.end()) state_.accessKeys[url] = key->second;
+      else state_.accessKeys.erase(url);
+      if (const auto secret = theirs.pairSecrets.find(url); secret != theirs.pairSecrets.end()) state_.pairSecrets[url] = secret->second;
+      else state_.pairSecrets.erase(url);
+    }
   }
+  // Another server that newly fails or waits is said once, by name; the
+  // shop goes on with the rest.
+  for (const auto &[url, status] : incomingStatus_) {
+    const auto before = serverStatus_.find(url);
+    if (status.empty() || status == "same" || (before != serverStatus_.end() && before->second == status)) continue;
+    const auto title = serverFor(url).title;
+    message(status == "pairing" ? trf("{0} is waiting for approval. Its list shows once approved.", {title})
+                                : trf("Could not connect to {0}. Its list is left out for now.", {title}));
+  }
+  serverStatus_ = std::move(incomingStatus_);
+  incomingStatus_.clear();
   features_ = session_->features();
+  serverFeatures_.clear();
+  serverFeatures_[session_->server().url] = features_;
+  for (const auto &other : others_)
+    if (const auto status = serverStatus_.find(other->server().url); status != serverStatus_.end() && status->second.empty())
+      serverFeatures_[other->server().url] = other->features();
   // Same server: keep decoded covers; only the access keys may have changed.
   images_->updateState(state_);
   if (screen_ == Screen::Detail)
     screen_ = previous_;
   // A 304 keeps the catalog already on screen.
   retries_ = 0;
-  if (session_->unchanged() && !groups_.empty()) {
+  if (!incomingCatalog_ && !groups_.empty()) {
     connected_ = true;
     serverAnsweredAt_ = SDL_GetTicks();
     error_ = {};
@@ -1222,7 +1271,7 @@ void Application::takeNetwork() {
   offerResume();
   // 홈브류 is read ahead once the home is up, so it opens with its list.
   needHomebrewList();
-  if (!homebrewScanned_ && features_.count("homebrew")) scanHomebrewCard();
+  if (!homebrewScanned_ && !serversWith("homebrew").empty()) scanHomebrewCard();
 }
 const std::vector<size_t> &Application::libraryList() const {
   std::string key = std::to_string(catalogVersion_) + "|" + std::to_string(int(librarySort_)) + "|";
@@ -1505,6 +1554,7 @@ void Application::action(Action a) {
     return;
   }
   if (confirmInstall_) {
+    if (a == Action::Left || a == Action::Right) stepInstallServer(a == Action::Left ? -1 : 1);
     if (a == Action::Accept && settled()) {
       confirmInstall_ = false;
       installSelected();
@@ -1967,6 +2017,17 @@ void Application::card(const Group &g, float x, float y, bool selected,
   }
   // Review score on the poster's top right.
   scoreBadge(g.representative.score, x + 150 - 6, y + 6);
+  // With several servers, a dot per server holding it on the bottom right.
+  if (manyServers()) {
+    constexpr float Dot = 12, Step = 10;
+    const auto servers = groupServers(g);
+    const size_t shown = std::min<size_t>(servers.size(), 4);
+    float dx = x + 150 - 8 - Dot - Step * float(shown - 1);
+    for (size_t i = 0; i < shown; ++i, dx += Step) {
+      paint_.rect(dx - 2, y + 150 - 8 - Dot - 2, Dot + 4, Dot + 4, Surface, int(Dot / 2 + 2));
+      paint_.rect(dx, y + 150 - 8 - Dot, Dot, Dot, serverDot(servers[i]), int(Dot / 2));
+    }
+  }
   if (badges) {
     if (selected) marquee(g.representative.name, x, y + 158, 18, 150, false);
     else paint_.fonts.text(g.representative.name, x, y + 158, 18, Ink, false, 150);
@@ -2522,6 +2583,10 @@ void Application::requestInstall() {
   }
   confirmInstall_ = true;
   dialogFocus_ = 0;
+  // From several servers it comes from the game's own unless picked.
+  const auto servers = selection_->servers();
+  if (std::find(servers.begin(), servers.end(), selection_->server) == servers.end())
+    selection_->server = servers.empty() ? std::string() : servers.front();
 }
 } // namespace foil::ui
 
@@ -2704,7 +2769,7 @@ Error Application::enqueueInstall(const std::vector<Item> &files, const std::str
   std::vector<uint64_t> ids;
   for (const auto &file : fresh) {
     history::Entry row;
-    row.install = {name, icon, target, {file}};
+    row.install = {name, icon, target, {file}, file.server.empty() ? serverInUse() : file.server};
     row.outcome = history::Outcome::Queued;
     row.group = group;
     row.at = int64_t(std::time(nullptr));
@@ -2732,19 +2797,20 @@ void Application::rebuildQueue() {
     if (e->kind.empty() && e->install.files.size() != 1)
       continue;
     installQueue_.push_back(
-        {e->install.files[0], e->install.name, e->install.icon, e->install.target, e->group, e->id, e->kind, e->payload});
+        {e->install.files[0], e->install.name, e->install.icon, e->install.target, e->group, e->id, e->kind, e->payload, e->install.server});
     installGroups_ = std::max(installGroups_, e->group);
   }
 }
 bool Application::queueJob(const std::string &kind, const std::string &name, const std::string &icon,
-                           const std::string &url, uint64_t size, const std::string &payload, int group, bool first) {
+                           const std::string &url, uint64_t size, const std::string &payload, int group, bool first,
+                           const std::string &server) {
   Item file;
   file.url = url;
   file.name = name;
   file.icon = icon;
   file.size = size;
   history::Entry row;
-  row.install = {name, icon, "sd", {file}};
+  row.install = {name, icon, "sd", {file}, server.empty() ? serverInUse() : server};
   row.kind = kind;
   row.payload = payload;
   row.outcome = history::Outcome::Queued;
@@ -2789,7 +2855,8 @@ void Application::queuePatchJobs(const std::vector<UserPatch> &patches, int grou
     // "Game · patch name" and the game's cover, as the 패치 screen shows them.
     std::string game, icon;
     patchGame(patch, game, icon);
-    queueJob("patch", game + " · " + patch.name, icon, "", patch.size, net::serializePatch(patch), group);
+    queueJob("patch", game + " · " + patch.name, icon, "", patch.size, net::serializePatch(patch), group, false,
+             patch.server);
   }
 }
 bool Application::downloadRunning() const {
@@ -2889,6 +2956,83 @@ void Application::unqueue(size_t index) {
   downloadsRow_ = std::min(downloadsRow_, int(installQueue_.size()));
   message(trf("Took {0} off the queue.", {gone.name}));
 }
+std::string Application::serverInUse() const { return session_ ? session_->server().url : std::string(); }
+Server Application::serverFor(const std::string &url) const {
+  if (!url.empty())
+    for (const auto &server : config_.servers)
+      if (server.url == url) return server;
+  return session_ ? session_->server() : Server{};
+}
+SDL_Color Application::serverDot(const std::string &url) const {
+  for (size_t i = 0; i < config_.servers.size(); ++i)
+    if (config_.servers[i].url == url) return serverColor(config_.servers[i].color, i);
+  return serverColor(-1, 0);
+}
+bool Application::manyServers() const {
+  return std::count_if(config_.servers.begin(), config_.servers.end(), [](const Server &s) { return s.enabled; }) > 1;
+}
+std::vector<std::string> Application::groupServers(const Group &g) const {
+  const auto &item = g.base ? *g.base : g.representative;
+  std::vector<std::string> servers{item.server.empty() ? serverInUse() : item.server};
+  for (const auto &copy : item.alsoOn) servers.push_back(copy.server);
+  return servers;
+}
+void Application::stepInstallServer(int by) {
+  const auto servers = selection_->servers();
+  if (servers.size() < 2) return;
+  const auto at = std::find(servers.begin(), servers.end(), selection_->server);
+  const int now = at == servers.end() ? 0 : int(at - servers.begin()), count = int(servers.size());
+  selection_->server = servers[size_t((now + by + count) % count)];
+  sounds_.play(Cue::Move);
+}
+std::vector<Server> Application::serversWith(const std::string &feature) const {
+  std::vector<Server> servers;
+  if (!session_) return servers;
+  // No feature: every server read now.
+  const auto offers = [&](const std::string &url) {
+    const auto found = serverFeatures_.find(url);
+    return found != serverFeatures_.end() && (feature.empty() || found->second.count(feature));
+  };
+  if (offers(session_->server().url)) servers.push_back(session_->server());
+  for (const auto &other : others_)
+    if (offers(other->server().url)) servers.push_back(other->server());
+  return servers;
+}
+net::Session *Application::sessionFor(const std::string &url) const {
+  for (const auto &other : others_)
+    if (other->server().url == url) return other.get();
+  return session_.get();
+}
+bool Application::readOthers(bool primaryChanged) {
+  incomingStatus_.clear();
+  if (others_.empty()) return false;
+  if (primaryChanged) serverItems_[session_->server().url] = session_->takeItems();
+  bool changed = primaryChanged;
+  std::set<std::string> ids;
+  if (!session_->serverId().empty()) ids.insert(session_->serverId());
+  for (const auto &other : others_) {
+    const auto &url = other->server().url;
+    Error error;
+    const bool read = other->refresh(error);
+    // Two addresses of one server (its own and a tunnel's): listed once.
+    if (read && !other->serverId().empty() && !ids.insert(other->serverId()).second) {
+      incomingStatus_[url] = "same";
+      changed = serverItems_.erase(url) > 0 || changed;
+      continue;
+    }
+    if (!read) {
+      incomingStatus_[url] = other->pairingPending() ? "pairing" : "failed";
+      if (!other->pairingPending()) logLine("server " + url + " not read: " + error.message);
+      continue; // its games from before stay until it answers again
+    }
+    incomingStatus_[url] = "";
+    if (!other->unchanged()) {
+      serverItems_[url] = other->takeItems();
+      changed = true;
+    }
+  }
+  return changed;
+}
 Error Application::launchQueued() {
   // One download at a time, whatever it is; a paused one holds the rest, and
   // so does the question at start until it is answered.
@@ -2913,7 +3057,7 @@ Error Application::launchQueued() {
   // card's query takes seconds): the console refuses a write that does not fit.
   const auto known = next.target == "nand" ? nandFree_ : sdFree_;
   if (auto error = installer_.start(files, next.name, next.icon, next.target,
-                                    session_ ? session_->server() : Server{}, state_,
+                                    serverFor(next.server), state_,
                                     known ? known : std::optional<uint64_t>(std::numeric_limits<uint64_t>::max()))) {
     // It cannot start (no room, firmware): the rest of its pick goes too.
     history::end(history_, next.entry, history::Outcome::Failed, error.message, int64_t(std::time(nullptr)));
@@ -2929,7 +3073,7 @@ Error Application::launchQueued() {
     row->at = int64_t(std::time(nullptr));
   } else {
     history::Entry entry;
-    entry.install = {next.name, next.icon, next.target, files};
+    entry.install = {next.name, next.icon, next.target, files, next.server};
     entry.at = int64_t(std::time(nullptr));
     history::add(history_, std::move(entry), SIZE_MAX, store_.topId());
   }
@@ -2966,22 +3110,24 @@ Error Application::launchJob(const QueuedInstall &next) {
         logLine("homebrew: " + apps.front().name + " is listed under a new id; fetched from there");
         apps.front() = *now;
       }
-    started = !apps.empty() && runHomebrew(apps.front());
+    started = !apps.empty() && runHomebrew(apps.front(), serverFor(next.server));
   } else if (next.kind == "retro") {
-    started = runRetroGame(retro::parseGameJson(next.payload));
+    started = runRetroGame(retro::parseGameJson(next.payload), serverFor(next.server));
   } else if (next.kind == "retroarch") {
-    started = runRetroArch(next.payload == "full");
+    started = runRetroArch(next.payload == "full", serverFor(next.server));
   } else if (next.kind == "reapply") {
     // Puts back what went missing, downloading it again when the server
     // still has the patch: a download like any other, so it waits its turn.
-    const auto patches = net::parsePatches(next.payload);
+    auto patches = net::parsePatches(next.payload);
+    for (auto &patch : patches) patch.server = next.server;
     if (!patches.empty() && !patchWorker_.joinable() && !installer_.running() && !retroDownloading()) {
       const bool onServer = std::any_of(serverPatches_.begin(), serverPatches_.end(),
                                         [&](const UserPatch &p) { return p.id == patches.front().id; });
       started = startPatchReapply(patches.front(), onServer);
     }
   } else if (next.kind == "patch") {
-    const auto patches = net::parsePatches(next.payload);
+    auto patches = net::parsePatches(next.payload);
+    for (auto &patch : patches) patch.server = next.server;
     if (!patches.empty() && patchStore_ && session_) {
       patchQueue_.push_back(patches.front());
       started = true;
@@ -3022,7 +3168,7 @@ void Application::settlePatchJob(bool failed, const std::string &error) {
 // fresh download token was asked for says so (and once on screen), since
 // trying again would not help.
 std::string Application::failureText(const std::string &error) {
-  if (!net::downloadSignInRefused()) return error;
+  if (!session_ || !net::downloadSignInRefused(session_->server().url)) return error;
   const std::string text = tr("The server refused the login. Check the server's username and password in Settings.");
   message(text);
   return text;

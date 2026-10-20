@@ -6,6 +6,7 @@
 #include "net/Api.hpp"
 #include "net/Dropbox.hpp"
 #include "net/HomebrewApi.hpp"
+#include "net/RetroApi.hpp"
 #include "ui/DropboxRows.hpp"
 #include "ui/Images.hpp"
 #include "ui/Painter.hpp"
@@ -169,7 +170,7 @@ public:
 #ifndef __SWITCH__
   void previewInstall(install::Progress p) { installer_.preview(std::move(p)); }
   void previewQueued(Item file, std::string name, std::string icon) {
-    installQueue_.push_back({std::move(file), std::move(name), std::move(icon), "sd", 0, 0, "", ""});
+    installQueue_.push_back({std::move(file), std::move(name), std::move(icon), "sd", 0, 0, "", "", ""});
   }
   // The queue as tests drive it: picks go in as from a game's page, and the
   // installer's work on the host is whatever setHostInstall() says.
@@ -178,7 +179,7 @@ public:
   }
   // A game paused before it began, its history row `entry`, on the top card.
   void previewHeld(Item file, std::string name, uint64_t entry) {
-    installQueue_.push_back({std::move(file), std::move(name), "", "sd", 0, entry, "", ""});
+    installQueue_.push_back({std::move(file), std::move(name), "", "sd", 0, entry, "", "", ""});
     queueHeld_ = true;
   }
   // The top card's 상세 정보, pressed: false when the card has none.
@@ -483,7 +484,11 @@ private:
   const homebrew::App &homebrewAt(int index) const; // a homebrewRows() index
   std::string homebrewIcon(const homebrew::App &app); // the URL or the card icon's key
   std::string homebrewFile(const homebrew::App &app) const; // its file on the card, from the SD root
-  std::string homebrewEtag_, homebrewQuery_;
+  std::string homebrewQuery_;
+  // Each server's last homebrew list and its ETag, by url: one that answers
+  // 304 keeps its part. Only the homebrew worker touches them.
+  std::map<std::string, std::string> homebrewEtags_;
+  std::map<std::string, std::vector<homebrew::App>> homebrewLists_;
   // 홈브류's order: the server's (most recently updated) unless one is picked.
   SortMode homebrewSort_ = SortMode::Updated;
   bool homebrewSortAsk_ = false;
@@ -527,6 +532,7 @@ private:
   // band and the editor it opens (AdminEditor.cpp).
   struct AdminTarget {
     std::string kind, id, name; // kind: homebrew, retro or game
+    std::string server;         // the server it came from: edits go there
   };
   struct AdminEdit {
     bool open = false, busy = false, changed = false;
@@ -552,6 +558,7 @@ private:
   struct VoteTarget {
     std::string kind, id;
     votes::Votes votes;
+    std::string server; // the server it came from: the vote goes there
   };
   std::optional<VoteTarget> voteTarget() const;
   bool voteAction(Action a, bool atTop);
@@ -586,7 +593,8 @@ private:
   // A shortcut made here, in its queue turn: the server's picture as its
   // icon (the .nro's when that cannot be had). payload: a homebrew app's
   // JSON, "retro:" and a game's, or "self".
-  void queueShortcut(const std::string &name, const std::string &icon, const std::string &payload);
+  void queueShortcut(const std::string &name, const std::string &icon, const std::string &payload,
+                     const std::string &server = ""); // the server its picture comes from
   bool makeHomebrewShortcutHere(const homebrew::App &app); // queued; false where none can be made
   bool makeRetroShortcutHere(const retro::Game &game);
   std::string shortcutApp(const history::Entry &entry) const; // the app id, "" when none
@@ -614,7 +622,20 @@ private:
   const InstalledGame *homebrewInstalledTitle(const homebrew::App &app) const;
   std::vector<int> homebrewRows() const; // homebrewAt() indexes in this tab and search
   bool getHomebrew(const homebrew::App &app);
-  bool runHomebrew(const homebrew::App &app);
+  // The configured server a record names (its url), as set now; the one in
+  // use for a record that names none or a server since taken out.
+  Server serverFor(const std::string &url) const;
+  // Its dot's colour, as the server's form shows it.
+  SDL_Color serverDot(const std::string &url) const;
+  // Two or more servers on: only then do cards and pages say which server.
+  bool manyServers() const;
+  // The servers a game's main file is on, its own first.
+  std::vector<std::string> groupServers(const Group &g) const;
+  // The install popup's 받을 서버: the d-pad steps through the servers
+  // holding every chosen file.
+  void stepInstallServer(int by);
+  std::string serverInUse() const;
+  bool runHomebrew(const homebrew::App &app, const Server &server);
   // The app's HOME Menu shortcut: made now, or queued behind a download
   // (NCM is the installer's while it runs); false when none can be made.
   bool homebrewShortcutPossible(const homebrew::App &app) const;
@@ -748,7 +769,7 @@ private:
   // false when it did not start (another retro job runs, no room, already there).
   bool getRetroGame(const retro::Game &game, bool again = false);
   // Its turn in the queue came: the download itself, on the retro worker.
-  bool runRetroGame(const retro::Game &game);
+  bool runRetroGame(const retro::Game &game, const Server &server);
   bool finishRetroEntry(const std::string &kind, history::Outcome outcome, const std::string &error, uint64_t bytes, uint64_t kept = 0);
   // A retro game or RetroArch downloading (not a list loading).
   bool retroDownloading() const { return !retroBusy_.empty(); }
@@ -770,7 +791,7 @@ private:
   void scoreBadge(int score, float right, float y);
   // Into the queue; `first` puts it ahead of what waits (a game's core).
   bool syncRetroArch(bool full = false, bool first = false); // full: every file again, settings kept
-  bool runRetroArch(bool full);
+  bool runRetroArch(bool full, const Server &server);
   bool retroCoreMissing(const retro::Game &game) const;
   bool retroReady(const retro::Game &game) const; // RetroArch and its core on the card
   bool retroArchPending() const;                   // a RetroArch job waits or runs
@@ -981,7 +1002,7 @@ private:
   UserPatch patchQueueNow_; // the queued patch the worker has
   void gallery();
   int screenshotStrip(int y);
-  std::string shopAddress(const std::string &url) const;
+  std::string shopAddress(const std::string &url, const std::string &server = "") const; // server: by url, empty the one in use
   float chipRow(const std::string &title, const std::vector<std::string> &labels, float y);
   std::string homebrewNotesOf_, homebrewNotes_; // the app whose notes homebrewNotes_ holds, as plain text
   std::string galleryName() const;
@@ -1020,10 +1041,11 @@ private:
   void patchAction(Action action);
   void fetchPatches();
   void pollPatches();
-  // `failTitle` heads the alert when the job fails (patch failure when empty).
+  // `failTitle` heads the alert when the job fails (patch failure when empty);
+  // `server` is the configured server it talks to (empty: the one in use).
   bool runPatchJob(const std::string &id, const std::string &label,
                    std::function<void(net::Session &, PatchStore &, Error &, std::string &)> job,
-                   const std::string &failTitle = "");
+                   const std::string &failTitle = "", const std::string &server = "");
   // Shared by 유저 패치 and an app's patches in 홈브류.
   void startPatchGet(const UserPatch &patch, bool fresh);
   void startPatchEnable(const UserPatch &patch);
@@ -1093,6 +1115,7 @@ private:
   enum class AppUpdate { Unknown, Checking, Latest, Available, Missing, Failed, Downloading };
   AppUpdate appUpdate_ = AppUpdate::Unknown;
   update::Release appRelease_;
+  std::string appReleaseServer_; // the server with the newest build: it is downloaded from there
   std::string appUpdateError_, selfPath_;
   void noticeRollBack(); // an update undone at start says so (AppUpdate.cpp)
   // A secure connection failed and the console clock is off from internet
@@ -1386,6 +1409,29 @@ private:
 
   size_t serverIndex_ = 0, detailGroup_ = 0;
   std::unique_ptr<net::Session> session_;
+  // The other enabled servers, read after session_'s on the same thread:
+  // their games join its list (mergeServers). In config.json's order.
+  std::vector<std::unique_ptr<net::Session>> others_;
+  // Each server's last list, by url, while more than one is read: one that
+  // answers 304 keeps its part. Only the network thread touches it.
+  std::map<std::string, std::vector<Item>> serverItems_;
+  // How each of the others answered its last read, by url: "" fine,
+  // "pairing" (awaiting approval), "same" (another address of a server
+  // already read) or "failed". incoming* is the network thread's.
+  std::map<std::string, std::string> serverStatus_, incomingStatus_;
+  bool incomingCatalog_ = false; // the network thread brought a list (incomingGroups_)
+  // What each server read now offers (/api/shop/info features), by url.
+  std::map<std::string, std::set<std::string>> serverFeatures_;
+  // The servers read now that offer `feature` (empty: all of them): the one
+  // in use first, then the others in config.json's order.
+  std::vector<Server> serversWith(const std::string &feature) const;
+  std::string detailServer_;     // the server the detail being read is asked of
+  // The session for a configured server (by url); session_ for none or one
+  // not read now.
+  net::Session *sessionFor(const std::string &url) const;
+  // The others, read in turn after session_'s list (the network thread):
+  // true when any part of the list changed.
+  bool readOthers(bool primaryChanged);
   std::thread network_;
   std::atomic<bool> done_{false};
   std::atomic<bool> stop_{false};
@@ -1544,6 +1590,9 @@ private:
   std::vector<retro::Variant> retroVariants_; // its versions, when it has more than one
   int retroVariant_ = 0;            // the one the cursor is on
   std::string retroDetailWant_;     // the version to load in full next
+  std::string retroDetailServer_;   // the server the open game (and its versions) come from
+  Parsed<retro::Page> retroPages(const std::vector<Server> &servers, const State &state, const std::string &system,
+                                 int page, const retro::Filter &filter, net::RetroReply &reply);
   // The versions picked to get (by id), and the full games loaded so far:
   // several versions sit side by side on the card under their own names.
   std::set<std::string> retroChecked_;
@@ -1650,11 +1699,13 @@ private:
     int group = 0; // one pick: a base game that fails takes the rest of it (update, DLC, patches) along
     uint64_t entry = 0; // its row in 다운로드's history, which keeps the queue across launches
     std::string kind, payload;
+    std::string server; // the configured server it comes from; empty: the one in use
   };
   // A job other than an install goes in behind the rest (or `first`); false
   // when the same one already waits or runs.
   bool queueJob(const std::string &kind, const std::string &name, const std::string &icon, const std::string &url,
-                uint64_t size, const std::string &payload, int group = 0, bool first = false);
+                uint64_t size, const std::string &payload, int group = 0, bool first = false,
+                const std::string &server = ""); // the server it comes from; empty: the one in use
   void queuePatchJobs(const std::vector<UserPatch> &patches, int group);
   Error launchJob(const QueuedInstall &next);
   bool startShortcut(const QueuedInstall &next); // false when it cannot start

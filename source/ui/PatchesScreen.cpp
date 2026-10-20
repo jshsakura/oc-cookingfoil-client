@@ -177,17 +177,34 @@ const Application::PatchRow *Application::pickedPatch(const std::vector<PatchRow
 void Application::fetchPatches() {
   if (patchesFixed_ || !session_ || patchWorker_.joinable() || !connected_)
     return;
-  patchFetching_ = runPatchJob("", "", [this](net::Session &session, PatchStore &, Error &error, std::string &) {
+  auto others = serversWith("");
+  if (!others.empty()) others.erase(others.begin()); // the one in use is the job's own session
+  const auto state = state_;
+  patchFetching_ = runPatchJob("", "", [this, others, state](net::Session &session, PatchStore &, Error &error, std::string &) {
     auto list = session.patches();
     error = list.error;
     incomingPatchRetry_ = session.patchesRetryAfter();
-    incomingPatches_ = std::move(list.value);
+    if (error || others.empty()) {
+      for (auto &patch : list.value) patch.server = session.server().url;
+      incomingPatches_ = std::move(list.value);
+      return;
+    }
+    // The others' patches join; one that does not answer is left out.
+    std::vector<std::pair<std::string, std::vector<UserPatch>>> lists{{session.server().url, std::move(list.value)}};
+    for (const auto &server : others) {
+      net::Session other(server, state, "", &stop_);
+      auto theirs = other.patches();
+      if (theirs.error) logLine("patches: " + server.url + " not read: " + theirs.error.message);
+      else lists.push_back({server.url, std::move(theirs.value)});
+    }
+    incomingPatches_ = mergePatchServers(std::move(lists));
   });
 }
 // One job at a time: the worker owns the store until it reports back.
 bool Application::runPatchJob(
     const std::string &id, const std::string &label,
-    std::function<void(net::Session &, PatchStore &, Error &, std::string &)> job, const std::string &failTitle) {
+    std::function<void(net::Session &, PatchStore &, Error &, std::string &)> job, const std::string &failTitle,
+    const std::string &server) {
   if (patchWorker_.joinable() || !patchStore_ || !session_)
     return false;
   // A job that moves files comes first: the light check stops where it is.
@@ -200,7 +217,7 @@ bool Application::runPatchJob(
   patchMoving_ = 0;
   incomingPatchError_ = {};
   patchMessage_.clear();
-  auto session = std::make_shared<net::Session>(session_->server(), state_, "", &stop_);
+  auto session = std::make_shared<net::Session>(serverFor(server), state_, "", &stop_);
   patchWorker_ = std::thread([this, session, job = std::move(job)] {
     const bool ok = guarded("patches", [&] { job(*session, *patchStore_, incomingPatchError_, patchMessage_); });
     if (!ok)
@@ -489,7 +506,7 @@ void Application::patchGame(const UserPatch &given, std::string &name, std::stri
       name = patch.gameNames[k];
   }
   if (icon.empty() && !patch.gameIcon.empty())
-    icon = shopAddress(patch.gameIcon);
+    icon = shopAddress(patch.gameIcon, patch.server);
   if (name.empty())
     name = patch.titleId;
 }
@@ -519,7 +536,8 @@ void Application::runPatchOp(int opIndex) {
   if (op == PatchOp::Reapply) {
     std::string game, icon;
     patchGame(row.patch, game, icon);
-    queueJob("reapply", game + " · " + row.patch.name, icon, "", row.patch.size, net::serializePatch(row.patch));
+    queueJob("reapply", game + " · " + row.patch.name, icon, "", row.patch.size, net::serializePatch(row.patch), 0, false,
+             row.patch.server);
     return;
   }
   if (op == PatchOp::Disable)
@@ -561,7 +579,8 @@ void Application::startPatchGet(const UserPatch &patch, bool fresh) {
                 done = !over.empty() ? trf("Patch downloaded and on. Files it shares with '{0}' now come from this patch.", {over})
                        : patch.homebrewApp.empty() ? tr("Patch downloaded and on. Applies when the game restarts.")
                                                    : tr("Patch downloaded and on. Applies when the app restarts.");
-              });
+              },
+              "", patch.server);
 }
 // The next queued patch goes to the worker the 패치 screen uses, once it is
 // free and no alert (a failed patch's among them) waits to be read.
@@ -628,7 +647,7 @@ bool Application::startPatchReapply(const UserPatch &patch, bool onServer) {
     done = left ? trf("This patch is gone from the server, so {0} files could not be put back.", {std::to_string(left)})
            : app ? tr("Patch reapplied. Restart the app to apply it.")
                  : tr("Patch reapplied. Restart the game to apply it.");
-  });
+  }, "", patch.server);
 }
 void Application::startPatchEnable(const UserPatch &patch) {
   // Files it shares with patches already on come from this one from now on.
@@ -935,7 +954,7 @@ void Application::patchMenu(const PatchRow &row) {
   // Its screenshots, a row of three under the description; ZR or a tap
   // opens them large.
   std::vector<std::string> shots;
-  for (const auto &shot : row.patch.screenshots) shots.push_back(shopAddress(shot));
+  for (const auto &shot : row.patch.screenshots) shots.push_back(shopAddress(shot, row.patch.server));
   if (detail_.screenshots != shots) {
     detail_.screenshots = shots;
     galleryOpen_ = false;
@@ -952,7 +971,7 @@ void Application::patchMenu(const PatchRow &row) {
   const float x = body.x + 32, w = body.w - 64, textX = x + Icon + 20;
   float y = body.y + 24;
   // The patch's own icon when the server has one, else its game's.
-  cover(row.patch.iconUrl.empty() ? row.icon : shopAddress(row.patch.iconUrl), x, y, int(Icon), false, row.game,
+  cover(row.patch.iconUrl.empty() ? row.icon : shopAddress(row.patch.iconUrl, row.patch.server), x, y, int(Icon), false, row.game,
         !row.patch.homebrewApp.empty());
   paint_.fonts.wrapped(row.game, textX, y, 18, Ink, nameW, 2, true);
   const float nameY = y + gameH + 4;

@@ -35,7 +35,13 @@ public:
   // The game version the chosen files leave installed: the update's when it
   // is on, else the base game's; empty when unknown.
   std::string installedVersion() const;
+  // The servers every chosen file can come from, the first file's own
+  // first; fewer than two leaves nothing to choose.
+  std::vector<std::string> servers() const;
   std::string target;
+  // The server picked from servers(); empty or one a file is not on: each
+  // file from its own.
+  std::string server;
 
 private:
   void showPatches();

@@ -1100,3 +1100,19 @@ bool PatchChecker::run(size_t maxLooks, std::chrono::milliseconds budget, const 
   return true;
 }
 } // namespace foil
+
+namespace foil {
+std::vector<UserPatch> mergePatchServers(std::vector<std::pair<std::string, std::vector<UserPatch>>> lists) {
+  std::vector<UserPatch> merged;
+  std::map<std::string, size_t> seen;
+  for (auto &[server, patches] : lists)
+    for (auto &patch : patches) {
+      patch.server = server;
+      const auto [at, fresh] = seen.emplace(patch.id, merged.size());
+      if (fresh) merged.push_back(std::move(patch));
+      else if (patch.hash != merged[at->second].hash && patch.updatedAt > merged[at->second].updatedAt)
+        merged[at->second] = std::move(patch);
+    }
+  return merged;
+}
+} // namespace foil

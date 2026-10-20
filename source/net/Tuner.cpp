@@ -111,7 +111,6 @@ int lastId = 0;
 ConnectionTuner *tuner = nullptr;
 Clock::time_point spanStart;
 uint64_t spanBytes = 0;
-std::atomic<int> active{0};
 std::string keptIn;                // where the found counts live on the card
 bool recalled = false;             // read from there once
 std::map<std::string, int> kept;   // as the card holds them
@@ -210,7 +209,7 @@ int tunedConnections() {
   const double seconds = std::chrono::duration<double>(now - spanStart).count();
   if (seconds >= ConnectionTuner::SpanSeconds) {
     const uint64_t bytes = receivedBytes();
-    if (runs.size() == 1) tuner->span(bytes - spanBytes, seconds, active.load());
+    if (runs.size() == 1) tuner->span(bytes - spanBytes, seconds, activeDownloads(runs.front().place));
     spanStart = now;
     spanBytes = bytes;
   }
@@ -224,6 +223,4 @@ bool tuningFound() {
   std::lock_guard<std::mutex> held(lock);
   return runs.empty() || !tuner || tuner->found();
 }
-void heardActiveDownloads(int count) { active = std::clamp(count, 0, 64); }
-int activeDownloads() { return active.load(); }
 } // namespace foil::net

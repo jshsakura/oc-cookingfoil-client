@@ -28,18 +28,33 @@ void Application::checkAppUpdate() {
     return;
   }
   appUpdate_ = AppUpdate::Checking;
-  const auto server = session_->server();
+  const auto servers = serversWith("");
   const auto state = state_;
-  updateWorker_ = std::thread([this, server, state] {
+  updateWorker_ = std::thread([this, servers, state] {
+    // The one in use says how the check went; another server with a newer
+    // build is where it comes from.
     net::ClientUpdateReply reply;
     std::optional<update::Release> release;
-    guarded("update", [&] { release = net::latestClient(server, state, reply, &stop_); });
-    updateFinish_ = [this, reply, release] {
+    std::string from;
+    guarded("update", [&] {
+      for (size_t i = 0; i < servers.size(); ++i) {
+        net::ClientUpdateReply theirs;
+        auto found = net::latestClient(servers[i], state, theirs, &stop_);
+        if (!i) reply = theirs;
+        if (found && (!release || update::compareVersions(found->version, release->version) > 0)) {
+          release = std::move(found);
+          from = servers[i].url;
+        }
+      }
+    });
+    if (release && reply.missing) reply = {}; // the one in use has none, another has
+    updateFinish_ = [this, reply, release, from] {
       appUpdateError_ = reply.error.message;
       if (reply.missing) appUpdate_ = AppUpdate::Missing;
       else if (!release) appUpdate_ = AppUpdate::Failed;
       else {
         appRelease_ = *release;
+        appReleaseServer_ = from;
         appUpdate_ = update::compareVersions(release->version, COOKINGFOIL_VERSION) > 0 ? AppUpdate::Available
                                                                                       : AppUpdate::Latest;
         updateNewer_ = appUpdate_ == AppUpdate::Available;
@@ -88,7 +103,7 @@ void Application::installAppUpdate() {
   appUpdate_ = AppUpdate::Downloading;
   updateReceived_ = 0;
   updateCancel_ = false;
-  const auto server = session_->server();
+  const auto server = serverFor(appReleaseServer_);
   const auto state = state_;
   const auto target = nroPath(selfPath_, sdRoot_);
   updateWorker_ = std::thread([this, server, state, release = appRelease_, target]() mutable {

@@ -190,8 +190,8 @@ size_t onHeader(char *data, size_t size, size_t count, void *user) {
   }
 }
 size_t onHeaderUnsafe(char *data, size_t size, size_t count, void *user) {
-  heardHeader(data, size * count);
   auto &c = *static_cast<Conn *>(user);
+  heardHeader(c.url, data, size * count);
   std::string line(data, size * count);
   while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
     line.pop_back();
@@ -550,7 +550,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       lastTurn = Clock::now();
       // No network on the console: nothing is asked for and nothing counts
       // against the parts; they go on from where they stood once it is back.
-      const bool offline = linkDown();
+      const bool offline = linkDown(url);
       if (offline) {
         s.lastData = Clock::now();
         if (!offlineSaid) log("download waits for the network");
@@ -706,18 +706,18 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         }
         // The download token ran out: a fresh one, and the part asks again at
         // once from the byte it stood at, not as a failure.
-        if (code == 401 && renewals < TokenRetries && renewDownloadToken(c->token)) {
+        if (code == 401 && renewals < TokenRetries && renewDownloadToken(url, c->token)) {
           ++renewals;
-          freshenBearer(sendHeaders);
+          freshenBearer(url, sendHeaders);
           waitUntil[size_t(seg)] = Clock::time_point();
           continue;
         }
         const bool fatal = code == 401 || code == 403 || code == 404 || code == 416;
         // No internet on the console: the outage does not count against the
         // window; the parts are asked again once it is back.
-        if (linkDown())
+        if (linkDown(url))
           s.lastData = Clock::now();
-        if (!linkDown()) tuneTrouble(); // a drop, a timeout, an error: one fewer may do better
+        if (!linkDown(url)) tuneTrouble(); // a drop, a timeout, an error: one fewer may do better
         if (!fatal && !c->changed && (code >= 500 || !c->bad) && Clock::now() - s.lastData < ResumeWindow) {
           // The longer nothing has come, the longer between asks: 2 s at
           // first, up to 15 s, so a server that is down is not hammered.
