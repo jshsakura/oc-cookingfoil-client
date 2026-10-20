@@ -4,6 +4,7 @@
 #include "core/Json.hpp"
 #include "core/TitleGuard.hpp"
 #include <algorithm>
+#include <map>
 #include <set>
 #include <sys/stat.h>
 #include <cctype>
@@ -500,5 +501,29 @@ uint64_t bundleSize(const App &app) {
       folders.insert(file.path.substr(0, slash));
   }
   return total + 512 * folders.size();
+}
+} // namespace foil::homebrew
+
+namespace foil::homebrew {
+std::vector<App> mergeServers(std::vector<ServerApps> lists) {
+  std::vector<App> merged;
+  std::map<std::string, size_t> seen;
+  for (auto &list : lists)
+    for (auto &app : list.apps) {
+      app.server = list.server;
+      const auto [at, fresh] = seen.emplace(app.id, merged.size());
+      if (fresh) {
+        merged.push_back(std::move(app));
+        continue;
+      }
+      auto &kept = merged[at->second];
+      if (!app.hash.empty() && app.hash == kept.hash) {
+        if (std::find(kept.alsoOn.begin(), kept.alsoOn.end(), list.server) == kept.alsoOn.end())
+          kept.alsoOn.push_back(list.server);
+      } else if (app.releasedAt > kept.releasedAt) {
+        kept = std::move(app);
+      }
+    }
+  return merged;
 }
 } // namespace foil::homebrew

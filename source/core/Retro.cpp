@@ -4,6 +4,7 @@
 #include "core/I18n.hpp"
 #include <algorithm>
 #include <cctype>
+#include <map>
 #include <set>
 namespace foil::retro {
 namespace {
@@ -378,5 +379,86 @@ Game parseGameJson(const std::string &json) {
   auto root = parseJson(json, error);
   if (!root || !json_object_is_type(root.get(), json_type_object)) return {};
   return parseGame(root.get(), "");
+}
+namespace {
+std::string lower(std::string s) {
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+  return s;
+}
+// Games named by their server, a game several hold once (by id).
+std::vector<Game> tagged(std::vector<std::pair<std::string, std::vector<Game>>> lists) {
+  std::vector<Game> games;
+  std::map<std::string, size_t> seen;
+  for (auto &[server, list] : lists)
+    for (auto &game : list) {
+      game.server = server;
+      const auto [at, fresh] = seen.emplace(game.id, games.size());
+      if (fresh) {
+        games.push_back(std::move(game));
+        continue;
+      }
+      auto &also = games[at->second].alsoOn;
+      if (std::find(also.begin(), also.end(), server) == also.end()) also.push_back(server);
+    }
+  return games;
+}
+void sortGames(std::vector<Game> &games, const std::string &sort) {
+  std::stable_sort(games.begin(), games.end(), [&](const Game &a, const Game &b) {
+    if (sort == "name") return lower(a.name) < lower(b.name);
+    if (sort == "size") return a.size > b.size;
+    if (sort == "added") return a.addedAt > b.addedAt;
+    return a.rating != b.rating ? a.rating > b.rating : a.ratingCount > b.ratingCount;
+  });
+}
+} // namespace
+std::vector<Game> mergeGames(std::vector<std::pair<std::string, std::vector<Game>>> lists, const std::string &sort) {
+  // One server's pages are in its order already.
+  const bool one = lists.size() == 1;
+  auto games = tagged(std::move(lists));
+  if (!one) sortGames(games, sort);
+  return games;
+}
+void orderGames(std::vector<Game> &games, const std::string &sort) {
+  std::map<std::string, size_t> seen;
+  std::vector<Game> kept;
+  kept.reserve(games.size());
+  for (auto &game : games) {
+    const auto [at, fresh] = seen.emplace(game.id, kept.size());
+    if (fresh) {
+      kept.push_back(std::move(game));
+      continue;
+    }
+    auto &also = kept[at->second].alsoOn;
+    for (const auto &server : game.alsoOn)
+      if (std::find(also.begin(), also.end(), server) == also.end()) also.push_back(server);
+    if (game.server != kept[at->second].server && std::find(also.begin(), also.end(), game.server) == also.end())
+      also.push_back(game.server);
+  }
+  games = std::move(kept);
+  sortGames(games, sort);
+}
+std::vector<Shelf> mergeShelves(std::vector<std::pair<std::string, std::vector<Shelf>>> lists) {
+  std::vector<Shelf> shelves;
+  std::map<std::string, size_t> at;
+  std::map<std::string, std::vector<std::pair<std::string, std::vector<Game>>>> parts;
+  for (auto &[server, list] : lists)
+    for (auto &shelf : list) {
+      const auto [found, fresh] = at.emplace(shelf.system.id, shelves.size());
+      if (fresh) shelves.push_back({shelf.system, {}});
+      else shelves[found->second].system.romCount += shelf.system.romCount;
+      parts[shelf.system.id].push_back({server, std::move(shelf.games)});
+    }
+  for (auto &shelf : shelves) {
+    auto &part = parts[shelf.system.id];
+    const bool one = part.size() == 1;
+    shelf.games = tagged(std::move(part));
+    if (one) continue;
+    sortGames(shelf.games, "rating");
+    std::set<std::string> originals;
+    shelf.games.erase(std::remove_if(shelf.games.begin(), shelf.games.end(),
+                                     [&](const Game &g) { return !g.original.empty() && !originals.insert(g.original).second; }),
+                      shelf.games.end());
+  }
+  return shelves;
 }
 } // namespace foil::retro

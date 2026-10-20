@@ -701,11 +701,16 @@ void Application::retryHistoryRow(history::Entry entry) {
   const auto &file = entry.install.files.front();
   // The row it was gives way to the new one (startInstall and queueJob take
   // out an older failed or canceled row of the same file).
+  // Again from the server it came from.
   if (entry.kind.empty()) {
-    if (auto error = startInstall(entry.install.files, entry.install.name, entry.install.icon, entry.install.target, {}, true))
+    auto files = entry.install.files;
+    for (auto &f : files)
+      if (f.server.empty()) f.server = entry.install.server;
+    if (auto error = startInstall(files, entry.install.name, entry.install.icon, entry.install.target, {}, true))
       alert_ = error.message;
   } else {
-    queueJob(entry.kind, entry.install.name, entry.install.icon, file.url, file.size, entry.payload, 0, true);
+    queueJob(entry.kind, entry.install.name, entry.install.icon, file.url, file.size, entry.payload, 0, true,
+             entry.install.server);
   }
   downloadsRow_ = std::min(downloadsRow_, std::max(0, int(downloadsList().size()) - 1));
 }

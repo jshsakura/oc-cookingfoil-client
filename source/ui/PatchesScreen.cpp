@@ -177,11 +177,27 @@ const Application::PatchRow *Application::pickedPatch(const std::vector<PatchRow
 void Application::fetchPatches() {
   if (patchesFixed_ || !session_ || patchWorker_.joinable() || !connected_)
     return;
-  patchFetching_ = runPatchJob("", "", [this](net::Session &session, PatchStore &, Error &error, std::string &) {
+  auto others = serversWith("");
+  if (!others.empty()) others.erase(others.begin()); // the one in use is the job's own session
+  const auto state = state_;
+  patchFetching_ = runPatchJob("", "", [this, others, state](net::Session &session, PatchStore &, Error &error, std::string &) {
     auto list = session.patches();
     error = list.error;
     incomingPatchRetry_ = session.patchesRetryAfter();
-    incomingPatches_ = std::move(list.value);
+    if (error || others.empty()) {
+      for (auto &patch : list.value) patch.server = session.server().url;
+      incomingPatches_ = std::move(list.value);
+      return;
+    }
+    // The others' patches join; one that does not answer is left out.
+    std::vector<std::pair<std::string, std::vector<UserPatch>>> lists{{session.server().url, std::move(list.value)}};
+    for (const auto &server : others) {
+      net::Session other(server, state, "", &stop_);
+      auto theirs = other.patches();
+      if (theirs.error) logLine("patches: " + server.url + " not read: " + theirs.error.message);
+      else lists.push_back({server.url, std::move(theirs.value)});
+    }
+    incomingPatches_ = mergePatchServers(std::move(lists));
   });
 }
 // One job at a time: the worker owns the store until it reports back.
@@ -520,7 +536,8 @@ void Application::runPatchOp(int opIndex) {
   if (op == PatchOp::Reapply) {
     std::string game, icon;
     patchGame(row.patch, game, icon);
-    queueJob("reapply", game + " · " + row.patch.name, icon, "", row.patch.size, net::serializePatch(row.patch));
+    queueJob("reapply", game + " · " + row.patch.name, icon, "", row.patch.size, net::serializePatch(row.patch), 0, false,
+             row.patch.server);
     return;
   }
   if (op == PatchOp::Disable)

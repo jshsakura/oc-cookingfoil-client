@@ -125,12 +125,23 @@ void Application::pollRetro() {
 }
 void Application::loadRetroHome() {
   if (!session_ || !connected_) return;
-  const auto server = session_->server();
+  const auto servers = serversWith("");
+  if (servers.empty()) return;
+  const auto server = servers.front();
   const auto state = state_;
   const auto sd = sdRoot_;
-  runRetroJob("list", [this, server, state, sd]() -> std::function<void()> {
+  runRetroJob("list", [this, servers, server, state, sd]() -> std::function<void()> {
     net::RetroReply reply;
-    auto shelves = net::retroHome(server, state, reply, &stop_).value;
+    // The one in use says how the home went; the others' shelves join it.
+    std::vector<std::pair<std::string, std::vector<retro::Shelf>>> parts{
+        {server.url, net::retroHome(server, state, reply, &stop_).value}};
+    for (size_t i = 1; i < servers.size() && !reply.missing && !reply.error; ++i) {
+      net::RetroReply theirs;
+      auto shelves = net::retroHome(servers[i], state, theirs, &stop_).value;
+      if (theirs.error) logLine("retro: " + servers[i].url + " not read: " + theirs.error.message);
+      else if (!theirs.missing) parts.push_back({servers[i].url, std::move(shelves)});
+    }
+    auto shelves = retro::mergeShelves(std::move(parts));
     // An older server has no home: its systems, and the list straight away.
     std::vector<retro::System> systems;
     const bool noHome = reply.missing;
@@ -199,13 +210,13 @@ void Application::loadShelfMore(int row) {
     return;
   }
   shelfWant_.clear();
-  const auto server = session_->server();
+  const auto servers = serversWith("");
   const auto state = state_;
   const auto sd = sdRoot_;
   const int page = shelfPage_[system] + 1;
-  runRetroJob("list", [this, server, state, system, page, sd]() -> std::function<void()> {
+  runRetroJob("list", [this, servers, state, system, page, sd]() -> std::function<void()> {
     net::RetroReply reply;
-    auto result = net::retroGames(server, state, system, page, retro::Filter{}, reply, &stop_);
+    auto result = retroPages(servers, state, system, page, retro::Filter{}, reply);
     std::map<std::string, bool> onCard;
     for (const auto &g : result.value.games)
       for (const auto *path : {&g.romPath, &g.bezelPath})
@@ -234,24 +245,47 @@ void Application::loadShelfMore(int row) {
     };
   });
 }
+// Page `page` of a system from each server, as one: the first server says
+// how it went, another that fails or lacks the system is left out.
+Parsed<retro::Page> Application::retroPages(const std::vector<Server> &servers, const State &state,
+                                            const std::string &system, int page, const retro::Filter &filter,
+                                            net::RetroReply &reply) {
+  Parsed<retro::Page> merged;
+  if (servers.empty()) return merged;
+  std::vector<std::pair<std::string, std::vector<retro::Game>>> lists;
+  for (size_t i = 0; i < servers.size(); ++i) {
+    net::RetroReply theirs;
+    auto result = net::retroGames(servers[i], state, system, page, filter, theirs, &stop_);
+    if (i == 0) reply = theirs;
+    else if (theirs.error) logLine("retro: " + servers[i].url + " not read: " + theirs.error.message);
+    if (theirs.error || theirs.missing) continue;
+    merged.value.total += result.value.total;
+    merged.value.pageSize = std::max(merged.value.pageSize, result.value.pageSize);
+    lists.push_back({servers[i].url, std::move(result.value.games)});
+  }
+  merged.value.page = page;
+  merged.value.games = retro::mergeGames(std::move(lists), filter.sort);
+  return merged;
+}
 void Application::loadRetroPage(bool next) {
   if (!session_ || retroSystems_.empty()) return;
   if (next && int(retroGames_.size()) >= retroTotal_) return;
-  const auto server = session_->server();
+  const auto servers = serversWith("");
   const auto state = state_;
   const auto system = retroSystems_[retroSystem_].id;
   const int page = next ? retroPage_ + 1 : 1;
   const auto sd = sdRoot_;
   const auto filter = retroFilter();
-  runRetroJob("list", [this, server, state, system, page, sd, filter]() -> std::function<void()> {
+  runRetroJob("list", [this, servers, state, system, page, sd, filter]() -> std::function<void()> {
     net::RetroReply reply;
-    auto result = net::retroGames(server, state, system, page, filter, reply, &stop_);
+    auto result = retroPages(servers, state, system, page, filter, reply);
     // Which of these are already on the card, looked up here, off the UI thread.
     std::map<std::string, bool> onCard;
     for (const auto &g : result.value.games)
       for (const auto *path : {&g.romPath, &g.bezelPath})
         if (!path->empty()) onCard[*path] = fileExists(sd + "/" + *path);
-    return [this, result = std::move(result.value), reply, system, page, filter, onCard = std::move(onCard)]() mutable {
+    return [this, result = std::move(result.value), reply, system, page, filter, servers,
+            onCard = std::move(onCard)]() mutable {
       // Switched system, search or filter meanwhile: pollRetro asks for the right one.
       if (retroSystems_.empty() || retroSystems_[retroSystem_].id != system || retroFilter() != filter) {
         retroListSystem_.clear();
@@ -263,7 +297,9 @@ void Application::loadRetroPage(bool next) {
       retroListSystem_ = system;
       retroPage_ = page;
       retroTotal_ = result.total;
+      // From several servers the list so far is ordered again with the new page.
       for (auto &g : result.games) retroGames_.push_back(std::move(g));
+      if (servers.size() > 1) retro::orderGames(retroGames_, filter.sort);
       for (auto &[path, there] : onCard) retroOnCard_[path] = there;
     };
   });
@@ -314,13 +350,14 @@ void Application::requestRetroDetail(const std::string &id) {
 }
 void Application::startRetroDetail() {
   if (retroDetailWant_.empty() || screen_ != Screen::RetroDetail || !session_) return;
-  const auto server = session_->server();
+  const auto server = serverFor(retroDetailServer_);
   const auto state = state_;
   const auto sd = sdRoot_;
   const auto id = retroDetailWant_;
   runRetroJob("list", [this, server, state, sd, id]() -> std::function<void()> {
     net::RetroReply reply;
     auto detail = net::retroDetail(server, state, id, reply, &stop_).value;
+    detail.game.server = server.url;
     std::map<std::string, bool> onCard;
     for (const auto *path : {&detail.game.romPath, &detail.game.bezelPath})
       if (!path->empty()) onCard[*path] = fileExists(sd + "/" + *path);
@@ -373,7 +410,8 @@ bool Application::getRetroGame(const retro::Game &game, bool again) {
   if (!ready && !retroArchPending() && syncRetroArch(false))
     message(tr("RetroArch comes first, then the game: it needs RetroArch's files to start."));
   // Its turn comes in 다운로드's queue, behind whatever downloads now.
-  return queueJob("retro", game.name, game.iconUrl, game.bundleUrl, game.size, retro::serializeGame(game));
+  return queueJob("retro", game.name, game.iconUrl, game.bundleUrl, game.size, retro::serializeGame(game), 0, false,
+                  game.server);
 }
 bool Application::runRetroGame(const retro::Game &game, const Server &server) {
   if (game.bundleUrl.empty()) return false;

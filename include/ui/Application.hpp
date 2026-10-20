@@ -6,6 +6,7 @@
 #include "net/Api.hpp"
 #include "net/Dropbox.hpp"
 #include "net/HomebrewApi.hpp"
+#include "net/RetroApi.hpp"
 #include "ui/DropboxRows.hpp"
 #include "ui/Images.hpp"
 #include "ui/Painter.hpp"
@@ -483,7 +484,11 @@ private:
   const homebrew::App &homebrewAt(int index) const; // a homebrewRows() index
   std::string homebrewIcon(const homebrew::App &app); // the URL or the card icon's key
   std::string homebrewFile(const homebrew::App &app) const; // its file on the card, from the SD root
-  std::string homebrewEtag_, homebrewQuery_;
+  std::string homebrewQuery_;
+  // Each server's last homebrew list and its ETag, by url: one that answers
+  // 304 keeps its part. Only the homebrew worker touches them.
+  std::map<std::string, std::string> homebrewEtags_;
+  std::map<std::string, std::vector<homebrew::App>> homebrewLists_;
   // 홈브류's order: the server's (most recently updated) unless one is picked.
   SortMode homebrewSort_ = SortMode::Updated;
   bool homebrewSortAsk_ = false;
@@ -1402,6 +1407,11 @@ private:
   // already read) or "failed". incoming* is the network thread's.
   std::map<std::string, std::string> serverStatus_, incomingStatus_;
   bool incomingCatalog_ = false; // the network thread brought a list (incomingGroups_)
+  // What each server read now offers (/api/shop/info features), by url.
+  std::map<std::string, std::set<std::string>> serverFeatures_;
+  // The servers read now that offer `feature` (empty: all of them): the one
+  // in use first, then the others in config.json's order.
+  std::vector<Server> serversWith(const std::string &feature) const;
   std::string detailServer_;     // the server the detail being read is asked of
   // The session for a configured server (by url); session_ for none or one
   // not read now.
@@ -1567,6 +1577,9 @@ private:
   std::vector<retro::Variant> retroVariants_; // its versions, when it has more than one
   int retroVariant_ = 0;            // the one the cursor is on
   std::string retroDetailWant_;     // the version to load in full next
+  std::string retroDetailServer_;   // the server the open game (and its versions) come from
+  Parsed<retro::Page> retroPages(const std::vector<Server> &servers, const State &state, const std::string &system,
+                                 int page, const retro::Filter &filter, net::RetroReply &reply);
   // The versions picked to get (by id), and the full games loaded so far:
   // several versions sit side by side on the card under their own names.
   std::set<std::string> retroChecked_;
@@ -1678,7 +1691,8 @@ private:
   // A job other than an install goes in behind the rest (or `first`); false
   // when the same one already waits or runs.
   bool queueJob(const std::string &kind, const std::string &name, const std::string &icon, const std::string &url,
-                uint64_t size, const std::string &payload, int group = 0, bool first = false);
+                uint64_t size, const std::string &payload, int group = 0, bool first = false,
+                const std::string &server = ""); // the server it comes from; empty: the one in use
   void queuePatchJobs(const std::vector<UserPatch> &patches, int group);
   Error launchJob(const QueuedInstall &next);
   bool startShortcut(const QueuedInstall &next); // false when it cannot start
