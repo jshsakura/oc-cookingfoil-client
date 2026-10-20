@@ -1091,7 +1091,7 @@ void Application::poll() {
         return app.title && std::any_of(parts.begin(), parts.end(), [&](const Item &f) { return f.url == app.downloadUrl; });
       });
       if (titleApp) {
-        homebrewEtag_.clear();
+        homebrewEtags_.clear();
         loadHomebrew();
       }
       for (const auto &part : parts)
@@ -1236,6 +1236,11 @@ void Application::takeNetwork() {
   serverStatus_ = std::move(incomingStatus_);
   incomingStatus_.clear();
   features_ = session_->features();
+  serverFeatures_.clear();
+  serverFeatures_[session_->server().url] = features_;
+  for (const auto &other : others_)
+    if (const auto status = serverStatus_.find(other->server().url); status != serverStatus_.end() && status->second.empty())
+      serverFeatures_[other->server().url] = other->features();
   // Same server: keep decoded covers; only the access keys may have changed.
   images_->updateState(state_);
   if (screen_ == Screen::Detail)
@@ -1257,7 +1262,7 @@ void Application::takeNetwork() {
   offerResume();
   // 홈브류 is read ahead once the home is up, so it opens with its list.
   needHomebrewList();
-  if (!homebrewScanned_ && features_.count("homebrew")) scanHomebrewCard();
+  if (!homebrewScanned_ && !serversWith("homebrew").empty()) scanHomebrewCard();
 }
 const std::vector<size_t> &Application::libraryList() const {
   std::string key = std::to_string(catalogVersion_) + "|" + std::to_string(int(librarySort_)) + "|";
@@ -2772,14 +2777,15 @@ void Application::rebuildQueue() {
   }
 }
 bool Application::queueJob(const std::string &kind, const std::string &name, const std::string &icon,
-                           const std::string &url, uint64_t size, const std::string &payload, int group, bool first) {
+                           const std::string &url, uint64_t size, const std::string &payload, int group, bool first,
+                           const std::string &server) {
   Item file;
   file.url = url;
   file.name = name;
   file.icon = icon;
   file.size = size;
   history::Entry row;
-  row.install = {name, icon, "sd", {file}, serverInUse()};
+  row.install = {name, icon, "sd", {file}, server.empty() ? serverInUse() : server};
   row.kind = kind;
   row.payload = payload;
   row.outcome = history::Outcome::Queued;
@@ -2824,7 +2830,8 @@ void Application::queuePatchJobs(const std::vector<UserPatch> &patches, int grou
     // "Game · patch name" and the game's cover, as the 패치 screen shows them.
     std::string game, icon;
     patchGame(patch, game, icon);
-    queueJob("patch", game + " · " + patch.name, icon, "", patch.size, net::serializePatch(patch), group);
+    queueJob("patch", game + " · " + patch.name, icon, "", patch.size, net::serializePatch(patch), group, false,
+             patch.server);
   }
 }
 bool Application::downloadRunning() const {
@@ -2930,6 +2937,19 @@ Server Application::serverFor(const std::string &url) const {
     for (const auto &server : config_.servers)
       if (server.url == url) return server;
   return session_ ? session_->server() : Server{};
+}
+std::vector<Server> Application::serversWith(const std::string &feature) const {
+  std::vector<Server> servers;
+  if (!session_) return servers;
+  // No feature: every server read now.
+  const auto offers = [&](const std::string &url) {
+    const auto found = serverFeatures_.find(url);
+    return found != serverFeatures_.end() && (feature.empty() || found->second.count(feature));
+  };
+  if (offers(session_->server().url)) servers.push_back(session_->server());
+  for (const auto &other : others_)
+    if (offers(other->server().url)) servers.push_back(other->server());
+  return servers;
 }
 net::Session *Application::sessionFor(const std::string &url) const {
   for (const auto &other : others_)

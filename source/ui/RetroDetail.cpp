@@ -47,6 +47,7 @@ void Application::openRetroDetail(const retro::Game &game) {
   screenshot_ = 0;
   retroPart_ = ButtonPart; // on the button, as a shop game's page opens
   retroDetailLoading_ = true;
+  retroDetailServer_ = game.server;
   requestRetroDetail(game.id);
 }
 // 2 while it downloads (percent filled in), 1 while it waits its turn, else 0.
@@ -150,13 +151,14 @@ void Application::getRetroChecked() {
     queueAll();
     return;
   }
-  const auto server = session_->server();
+  const auto server = serverFor(retroDetailServer_); // its versions are on the game's server
   const auto state = state_;
   if (!runRetroJob("list", [this, server, state, missing, queueAll]() -> std::function<void()> {
         std::vector<retro::Game> games;
         for (const auto &id : missing) {
           net::RetroReply reply;
           auto detail = net::retroDetail(server, state, id, reply, &stop_).value;
+          detail.game.server = server.url;
           if (!reply.error && !detail.game.id.empty()) games.push_back(std::move(detail.game));
         }
         return [this, games = std::move(games), queueAll]() mutable {

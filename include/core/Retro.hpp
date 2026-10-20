@@ -38,6 +38,10 @@ struct Game {
   enum class Bezel { None, System, Game } bezel = Bezel::None;
   // Its RetroAchievements match; count 0 when it has none.
   achievements::Summary achievements;
+  // The configured server it came from (its url), and the others holding
+  // the same game (same id): never serialized, the queue keeps its own.
+  std::string server;
+  std::vector<std::string> alsoOn;
 };
 // One version of a game, as its detail lists them: picking one means its id.
 struct Variant {
@@ -85,6 +89,18 @@ struct Shelf {
   System system;
   std::vector<Game> games;
 };
+// Several servers' replies as one; each list in the servers' order, as
+// {server url, its part}. A game on several (same id) is listed once from
+// the first, naming the others.
+// Pages of one system: merged in the filter's order (`sort` as Filter::sort).
+std::vector<Game> mergeGames(std::vector<std::pair<std::string, std::vector<Game>>> lists, const std::string &sort);
+// Games already naming their servers, as one list again (a later page of
+// several servers joining): each id once, in the filter's order.
+void orderGames(std::vector<Game> &games, const std::string &sort);
+// The home: a system's shelves join in the order systems first appear, its
+// games best rated first with one card per original title, and its count
+// the sum of the servers' (an upper bound when they share games).
+std::vector<Shelf> mergeShelves(std::vector<std::pair<std::string, std::vector<Shelf>>> lists);
 struct PackFile {
   std::string path, sha256, url;
   uint64_t size = 0;

@@ -37,6 +37,11 @@ struct UserPatch {
   std::string iconUrl, bannerUrl;
   std::vector<std::string> screenshots;
 };
+// Several servers' patch lists as one, by patch id (what the records on the
+// card know it by): each names its server, the same build (hash) on several
+// is listed once from the first, and of two builds the later is kept.
+// `lists` in the servers' order, as {server url, its patches}.
+std::vector<UserPatch> mergePatchServers(std::vector<std::pair<std::string, std::vector<UserPatch>>> lists);
 // Whether a patch for titleId may write this SD-root relative path. Only the
 // game's own contents folder, exefs patches and FPSLocker patches qualify.
 bool patchPathAllowed(const std::string &titleId, const std::string &path);

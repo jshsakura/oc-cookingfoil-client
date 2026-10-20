@@ -4,6 +4,7 @@
 #include "core/SaveBackups.hpp"
 #include "core/Json.hpp"
 #include <algorithm>
+#include <set>
 #include <filesystem>
 namespace foil::shopsaves {
 namespace {
@@ -128,5 +129,15 @@ std::string gameName(const ShopSave &save, const std::string &languageCode) {
   for (const auto &name : save.gameNames)
     if (!name.empty()) return name;
   return save.titleId;
+}
+std::vector<ShopSave> mergeServers(std::vector<std::pair<std::string, std::vector<ShopSave>>> lists) {
+  std::vector<ShopSave> merged;
+  std::set<std::string> hashes;
+  for (auto &[server, saves] : lists)
+    for (auto &save : saves) {
+      save.server = server;
+      if (save.hash.empty() || hashes.insert(save.hash).second) merged.push_back(std::move(save));
+    }
+  return merged;
 }
 } // namespace foil::shopsaves

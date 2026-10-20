@@ -20,31 +20,65 @@ bool fileExists(const std::string &path) {
 // The list, asked again with its ETag each time 홈브류 shows after a refresh.
 void Application::loadHomebrew() {
   if (!session_ || !connected_ || homebrewWorker_.joinable()) return;
-  const auto server = session_->server();
+  struct Source {
+    Server server;
+    bool titles;
+  };
+  std::vector<Source> sources;
+  for (const auto &server : serversWith("homebrew"))
+    sources.push_back({server, serverFeatures_[server.url].count("homebrew-titles") > 0});
   const auto state = state_;
-  auto etag = homebrewEtag_;
-  const bool titles = features_.count("homebrew-titles") > 0;
-  homebrewWorker_ = std::thread([this, server, state, etag, titles]() mutable {
+  homebrewWorker_ = std::thread([this, sources, state]() mutable {
     const platform::OnCore off(platform::NetworkCore); // the drawing core keeps the screen moving
     std::vector<homebrew::App> apps;
-    bool unchanged = false;
+    bool unchanged = true;
     Error error;
-    if (!guarded("homebrew", [&] { net::homebrewList(server, state, etag, apps, unchanged, error, &stop_, titles); }))
+    if (!guarded("homebrew", [&] {
+          // The one in use decides whether the list failed; another server
+          // that does not answer keeps its part from before.
+          std::vector<homebrew::ServerApps> lists;
+          for (size_t i = 0; i < sources.size(); ++i) {
+            const auto &[server, titles] = sources[i];
+            auto etag = homebrewEtags_[server.url];
+            std::vector<homebrew::App> read;
+            bool same = false;
+            Error failed;
+            net::homebrewList(server, state, etag, read, same, failed, &stop_, titles);
+            if (failed && i == 0 && server.url == serverInUse()) {
+              error = failed;
+              return;
+            }
+            if (failed) logLine("homebrew: " + server.url + " not read: " + failed.message);
+            else if (!same) {
+              homebrewLists_[server.url] = std::move(read);
+              homebrewEtags_[server.url] = etag;
+              unchanged = false;
+            }
+            if (const auto kept = homebrewLists_.find(server.url); kept != homebrewLists_.end())
+              lists.push_back({server.url, kept->second});
+          }
+          // A server no longer read drops its part.
+          for (auto at = homebrewLists_.begin(); at != homebrewLists_.end();)
+            if (std::none_of(sources.begin(), sources.end(), [&](const Source &s) { return s.server.url == at->first; })) {
+              at = homebrewLists_.erase(at);
+              unchanged = false;
+            } else
+              ++at;
+          if (!unchanged) apps = homebrew::mergeServers(std::move(lists));
+        }))
       error.message = tr("Something went wrong reading the homebrew list.");
-    homebrewFinish_ = [this, apps = std::move(apps), unchanged, error, etag, shown = homebrewLoaded_ && !homebrew_.empty()]() mutable {
+    homebrewFinish_ = [this, apps = std::move(apps), unchanged, error, shown = homebrewLoaded_ && !homebrew_.empty()]() mutable {
       homebrewLoaded_ = true;
       // A look again that failed keeps the list it had: said in the log only.
       if (error && shown) {
         logLine("homebrew: list kept, " + error.message);
         error = {};
         unchanged = true;
-        etag = homebrewEtag_;
       }
       homebrewError_ = error;
       // A row in 다운로드 asked for an app's page before the list was here.
       const auto wanted = std::exchange(homebrewOpenId_, std::string());
       if (error) return;
-      homebrewEtag_ = etag;
       if (!unchanged) {
         // The cursor (and an open page) stays on the same app when the new
         // list puts it somewhere else.
@@ -335,7 +369,8 @@ bool Application::getHomebrew(const homebrew::App &app) {
     alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(bytes)});
     return false;
   }
-  return queueJob("homebrew", app.name, app.iconUrl, app.downloadUrl, bytes ? bytes : app.size, homebrew::serialize(app));
+  return queueJob("homebrew", app.name, app.iconUrl, app.downloadUrl, bytes ? bytes : app.size, homebrew::serialize(app), 0,
+                  false, app.server);
 }
 bool Application::runHomebrew(const homebrew::App &app, const Server &server) {
   if (app.cardOnly) return false;

@@ -86,7 +86,20 @@ struct App {
   std::vector<std::string> languages;
   std::string requiredFirmware, releaseNotes, license, updatedAt;
   int stars = -1;
+  // The configured server it came from (its url), and the others holding
+  // the same build (same hash): never serialized, the queue keeps its own.
+  std::string server;
+  std::vector<std::string> alsoOn;
 };
+// Several servers' lists as one, by app id (the ledger's key): each app
+// names its server, the same build on several is listed once from the
+// first naming the others, and of two different builds the newer release
+// is kept. `lists` in the servers' order.
+struct ServerApps {
+  std::string server;
+  std::vector<App> apps;
+};
+std::vector<App> mergeServers(std::vector<ServerApps> lists);
 // Release notes as plain text to read on the console: headings, emphasis,
 // code marks and HTML tags go, links keep their words, images go, list items
 // become "• ", and runs of blank lines become one.

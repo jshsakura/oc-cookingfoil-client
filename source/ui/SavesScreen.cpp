@@ -192,12 +192,25 @@ void Application::savesScreen() {
 }
 void Application::loadShopSaves() {
   if (!session_ || !connected_ || shopSavesWorker_.joinable()) return;
-  const auto server = session_->server();
+  const auto servers = serversWith("");
+  if (servers.empty()) return;
   const auto state = state_;
   shopSavesError_ = {};
-  shopSavesWorker_ = std::thread([this, server, state] {
+  shopSavesWorker_ = std::thread([this, servers, state] {
     net::ShopSavesReply reply;
-    if (!guarded("shop saves", [&] { incomingShopSaves_ = net::shopSaves(server, state, reply, &stop_).value; }))
+    if (!guarded("shop saves", [&] {
+          // The one in use says whether the list failed; another server that
+          // does not answer is left out.
+          std::vector<std::pair<std::string, std::vector<shopsaves::ShopSave>>> lists;
+          for (size_t i = 0; i < servers.size(); ++i) {
+            net::ShopSavesReply theirs;
+            auto saves = net::shopSaves(servers[i], state, theirs, &stop_).value;
+            if (i == 0) reply = theirs;
+            else if (theirs.error) logLine("shop saves: " + servers[i].url + " not read: " + theirs.error.message);
+            if (!theirs.error) lists.push_back({servers[i].url, std::move(saves)});
+          }
+          incomingShopSaves_ = shopsaves::mergeServers(std::move(lists));
+        }))
       reply.error.message = tr("Could not load the server saves.");
     incomingShopSavesError_ = reply.error;
     incomingShopSavesMissing_ = reply.missing;
@@ -439,7 +452,7 @@ void Application::applyShopSave() {
   job.sd = sdRoot_;
   job.copied = &saveCopied_;
   const auto save = *applying_;
-  const auto server = session_ ? session_->server() : Server{};
+  const auto server = session_ ? serverFor(applying_->server) : Server{};
   const auto state = state_;
   saveCopied_ = 0;
   saveRestoring_ = true;
