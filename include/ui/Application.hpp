@@ -1702,7 +1702,13 @@ private:
   void wakeHistoryWriter();
   // 다운로드's tabs: 0 진행 중, 1 완료, 2 실패 (and cancelled).
   int downloadsTab_ = 0, downloadsRow_ = 0;
-  std::vector<int> downloadsList() const; // history_ indices in the tab
+  std::vector<int> downloadsList() const;
+  // 다운로드's ended rows are read a page at a time; the next page comes
+  // as the cursor nears the end of what is read.
+  static constexpr size_t HistoryPage = 60;
+  Job historyPageJob_;
+  void readOlderHistory();
+  void clearHistoryTab(history::Outcome outcome); // history_ indices in the tab
   void downloadsAction(Action action);
   void downloadsHistory();
   void forgetInstall();

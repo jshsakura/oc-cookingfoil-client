@@ -104,6 +104,7 @@ Application::~Application() {
   raJob_.join();
   raListJob_.join();
   raGamesJob_.join();
+  historyPageJob_.join(); // reads and clears the store, which closes after
   flushHistory();
   if (storageWorker_.joinable())
     storageWorker_.join();
@@ -945,6 +946,7 @@ void Application::poll() {
   pollBackupSummary();
   pollDropbox();
   raJob_.poll();
+  historyPageJob_.poll();
   raListJob_.poll();
   raGamesJob_.poll();
   adminJob_.poll();
@@ -2696,7 +2698,7 @@ Error Application::enqueueInstall(const std::vector<Item> &files, const std::str
     row.outcome = history::Outcome::Queued;
     row.group = group;
     row.at = int64_t(std::time(nullptr));
-    ids.push_back(history::add(history_, std::move(row)));
+    ids.push_back(history::add(history_, std::move(row), SIZE_MAX, store_.topId()));
   }
   // Its patches come right after its files, in the same pick: a game that
   // does not install takes them off the queue with the rest.
@@ -2753,7 +2755,7 @@ bool Application::queueJob(const std::string &kind, const std::string &name, con
                                          (e.outcome == history::Outcome::Failed || e.outcome == history::Outcome::Cancelled);
                                 }),
                  history_.end());
-  const auto id = history::add(history_, std::move(row));
+  const auto id = history::add(history_, std::move(row), SIZE_MAX, store_.topId());
   if (first)
     history::takeFirstTurn(history_, id);
   saveHistory();
@@ -2919,7 +2921,7 @@ Error Application::launchQueued() {
     history::Entry entry;
     entry.install = {next.name, next.icon, next.target, files};
     entry.at = int64_t(std::time(nullptr));
-    history::add(history_, std::move(entry));
+    history::add(history_, std::move(entry), SIZE_MAX, store_.topId());
   }
   saveHistory();
   observedInstall_ = install::Status::Running;
@@ -3026,7 +3028,7 @@ void Application::openDownloads(const std::string &sd) {
     history_.clear();
     return;
   }
-  history_ = store_.load();
+  history_ = store_.load(HistoryPage);
   installer_.loadResumePoints(store_.resumePoints());
   checkResumePoints();
   const auto old = sd + "/switch/cookingfoil/downloads.json";

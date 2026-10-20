@@ -26,8 +26,9 @@ std::vector<Entry> parse(const std::string &json);
 std::string serialize(const std::vector<Entry> &entries);
 // Puts `entry` first with a fresh id. With a `cap`, the oldest finished
 // ones past it go (queued and running ones always stay); by default the
-// list keeps everything, one row a file (see end()).
-uint64_t add(std::vector<Entry> &entries, Entry entry, size_t cap = SIZE_MAX);
+// list keeps everything, one row a file (see end()). The id goes above
+// `floor` too: the highest one in rows kept but not read (DownloadStore).
+uint64_t add(std::vector<Entry> &entries, Entry entry, size_t cap = SIZE_MAX, uint64_t floor = 0);
 // The row `id` ends with `outcome` and moves to the top; older finished rows
 // of the same download go, so a file never shows twice. False when no such row.
 bool end(std::vector<Entry> &entries, uint64_t id, Outcome outcome, const std::string &error, int64_t at);
