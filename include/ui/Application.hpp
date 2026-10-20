@@ -517,6 +517,7 @@ private:
     std::vector<admin::Field> fields;
     int row = 0;
     Error error;
+    std::string confirm; // a change waiting on 확인: hiding the item from every list
   };
   std::optional<AdminTarget> adminTarget() const;
   bool adminFocused() const;

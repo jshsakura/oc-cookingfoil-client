@@ -104,6 +104,11 @@ void Application::adminEditAction(Action a) {
   auto &edit = adminEdit_;
   const int count = int(edit.fields.size());
   edit.row = std::clamp(edit.row, 0, std::max(0, count - 1));
+  if (!edit.confirm.empty()) {
+    if (a == Action::Back) edit.confirm.clear();
+    else if (a == Action::Accept && settled()) sendAdminChange(std::exchange(edit.confirm, {}));
+    return;
+  }
   if (a == Action::Back) {
     edit.open = false;
     // What changed shows in the lists and on this page: they are read again.
@@ -114,13 +119,34 @@ void Application::adminEditAction(Action a) {
   if (a == Action::Down) edit.row = std::min(count - 1, edit.row + 1);
   if (edit.busy || !count || !settled()) return;
   const auto &field = edit.fields[edit.row];
-  if (a == Action::Accept)
+  // Hiding takes the item out of every list, this console's too: it asks first.
+  if (a == Action::Accept && field.type == admin::Type::Toggle && field.key == "enabled" && field.on) {
+    edit.confirm = admin::toggled(field);
+    popupAt_ = SDL_GetTicks();
+  } else if (a == Action::Accept)
     sendAdminChange(field.type == admin::Type::Toggle ? admin::toggled(field) : admin::stepped(field, 1));
   else if (field.type == admin::Type::Choice && (a == Action::Left || a == Action::Right))
     sendAdminChange(admin::stepped(field, a == Action::Right ? 1 : -1));
 }
 void Application::adminEditDialog() {
   const auto &edit = adminEdit_;
+  if (!edit.confirm.empty()) {
+    constexpr float Width = 620, Text = Width - 64;
+    const auto &name = edit.target.name;
+    const std::string ask = tr("Hide it from the lists?");
+    const std::string note = tr("It disappears from every console's list, this one too. Turn it back on in the web dashboard.");
+    const float nameH = paint_.fonts.lineCount(name, 22, Text, 2, true) * 22 * 1.3f;
+    const float askH = paint_.fonts.lineCount(ask, 19, Text, 2) * 19 * 1.3f;
+    const float noteH = paint_.fonts.lineCount(note, 18, Text, 3) * 18 * 1.3f;
+    const auto body = modal(Width, 22 + nameH + 10 + askH + 10 + noteH + 20, tr("Admin edit"), tr("Cancel"), "", tr("Hide|admin"), 45);
+    float y = body.y + 22;
+    paint_.fonts.wrapped(name, body.x + 32, y, 22, Ink, Text, 2, true);
+    y += nameH + 10;
+    paint_.fonts.wrapped(ask, body.x + 32, y, 19, Ink, Text, 2);
+    y += askH + 10;
+    paint_.fonts.wrapped(note, body.x + 32, y, 18, Secondary, Text, 3);
+    return;
+  }
   constexpr float Row = 58, Gap = 8;
   const int count = int(edit.fields.size());
   const float listH = count ? count * (Row + Gap) - Gap : Row;
