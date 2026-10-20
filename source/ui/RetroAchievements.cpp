@@ -310,23 +310,15 @@ void Application::raDialog() {
     paint_.fonts.wrapped(tr("This server has no RetroAchievements key, so games' achievement lists do not show."), x,
                          noteY, 16, Secondary, Text, 2);
 }
-// The game page's card, under its facts: how many achievements and points,
-// X for the list. A game matched by its title says the patch may not count.
-int Application::raCard(int y) {
-  const auto &summary = retroMeta_.achievements;
-  if (!summary.raGameId) return y;
-  constexpr float X = 40, W = 750;
-  const float height = summary.byTitle ? 92 : 64;
-  hit(X, y, W, height, [this] { openRaList(); });
-  paint_.rect(X, y, W, height, Surface, 16);
-  paint_.icon(28, X + 20, y + 20, Ink, 24);
-  paint_.fonts.middle(trf("{0} achievements · {1} points", {std::to_string(summary.count), std::to_string(summary.points)}),
-                      X + 56, y + 32, 19, Ink, true, W - 260);
-  paint_.keyChip("X", tr("See achievements"), X + W - 20, y + 32);
-  if (summary.byTitle)
-    paint_.fonts.middle(tr("Found by title, so a ROM changed from the original, such as a translation, may not earn them."), X + 56, y + 66, 16, Pending,
-                        false, W - 80);
-  return int(y + height + 16);
+// The game page's way to its achievements, at the band's top right as the
+// photo viewer's 닫기 is: ZL and 업적 보기. The count is the 업적 pill under
+// the name. None when RetroAchievements has no match.
+float Application::raChip(float right) {
+  if (!retroMeta_.achievements.raGameId) return right;
+  constexpr float Mid = 25;
+  const float w = paint_.keyChip("ZL", tr("See achievements"), right, Mid);
+  hit(right - w - 8, Mid - 22, w + 16, 44, [this] { openRaList(); });
+  return right - w;
 }
 void Application::openRaList() {
   if (!retroMeta_.achievements.raGameId || !session_) return;
@@ -357,7 +349,7 @@ void Application::raListFetch() {
 }
 void Application::raListAction(Action a) {
   const int last = std::max(0, int(raList_.list.size()) - 1);
-  if (a == Action::Back || a == Action::Search) raListOpen_ = false;
+  if (a == Action::Back || a == Action::Extra) raListOpen_ = false;
   if (a == Action::Up) raListRow_ = std::max(0, raListRow_ - 1);
   if (a == Action::Down) raListRow_ = std::min(last, raListRow_ + 1);
 }
@@ -367,7 +359,9 @@ void Application::raListDialog() {
   raListFetch(); // a fetch for the game before finishes first
   const bool loading = raListJob_.busy() || raListAsked_ != raListGame_;
   const auto &list = raList_.list;
-  const auto body = modal(900, 24 + 34 + Shown * (Row + Gap) + 8, retroPick_.name, tr("Close"), "", NoAccept, 31);
+  // Found by title only: a changed ROM (a translation) may not earn them.
+  const bool byTitle = retroMeta_.achievements.byTitle;
+  const auto body = modal(900, 24 + 34 + (byTitle ? 30 : 0) + Shown * (Row + Gap) + 8, retroPick_.name, tr("Close"), "", NoAccept, 31);
   const float x = body.x + 32, w = body.w - 64;
   float y = body.y + 24;
   // Whose progress, or how to get it shown.
@@ -379,6 +373,11 @@ void Application::raListDialog() {
                                                : std::string(tr("Sign in or register the id to see your progress."));
   paint_.fonts.middle(head, x, y + 12, 18, raList_.hasUser ? Ink : Secondary, true, w);
   y += 34;
+  if (byTitle) {
+    paint_.fonts.middle(tr("Found by title, so a ROM changed from the original, such as a translation, may not earn them."), x, y + 8,
+                        16, Pending, false, w);
+    y += 30;
+  }
   if (list.empty()) {
     if (loading)
       for (int n = 0; n < 3; ++n) paint_.skeleton(x, y + n * (Row + Gap), w, Row, 12);

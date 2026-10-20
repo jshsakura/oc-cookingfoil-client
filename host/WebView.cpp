@@ -33,17 +33,17 @@ p{color:#5b5b63;margin:10px 0 0}
 <div class="pad">
 <button data-k="UP">↑</button><button data-k="DOWN">↓</button><button data-k="LEFT">←</button><button data-k="RIGHT">→</button>
 <button class="alt" data-k="A">A</button><button data-k="B">B</button><button data-k="X">X</button><button data-k="Y">Y</button>
-<button data-k="L">L</button><button data-k="R">R</button><button data-k="ZR">ZR</button>
+<button data-k="L">L</button><button data-k="R">R</button><button data-k="ZL">ZL</button><button data-k="ZR">ZR</button>
 <button data-k="SUP">R스틱 ↑</button><button data-k="SDOWN">R스틱 ↓</button><button data-k="PLUS">+</button>
 </div>
-<p>화면을 누르면 터치, 끌면 스크롤입니다. 키보드는 방향키, Enter=A, Esc=B, X, Y, L, R, Z=ZR, PageUp/PageDown=R스틱입니다.</p>
+<p>화면을 누르면 터치, 끌면 스크롤입니다. 키보드는 방향키, Enter=A, Esc=B, X, Y, L, R, Q=ZL, Z=ZR, PageUp/PageDown=R스틱입니다.</p>
 </main><script>
 const img=document.getElementById('screen');
 const send=(path)=>fetch(path).catch(()=>{});
 const key=(k)=>send('/key?k='+k);
 document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>key(b.dataset.k));
 const keys={ArrowUp:'UP',ArrowDown:'DOWN',ArrowLeft:'LEFT',ArrowRight:'RIGHT',Enter:'A',Escape:'B',Backspace:'B',
-  x:'X',y:'Y',l:'L',r:'R',z:'ZR',PageUp:'SUP',PageDown:'SDOWN','+':'PLUS'};
+  x:'X',y:'Y',l:'L',r:'R',q:'ZL',z:'ZR',PageUp:'SUP',PageDown:'SDOWN','+':'PLUS'};
 addEventListener('keydown',e=>{const k=keys[e.key];if(k){e.preventDefault();key(k);}});
 let start=null,last=null,moved=false,trail=[];
 const at=(e)=>{const r=img.getBoundingClientRect();return[(e.clientX-r.left)*1280/r.width,(e.clientY-r.top)*720/r.height];};
@@ -175,7 +175,7 @@ void input(ui::Application &app, const std::string &k) {
   static const std::map<std::string, Action> actions = {
       {"UP", Action::Up},       {"DOWN", Action::Down},     {"LEFT", Action::Left},
       {"RIGHT", Action::Right}, {"A", Action::Accept},      {"B", Action::Back},
-      {"L", Action::Previous},  {"R", Action::Next},        {"ZR", Action::Preview},
+      {"L", Action::Previous},  {"R", Action::Next},        {"ZR", Action::Preview},  {"ZL", Action::Extra},
   };
   // The page's R-stick buttons lean the stick for a moment.
   if (k == "SUP" || k == "SDOWN")

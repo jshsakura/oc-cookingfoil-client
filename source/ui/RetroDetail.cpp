@@ -170,8 +170,8 @@ void Application::retroDetailAction(Action a) {
     raListAction(a);
     return;
   }
-  // X: the game's achievements, when RetroAchievements has it.
-  if (a == Action::Search) {
+  // ZL: the game's achievements, when RetroAchievements has it.
+  if (a == Action::Extra) {
     openRaList();
     return;
   }
@@ -308,7 +308,7 @@ void Application::retroDetail() {
   images_->draw(banner, 0, 0, 1280, 212, 0, true);
   const auto back = screenLabel(previous_);
   paint_.icon(7, 32, 14, Surface, 20);
-  adminChip();
+  raChip(adminChip() - 10);
   paint_.fonts.middle(back, 56, 24, 17, Surface);
   hit(24, 4, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
@@ -353,7 +353,6 @@ void Application::retroDetail() {
     y += Height + 16;
   }
   y = int(retroInfoCard(float(y))) + 22;
-  y = raCard(y);
   y = screenshotStrip(y);
   descriptionHeight_ = std::max(0, y + offset - (BandBottom - Pad));
   {

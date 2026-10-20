@@ -1,0 +1,3 @@
+{"id":"fx-retro-1","name":"Lantern Quest","system":"snes","file":"Lantern Quest (Korea).sfc","size":2097152,"core":"snes9x",
+"description":"등불 하나로 밤길을 건너는 액션 RPG입니다.","publisher":"Butter Works","developer":"Butter Works","releaseDate":19950714,"numberOfPlayers":1,"genres":["RPG"],
+"achievements":{"raGameId":42,"count":40,"points":400,"matchedBy":"hash"}}

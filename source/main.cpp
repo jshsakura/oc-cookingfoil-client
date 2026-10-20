@@ -251,6 +251,8 @@ int main(int argc, char **argv) {
           ui.action(Action::Next);
         if (keys & HidNpadButton_ZR)
           ui.action(Action::Preview);
+        if (keys & HidNpadButton_ZL)
+          ui.action(Action::Extra);
         if (keys & HidNpadButton_Y)
           ui.action(ui.current() == foil::ui::Screen::Settings ? Action::Reload
                                                                : Action::Queue);
