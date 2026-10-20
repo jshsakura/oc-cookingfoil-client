@@ -31,6 +31,7 @@ void Application::openRetroDetail(const retro::Game &game) {
   headerFocus_.clear();
   unglide();
   screen_ = Screen::RetroDetail;
+  adminFocus_ = false;
   retroPick_ = game;
   retroVariants_.clear();
   retroVariant_ = 0;
@@ -176,6 +177,7 @@ void Application::retroDetailAction(Action a) {
   }
   const int rows = int(retroVersionList().size());
   retroPart_ = std::min(retroPart_, rows); // the button stays the button as versions arrive
+  if (adminChipAction(a, retroPart_ == 0)) return;
   if (a == Action::Back) {
     screen_ = previous_ == Screen::RetroDetail ? Screen::Retro : previous_;
     unglide();
@@ -306,6 +308,7 @@ void Application::retroDetail() {
   images_->draw(banner, 0, 0, 1280, 212, 0, true);
   const auto back = screenLabel(previous_);
   paint_.icon(7, 32, 14, Surface, 20);
+  adminChip();
   paint_.fonts.middle(back, 56, 24, 17, Surface);
   hit(24, 4, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
@@ -368,7 +371,7 @@ void Application::retroDetail() {
 void Application::retroDetailPanel() {
   const auto versions = retroVersionList();
   const int rows = int(versions.size());
-  const bool panelFocus = !descriptionFocus_;
+  const bool panelFocus = !descriptionFocus_ && !adminFocused();
   paint_.rect(818, 172, 430, 484, Surface, 20);
   const std::string head = tr("Versions");
   paint_.fonts.middle(head, 840, 194, 22, Ink, true);

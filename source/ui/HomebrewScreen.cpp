@@ -629,6 +629,7 @@ void Application::homebrewAction(Action a) {
     // 삭제), then the button below them (-1).
     const int extras = picked ? int(homebrewExtraKinds(*picked).size()) : 0;
     homebrewAskRow_ = std::clamp(homebrewAskRow_, -1, extras - 1);
+    if (adminChipAction(a, extras == 0 || homebrewAskRow_ == 0)) return;
     if (a == Action::Back) {
       homebrewAsk_ = false;
       if (homebrewReturn_ != Screen::Homebrew) screen(std::exchange(homebrewReturn_, Screen::Homebrew));
@@ -693,6 +694,7 @@ void Application::homebrewAction(Action a) {
     descriptionFocus_ = false;
     unglide();
     homebrewAsk_ = true;
+    adminFocus_ = false;
     homebrewAskRow_ = homebrewStatus(*picked) == homebrew::Status::Installed ? 0 : -1;
     homebrewExtras_ = 0;
     homebrewSaveAsk_ = false;

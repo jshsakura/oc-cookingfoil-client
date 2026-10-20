@@ -23,6 +23,7 @@
 #include "core/Patches.hpp"
 #include "core/CardPatches.hpp"
 #include "core/I18n.hpp"
+#include "core/AdminEdit.hpp"
 #include <array>
 #include <condition_variable>
 #include <deque>
@@ -231,6 +232,11 @@ public:
     deviceFixture_ = true;
   }
   void previewFeatures(std::set<std::string> features) { features_ = std::move(features); }
+  // An admin console without a server: these fields, changed in place.
+  void previewAdminEdit(std::vector<admin::Field> fields) {
+    features_.insert("admin-edit");
+    adminPreview_ = std::move(fields);
+  }
   bool askingSelfShortcut() const { return selfShortcutAsk_; }
   bool askingShortcutRemoval() const { return shortcutRemoveAsk_; }
   bool appPopupOpen() const { return homebrewAsk_; }
@@ -500,6 +506,30 @@ private:
   void homebrewSortAction(Action a);
   void homebrewSortDialog();
   void homebrewRemoveDialog();
+  // 관리자 편집 (feature admin-edit): the page's item, its chip on the dark
+  // band and the editor it opens (AdminEditor.cpp).
+  struct AdminTarget {
+    std::string kind, id, name; // kind: homebrew, retro or game
+  };
+  struct AdminEdit {
+    bool open = false, busy = false, changed = false;
+    AdminTarget target;
+    std::vector<admin::Field> fields;
+    int row = 0;
+    Error error;
+  };
+  std::optional<AdminTarget> adminTarget() const;
+  bool adminFocused() const;
+  bool adminChipAction(Action a, bool atTop);
+  void adminChip();
+  void openAdminEdit();
+  void sendAdminChange(const std::string &body);
+  void adminEditAction(Action a);
+  void adminEditDialog();
+  AdminEdit adminEdit_;
+  bool adminFocus_ = false;
+  Job adminJob_;
+  std::optional<std::vector<admin::Field>> adminPreview_;
   // HOME Menu shortcuts (platform/Shortcut): the ids the console has, as the
   // last card scan found them and as made or removed since.
   std::set<uint64_t> shortcuts_;
