@@ -183,7 +183,21 @@ void Application::raAccountRow(float y, bool loading) {
                              : raGames_.hasUser ? trf("{0} points · {1} games with achievements",
                                                       {std::to_string(raGames_.userPoints), std::to_string(raGames_.list.size())})
                                                 : std::string(tr("Signed in on this console."));
-  paint_.fonts.text(status, 360, y + 46, 16, Secondary, false, 640);
+  // retroarch.cfg holds one account for the console, the server its own
+  // registered id: when they differ the player is told which one earns.
+  const auto &registered = raAccount_.username;
+  // RetroAchievements ids are not case sensitive.
+  const bool differ = !registered.empty() && (registered.size() != raSignedIn_.size() ||
+                                              !std::equal(registered.begin(), registered.end(), raSignedIn_.begin(),
+                                                          [](unsigned char a, unsigned char b) {
+                                                            return std::tolower(a) == std::tolower(b);
+                                                          }));
+  if (differ)
+    paint_.fonts.text(trf("The server has {0} registered; achievements go to {1}, signed in on this console.",
+                          {registered, raSignedIn_}),
+                      360, y + 46, 16, Pending, true, 640);
+  else
+    paint_.fonts.text(status, 360, y + 46, 16, Secondary, false, 640);
   const std::string out = tr("Sign out|achievements");
   const float bw = paint_.fonts.measure(out, 17, true) + 36;
   paint_.rect(1230 - bw, y + 22, bw, 40, focused ? Butter : Ground, 12);

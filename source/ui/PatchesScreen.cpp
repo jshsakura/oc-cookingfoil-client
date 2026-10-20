@@ -852,6 +852,7 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
     if (focused) marquee(row.patch.name, x + 20, y + 12, 18, nameW);
     else paint_.fonts.text(row.patch.name, x + 20, y + 12, 18, Ink, true, nameW);
     float at = x + 20;
+    if (row.patch.verified) at += paint_.verifiedPill(at, y + 40) + 6;
     for (const auto &kind : row.patch.kinds) {
       const std::string label = patchKindLabel(kind);
       if (at + paint_.fonts.measure(label, 15, true) + 18 > x + 20 + nameW) break;
@@ -865,6 +866,7 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
       meta += (meta.empty() ? "" : " · ") + std::string(tr("Partly covered by another patch"));
     if (const char *note = healthNote(patchHealth_, row))
       meta += (meta.empty() ? "" : " · ") + std::string(note);
+    if (const auto votes = voteSummary(row.patch.votes); !votes.empty()) meta += (meta.empty() ? "" : " · ") + votes;
     if (!meta.empty() && at < x + 20 + nameW)
       paint_.fonts.middle(meta, at + (at > x + 20 ? 6 : 0), y + 53, 15, Secondary, false, x + 20 + nameW - at);
     const bool busy = patchBusy_ == row.patch.id && !row.patch.id.empty();
@@ -958,6 +960,7 @@ void Application::patchMenu(const PatchRow &row) {
   paint_.fonts.text(size, x + w - sizeW, y + 1, 17, Ink, true);
   const float pillY = nameY + nameH + 10;
   float at = textX;
+  if (row.patch.verified) at += paint_.verifiedPill(at, pillY) + 6;
   for (const auto &kind : row.patch.kinds)
     at += paint_.pill(patchKindLabel(kind), at, pillY) + 6;
   std::string meta;
@@ -967,6 +970,7 @@ void Application::patchMenu(const PatchRow &row) {
     meta += (meta.empty() ? "" : " · ") + std::string(tr("Partly covered by another patch"));
   if (const char *note = healthNote(patchHealth_, row))
     meta += (meta.empty() ? "" : " · ") + std::string(note);
+  if (const auto votes = voteSummary(row.patch.votes); !votes.empty()) meta += (meta.empty() ? "" : " · ") + votes;
   if (!meta.empty())
     paint_.fonts.middle(meta, at + (at > textX ? 6 : 0), pillY + 13, 17, Secondary, false, x + w - at);
   y += head + 16;

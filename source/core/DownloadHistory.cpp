@@ -60,8 +60,8 @@ std::string serialize(const std::vector<Entry> &entries) {
   }
   return json_object_to_json_string_ext(list.get(), JSON_C_TO_STRING_PLAIN);
 }
-uint64_t add(std::vector<Entry> &entries, Entry entry, size_t cap) {
-  uint64_t top = 0;
+uint64_t add(std::vector<Entry> &entries, Entry entry, size_t cap, uint64_t floor) {
+  uint64_t top = floor;
   for (const auto &e : entries) top = std::max(top, e.id);
   entry.id = top + 1;
   entries.insert(entries.begin(), std::move(entry));

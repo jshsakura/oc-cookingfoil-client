@@ -3,6 +3,7 @@
 // per-game bundles (a tar from the SD root) and the RetroArch base pack.
 #include "core/Achievements.hpp"
 #include "core/Types.hpp"
+#include "core/Votes.hpp"
 #include <map>
 namespace foil::retro {
 struct System {
@@ -31,6 +32,8 @@ struct Game {
   int rating = 0;      // 0-100 community score; 0 when the server has none
   int ratingCount = 0; // how many people rated it
   int variants = 1;    // versions of it the server has (a list shows one, its pick)
+  bool verified = false; // an admin checked that it runs
+  votes::Votes votes;
   // Its bezel: one made for this game, the system's default, or none.
   enum class Bezel { None, System, Game } bezel = Bezel::None;
   // Its RetroAchievements match; count 0 when it has none.

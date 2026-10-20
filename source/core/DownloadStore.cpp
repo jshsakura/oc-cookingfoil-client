@@ -665,45 +665,150 @@ bool DownloadStore::run(bool writes, std::string &error, const std::function<boo
   closeDb(db); // rolls back whatever did not commit
   return ok;
 }
-std::vector<history::Entry> DownloadStore::load() {
+namespace {
+history::Entry entryOf(const Statement &rows, bool &readable) {
+  history::Entry e;
+  auto install = parsePending(rows.column(5));
+  readable = bool(install);
+  if (!install) return e; // kept in the file, never deleted: this build cannot read it
+  e.id = uint64_t(sqlite3_column_int64(rows.get(), 0));
+  e.kind = rows.column(2);
+  e.outcome = outcomeOf(rows.column(3));
+  e.group = sqlite3_column_int(rows.get(), 4);
+  e.install = std::move(*install);
+  e.payload = rows.column(6);
+  e.error = rows.column(7);
+  e.at = sqlite3_column_int64(rows.get(), 8);
+  e.startedAt = sqlite3_column_int64(rows.get(), 9);
+  e.bytes = uint64_t(sqlite3_column_int64(rows.get(), 10));
+  e.downloadSeconds = sqlite3_column_double(rows.get(), 11);
+  e.installSeconds = sqlite3_column_double(rows.get(), 12);
+  return e;
+}
+constexpr history::Outcome Endings[] = {history::Outcome::Done, history::Outcome::Failed, history::Outcome::Cancelled};
+// Rows of one ending, newest first, from before (at, id) when `before`;
+// one past `limit` is read to tell whether more are left.
+bool readEnding(sqlite3 *db, history::Outcome outcome, bool before, int64_t at, uint64_t id, size_t limit,
+                std::vector<std::pair<int64_t, history::Entry>> &out, std::set<uint64_t> &ids, bool &more) {
+  Statement rows(db, (std::string(SelectRows) + " WHERE outcome=?" + (before ? " AND (at<? OR (at=? AND id<?))" : "") +
+                      " ORDER BY at DESC, id DESC LIMIT ?")
+                         .c_str());
+  if (!rows) return false;
+  int at_ = 1;
+  rows.text(at_++, outcomeName(outcome));
+  if (before) {
+    rows.integer(at_++, at);
+    rows.integer(at_++, at);
+    rows.integer(at_++, int64_t(id));
+  }
+  rows.integer(at_, limit == SIZE_MAX ? -1 : int64_t(limit) + 1);
+  more = false;
+  size_t taken = 0;
+  int rc;
+  while ((rc = rows.step()) == SQLITE_ROW) {
+    if (taken == limit) {
+      more = true;
+      break;
+    }
+    ++taken;
+    bool readable = false;
+    auto e = entryOf(rows, readable);
+    if (!readable) continue;
+    ids.insert(e.id);
+    out.emplace_back(sqlite3_column_int64(rows.get(), 1), std::move(e));
+  }
+  return rc == SQLITE_DONE || rc == SQLITE_ROW;
+}
+} // namespace
+std::vector<history::Entry> DownloadStore::load(size_t finishedPage) {
   std::lock_guard<std::mutex> held(lock_);
   std::vector<history::Entry> out;
   std::set<uint64_t> ids;
+  std::set<history::Outcome> more;
+  uint64_t top = 0;
   // Nothing known until a load succeeds, so a save after a failed load
   // deletes nothing it never saw.
   known_.clear();
   std::string error;
   const bool ok = run(false, error, [&](sqlite3 *db, std::string &) {
-    Statement rows(db, (std::string(SelectRows) + " ORDER BY position").c_str());
-    if (!rows)
-      return false;
+    {
+      Statement highest(db, "SELECT MAX(id) FROM downloads");
+      if (!highest || highest.step() != SQLITE_ROW) return false;
+      top = uint64_t(sqlite3_column_int64(highest.get(), 0));
+    }
+    // Waiting and running rows all; of each ending its page. Then the
+    // rows read in the list's order (position), as they were saved.
+    std::vector<std::pair<int64_t, history::Entry>> read;
+    Statement rows(db, (std::string(SelectRows) + " WHERE outcome IN ('running','queued')").c_str());
+    if (!rows) return false;
     int rc;
     while ((rc = rows.step()) == SQLITE_ROW) {
-      auto install = parsePending(rows.column(5));
-      if (!install)
-        continue; // kept in the file, never deleted: this build cannot read it
-      history::Entry e;
-      e.id = uint64_t(sqlite3_column_int64(rows.get(), 0));
-      e.kind = rows.column(2);
-      e.outcome = outcomeOf(rows.column(3));
-      e.group = sqlite3_column_int(rows.get(), 4);
-      e.install = std::move(*install);
-      e.payload = rows.column(6);
-      e.error = rows.column(7);
-      e.at = sqlite3_column_int64(rows.get(), 8);
-      e.startedAt = sqlite3_column_int64(rows.get(), 9);
-      e.bytes = uint64_t(sqlite3_column_int64(rows.get(), 10));
-      e.downloadSeconds = sqlite3_column_double(rows.get(), 11);
-      e.installSeconds = sqlite3_column_double(rows.get(), 12);
+      bool readable = false;
+      auto e = entryOf(rows, readable);
+      if (!readable) continue;
       ids.insert(e.id);
-      out.push_back(std::move(e));
+      read.emplace_back(sqlite3_column_int64(rows.get(), 1), std::move(e));
     }
-    return rc == SQLITE_DONE;
+    if (rc != SQLITE_DONE) return false;
+    for (const auto outcome : Endings) {
+      bool left = false;
+      if (!readEnding(db, outcome, false, 0, 0, finishedPage, read, ids, left)) return false;
+      if (left) more.insert(outcome);
+    }
+    std::stable_sort(read.begin(), read.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+    for (auto &[position, e] : read) out.push_back(std::move(e));
+    return true;
   });
   if (!ok)
     return {};
   known_ = std::move(ids);
+  more_ = std::move(more);
+  topId_ = top;
   return out;
+}
+std::vector<history::Entry> DownloadStore::older(history::Outcome outcome, int64_t at, uint64_t id, size_t limit,
+                                                 bool &more) {
+  std::lock_guard<std::mutex> held(lock_);
+  std::vector<std::pair<int64_t, history::Entry>> read;
+  std::set<uint64_t> ids;
+  more = false;
+  std::string error;
+  const bool ok = run(false, error, [&](sqlite3 *db, std::string &) {
+    return readEnding(db, outcome, true, at, id, limit, read, ids, more);
+  });
+  std::vector<history::Entry> out;
+  for (auto &[position, e] : read) out.push_back(std::move(e));
+  if (!ok) {
+    more = true; // not read now: asked again later
+    return {};
+  }
+  known_.insert(ids.begin(), ids.end());
+  if (more) more_.insert(outcome);
+  else more_.erase(outcome);
+  return out;
+}
+bool DownloadStore::moreOf(history::Outcome outcome) const {
+  std::lock_guard<std::mutex> held(lock_);
+  return more_.count(outcome) > 0;
+}
+uint64_t DownloadStore::topId() const {
+  std::lock_guard<std::mutex> held(lock_);
+  return topId_;
+}
+bool DownloadStore::removeAll(history::Outcome outcome, std::string &error) {
+  std::lock_guard<std::mutex> held(lock_);
+  if (!file_.empty() && readOnly_) {
+    error = NewerBuild;
+    return false;
+  }
+  const bool ok = run(true, error, [&](sqlite3 *db, std::string &) {
+    Statement remove(db, "DELETE FROM downloads WHERE outcome=?");
+    if (!remove) return false;
+    remove.text(1, outcomeName(outcome));
+    return remove.step() == SQLITE_DONE;
+  });
+  if (ok) more_.erase(outcome);
+  return ok;
 }
 bool DownloadStore::save(const std::vector<history::Entry> &entries, std::string &error) {
   std::lock_guard<std::mutex> held(lock_);
@@ -715,16 +820,22 @@ bool DownloadStore::save(const std::vector<history::Entry> &entries, std::string
   const bool ok = run(true, error, [&](sqlite3 *db, std::string &) {
     // The file as it is now, not as this instance last left it: another
     // instance may have written since.
+    // Only the rows this save may touch (in the list or known), one by one:
+    // the older history it never read stays unread.
     std::map<uint64_t, std::string> inFile;
     {
-      Statement rows(db, SelectRows);
-      if (!rows)
+      Statement row(db, (std::string(SelectRows) + " WHERE id=?").c_str());
+      if (!row)
         return false;
-      int rc;
-      while ((rc = rows.step()) == SQLITE_ROW)
-        inFile[uint64_t(sqlite3_column_int64(rows.get(), 0))] = fingerprint(rows);
-      if (rc != SQLITE_DONE)
-        return false;
+      std::set<uint64_t> asked(known_);
+      for (const auto &e : entries) asked.insert(e.id);
+      for (const auto id : asked) {
+        row.integer(1, int64_t(id));
+        const int rc = row.step();
+        if (rc == SQLITE_ROW) inFile[id] = fingerprint(row);
+        else if (rc != SQLITE_DONE) return false;
+        row.reset();
+      }
     }
     Statement upsert(db, "INSERT INTO downloads(id, position, kind, outcome, grp, install, payload, error, at, started_at,"
                          " bytes, download_seconds, install_seconds) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)"
@@ -773,8 +884,10 @@ bool DownloadStore::save(const std::vector<history::Entry> &entries, std::string
     return true;
   });
   // Nothing of a failed save stays: its transaction never committed.
-  if (ok)
+  if (ok) {
+    for (const auto id : now) topId_ = std::max(topId_, id);
     known_ = std::move(now);
+  }
   return ok;
 }
 // Where a cut-off file stands is written every 30 s while it downloads, so

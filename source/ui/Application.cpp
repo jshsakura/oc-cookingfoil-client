@@ -104,6 +104,9 @@ Application::~Application() {
   raJob_.join();
   raListJob_.join();
   raGamesJob_.join();
+  keysJob_.join();
+  voteJob_.join();
+  historyPageJob_.join(); // reads and clears the store, which closes after
   flushHistory();
   if (storageWorker_.joinable())
     storageWorker_.join();
@@ -945,6 +948,9 @@ void Application::poll() {
   pollBackupSummary();
   pollDropbox();
   raJob_.poll();
+  historyPageJob_.poll();
+  keysJob_.poll();
+  voteJob_.poll();
   raListJob_.poll();
   raGamesJob_.poll();
   adminJob_.poll();
@@ -2024,7 +2030,10 @@ void Application::footer(
     x -= label;
     paint_.fonts.middle(it->second, x, 691, 19, Ink);
     x -= key + 10;
-    hit(x - 8, 660, key + label + 26, 60, [this, k = it->first] { hintAction(k); });
+    // The whole bar's height answers; pressed, only the key and its label
+    // darken, as a pill around them.
+    const float w = key + label + 26;
+    hit(x - 8, 660, w, 60, [this, k = it->first] { hintAction(k); }, {x - 8, 691 - 22, w, 44}, 22);
     paint_.key(it->first, x, 691);
     x -= 30;
   }
@@ -2200,6 +2209,22 @@ float Application::statusBar() {
   }
   return x;
 }
+bool Application::refreshSkeleton() const {
+  return menuPending() && !fullPage() && screen_ != Screen::Home;
+}
+// A menu screen's shape while the server is asked: its title, then cards
+// for the screens of games, rows for the others.
+void Application::screenSkeleton() {
+  paint_.skeleton(260, 30, 180, 34, 10);
+  const bool cards = screen_ == Screen::Library || screen_ == Screen::Installed || screen_ == Screen::Homebrew ||
+                     screen_ == Screen::Retro;
+  if (cards) {
+    paint_.skeletonCards(260, 104, 12);
+    return;
+  }
+  constexpr float Top = 96, Row = 64, Gap = 10;
+  for (int n = 0; n < 8; ++n) paint_.skeleton(260, Top + n * (Row + Gap), 992, Row, 16);
+}
 void Application::render() {
   poll();
   // An alert that comes up says so once with the error cue.
@@ -2227,6 +2252,10 @@ void Application::render() {
       autoSidebar_ = false;
     }
   }
+  // While the server is asked again every menu screen is placeholders: the
+  // cursor waits on the menu (which does not move meanwhile) and comes back
+  // in once the answer is there.
+  if (refreshSkeleton() && !sidebar_) sidebar_ = autoSidebar_ = true;
   // With nothing to select the cursor waits on the menu; once the screen
   // has something (a list finished loading) it moves in by itself.
   if (!sidebar_ && !hasFocusable() && !managedGame_ && headerFocus_.empty()) {
@@ -2244,7 +2273,9 @@ void Application::render() {
     shell();
   SDL_Rect clip{fullPage() ? 0 : 232, 0, fullPage() ? 1280 : 1048, 660};
   SDL_RenderSetClipRect(paint_.renderer, &clip);
-  if (pairingPending_ && screen_ != Screen::Settings)
+  if (refreshSkeleton())
+    screenSkeleton();
+  else if (pairingPending_ && screen_ != Screen::Settings)
     pairing();
   else if (screen_ == Screen::Home)
     home();
@@ -2277,6 +2308,12 @@ void Application::render() {
     footer({{"Y", tr("Write message")}, {"B", tr("Back")}});
   else if (adminFocused())
     footer({{"A", tr("Admin edit")}, {"B", tr("Back")}});
+  else if (voteFocus_ && voteTarget()) {
+    const auto mine = voteTarget()->votes.mine;
+    const bool up = voteFocus_ == 1;
+    footer({{"A", mine == (up ? "up" : "down") ? tr("Take back the vote") : up ? tr("Works") : tr("Doesn't work")},
+            {"B", tr("Back")}});
+  }
   else if (!headerFocus_.empty())
     footer({{"A", headerFocus_.rfind("tab", 0) == 0 ? tr("Next tab") : tr("Select")}, {"B", tr("Back")}}); // on a header button
   else if (screen_ == Screen::Library)
@@ -2671,7 +2708,7 @@ Error Application::enqueueInstall(const std::vector<Item> &files, const std::str
     row.outcome = history::Outcome::Queued;
     row.group = group;
     row.at = int64_t(std::time(nullptr));
-    ids.push_back(history::add(history_, std::move(row)));
+    ids.push_back(history::add(history_, std::move(row), SIZE_MAX, store_.topId()));
   }
   // Its patches come right after its files, in the same pick: a game that
   // does not install takes them off the queue with the rest.
@@ -2728,7 +2765,7 @@ bool Application::queueJob(const std::string &kind, const std::string &name, con
                                          (e.outcome == history::Outcome::Failed || e.outcome == history::Outcome::Cancelled);
                                 }),
                  history_.end());
-  const auto id = history::add(history_, std::move(row));
+  const auto id = history::add(history_, std::move(row), SIZE_MAX, store_.topId());
   if (first)
     history::takeFirstTurn(history_, id);
   saveHistory();
@@ -2894,7 +2931,7 @@ Error Application::launchQueued() {
     history::Entry entry;
     entry.install = {next.name, next.icon, next.target, files};
     entry.at = int64_t(std::time(nullptr));
-    history::add(history_, std::move(entry));
+    history::add(history_, std::move(entry), SIZE_MAX, store_.topId());
   }
   saveHistory();
   observedInstall_ = install::Status::Running;
@@ -3001,7 +3038,7 @@ void Application::openDownloads(const std::string &sd) {
     history_.clear();
     return;
   }
-  history_ = store_.load();
+  history_ = store_.load(HistoryPage);
   installer_.loadResumePoints(store_.resumePoints());
   checkResumePoints();
   const auto old = sd + "/switch/cookingfoil/downloads.json";

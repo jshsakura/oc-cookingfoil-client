@@ -1,4 +1,5 @@
 #pragma once
+#include "core/Votes.hpp"
 // Homebrew apps the server offers (feature: homebrew), saved to the SD card
 // as sdmc:/switch/<name>/<name>.nro.
 #include "core/Catalog.hpp"
@@ -73,6 +74,7 @@ struct App {
   // The admin ran it on a console and checked it: a badge only (absent on
   // an older server, read as false).
   bool verified = false;
+  votes::Votes votes;
   // The page's wide backdrop (empty: the icon, blurred) and its screenshots
   // (at most 8), as a game's page shows them.
   std::string bannerUrl;

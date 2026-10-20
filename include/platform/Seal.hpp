@@ -18,4 +18,9 @@ std::string sharedX(const std::string &secret, const std::string &peerPoint);
 // False when the tag does not match (wrong key, iv, aad or altered bytes).
 bool open(const std::string &key, const std::string &iv, const std::string &aad, const std::string &sealed,
           std::string &plain);
+// AES-256-GCM the other way: `sealed` gets the ciphertext with the tag after it.
+bool close(const std::string &key, const std::string &iv, const std::string &aad, const std::string &plain,
+           std::string &sealed);
+// `size` bytes from the system's secure random source; "" when it fails.
+std::string random(size_t size);
 } // namespace foil::seal

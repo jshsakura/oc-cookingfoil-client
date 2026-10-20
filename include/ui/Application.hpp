@@ -21,6 +21,8 @@
 #include "core/ShopSaves.hpp"
 #include "core/ClientUpdate.hpp"
 #include "core/Patches.hpp"
+#include "core/ProdKeys.hpp"
+#include "core/Votes.hpp"
 #include "core/CardPatches.hpp"
 #include "core/I18n.hpp"
 #include "core/AdminEdit.hpp"
@@ -245,6 +247,11 @@ public:
     features_.insert("admin-edit");
     adminPreview_ = std::move(fields);
   }
+  // prod.keys as an admin console sees it, without a server: this holding.
+  void previewKeys(prodkeys::Status status) {
+    features_.insert("keys-upload");
+    keysPreview_ = std::move(status);
+  }
   bool askingSelfShortcut() const { return selfShortcutAsk_; }
   bool askingShortcutRemoval() const { return shortcutRemoveAsk_; }
   bool appPopupOpen() const { return homebrewAsk_; }
@@ -400,6 +407,8 @@ private:
   std::optional<homebrew::App> homebrewOpenLike_; // a page asked for by an app known from before
   // Until the server first answers (or while the records are still being
   // read), the menu and the buttons are placeholders.
+  bool refreshSkeleton() const;
+  void screenSkeleton();
   bool menuPending() const { return !menuKnown_ && (network_.joinable() || stateWaiting_); }
   void onTheWayButton(float x, float w, bool downloading, double percent, double skipped = 0);
   // False when there was nothing new to write.
@@ -537,6 +546,22 @@ private:
   void adminEditDialog();
   AdminEdit adminEdit_;
   bool adminFocus_ = false;
+  // 잘 돼요 / 안 돼요 on a homebrew or retro page: chips on the band beside
+  // the admin one, reached the same way (up from the page's top). A vote
+  // sent shows its answer until the lists are read again.
+  struct VoteTarget {
+    std::string kind, id;
+    votes::Votes votes;
+  };
+  std::optional<VoteTarget> voteTarget() const;
+  bool voteAction(Action a, bool atTop);
+  float voteChips(float right); // their left edge, or `right` when not drawn
+  void castVote(const std::string &vote);
+  // "잘 돼요 5 · 안 돼요 1" for a row; "" when nobody voted yet.
+  static std::string voteSummary(const votes::Votes &votes);
+  int voteFocus_ = 0; // 0 none, 1 잘 돼요, 2 안 돼요
+  std::map<std::string, votes::Votes> votesCast_; // "kind/id"
+  Job voteJob_;
   Job adminJob_;
   std::optional<std::vector<admin::Field>> adminPreview_;
   // HOME Menu shortcuts (platform/Shortcut): the ids the console has, as the
@@ -1174,8 +1199,22 @@ private:
     int row = 0;    // 0 주소, 1 아이디, 2 비밀번호, 3 이름, 4 메시지
     std::string error;
     bool confirmDelete = false;
+    bool confirmKeys = false; // asked before prod.keys goes to the server
   };
-  static constexpr int ServerFields = 5; // then the colour row
+  static constexpr int ServerFields = 5; // then the colour row, then prod.keys on an admin console
+  static constexpr int KeysRow = ServerFields + 1;
+  // prod.keys for the server being edited: the row shows on the connected
+  // server when it offers keys-upload to this (admin) console.
+  bool keysRowShown() const;
+  int serverFormRows() const { return keysRowShown() ? KeysRow + 1 : KeysRow; }
+  std::optional<prodkeys::Status> keysStatus_;
+  std::string keysNote_; // what the last read or send said
+  Job keysJob_;
+  bool keysSending_ = false;
+  std::optional<prodkeys::Status> keysPreview_;
+  void readKeysStatus();
+  void sendProdKeys();
+  void keysRow(float x, float y, float w, float h, float valueX, float valueW);
   int serverFormColor() const;
   void stepServerColor(int step);
   std::optional<ServerForm> serverForm_;
@@ -1556,8 +1595,15 @@ private:
   // The games with a save on the console, read with the summary; unknown
   // (the host, or a failed read) keeps every game.
   std::optional<std::set<uint64_t>> savedGames_, incomingSaved_;
-  // A game worth listing in 세이브: a save on the console or a backup on the card.
-  bool hasSaveWork(uint64_t id) const { return backupsOf(id) > 0 || !savedGames_ || savedGames_->count(id); }
+  // A game worth listing in 세이브: a save on the console, a backup on the
+  // card or one on Dropbox.
+  bool hasSaveWork(uint64_t id) const {
+    return backupsOf(id) > 0 || !savedGames_ || savedGames_->count(id) || dropboxHas(id);
+  }
+  bool dropboxHas(uint64_t id) const;
+  // The console's saves are being read for the first time: the list waits
+  // (placeholders) rather than show every game and then drop most.
+  bool savesUnread() const { return !savedGames_ && backupSummaryWorker_.joinable(); }
   std::optional<int> saveOpen_;          // index into saves_
   std::vector<saves::LocalBackup> backups_;
   int saveRow_ = 0;                      // 0 back up, 1..n backups, n+1 delete
@@ -1693,7 +1739,13 @@ private:
   void wakeHistoryWriter();
   // 다운로드's tabs: 0 진행 중, 1 완료, 2 실패 (and cancelled).
   int downloadsTab_ = 0, downloadsRow_ = 0;
-  std::vector<int> downloadsList() const; // history_ indices in the tab
+  std::vector<int> downloadsList() const;
+  // 다운로드's ended rows are read a page at a time; the next page comes
+  // as the cursor nears the end of what is read.
+  static constexpr size_t HistoryPage = 60;
+  Job historyPageJob_;
+  void readOlderHistory();
+  void clearHistoryTab(history::Outcome outcome); // history_ indices in the tab
   void downloadsAction(Action action);
   void downloadsHistory();
   void forgetInstall();

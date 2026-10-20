@@ -515,6 +515,47 @@ void Application::queueList(float y, float viewTop) {
       button(tr("Move up"), [this, r] { moveShown(r, true); });
   }
 }
+namespace {
+history::Outcome tabOutcome(int tab) {
+  return tab == 1 ? history::Outcome::Failed : tab == 2 ? history::Outcome::Cancelled : history::Outcome::Done;
+}
+} // namespace
+// The next page of this tab's ended rows, older than the oldest read, off
+// the drawing thread; they join the list as they were before.
+void Application::readOlderHistory() {
+  const auto outcome = tabOutcome(downloadsTab_);
+  if (historyPageJob_.busy() || !store_.isOpen() || !store_.moreOf(outcome)) return;
+  int64_t at = INT64_MAX;
+  uint64_t id = UINT64_MAX;
+  for (const auto &e : history_)
+    if (e.outcome == outcome && (e.at < at || (e.at == at && e.id < id))) {
+      at = e.at;
+      id = e.id;
+    }
+  historyPageJob_.run("history", [this, outcome, at, id]() -> Job::Finish {
+    bool more = false;
+    auto page = store_.older(outcome, at, id, HistoryPage, more);
+    return [this, page = std::move(page)]() mutable {
+      std::set<uint64_t> have;
+      for (const auto &e : history_) have.insert(e.id);
+      for (auto &e : page)
+        if (have.insert(e.id).second) history_.push_back(std::move(e));
+    };
+  }, [] {});
+}
+// 비우기: the rows read go from the list, and the ones never read from the file.
+void Application::clearHistoryTab(history::Outcome outcome) {
+  if (historyPageJob_.busy()) return; // a page on its way would bring some back
+  history_.erase(std::remove_if(history_.begin(), history_.end(),
+                                [&](const history::Entry &e) { return e.outcome == outcome && !extraJob(e); }),
+                 history_.end());
+  saveHistory();
+  historyPageJob_.run("history", [this, outcome]() -> Job::Finish {
+    std::string error;
+    if (!store_.removeAll(outcome, error)) logLine("downloads: " + error);
+    return [] {};
+  }, [] {});
+}
 std::vector<int> Application::downloadsList() const {
   std::vector<int> out;
   for (int i = 0; i < int(history_.size()); ++i) {
@@ -558,6 +599,8 @@ void Application::downloadsHistory() {
                           float((count) - (Visible)), Step);
   // Stretched past the top while it springs back: no row before the first.
   const int first = std::max(0, int(std::floor(top)));
+  // Near the end of what is read, the next page is asked for.
+  if (first + Visible + 10 >= count) readOlderHistory();
   paint_.scrollbar(1266, Top, Step * Visible - 12, top, Visible, float(count));
   clipTo(232, Top - 8, 1048, 660 - Top + 8);
   for (int n = first; n < count && n <= first + Visible + 1; ++n) {
@@ -642,9 +685,8 @@ void Application::downloadsAction(Action a) {
     saveHistory();
   }
   if (a == Action::Queue) {
-    for (auto i = list.rbegin(); i != list.rend(); ++i) history_.erase(history_.begin() + *i);
+    clearHistoryTab(tabOutcome(downloadsTab_));
     downloadsRow_ = 0;
-    saveHistory();
   }
 }
 } // namespace foil::ui

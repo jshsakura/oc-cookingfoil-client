@@ -32,6 +32,7 @@ void Application::openRetroDetail(const retro::Game &game) {
   unglide();
   screen_ = Screen::RetroDetail;
   adminFocus_ = false;
+  voteFocus_ = 0;
   retroPick_ = game;
   retroVariants_.clear();
   retroVariant_ = 0;
@@ -177,7 +178,7 @@ void Application::retroDetailAction(Action a) {
   }
   const int rows = int(retroVersionList().size());
   retroPart_ = std::min(retroPart_, rows); // the button stays the button as versions arrive
-  if (adminChipAction(a, retroPart_ == 0)) return;
+  if (voteAction(a, retroPart_ == 0) || adminChipAction(a, retroPart_ == 0)) return;
   if (a == Action::Back) {
     screen_ = previous_ == Screen::RetroDetail ? Screen::Retro : previous_;
     unglide();
@@ -307,10 +308,14 @@ void Application::retroDetail() {
     paint_.skeleton(0, 0, 1280, 212, 0, true);
   images_->draw(banner, 0, 0, 1280, 212, 0, true);
   const auto back = screenLabel(previous_);
-  paint_.icon(7, 32, 14, Surface, 20);
-  raChip(adminChip() - 10);
-  paint_.fonts.middle(back, 56, 24, 17, Surface);
-  hit(24, 4, 200, 40, [this] { action(Action::Back); });
+  paint_.icon(7, 32, BackLine - 10, Surface, 20);
+  // The band's chips from the right, 10 apart: admin, achievements, votes.
+  float right = adminChip();
+  if (right < BandRight) right -= 10;
+  if (const float left = raChip(right); left < right) right = left - 10;
+  voteChips(right);
+  paint_.fonts.middle(back, 56, BackLine, 17, Surface);
+  hit(24, BackLine - 20, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
   cover(game.iconUrl, 40, Top, 140, false, game.name, true, true);
   paint_.region(game.region, 40 + 140 - 44, Top + 140 - 32, 36, 24);
@@ -323,6 +328,7 @@ void Application::retroDetail() {
   paint_.fonts.text(subtitle, 208, Top + 62, 19, {228, 228, 234, 255}, false, 960);
   constexpr float PillsRight = 806;
   float x = 208;
+  if (game.verified) x += paint_.verifiedPill(x, Top + 100, true, 17) + 10;
   if (const float w = achievementLabel(game.achievements, x, Top + 100, 35, 17)) x += w + 10;
   for (const auto &label : retroLabels(game, true)) {
     if (x + paint_.fonts.measure(label, 17) + 28 > PillsRight) break;
@@ -370,7 +376,7 @@ void Application::retroDetail() {
 void Application::retroDetailPanel() {
   const auto versions = retroVersionList();
   const int rows = int(versions.size());
-  const bool panelFocus = !descriptionFocus_ && !adminFocused();
+  const bool panelFocus = !descriptionFocus_ && !adminFocused() && !voteFocus_;
   paint_.rect(818, 172, 430, 484, Surface, 20);
   const std::string head = tr("Versions");
   paint_.fonts.middle(head, 840, 194, 22, Ink, true);

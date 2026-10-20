@@ -47,8 +47,19 @@ public:
   void close();
   // The name SQLite opens: "sdmc:/" is the card's root, which is "/" there.
   static std::string fileName(const std::string &path);
-  // The list, top row first (empty when the file cannot be read now).
-  std::vector<history::Entry> load();
+  // The list, top row first (empty when the file cannot be read now): every
+  // waiting and running row, and of each ending (완료, 실패, 취소) the
+  // `finishedPage` that ended last, newest first.
+  std::vector<history::Entry> load(size_t finishedPage = SIZE_MAX);
+  // The `limit` rows of `outcome` that ended before (at, id), newest first;
+  // `more` says whether older ones are left.
+  std::vector<history::Entry> older(history::Outcome outcome, int64_t at, uint64_t id, size_t limit, bool &more);
+  // Whether rows of `outcome` were left out at load (more to read).
+  bool moreOf(history::Outcome outcome) const;
+  // The highest id in the file: a new row's id goes above it, read or not.
+  uint64_t topId() const;
+  // Every row of `outcome` goes, read or not (비우기 on its tab).
+  bool removeAll(history::Outcome outcome, std::string &error);
   // The list as it is now, in one transaction: rows that differ from the
   // file are written, rows this instance loaded or wrote and that are no
   // longer in the list are deleted, rows it never knew are left alone.
@@ -115,5 +126,7 @@ private:
   // the lock.
   std::atomic<bool> open_{false}, readOnly_{false};
   std::set<uint64_t> known_; // rows this instance loaded or wrote: the only ones its saves delete
+  std::set<history::Outcome> more_; // endings with older rows not read yet
+  uint64_t topId_ = 0;
 };
 } // namespace foil

@@ -88,6 +88,9 @@ Game parseGame(json_object *object, const std::string &base) {
   g.rating = int(std::clamp<int64_t>(integerField(object, "rating"), 0, 100));
   g.ratingCount = int(std::clamp<int64_t>(integerField(object, "ratingCount"), 0, 1 << 30));
   g.variants = int(std::clamp<int64_t>(integerField(object, "variants", 1), 1, 999));
+  auto *verified = field(object, "verified");
+  g.verified = json_object_is_type(verified, json_type_boolean) && json_object_get_boolean(verified);
+  g.votes = votes::fromItem(object);
   g.iconUrl = url(object, "iconUrl", base);
   g.bundleUrl = url(object, "bundleUrl", base);
   g.forwarderUrl = url(object, "forwarderUrl", base);
