@@ -39,15 +39,23 @@ private:
     size_t wait = 0; // samples of silence before it starts
     int gain = 256;  // of 256
   };
+  void takeRequests();
   static void mix(void *self, Uint8 *stream, int bytes);
   SDL_AudioDeviceID device_ = 0;
   std::array<std::vector<int16_t>, CueCount> cues_; // filled under the lock
   std::vector<Voice> voices_; // under the device's lock
   std::atomic<bool> on_{true};
   bool startWanted_ = false, startPlayed_ = false; // under the lock
-  uint32_t beatAt_ = 0;                            // under the lock
+  std::atomic<uint32_t> beatAt_{0};
+  // A cue asked for: the screen only leaves this note, the audio thread takes
+  // it at its next buffer. The screen never waits for the device's lock.
+  struct Request {
+    std::atomic<uint32_t> count{0};
+    std::atomic<size_t> wait{0};
+  };
+  std::array<Request, CueCount> requests_;
   std::atomic<uint32_t> startHeardAt_{0};
   std::thread maker_;
-  std::array<uint32_t, CueCount> lastAt_{}; // when each cue last started
+  std::array<std::atomic<uint32_t>, CueCount> lastAt_{}; // when each cue last started
 };
 } // namespace foil::ui

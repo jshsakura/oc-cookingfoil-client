@@ -68,47 +68,54 @@ void Sounds::setOn(bool on) {
   if (on || !device_) return;
   SDL_LockAudioDevice(device_);
   voices_.clear();
+  for (auto &request : requests_) request.count = 0;
   SDL_UnlockAudioDevice(device_);
 }
 void Sounds::play(Cue cue) {
   if (!device_ || !on_) return;
   const auto now = SDL_GetTicks();
-  auto &last = lastAt_[int(cue)];
+  const uint32_t last = lastAt_[int(cue)];
   if (last && now - last < (cue == Cue::Move ? MoveGapMs : OtherGapMs)) return;
-  SDL_LockAudioDevice(device_);
-  if (cues_[int(cue)].empty()) { // still being made
-    SDL_UnlockAudioDevice(device_);
-    return;
-  }
-  last = now;
-  // The start cue plays once a launch: once it has, its samples (the
-  // longest, about 200 KB) go.
-  if (cue != Cue::Start && startPlayed_ && !cues_[int(Cue::Start)].empty() &&
-      std::none_of(voices_.begin(), voices_.end(), [&](const Voice &v) { return v.samples == &cues_[int(Cue::Start)]; }))
-    std::vector<int16_t>().swap(cues_[int(Cue::Start)]);
-  if (cue == Cue::Start) startPlayed_ = true;
-  if (voices_.size() >= MostVoices) voices_.erase(voices_.begin()); // the oldest gives way
+  lastAt_[int(cue)] = now;
   // The start waits for the butter's next landing, less what the device
   // holds before it is heard (one buffer).
   size_t wait = 0;
   // Right behind a done, a shortcut's note comes on that arpeggio's next
   // step (its notes are 80 ms apart) rather than over it.
   constexpr uint32_t DoneStepMs = 240;
-  if (const auto done = lastAt_[int(Cue::Done)]; cue == Cue::Shortcut && done && now - done < DoneStepMs)
+  if (const uint32_t done = lastAt_[int(Cue::Done)]; cue == Cue::Shortcut && done && now - done < DoneStepMs)
     wait = size_t(DoneStepMs - (now - done)) * Rate / 1000;
-  if (cue == Cue::Start && beatAt_) {
+  if (const uint32_t beatAt = beatAt_; cue == Cue::Start && beatAt) {
     constexpr uint32_t BeatMs = 1000, BufferMs = 1024 * 1000 / Rate;
-    const uint32_t toBeat = (BeatMs - (now - beatAt_) % BeatMs) % BeatMs;
+    const uint32_t toBeat = (BeatMs - (now - beatAt) % BeatMs) % BeatMs;
     const uint32_t waitMs = (toBeat + BeatMs - BufferMs % BeatMs) % BeatMs;
     wait = size_t(waitMs) * Rate / 1000;
     startHeardAt_ = now + waitMs + BufferMs;
   }
-  voices_.push_back({&cues_[int(cue)], 0, wait, cue == Cue::Start ? StartGain : Gain});
-  SDL_UnlockAudioDevice(device_);
+  requests_[int(cue)].wait = wait;
+  ++requests_[int(cue)].count;
+}
+// On SDL's audio thread, with the device locked: the cues asked for since
+// the last buffer start. One still being made is passed over.
+void Sounds::takeRequests() {
+  for (int i = 0; i < CueCount; ++i) {
+    auto &request = requests_[i];
+    if (!request.count.exchange(0) || cues_[i].empty()) continue;
+    const Cue cue = Cue(i);
+    // The start cue plays once a launch: once it has, its samples (the
+    // longest, about 200 KB) go.
+    if (cue != Cue::Start && startPlayed_ && !cues_[int(Cue::Start)].empty() &&
+        std::none_of(voices_.begin(), voices_.end(), [&](const Voice &v) { return v.samples == &cues_[int(Cue::Start)]; }))
+      std::vector<int16_t>().swap(cues_[int(Cue::Start)]);
+    if (cue == Cue::Start) startPlayed_ = true;
+    if (voices_.size() >= MostVoices) voices_.erase(voices_.begin()); // the oldest gives way
+    voices_.push_back({&cues_[i], 0, request.wait, cue == Cue::Start ? StartGain : Gain});
+  }
 }
 // On SDL's audio thread, with the device locked.
 void Sounds::mix(void *self, Uint8 *stream, int bytes) {
   auto &me = *static_cast<Sounds *>(self);
+  me.takeRequests();
   auto *out = reinterpret_cast<int16_t *>(stream);
   const size_t count = size_t(bytes) / sizeof(int16_t);
   std::fill(out, out + count, int16_t(0));
