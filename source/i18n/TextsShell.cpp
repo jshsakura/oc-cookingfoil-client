@@ -62,6 +62,8 @@ const Translation rows[] = {
     {"Awaiting approval", "승인 대기", "承認待ち", "等待批准"},
     {"Same server", "같은 서버", "同じサーバー", "同一服务器"},
     {"Download from", "받을 서버", "ダウンロード元", "下载来源"},
+    {"{0} is waiting for approval. Its list shows once approved.", "{0}이(가) 승인을 기다리고 있습니다. 승인되면 목록에 나타납니다.", "{0} は承認待ちです。承認されると一覧に表示されます。", "{0} 正在等待批准。批准后会显示在列表中。"},
+    {"Could not connect to {0}. Its list is left out for now.", "{0}에 연결하지 못해 이번에는 그 서버의 목록을 빼고 보여 줍니다.", "{0} に接続できなかったため、今回はそのサーバーの一覧を除いて表示します。", "无法连接到 {0}，本次显示的列表不包含该服务器。"},
     {"Connecting", "연결 중", "接続中", "连接中"},
     {"No internet", "인터넷 없음", "インターネットなし", "无网络"},
     {"Failed|connection", "연결 실패", "接続失敗", "连接失败"},

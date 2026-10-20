@@ -1233,6 +1233,15 @@ void Application::takeNetwork() {
       else state_.pairSecrets.erase(url);
     }
   }
+  // Another server that newly fails or waits is said once, by name; the
+  // shop goes on with the rest.
+  for (const auto &[url, status] : incomingStatus_) {
+    const auto before = serverStatus_.find(url);
+    if (status.empty() || status == "same" || (before != serverStatus_.end() && before->second == status)) continue;
+    const auto title = serverFor(url).title;
+    message(status == "pairing" ? trf("{0} is waiting for approval. Its list shows once approved.", {title})
+                                : trf("Could not connect to {0}. Its list is left out for now.", {title}));
+  }
   serverStatus_ = std::move(incomingStatus_);
   incomingStatus_.clear();
   features_ = session_->features();
@@ -2008,6 +2017,17 @@ void Application::card(const Group &g, float x, float y, bool selected,
   }
   // Review score on the poster's top right.
   scoreBadge(g.representative.score, x + 150 - 6, y + 6);
+  // With several servers, a dot per server holding it on the bottom right.
+  if (manyServers()) {
+    constexpr float Dot = 12, Step = 10;
+    const auto servers = groupServers(g);
+    const size_t shown = std::min<size_t>(servers.size(), 4);
+    float dx = x + 150 - 8 - Dot - Step * float(shown - 1);
+    for (size_t i = 0; i < shown; ++i, dx += Step) {
+      paint_.rect(dx - 2, y + 150 - 8 - Dot - 2, Dot + 4, Dot + 4, Surface, int(Dot / 2 + 2));
+      paint_.rect(dx, y + 150 - 8 - Dot, Dot, Dot, serverDot(servers[i]), int(Dot / 2));
+    }
+  }
   if (badges) {
     if (selected) marquee(g.representative.name, x, y + 158, 18, 150, false);
     else paint_.fonts.text(g.representative.name, x, y + 158, 18, Ink, false, 150);
@@ -2947,6 +2967,15 @@ SDL_Color Application::serverDot(const std::string &url) const {
   for (size_t i = 0; i < config_.servers.size(); ++i)
     if (config_.servers[i].url == url) return serverColor(config_.servers[i].color, i);
   return serverColor(-1, 0);
+}
+bool Application::manyServers() const {
+  return std::count_if(config_.servers.begin(), config_.servers.end(), [](const Server &s) { return s.enabled; }) > 1;
+}
+std::vector<std::string> Application::groupServers(const Group &g) const {
+  const auto &item = g.base ? *g.base : g.representative;
+  std::vector<std::string> servers{item.server.empty() ? serverInUse() : item.server};
+  for (const auto &copy : item.alsoOn) servers.push_back(copy.server);
+  return servers;
 }
 void Application::stepInstallServer(int by) {
   const auto servers = selection_->servers();

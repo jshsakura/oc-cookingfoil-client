@@ -143,6 +143,12 @@ void Application::detail() {
     pill(tr("Required patch"));
   if (const int integrity = groupIntegrity(g))
     pill(integrity == 2 ? tr("May be damaged") : tr("Modified file"));
+  // With several servers, the ones it is on by name, its own first.
+  if (manyServers()) {
+    std::string on;
+    for (const auto &url : groupServers(g)) on += (on.empty() ? "" : " · ") + serverFor(url).title;
+    pill(on);
+  }
   const auto &languages = item.languages;
   if (std::find(languages.begin(), languages.end(), "ko") != languages.end())
     pill(tr("Korean"));
