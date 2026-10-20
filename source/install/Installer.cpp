@@ -356,8 +356,8 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
         const auto headers = net::downloadHeaders(server, state, files[i].url);
         const auto bearer = net::bearerOf(headers);
         const bool session = net::isSessionToken(bearer);
-        const auto sent = session ? bearer : net::downloadToken();
-        const auto refusals = net::sessionRefusals();
+        const auto sent = session ? bearer : net::downloadToken(server.url);
+        const auto refusals = net::sessionRefusals(server.url);
         try {
           nativeInstall(files[i], target, headers);
           break;
@@ -365,8 +365,8 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
           // The download token (or the session token) ran out: a fresh one,
           // and the same file goes on from the same byte, not counted as a
           // failed try.
-          const bool refused = session ? net::sessionRefusals() != refusals : net::downloadTokenRejected();
-          if (refused && !cancel_ && renewed++ < 2 && net::renewDownloadToken(sent)) {
+          const bool refused = session ? net::sessionRefusals(server.url) != refusals : net::downloadTokenRejected(server.url);
+          if (refused && !cancel_ && renewed++ < 2 && net::renewDownloadToken(server.url, sent)) {
             --attempt;
             continue;
           }

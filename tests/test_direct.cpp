@@ -89,27 +89,26 @@ struct Files {
     return std::exchange(requests, {});
   }
 };
-void hear(const std::string &line) { foil::net::heardHeader(line.data(), line.size()); }
+void hear(const std::string &from, const std::string &line) { foil::net::heardHeader(from, line.data(), line.size()); }
 bool has(const std::string &text, const std::string &part) { return text.find(part) != std::string::npos; }
 } // namespace
 int runDirectTests() {
   int failures = 0;
   using namespace foil::net;
   forgetDirect();
-  forgetDownloadToken();
+  forgetLinks();
   const std::string shop = "http://127.0.0.1:38000";
   const std::string game = shop + "/api/get/Game%20One.nsz?v=3";
   {
     // Nothing named: the server's own address, its keys as they are.
-    setShopOrigin(shop);
     CHECK(routeDownload(game) == game);
     CHECK(routeName(game) == "server");
-    hear("X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
+    hear(shop, "X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
     // Named, it is the only way even before a token comes: asked with no
     // key at all (its 401 asks for one), never the server's keys.
     CHECK(routeDownload(game) == "https://dl.example:8443/api/get/Game%20One.nsz?v=3");
     CHECK(headersFor(routeDownload(game), {"X-Access-Key: k"}).empty());
-    hear("X-CookingFoil-Download-Token: first\r\n");
+    hear(shop, "X-CookingFoil-Download-Token: first\r\n");
     // Both: the same path and query on the direct address.
     CHECK(routeDownload(game) == "https://dl.example:8443/api/get/Game%20One.nsz?v=3");
     CHECK(routeName(game) == "direct");
@@ -129,30 +128,29 @@ int runDirectTests() {
     CHECK(routeName(game) == "direct");
     // Named in another form of the same place: one place, and the keys
     // never go there.
-    hear("X-CookingFoil-Download-Origin: https://DL.Example:443\r\n");
+    hear(shop, "X-CookingFoil-Download-Origin: https://DL.Example:443\r\n");
     CHECK(routeDownload(game) == "https://dl.example/api/get/Game%20One.nsz?v=3");
     CHECK(isDirect("https://dl.example/x") && isDirect("https://DL.EXAMPLE:443/x"));
     CHECK(headersFor("https://dl.example:443/x", keys) == std::vector<std::string>{"Authorization: Bearer first"});
-    hear("X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
+    hear(shop, "X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
   }
   {
     // 401: a fresh token once; refused with it too, the caller's (a failure).
     forgetDirect();
-    setShopOrigin(shop);
     int asked = 0;
-    setTokenRenewer([&] {
+    setTokenRenewer(shop, [&] {
       ++asked;
-      hear("X-CookingFoil-Download-Token: second\r\n");
+      hear(shop, "X-CookingFoil-Download-Token: second\r\n");
       return 200L;
     });
     const auto direct = routeDownload(game);
     CHECK(afterDirectFailure(direct, 401, "first") == DirectStep::Again);
-    CHECK(asked == 1 && downloadToken() == "second");
+    CHECK(asked == 1 && downloadToken(shop) == "second");
     CHECK(afterDirectFailure(direct, 401, "first") == DirectStep::Again); // a part sent with the old one
     CHECK(asked == 1);
     CHECK(afterDirectFailure(direct, 401, "second") == DirectStep::Other);
     CHECK(routeDownload(game) == direct); // still the only way
-    setTokenRenewer(nullptr);
+    setTokenRenewer(shop, nullptr);
   }
   {
     // Named before its token came: asked with no key, the proxy in front
@@ -160,13 +158,12 @@ int runDirectTests() {
     // a token is asked for and it goes again. With a token sent, a 404 is
     // the file's own and stays a failure.
     forgetDirect();
-    forgetDownloadToken();
-    setShopOrigin(shop);
-    hear("X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
+    forgetLinks();
+    hear(shop, "X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
     int asked = 0;
-    setTokenRenewer([&] {
+    setTokenRenewer(shop, [&] {
       ++asked;
-      hear("X-CookingFoil-Download-Token: third\r\n");
+      hear(shop, "X-CookingFoil-Download-Token: third\r\n");
       return 200L;
     });
     const auto direct = routeDownload(game);
@@ -175,7 +172,7 @@ int runDirectTests() {
     CHECK(asked == 1 && headersFor(direct, {}) == std::vector<std::string>{"Authorization: Bearer third"});
     CHECK(afterDirectFailure(direct, 404, "third") == DirectStep::Other);
     CHECK(afterDirectFailure(game, 404, "") == DirectStep::Other); // the server's own address: its 404
-    setTokenRenewer(nullptr);
+    setTokenRenewer(shop, nullptr);
   }
   Files files;
   files.body.resize(3 << 20);
@@ -187,8 +184,7 @@ int runDirectTests() {
     // (a dead one for minutes, as any server) until it fails or is
     // cancelled, and nothing reaches the public address.
     forgetDirect();
-    setShopOrigin("http://127.0.0.1:" + std::to_string(files.port));
-    hear("X-CookingFoil-Download-Origin: https://127.0.0.1:1\r\n");
+    hear(url, "X-CookingFoil-Download-Origin: https://127.0.0.1:1\r\n");
     CHECK(routeName(url) == "direct");
     SegmentedOptions options;
     options.connections = 2;
@@ -215,8 +211,7 @@ int runDirectTests() {
   {
     // No direct address named: the server's own, with its keys.
     forgetDirect();
-    forgetDownloadToken();
-    setShopOrigin("http://127.0.0.1:" + std::to_string(files.port));
+    forgetLinks();
     std::string got(files.body.size(), '\0');
     SegmentedOptions options;
     options.connections = 3;
@@ -238,34 +233,34 @@ int runDirectTests() {
     // The server turned its direct address off: its next info or list reply
     // over https names none, and what was held goes (downloads go back to
     // the list's own addresses without a restart).
-    const auto named = [] {
-      forgetDownloadToken();
-      hear("X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
-      hear("X-CookingFoil-Download-Token: held\r\n");
-    };
     const std::string info = "https://shop.example/api/shop/info";
+    const auto named = [&] {
+      forgetLinks();
+      hear(info, "X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
+      hear(info, "X-CookingFoil-Download-Token: held\r\n");
+    };
     Response reply;
     reply.status = 200;
     named();
     reply.directNamed = true; // still named: kept
     followDirectNaming(info, reply);
-    CHECK(downloadTokenOrigin() == "https://dl.example:8443" && downloadToken() == "held");
+    CHECK(downloadTokenOrigin(info) == "https://dl.example:8443" && downloadToken(info) == "held");
     reply.directNamed = false; // named no more: dropped
     followDirectNaming(info, reply);
-    CHECK(downloadTokenOrigin().empty() && downloadToken().empty());
+    CHECK(downloadTokenOrigin(info).empty() && downloadToken(info).empty());
     named();
     reply.status = 304; // an unchanged list counts the same
     followDirectNaming(info, reply);
-    CHECK(downloadTokenOrigin().empty());
+    CHECK(downloadTokenOrigin(info).empty());
     named();
     reply.status = 503; // a failure says nothing about it
     followDirectNaming(info, reply);
-    CHECK(downloadTokenOrigin() == "https://dl.example:8443");
+    CHECK(downloadTokenOrigin(info) == "https://dl.example:8443");
     reply.status = 200; // a plain http server is never given one
     followDirectNaming("http://shop.example/api/shop/info", reply);
-    CHECK(downloadToken() == "held");
+    CHECK(downloadToken(info) == "held");
   }
   forgetDirect();
-  forgetDownloadToken();
+  forgetLinks();
   return failures;
 }

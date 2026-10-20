@@ -10,6 +10,7 @@
 struct json_object;
 namespace foil::net {
 struct Response {
+    std::string url; // what was asked
     long status = 0;
     std::string body, etag, error;
     int retryAfter = 0; // the Retry-After header in seconds; 0 when absent or a date

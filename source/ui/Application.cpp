@@ -179,7 +179,7 @@ void Application::serverRestartNotice() {
 // changed): a refresh, where the session drops the old key and asks for
 // approval again, so the QR code shows instead of each screen failing.
 void Application::followTakeBack() {
-  if (net::takeConsoleRevoked()) takenBack_ = true;
+  if (session_ && net::takeConsoleRevoked(session_->server().url)) takenBack_ = true;
   if (!takenBack_ || !session_ || network_.joinable()) return;
   takenBack_ = false;
   logLine("the server took this console back; refreshing to ask for approval again");
@@ -886,8 +886,7 @@ void Application::connect(size_t index) {
   refresh();
 }
 void Application::renewTokensWith(const Server &server) {
-  net::setTokenRenewer([server, state = state_] { return net::renewDownloadToken(server, state); });
-  net::setShopOrigin(server.url); // its files may come from its direct address
+  net::setTokenRenewer(server.url, [server, state = state_] { return net::renewDownloadToken(server, state); });
 }
 void Application::refresh() {
   if (!session_ || network_.joinable())
@@ -3022,7 +3021,7 @@ void Application::settlePatchJob(bool failed, const std::string &error) {
 // fresh download token was asked for says so (and once on screen), since
 // trying again would not help.
 std::string Application::failureText(const std::string &error) {
-  if (!net::downloadSignInRefused()) return error;
+  if (!session_ || !net::downloadSignInRefused(session_->server().url)) return error;
   const std::string text = tr("The server refused the login. Check the server's username and password in Settings.");
   message(text);
   return text;

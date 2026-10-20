@@ -337,14 +337,14 @@ int runEnrollTests() {
     mock.answer = [](const std::string &) -> Reply {
       return {401, "X-CookingFoil-Session: revoked\r\n", R"({"error":"session revoked"})"};
     };
-    net::takeConsoleRevoked(); // what tests before this one left
+    net::takeConsoleRevoked(url); // what tests before this one left
     net::get(url + "/api/shop/sections", {}, "", nullptr);
-    CHECK(net::takeConsoleRevoked() && !net::takeConsoleRevoked());
+    CHECK(net::takeConsoleRevoked(url) && !net::takeConsoleRevoked(url));
     mock.answer = [](const std::string &) -> Reply {
       return {401, "X-CookingFoil-Session: expired\r\n", "{}"};
     };
     net::get(url + "/api/shop/sections", {}, "", nullptr);
-    CHECK(!net::takeConsoleRevoked()); // expired is renewed, not a take-back
+    CHECK(!net::takeConsoleRevoked(url)); // expired is renewed, not a take-back
     mock.take();
   }
   {

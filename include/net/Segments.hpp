@@ -43,8 +43,5 @@ private:
 // (never more than the server recommends), or 0 for automatic: the server's
 // recommendation, else 2 for a private address and 4 otherwise.
 int connectionsFor(const std::string &serverUrl, int setting);
-// The server's recommendation (/api/shop/info download.maxConnections); 0
-// when it gives none.
-void recommendConnections(int most);
 bool privateHost(const std::string &url);
 } // namespace foil::net
