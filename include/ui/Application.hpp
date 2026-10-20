@@ -627,6 +627,10 @@ private:
   Server serverFor(const std::string &url) const;
   // Its dot's colour, as the server's form shows it.
   SDL_Color serverDot(const std::string &url) const;
+  // Two or more servers on: only then do cards and pages say which server.
+  bool manyServers() const;
+  // The servers a game's main file is on, its own first.
+  std::vector<std::string> groupServers(const Group &g) const;
   // The install popup's 받을 서버: the d-pad steps through the servers
   // holding every chosen file.
   void stepInstallServer(int by);
