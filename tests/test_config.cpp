@@ -147,6 +147,7 @@ int runConfigTests() {
       foil::openLog(path);
       const std::string filler(200, 'x');
       for (int i = 0; i < 8000; ++i) foil::logLine("line " + std::to_string(i) + " " + filler);
+      foil::flushLog();
       CHECK(std::filesystem::file_size(path) <= 2 * 256 * 1024 + 4096);
       CHECK(foil::readFile(path).find("line 7999 ") != std::string::npos);
       // A line repeated (a poll failing every few seconds) is written once,
@@ -156,6 +157,7 @@ int runConfigTests() {
       for (int i = 0; i < 5; ++i) foil::logLine("GET /api/pair/status status=404");
       CHECK(foil::logTail(4096).find("4 more times so far") != std::string::npos);
       foil::logLine("paired");
+      foil::flushLog();
       const auto text = foil::readFile(path);
       CHECK(std::count(text.begin(), text.end(), '\n') == 3);
       CHECK(text.find("(the line before 4 more times)") != std::string::npos && text.find("paired") != std::string::npos);

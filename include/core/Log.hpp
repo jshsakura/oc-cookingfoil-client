@@ -5,7 +5,10 @@
 namespace foil {
 // Appends to the log file opened by openLog. No-op until then.
 void openLog(const std::string &path);
+// Queued and written by a thread of its own, so it never waits for the card.
 void logLine(const std::string &line);
+// Waits until every line logged so far is in the file (a report, a test).
+void flushLog();
 // A line as the log keeps it: no server addresses. An address's scheme and
 // host and its query (signatures, keys) go; the path stays, to tell what it
 // was ("/api/homebrew/x/bundle"). Keys, passwords and tokens read as "***".
