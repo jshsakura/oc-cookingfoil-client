@@ -91,6 +91,8 @@ Parsed<Config> parseConfig(const std::string& json) {
         auto* enabled = field(object, "enabled");
         if (enabled && !json_object_is_type(enabled, json_type_boolean)) { fail(tr("enabled must be true or false.")); return result; }
         server.enabled = !enabled || json_object_get_boolean(enabled);
+        const auto color = integerField(object, "color", -1);
+        server.color = color >= 0 && color < ServerColorCount ? int(color) : -1;
         result.value.servers.push_back(server);
     }
     for (const auto* key : {"language", "installTarget"}) {
@@ -115,6 +117,7 @@ std::string serializeConfig(const Config& config, bool redact) {
         add("cfClientSecret", redact && !s.cfClientSecret.empty() ? "••••" : s.cfClientSecret);
         if (!s.enrollToken.empty()) add("enrollToken", redact ? "••••" : s.enrollToken);
         json_object_object_add(object, "enabled", json_object_new_boolean(s.enabled));
+        if (s.color >= 0) json_object_object_add(object, "color", json_object_new_int(s.color));
         json_object_array_add(servers, object);
     }
     json_object_object_add(root.get(), "servers", servers);

@@ -181,5 +181,16 @@ int runConfigTests() {
     const auto title = foil::parsePending(foil::serializePending(pending));
     CHECK(title && title->files.size() == 1 && title->files[0].format == "nsp");
   }
+  {
+    // A server's dot colour: one of the eight, kept through a save; any
+    // other number is no choice (its place in the list decides).
+    auto parsed = foil::parseConfig(R"({"servers":[{"url":"https://a.example.com","color":3},)"
+                                     R"({"url":"https://b.example.com","color":99},{"url":"https://c.example.com"}]})");
+    CHECK(!parsed.error && parsed.value.servers.size() == 3);
+    CHECK(parsed.value.servers[0].color == 3);
+    CHECK(parsed.value.servers[1].color == -1 && parsed.value.servers[2].color == -1);
+    const auto again = foil::parseConfig(foil::serializeConfig(parsed.value));
+    CHECK(again.value.servers[0].color == 3 && again.value.servers[2].color == -1);
+  }
   return failures;
 }

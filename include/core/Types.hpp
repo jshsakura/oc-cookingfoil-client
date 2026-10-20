@@ -40,6 +40,7 @@ struct Item {
     std::vector<std::string> icons;
     Tags languages, categories;
 };
+inline constexpr int ServerColorCount = 8;
 struct Server {
     std::string title, url, username, password, cfClientId, cfClientSecret;
     bool enabled = true;
@@ -47,6 +48,9 @@ struct Server {
     // (cfe_…): spent once for this console's access key (POST /api/pair/enroll),
     // then taken out of config.json. Empty for a server set up by hand.
     std::string enrollToken;
+    // Its dot's colour, one of the eight (ui/Theme ServerColors); -1 takes
+    // the one its place in the list gives (the first green, the second blue).
+    int color = -1;
 };
 struct Config {
     std::vector<Server> servers;

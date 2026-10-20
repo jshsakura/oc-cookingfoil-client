@@ -1175,7 +1175,9 @@ private:
     std::string error;
     bool confirmDelete = false;
   };
-  static constexpr int ServerFields = 5;
+  static constexpr int ServerFields = 5; // then the colour row
+  int serverFormColor() const;
+  void stepServerColor(int step);
   std::optional<ServerForm> serverForm_;
   std::optional<TextRequest> textRequest_;
   int textField_ = -1; // the form field the keyboard types into
