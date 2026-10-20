@@ -18,7 +18,8 @@ std::string Application::backupDetail(const saves::LocalBackup &b) const {
   std::string detail = saves::deviceBackup(b)      ? std::string(tr("Shared save"))
                        : b.meta.userName.empty() ? std::string(tr("Backup without details"))
                                                  : b.meta.userName;
-  if (!b.meta.deviceLabel.empty()) detail += " · " + b.meta.deviceLabel;
+  if (!b.meta.deviceLabel.empty())
+    detail += " · " + (b.meta.deviceLabel == "Unknown device" ? std::string(tr("Unknown console")) : b.meta.deviceLabel); // i18n: as is
   if (b.meta.isAutoBackup) detail += " · " + std::string(tr("Auto backup before restore"));
   return detail;
 }
