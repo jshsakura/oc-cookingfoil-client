@@ -2,11 +2,14 @@
 #include "core/Log.hpp"
 #include <algorithm>
 #include <cctype>
+#include <condition_variable>
+#include <deque>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
 #include <mutex>
 #include <regex>
+#include <thread>
 #ifdef __SWITCH__
 #include <switch.h>
 #include <malloc.h>
@@ -49,7 +52,65 @@ void trimLog(const std::string &path) {
   if (!atomicWrite(path, text, ignored)) std::filesystem::remove(path, error);
 }
 } // namespace
+namespace {
+void writeOne(const std::string &raw);
+// Lines go to the card on a thread of their own: a screen that logs (every
+// finished download does) never waits for a write. It drains in batches, so
+// a card that stalls for a moment costs the screen nothing.
+class Writer {
+public:
+  ~Writer() {
+    {
+      std::lock_guard<std::mutex> held(lock_);
+      quit_ = true;
+    }
+    wake_.notify_all();
+    if (thread_.joinable()) thread_.join();
+  }
+  void push(std::string raw) {
+    std::lock_guard<std::mutex> held(lock_);
+    if (lines_.size() >= MaxQueued) lines_.pop_front(); // the card is stuck: the oldest go, it never grows
+    if (!thread_.joinable()) thread_ = std::thread([this] { run(); });
+    lines_.push_back(std::move(raw));
+    wake_.notify_one();
+  }
+  // Returns once every line pushed before it is on the card.
+  void flush() {
+    std::unique_lock<std::mutex> held(lock_);
+    idle_.wait(held, [this] { return lines_.empty() && !busy_; });
+  }
+
+private:
+  static constexpr size_t MaxQueued = 4096;
+  void run() {
+    std::unique_lock<std::mutex> held(lock_);
+    for (;;) {
+      wake_.wait(held, [this] { return !lines_.empty() || quit_; });
+      if (lines_.empty()) return;
+      std::deque<std::string> batch;
+      batch.swap(lines_);
+      busy_ = true;
+      held.unlock();
+      for (const auto &raw : batch) writeOne(raw);
+      held.lock();
+      busy_ = false;
+      idle_.notify_all();
+    }
+  }
+  std::mutex lock_;
+  std::condition_variable wake_, idle_;
+  std::deque<std::string> lines_;
+  std::thread thread_;
+  bool busy_ = false, quit_ = false;
+};
+Writer &writer() {
+  static Writer instance;
+  return instance;
+}
+} // namespace
+void flushLog() { writer().flush(); }
 void openLog(const std::string &path) {
+  flushLog(); // what came before belongs to the file it was meant for
   std::lock_guard<std::mutex> lock(mutex);
   std::error_code error;
   lastLine.clear();
@@ -166,7 +227,8 @@ std::string forReport(const std::string &text, const ReportPrivate &known) {
   out = std::regex_replace(out, home, "$1(user)");
   return std::regex_replace(out, longHex, "$1...");
 }
-void logLine(const std::string &raw) {
+namespace {
+void writeOne(const std::string &raw) {
   const auto line = withoutAddresses(raw);
   std::lock_guard<std::mutex> lock(mutex);
   if (logPath.empty())
@@ -188,7 +250,10 @@ void logLine(const std::string &raw) {
     if (size > long(2 * MaxLogBytes)) trimLog(logPath);
   }
 }
+} // namespace
+void logLine(const std::string &raw) { writer().push(raw); }
 std::string logTail(size_t maxBytes) {
+  flushLog();
   std::lock_guard<std::mutex> lock(mutex);
   if (logPath.empty()) return {};
   auto text = readFile(logPath);
