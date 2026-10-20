@@ -1400,6 +1400,8 @@ private:
   GenreNames genreNames_, scoreLabels_; // key -> name on screen
   net::NameTable genreTable_;            // fixtures only; a session has its own
   std::string heroBanner_; // admin banner for the hero, when featured has one
+  // Which of the shop's games are on the console, from the installed list.
+  InstalledMask installedMaskNow() const;
   void rebuildHome();
   // Shows each game under its name in the interface language when the
   // server sent one (feature item-names), else the store's own name.

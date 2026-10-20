@@ -1290,12 +1290,16 @@ const std::vector<size_t> &Application::libraryList() const {
 }
 // Home rows and the "not installed" filter both depend on what the console
 // has, so they are rebuilt when either the catalog or the installed list moves.
-void Application::rebuildHome() {
-  installedMask_.assign(groups_.size(), false);
+InstalledMask Application::installedMaskNow() const {
+  InstalledMask mask(groups_.size(), false);
   if (installed_.installed.complete)
     for (const auto &t : installed_.installed.titles)
       if (const auto found = groupIndex_.find(t.titleId); found != groupIndex_.end())
-        installedMask_[found->second] = true;
+        mask[found->second] = true;
+  return mask;
+}
+void Application::rebuildHome() {
+  installedMask_ = installedMaskNow();
   // Admin picks (feature: featured) lead the home, mapped onto loaded groups.
   std::vector<HomeTheme> pinned;
   heroBanner_.clear();
