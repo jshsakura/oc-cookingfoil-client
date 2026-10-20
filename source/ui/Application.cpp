@@ -943,6 +943,7 @@ void Application::poll() {
   raJob_.poll();
   raListJob_.poll();
   raGamesJob_.poll();
+  adminJob_.poll();
   pollPatches();
   pollPatchCheck();
   pollFileCleanup();
@@ -1413,6 +1414,10 @@ void Application::action(Action a) {
     selfShortcutAction(a);
     return;
   }
+  if (adminEdit_.open) {
+    adminEditAction(a);
+    return;
+  }
   if (resumeAsked()) {
     if (a == Action::Accept && settled()) {
       confirmResume_ = false;
@@ -1759,6 +1764,7 @@ void Application::action(Action a) {
     if (a == Action::Accept && !list.empty() && selected_ >= 0)
       openDetail(list[selected_]);
   } else if (screen_ == Screen::Detail && selection_) {
+    if (adminChipAction(a, part_ == 0)) return;
     if (a == Action::Preview && !detail_.screenshots.empty()) {
       galleryOpen_ = true;
       screenshot_ = 0;
@@ -2262,6 +2268,8 @@ void Application::render() {
   SDL_RenderSetClipRect(paint_.renderer, nullptr);
   if (pairingPending_ && screen_ != Screen::Settings)
     footer({{"Y", tr("Write message")}, {"B", tr("Back")}});
+  else if (adminFocused())
+    footer({{"A", tr("Admin edit")}, {"B", tr("Back")}});
   else if (!headerFocus_.empty())
     footer({{"A", headerFocus_.rfind("tab", 0) == 0 ? tr("Next tab") : tr("Select")}, {"B", tr("Back")}}); // on a header button
   else if (screen_ == Screen::Library)

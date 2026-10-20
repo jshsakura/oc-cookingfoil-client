@@ -57,6 +57,7 @@ void Application::openDetail(size_t group) {
   if (group >= groups_.size())
     return;
   detailGroup_ = group;
+  adminFocus_ = false;
   previous_ = screen_;
   screen_ = Screen::Detail;
   detail_ = {};
@@ -119,6 +120,7 @@ void Application::detail() {
   // Back link names the screen it returns to, with room before the cover.
   const auto back = screenLabel(previous_);
   paint_.icon(7, 32, 14, Surface, 20);
+  adminChip();
   paint_.fonts.middle(back, 56, 24, 17, Surface);
   hit(24, 4, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
@@ -224,7 +226,7 @@ void Application::detail() {
   const auto &parts = selection_->parts();
   // Files, then the game's patches; the storage cards and the button follow.
   const int rows = int(selection_->rows());
-  const bool panelFocus = !descriptionFocus_;
+  const bool panelFocus = !descriptionFocus_ && !adminFocused();
   // Rows have room above and below their two lines; everything is centered
   // in the row instead of hugging its top edge.
   constexpr float RowTop = 226, RowPitch = 56, RowHeight = 52;

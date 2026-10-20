@@ -1,0 +1,6 @@
+{"fields":[
+{"key":"verified","type":"toggle","label":{"ko":"검수됨","en":"Verified","ja":"動作確認済み","zh":"已驗證"},"value":true},
+{"key":"visible","type":"toggle","label":{"ko":"목록에 보이기","en":"Show in lists","ja":"一覧に表示","zh":"在列表中显示"},"value":true},
+{"key":"kind","type":"choice","label":{"ko":"분류","en":"Kind","ja":"分類","zh":"分类"},"value":"tool","options":[{"value":"tool","label":{"ko":"도구","en":"Tool","ja":"ツール","zh":"工具"}},{"value":"port","label":{"ko":"포트","en":"Port","ja":"移植","zh":"移植"}}]},
+{"key":"featured","type":"toggle","label":{"ko":"추천 선반에 올리기","en":"Featured shelf","ja":"おすすめに載せる","zh":"放上推荐栏"},"value":false}
+]}
