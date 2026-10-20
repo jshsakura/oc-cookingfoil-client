@@ -307,10 +307,10 @@ void Application::retroDetail() {
     paint_.skeleton(0, 0, 1280, 212, 0, true);
   images_->draw(banner, 0, 0, 1280, 212, 0, true);
   const auto back = screenLabel(previous_);
-  paint_.icon(7, 32, 14, Surface, 20);
+  paint_.icon(7, 32, BackLine - 10, Surface, 20);
   raChip(adminChip() - 10);
-  paint_.fonts.middle(back, 56, 24, 17, Surface);
-  hit(24, 4, 200, 40, [this] { action(Action::Back); });
+  paint_.fonts.middle(back, 56, BackLine, 17, Surface);
+  hit(24, BackLine - 20, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
   cover(game.iconUrl, 40, Top, 140, false, game.name, true, true);
   paint_.region(game.region, 40 + 140 - 44, Top + 140 - 32, 36, 24);

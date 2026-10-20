@@ -115,6 +115,7 @@ void Application::serverFormAction(Action a) {
 }
 // The colour shown is the one chosen, else the one its place gives; stepping
 // from that one keeps the first step next to what the player sees.
+static_assert(std::size(ServerColors) == ServerColorCount, "one colour per choice");
 int Application::serverFormColor() const {
   const auto &form = *serverForm_;
   if (form.server.color >= 0) return form.server.color;
@@ -273,7 +274,7 @@ void Application::serverFormDialog() {
     if (form.row == ServerFields) paint_.focusRow(x, y, w, Row, Ground, 12);
     else paint_.rect(x, y, w, Row, Ground, 12);
     paint_.fonts.middle(tr("Color"), x + 20, mid, 18, Secondary, true, 140);
-    constexpr float Dot = 22, Step = 44;
+    constexpr float Dot = 22, Step = 40;
     const int chosen = serverFormColor();
     for (int c = 0; c < ServerColorCount; ++c) {
       const float cx = valueX + c * Step + Dot / 2;

@@ -38,7 +38,7 @@ bool Application::adminChipAction(Action a, bool atTop) {
 }
 // On the dark band, across from the way back.
 float Application::adminChip() {
-  constexpr float Right = 1248, Top = 8, Height = 34;
+  constexpr float Right = 1248, Height = 34, Top = BackLine - Height / 2;
   if (!adminTarget()) return Right;
   const std::string label = tr("Admin edit");
   const float w = 14 + 18 + 8 + paint_.fonts.measure(label, 16, true) + 16, x = Right - w;

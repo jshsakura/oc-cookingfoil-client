@@ -102,10 +102,10 @@ void Application::homebrewDetail() {
   if (!backdrop.empty() && !images_->loaded(backdrop) && !images_->failed(backdrop))
     paint_.skeleton(0, 0, 1280, 212, 0, true);
   images_->draw(backdrop, 0, 0, 1280, 212, 0, true);
-  paint_.icon(7, 32, 14, Surface, 20);
+  paint_.icon(7, 32, BackLine - 10, Surface, 20);
   adminChip();
-  paint_.fonts.middle(homebrewReturn_ == Screen::Downloads ? tr("Downloads") : tr("Homebrew"), 56, 24, 17, Surface);
-  hit(24, 4, 200, 40, [this] { action(Action::Back); });
+  paint_.fonts.middle(homebrewReturn_ == Screen::Downloads ? tr("Downloads") : tr("Homebrew"), 56, BackLine, 17, Surface);
+  hit(24, BackLine - 20, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
   cover(icon, 40, Top, 140, false, app.name, true, true);
   paint_.fonts.text(app.name, 208, Top + 4, 38, Surface, true, 1010);

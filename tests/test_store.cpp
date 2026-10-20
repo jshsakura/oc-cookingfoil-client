@@ -530,6 +530,41 @@ int runStoreTests() {
     CHECK(DownloadStore::fileName("/tmp/x.db") == "/tmp/x.db");
     CHECK(DownloadStore::fileName("sdmc:") == "sdmc:");
   }
+  {
+    // 다운로드 reads each ending a page at a time: the newest first, older
+    // ones on asking, and a save never deletes what was not read.
+    const auto paged = (dir / "paged.db").string();
+    std::vector<history::Entry> rows;
+    for (int n = 0; n < 5; ++n) {
+      auto e = entry("done" + std::to_string(n), history::Outcome::Done);
+      e.id = uint64_t(n + 1);
+      e.at = 100 + n; // done4 ended last
+      rows.push_back(e);
+    }
+    auto waiting = entry("waiting", history::Outcome::Queued);
+    waiting.id = 9;
+    rows.push_back(waiting);
+    std::string error;
+    {
+      DownloadStore store;
+      CHECK(store.open(paged, error) && store.save(rows, error));
+    }
+    DownloadStore store;
+    CHECK(store.open(paged, error));
+    auto shown = store.load(2);
+    CHECK(shown.size() == 3); // done4, done3 and the waiting row
+    CHECK(store.moreOf(history::Outcome::Done) && !store.moreOf(history::Outcome::Failed));
+    CHECK(store.topId() == 9);
+    bool more = false;
+    const auto next = store.older(history::Outcome::Done, 103, 4, 2, more);
+    CHECK(next.size() == 2 && next[0].install.name == "done2" && next[1].install.name == "done1" && more);
+    // Saving what was read (the older page joins the list) leaves done0,
+    // never read, in the file.
+    shown.insert(shown.end(), next.begin(), next.end());
+    CHECK(store.save(shown, error));
+    CHECK(store.load().size() == 6);
+    CHECK(store.removeAll(history::Outcome::Done, error) && store.load().size() == 1);
+  }
   DownloadStore::takeSetAside(); // the cases above leave it set
   std::filesystem::remove_all(dir);
   return failures;

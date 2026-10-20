@@ -2024,7 +2024,10 @@ void Application::footer(
     x -= label;
     paint_.fonts.middle(it->second, x, 691, 19, Ink);
     x -= key + 10;
-    hit(x - 8, 660, key + label + 26, 60, [this, k = it->first] { hintAction(k); });
+    // The whole bar's height answers; pressed, only the key and its label
+    // darken, as a pill around them.
+    const float w = key + label + 26;
+    hit(x - 8, 660, w, 60, [this, k = it->first] { hintAction(k); }, {x - 8, 691 - 22, w, 44}, 22);
     paint_.key(it->first, x, 691);
     x -= 30;
   }

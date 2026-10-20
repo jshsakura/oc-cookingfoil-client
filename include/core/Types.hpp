@@ -40,7 +40,7 @@ struct Item {
     std::vector<std::string> icons;
     Tags languages, categories;
 };
-inline constexpr int ServerColorCount = 8;
+inline constexpr int ServerColorCount = 12;
 struct Server {
     std::string title, url, username, password, cfClientId, cfClientSecret;
     bool enabled = true;

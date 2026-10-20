@@ -91,7 +91,7 @@ Parsed<Config> parseConfig(const std::string& json) {
         auto* enabled = field(object, "enabled");
         if (enabled && !json_object_is_type(enabled, json_type_boolean)) { fail(tr("enabled must be true or false.")); return result; }
         server.enabled = !enabled || json_object_get_boolean(enabled);
-        const auto color = integerField(object, "color", -1);
+        const auto color = integerField(object, "color", -1); // ServerColors' place
         server.color = color >= 0 && color < ServerColorCount ? int(color) : -1;
         result.value.servers.push_back(server);
     }
