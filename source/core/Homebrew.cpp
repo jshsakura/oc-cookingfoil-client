@@ -82,6 +82,7 @@ std::vector<App> parse(const std::string &json, const std::string &base) {
     a.id = stringField(o, "id");
     a.name = stringField(o, "name");
     a.version = stringField(o, "version");
+    a.nacpVersion = stringField(o, "nacp_version");
     a.author = stringField(o, "author");
     a.description = stringField(o, "description");
     a.hash = stringField(o, "hash");
@@ -329,6 +330,7 @@ Ledger parseLedger(const std::string &json) {
     r.seen = {uint64_t(std::max<int64_t>(0, integerField(value, "size"))), integerField(value, "mtime")};
     r.fileSha = stringField(value, "fileSha");
     r.shortcutKey = stringField(value, "shortcutKey");
+    r.nacpVersion = stringField(value, "nacpVersion");
     auto *files = field(value, "files");
     if (json_object_is_type(files, json_type_array))
       for (size_t f = 0; f < json_object_array_length(files); ++f) {
@@ -353,6 +355,7 @@ std::string serializeLedger(const Ledger &ledger) {
     }
     if (!r.fileSha.empty()) json_object_object_add(o, "fileSha", json_object_new_string(r.fileSha.c_str()));
     if (!r.shortcutKey.empty()) json_object_object_add(o, "shortcutKey", json_object_new_string(r.shortcutKey.c_str()));
+    if (!r.nacpVersion.empty()) json_object_object_add(o, "nacpVersion", json_object_new_string(r.nacpVersion.c_str()));
     json_object_object_add(root.get(), id.c_str(), o);
   }
   return json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_NOSLASHESCAPE);
@@ -439,7 +442,7 @@ LedgerCheck checkLedger(const Ledger &ledger, const std::function<std::optional<
     fixed.fileSha = sha;
     if (!record.fileSha.empty() && sha != record.fileSha) {
       fixed.hash.clear();
-      fixed.version = cardVersion(record.file);
+      fixed.version = fixed.nacpVersion = cardVersion(record.file);
       out.followed.push_back(id);
     }
     out.fixed[id] = std::move(fixed);
@@ -467,10 +470,12 @@ Status status(const App &app, const Ledger &ledger, const std::function<bool(con
   if (found == ledger.end() || !exists(found->second.file))
     return cardVersion ? cardStatus(app.version, *cardVersion) : Status::Available;
   // Same build in another place (the server moved it) also reads as an update.
-  // The build's version is a second sign beside the hash, when both sides
-  // have one (a record from before versions goes by the hash alone).
+  // The build's NACP version is a second sign beside the hash, when both
+  // sides know it (an older record or server goes by the hash alone). Not
+  // the shown version: a GitHub app's may be its release tag.
   const auto &record = found->second;
-  const bool newVersion = !record.version.empty() && !app.version.empty() && record.version != app.version;
+  const bool newVersion =
+      !record.nacpVersion.empty() && !app.nacpVersion.empty() && record.nacpVersion != app.nacpVersion;
   return record.hash == app.hash && record.file == app.installPath && !newVersion ? Status::Installed : Status::Update;
 }
 const App *findApp(const std::vector<App> &apps, const std::string &folder) {
