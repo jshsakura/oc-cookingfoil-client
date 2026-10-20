@@ -26,7 +26,8 @@ std::string hostOf(const std::string &url) {
 }
 bool sameServer(const Server &a, const Server &b) {
   return a.title == b.title && a.url == b.url && a.username == b.username && a.password == b.password &&
-         a.cfClientId == b.cfClientId && a.cfClientSecret == b.cfClientSecret && a.enabled == b.enabled;
+         a.cfClientId == b.cfClientId && a.cfClientSecret == b.cfClientSecret && a.enabled == b.enabled &&
+         a.color == b.color;
 }
 // The form's rows: the server's four fields, then the approval message.
 std::string &fieldOf(Server &server, std::string &note, int field) {
@@ -93,8 +94,16 @@ void Application::serverFormAction(Action a) {
   const bool existing = form.index >= 0;
   switch (a) {
   case Action::Up: form.row = std::max(0, form.row - 1); break;
-  case Action::Down: form.row = std::min(ServerFields - 1, form.row + 1); break;
-  case Action::Accept: askServerField(form.row); break;
+  case Action::Down: form.row = std::min(ServerFields, form.row + 1); break;
+  // The last row is the dot's colour: left and right, or A, step through them.
+  case Action::Left:
+  case Action::Right:
+    if (form.row == ServerFields) stepServerColor(a == Action::Left ? -1 : 1);
+    break;
+  case Action::Accept:
+    if (form.row == ServerFields) stepServerColor(1);
+    else askServerField(form.row);
+    break;
   // X deletes a server already there.
   case Action::Search: if (existing) form.confirmDelete = true; break;
   // Y saves from any row; in 설정 the console sends it as Reload.
@@ -103,6 +112,17 @@ void Application::serverFormAction(Action a) {
   case Action::Back: serverForm_.reset(); break;
   default: break;
   }
+}
+// The colour shown is the one chosen, else the one its place gives; stepping
+// from that one keeps the first step next to what the player sees.
+int Application::serverFormColor() const {
+  const auto &form = *serverForm_;
+  if (form.server.color >= 0) return form.server.color;
+  const size_t place = form.index >= 0 ? size_t(form.index) : config_.servers.size();
+  return int(place % ServerColorCount);
+}
+void Application::stepServerColor(int step) {
+  serverForm_->server.color = (serverFormColor() + step + ServerColorCount) % ServerColorCount;
 }
 void Application::saveServerForm() {
   auto &form = *serverForm_;
@@ -216,9 +236,9 @@ void Application::serverFormDialog() {
   const bool existing = form.index >= 0;
   constexpr float Width = 760, Row = 56, Gap = 8;
   const float errorSpace = form.error.empty() ? 0 : 30;
-  const float bodyH = 20 + ServerFields * (Row + Gap) - Gap + 18 + 50 + errorSpace + 18;
+  const float bodyH = 20 + (ServerFields + 1) * (Row + Gap) - Gap + 18 + 50 + errorSpace + 18;
   const auto body = modal(Width, bodyH, existing ? tr("Edit server") : tr("Add server"), tr("Cancel"), tr("Save"),
-                          tr("Type"), 21, existing ? tr("Delete") : "");
+                          form.row == ServerFields ? tr("Change|admin") : tr("Type"), 21, existing ? tr("Delete") : "");
   const float x = body.x + 32, w = body.w - 64, valueX = x + 170, valueW = w - 190;
   const char *labels[ServerFields] = {tr("Address"), tr("Username"), tr("Password"), tr("Name"), tr("Message")};
   for (int field = 0; field < ServerFields; ++field) {
@@ -247,7 +267,26 @@ void Application::serverFormDialog() {
       paint_.fonts.middle(value, valueX, mid, 20, Ink, field == 3, valueW);
     }
   }
-  float lineY = body.y + 20 + ServerFields * (Row + Gap) - Gap + 18;
+  {
+    // The dot this server wears where several servers are listed together.
+    const float y = body.y + 20 + ServerFields * (Row + Gap), mid = y + Row / 2;
+    if (form.row == ServerFields) paint_.focusRow(x, y, w, Row, Ground, 12);
+    else paint_.rect(x, y, w, Row, Ground, 12);
+    paint_.fonts.middle(tr("Color"), x + 20, mid, 18, Secondary, true, 140);
+    constexpr float Dot = 22, Step = 44;
+    const int chosen = serverFormColor();
+    for (int c = 0; c < ServerColorCount; ++c) {
+      const float cx = valueX + c * Step + Dot / 2;
+      if (c == chosen) paint_.rect(cx - Dot / 2 - 5, mid - Dot / 2 - 5, Dot + 10, Dot + 10, Ink, int(Dot / 2 + 5));
+      if (c == chosen) paint_.rect(cx - Dot / 2 - 2, mid - Dot / 2 - 2, Dot + 4, Dot + 4, Surface, int(Dot / 2 + 2));
+      paint_.rect(cx - Dot / 2, mid - Dot / 2, Dot, Dot, ServerColors[c], int(Dot / 2));
+      hit(cx - Step / 2, y, Step, Row, [this, c] {
+        serverForm_->row = ServerFields;
+        serverForm_->server.color = c;
+      });
+    }
+  }
+  float lineY = body.y + 20 + (ServerFields + 1) * (Row + Gap) - Gap + 18;
   if (!form.error.empty()) {
     paint_.fonts.text(form.error, x, lineY, 18, Bad, true, w);
     lineY += errorSpace;
