@@ -148,7 +148,8 @@ bool Application::makeHomebrewShortcutHere(const homebrew::App &app) {
   if (!platform::canMakeShortcuts() || !homebrew::cardNroPath(homebrewFile(app))) return false;
   queueShortcut(app.name, app.iconUrl,
                 serializePlan({homebrewFile(app), "", "", app.name, "", app.name, app.iconUrl, homebrewServerShortcut(app),
-                               app.forwarderCores, app.id, app.forwarderKey}));
+                               app.forwarderCores, app.id, app.forwarderKey}),
+                app.server);
   return true;
 }
 // The server's shortcut first (its picture as set on the web); without one,
@@ -168,7 +169,8 @@ bool Application::makeRetroShortcutHere(const retro::Game &game) {
   queueShortcut(game.name, game.iconUrl,
                 serializePlan({retro::RetroArchApp, retro::corePath(game.core),
                                rom.find(' ') == std::string::npos ? rom : "\"" + rom + "\"", game.name, "RetroArch",
-                               game.name, game.iconUrl, forwarder::serverShortcutId(game.forwarderTitleId)}));
+                               game.name, game.iconUrl, forwarder::serverShortcutId(game.forwarderTitleId)}),
+                game.server);
   return true;
 }
 // The server's shortcut did not come or would not install: made here
@@ -199,8 +201,9 @@ bool Application::shortcutFailed(const std::string &titleId) {
     }
   return false;
 }
-void Application::queueShortcut(const std::string &name, const std::string &icon, const std::string &payload) {
-  queueJob("shortcut", trf("{0} shortcut", {name}), icon, "", 0, payload);
+void Application::queueShortcut(const std::string &name, const std::string &icon, const std::string &payload,
+                                const std::string &server) {
+  queueJob("shortcut", trf("{0} shortcut", {name}), icon, "", 0, payload, 0, false, server);
 }
 // Its turn: the picture fetched and the shortcut written on the writer core,
 // so the screen keeps moving; said and its row ended back here.
@@ -213,7 +216,7 @@ bool Application::startShortcut(const QueuedInstall &next) {
     const auto &app = apps.front();
     plan = {homebrewFile(app), "", "", app.name, "", app.name, app.iconUrl, homebrewServerShortcut(app)};
   }
-  const auto server = session_ ? session_->server() : Server{};
+  const auto server = session_ ? serverFor(next.server) : Server{};
   // The picture as the server gives it now: the row was queued with the
   // address of its time, and the picture may have changed since.
   for (const auto &app : homebrew_)

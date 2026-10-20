@@ -506,7 +506,7 @@ void Application::patchGame(const UserPatch &given, std::string &name, std::stri
       name = patch.gameNames[k];
   }
   if (icon.empty() && !patch.gameIcon.empty())
-    icon = shopAddress(patch.gameIcon);
+    icon = shopAddress(patch.gameIcon, patch.server);
   if (name.empty())
     name = patch.titleId;
 }
@@ -954,7 +954,7 @@ void Application::patchMenu(const PatchRow &row) {
   // Its screenshots, a row of three under the description; ZR or a tap
   // opens them large.
   std::vector<std::string> shots;
-  for (const auto &shot : row.patch.screenshots) shots.push_back(shopAddress(shot));
+  for (const auto &shot : row.patch.screenshots) shots.push_back(shopAddress(shot, row.patch.server));
   if (detail_.screenshots != shots) {
     detail_.screenshots = shots;
     galleryOpen_ = false;
@@ -971,7 +971,7 @@ void Application::patchMenu(const PatchRow &row) {
   const float x = body.x + 32, w = body.w - 64, textX = x + Icon + 20;
   float y = body.y + 24;
   // The patch's own icon when the server has one, else its game's.
-  cover(row.patch.iconUrl.empty() ? row.icon : shopAddress(row.patch.iconUrl), x, y, int(Icon), false, row.game,
+  cover(row.patch.iconUrl.empty() ? row.icon : shopAddress(row.patch.iconUrl, row.patch.server), x, y, int(Icon), false, row.game,
         !row.patch.homebrewApp.empty());
   paint_.fonts.wrapped(row.game, textX, y, 18, Ink, nameW, 2, true);
   const float nameY = y + gameH + 4;

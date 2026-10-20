@@ -342,7 +342,8 @@ void Application::openRaList() {
 void Application::raListFetch() {
   if (raListAsked_ == raListGame_ || raListJob_.busy() || !session_) return;
   const auto id = raListAsked_ = raListGame_;
-  const auto server = session_->server();
+  // A game's page asks its own server; 업적's list is the one in use.
+  const auto server = serverFor(screen_ == Screen::RetroDetail ? retroDetailServer_ : "");
   const auto state = state_;
   raListJob_.run("game", [this, server, state, id]() -> Job::Finish {
     bool missing = false;

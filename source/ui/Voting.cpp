@@ -8,14 +8,14 @@ namespace foil::ui {
 std::optional<Application::VoteTarget> Application::voteTarget() const {
   VoteTarget target;
   if (screen_ == Screen::RetroDetail && !retroPick_.id.empty())
-    target = {"retro", retroPick_.id, retroPick_.votes};
+    target = {"retro", retroPick_.id, retroPick_.votes, retroPick_.server};
   else if (homebrewAsk_ && (screen_ == Screen::Homebrew || screen_ == Screen::Downloads)) {
     const auto *app = homebrewPicked();
     if (!app || app->cardOnly) return std::nullopt;
-    target = {"homebrew", app->id, app->votes};
+    target = {"homebrew", app->id, app->votes, app->server};
   } else
     return std::nullopt;
-  if (const auto cast = votesCast_.find(target.kind + "/" + target.id); cast != votesCast_.end())
+  if (const auto cast = votesCast_.find(target.server + "|" + target.kind + "/" + target.id); cast != votesCast_.end())
     target.votes = cast->second;
   if (!target.votes.offered) return std::nullopt;
   return target;
@@ -51,7 +51,7 @@ bool Application::voteAction(Action a, bool atTop) {
 void Application::castVote(const std::string &vote) {
   const auto target = voteTarget();
   if (!target || voteJob_.busy()) return;
-  const auto key = target->kind + "/" + target->id;
+  const auto key = target->server + "|" + target->kind + "/" + target->id;
   const auto body = votes::body(target->votes, vote);
   if (!session_) {
     // The preview has no server: the count moves as the server's would.
@@ -62,7 +62,7 @@ void Application::castVote(const std::string &vote) {
     votesCast_[key] = v;
     return;
   }
-  voteJob_.run("vote", [this, server = session_->server(), state = state_, target = *target, key, body]() -> Job::Finish {
+  voteJob_.run("vote", [this, server = serverFor(target->server), state = state_, target = *target, key, body]() -> Job::Finish {
     auto answer = net::castVote(server, state, target.kind, target.id, body, &stop_);
     return [this, key, answer = std::move(answer)] {
       if (answer.error) message(answer.error.message);
