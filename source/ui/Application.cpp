@@ -2152,7 +2152,7 @@ void Application::shell() {
         menuPending_ = false;
         sidebar_ = true;
         autoSidebar_ = false;
-      });
+      }, {16, y, 200, float(height)}, 12); // pressed, the row itself darkens, not a card over its neighbours
     if (sidebar_ && active)
       paint_.ring(16, y, 200, height, 12);
     if (active)
