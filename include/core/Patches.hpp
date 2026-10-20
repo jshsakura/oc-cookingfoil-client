@@ -14,6 +14,7 @@ namespace foil {
 // out from the SD card root, e.g. atmosphere/contents/<TID>/romfs/...
 struct UserPatch {
   std::string id, titleId, name, version, gameVersion, author, description, hash;
+  std::string server; // the configured server it comes from (its url); empty: the one in use
   std::vector<std::string> kinds; // romfs, exefs, cheats, exefs_patches, fpslocker, homebrew
   // An app's patch has no Title ID: every file goes below switch/<app>/.
   std::string homebrewApp;

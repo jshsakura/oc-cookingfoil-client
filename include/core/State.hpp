@@ -87,6 +87,9 @@ std::string randomKey();
 struct PendingInstall {
     std::string name, icon, target;
     std::vector<Item> files;
+    // The configured server it is downloaded from (its url); empty in rows
+    // from before there could be more than one: the one in use.
+    std::string server;
 };
 std::string serializePending(const PendingInstall& pending); // "[]" when there is none
 std::optional<PendingInstall> parsePending(const std::string& queueJson);

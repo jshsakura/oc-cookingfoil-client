@@ -2703,7 +2703,7 @@ Error Application::enqueueInstall(const std::vector<Item> &files, const std::str
   std::vector<uint64_t> ids;
   for (const auto &file : fresh) {
     history::Entry row;
-    row.install = {name, icon, target, {file}};
+    row.install = {name, icon, target, {file}, file.server.empty() ? serverInUse() : file.server};
     row.outcome = history::Outcome::Queued;
     row.group = group;
     row.at = int64_t(std::time(nullptr));
@@ -2731,7 +2731,7 @@ void Application::rebuildQueue() {
     if (e->kind.empty() && e->install.files.size() != 1)
       continue;
     installQueue_.push_back(
-        {e->install.files[0], e->install.name, e->install.icon, e->install.target, e->group, e->id, e->kind, e->payload});
+        {e->install.files[0], e->install.name, e->install.icon, e->install.target, e->group, e->id, e->kind, e->payload, e->install.server});
     installGroups_ = std::max(installGroups_, e->group);
   }
 }
@@ -2743,7 +2743,7 @@ bool Application::queueJob(const std::string &kind, const std::string &name, con
   file.icon = icon;
   file.size = size;
   history::Entry row;
-  row.install = {name, icon, "sd", {file}};
+  row.install = {name, icon, "sd", {file}, serverInUse()};
   row.kind = kind;
   row.payload = payload;
   row.outcome = history::Outcome::Queued;
@@ -2888,6 +2888,13 @@ void Application::unqueue(size_t index) {
   downloadsRow_ = std::min(downloadsRow_, int(installQueue_.size()));
   message(trf("Took {0} off the queue.", {gone.name}));
 }
+std::string Application::serverInUse() const { return session_ ? session_->server().url : std::string(); }
+Server Application::serverFor(const std::string &url) const {
+  if (!url.empty())
+    for (const auto &server : config_.servers)
+      if (server.url == url) return server;
+  return session_ ? session_->server() : Server{};
+}
 Error Application::launchQueued() {
   // One download at a time, whatever it is; a paused one holds the rest, and
   // so does the question at start until it is answered.
@@ -2912,7 +2919,7 @@ Error Application::launchQueued() {
   // card's query takes seconds): the console refuses a write that does not fit.
   const auto known = next.target == "nand" ? nandFree_ : sdFree_;
   if (auto error = installer_.start(files, next.name, next.icon, next.target,
-                                    session_ ? session_->server() : Server{}, state_,
+                                    serverFor(next.server), state_,
                                     known ? known : std::optional<uint64_t>(std::numeric_limits<uint64_t>::max()))) {
     // It cannot start (no room, firmware): the rest of its pick goes too.
     history::end(history_, next.entry, history::Outcome::Failed, error.message, int64_t(std::time(nullptr)));
@@ -2928,7 +2935,7 @@ Error Application::launchQueued() {
     row->at = int64_t(std::time(nullptr));
   } else {
     history::Entry entry;
-    entry.install = {next.name, next.icon, next.target, files};
+    entry.install = {next.name, next.icon, next.target, files, next.server};
     entry.at = int64_t(std::time(nullptr));
     history::add(history_, std::move(entry), SIZE_MAX, store_.topId());
   }
@@ -2965,22 +2972,24 @@ Error Application::launchJob(const QueuedInstall &next) {
         logLine("homebrew: " + apps.front().name + " is listed under a new id; fetched from there");
         apps.front() = *now;
       }
-    started = !apps.empty() && runHomebrew(apps.front());
+    started = !apps.empty() && runHomebrew(apps.front(), serverFor(next.server));
   } else if (next.kind == "retro") {
-    started = runRetroGame(retro::parseGameJson(next.payload));
+    started = runRetroGame(retro::parseGameJson(next.payload), serverFor(next.server));
   } else if (next.kind == "retroarch") {
-    started = runRetroArch(next.payload == "full");
+    started = runRetroArch(next.payload == "full", serverFor(next.server));
   } else if (next.kind == "reapply") {
     // Puts back what went missing, downloading it again when the server
     // still has the patch: a download like any other, so it waits its turn.
-    const auto patches = net::parsePatches(next.payload);
+    auto patches = net::parsePatches(next.payload);
+    for (auto &patch : patches) patch.server = next.server;
     if (!patches.empty() && !patchWorker_.joinable() && !installer_.running() && !retroDownloading()) {
       const bool onServer = std::any_of(serverPatches_.begin(), serverPatches_.end(),
                                         [&](const UserPatch &p) { return p.id == patches.front().id; });
       started = startPatchReapply(patches.front(), onServer);
     }
   } else if (next.kind == "patch") {
-    const auto patches = net::parsePatches(next.payload);
+    auto patches = net::parsePatches(next.payload);
+    for (auto &patch : patches) patch.server = next.server;
     if (!patches.empty() && patchStore_ && session_) {
       patchQueue_.push_back(patches.front());
       started = true;

@@ -23,6 +23,9 @@ struct Entry {
   double downloadSeconds = 0, installSeconds = 0;
 };
 std::vector<Entry> parse(const std::string &json);
+// A server's address changed from `from` to `to`: the rows that named it
+// name it again. True when one did.
+bool moveServer(std::vector<Entry> &entries, const std::string &from, const std::string &to);
 std::string serialize(const std::vector<Entry> &entries);
 // Puts `entry` first with a fresh id. With a `cap`, the oldest finished
 // ones past it go (queued and running ones always stay); by default the

@@ -225,6 +225,7 @@ void Application::saveServerForm() {
   if (server.title.empty()) server.title = hostOf(server.url);
   auto next = config_;
   int index = form.index;
+  std::string from; // its address before, when it is one already set up
   if (index < 0) {
     if (next.servers.size() >= 32) return fail(tr("You can add up to 32 servers."), form.row);
     next.servers.push_back(server);
@@ -243,6 +244,7 @@ void Application::saveServerForm() {
       }
       return;
     }
+    from = next.servers[index].url;
     next.servers[index] = server;
   } else {
     serverForm_.reset();
@@ -251,6 +253,11 @@ void Application::saveServerForm() {
   if (writeServers(next, index, tr("Saved the server."))) {
     serverForm_.reset();
     selected_ = index;
+    // Its downloads, waiting or done, go on naming it at its new address.
+    if (from != server.url && history::moveServer(history_, from, server.url)) {
+      saveHistory();
+      rebuildQueue();
+    }
   }
 }
 void Application::deleteServerForm() {
