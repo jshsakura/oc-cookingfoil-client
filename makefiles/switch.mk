@@ -23,7 +23,7 @@ APP_AUTHOR := OpenCourse
 # user agent all come from it, and a release tag must match it (vX.Y.Z).
 # scripts/ship.sh raises the last number and commits it for every build it
 # ships, so each one reads newer than the last (설정 > 앱 업데이트).
-APP_VERSION := 0.3.221
+APP_VERSION := 0.3.222
 ARCH := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 CFLAGS := -g -Wall -Wextra -O2 -ffunction-sections $(ARCH) $(INCLUDE) -D__SWITCH__ -DCOOKINGFOIL_VERSION=\"$(APP_VERSION)\" -I$(PORTLIBS)/include/SDL2 -I$(PORTLIBS)/include/freetype2
 CXXFLAGS := $(CFLAGS) -std=c++17 -fno-rtti
