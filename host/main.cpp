@@ -1,3 +1,4 @@
+#include "core/Retro.hpp"
 #include "core/AdminEdit.hpp"
 #include "core/Config.hpp"
 #include "core/Json.hpp"
@@ -94,7 +95,7 @@ namespace foil::platform {
 void setHostSpace(uint64_t bytes);
 }
 int main(int argc, char **argv) {
-  std::string shot, fixture, url, configPath, statePath = "out/cookingfoil.db", language, self;
+  std::string shot, fixture, url, configPath, statePath = "out/cookingfoil.db", language, self, retroDetail;
   int servePort = 0;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -117,6 +118,8 @@ int main(int argc, char **argv) {
       statePath = value;
     else if (arg == "--lang")
       language = value; // ko, en, ja or zh
+    else if (arg == "--retro")
+      retroDetail = value; // a retro game's page to open, in the server's /api/retro/games/:id shape
     else if (arg == "--self")
       self = value; // as argv[0] on the console: sdmc:/switch/cookingfoil/cookingfoil.nro
     else {
@@ -239,6 +242,8 @@ int main(int argc, char **argv) {
   // shortcut, the offer to make one (the fake SD card needs the .nro).
   if (!self.empty())
     ui.setSelfPath(self);
+  if (!retroDetail.empty())
+    ui.previewRetroDetail(foil::retro::parseDetail(foil::readFile(retroDetail), "http://fixture"));
   ui.render();
   if (servePort)
     return foil::host::serveWeb(ui, app, servePort);

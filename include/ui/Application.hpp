@@ -75,7 +75,8 @@ enum class Action {
   Reload,
   Preview,
   ScrollUp,
-  ScrollDown
+  ScrollDown,
+  Extra // ZL: a page's extra (a retro game's achievements)
 };
 int themeIcon(const Theme &theme);
 class Application {
@@ -232,6 +233,13 @@ public:
     deviceFixture_ = true;
   }
   void previewFeatures(std::set<std::string> features) { features_ = std::move(features); }
+  // A retro game's page as the server would fill it, without a server.
+  void previewRetroDetail(retro::Detail detail) {
+    openRetroDetail(detail.game);
+    retroMeta_ = std::move(detail.meta);
+    retroVariants_ = std::move(detail.variants);
+    retroDetailLoading_ = false;
+  }
   // An admin console without a server: these fields, changed in place.
   void previewAdminEdit(std::vector<admin::Field> fields) {
     features_.insert("admin-edit");
@@ -522,7 +530,7 @@ private:
   std::optional<AdminTarget> adminTarget() const;
   bool adminFocused() const;
   bool adminChipAction(Action a, bool atTop);
-  void adminChip();
+  float adminChip(); // its left edge, or the band's right edge when not drawn
   void openAdminEdit();
   void sendAdminChange(const std::string &body);
   void adminEditAction(Action a);
@@ -824,7 +832,7 @@ private:
   void raGuideCard(float y, const RaGuide &guide);
   std::vector<std::pair<std::string, std::string>> raPageHints() const;
   float raHeaderButton(float right); // the header's X 업적; returns its left edge
-  int raCard(int y);                 // the game page's achievements card
+  float raChip(float right);         // the game page's 업적 chip, left of `right`; its left edge
   void openRaList();
   void raListFetch(); // asks for raListGame_'s list once nothing else is being fetched
   void raListAction(Action a);

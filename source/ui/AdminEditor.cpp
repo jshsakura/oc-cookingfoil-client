@@ -37,10 +37,10 @@ bool Application::adminChipAction(Action a, bool atTop) {
   return true;
 }
 // On the dark band, across from the way back.
-void Application::adminChip() {
-  if (!adminTarget()) return;
-  const std::string label = tr("Admin edit");
+float Application::adminChip() {
   constexpr float Right = 1248, Top = 8, Height = 34;
+  if (!adminTarget()) return Right;
+  const std::string label = tr("Admin edit");
   const float w = 14 + 18 + 8 + paint_.fonts.measure(label, 16, true) + 16, x = Right - w;
   hit(x, Top, w, Height, [this] {
     adminFocus_ = true;
@@ -51,6 +51,7 @@ void Application::adminChip() {
   paint_.rect(x, Top, w, Height, focused ? Butter : SDL_Color{255, 255, 255, 41}, 17);
   paint_.icon(45, x + 14, Top + (Height - 18) / 2, focused ? Ink : Butter, 18);
   paint_.fonts.middle(label, x + 40, Top + Height / 2, 16, focused ? Ink : Surface, true);
+  return x;
 }
 void Application::openAdminEdit() {
   const auto target = adminTarget();
