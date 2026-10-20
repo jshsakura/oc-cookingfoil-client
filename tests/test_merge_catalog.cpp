@@ -6,6 +6,7 @@
 #include "core/Homebrew.hpp"
 #include "core/Patches.hpp"
 #include "core/Retro.hpp"
+#include "core/Selection.hpp"
 #include <algorithm>
 namespace {
 foil::Item item(const std::string &titleId, const std::string &type, uint32_t version, const std::string &url) {
@@ -35,7 +36,7 @@ int runMergeCatalogTests() {
   };
   // The base both hold: once, from the first, naming the second.
   CHECK(find(a + "/g1") != merged.end() && find(b + "/g1") == merged.end());
-  CHECK(find(a + "/g1")->server == a && find(a + "/g1")->alsoOn == std::vector<std::string>{b});
+  CHECK(find(a + "/g1")->server == a && find(a + "/g1")->alsoOn == (std::vector<foil::Item::Copy>{{b, b + "/g1"}}));
   // Updates of other versions are other files.
   CHECK(find(a + "/u1") != merged.end() && find(b + "/u2") != merged.end());
   CHECK(find(b + "/u2")->server == b && find(b + "/u2")->alsoOn.empty());
@@ -49,6 +50,17 @@ int runMergeCatalogTests() {
   const auto groups = foil::groupCatalog(merged);
   const auto game = std::find_if(groups.begin(), groups.end(), [&](const foil::Group &g) { return g.id == base; });
   CHECK(game != groups.end());
+  // Installing it: only the base is on both, so with the update on there is
+  // nothing to choose; with the update off either server can send it.
+  foil::Selection pick(*game);
+  CHECK(pick.servers().size() == 1);
+  for (size_t row = 0; row < pick.parts().size(); ++row)
+    if (pick.parts()[row].type == "update" && pick.enabled(row)) pick.toggle(row);
+  CHECK(pick.servers() == (std::vector<std::string>{a, b}));
+  pick.server = b;
+  CHECK(pick.files().size() == 1 && pick.files()[0].server == b && pick.files()[0].url == b + "/g1");
+  pick.server.clear();
+  CHECK(pick.files()[0].server == a && pick.files()[0].url == a + "/g1");
   // Homebrew by app id: the same build once naming the other server, a
   // different build kept from whichever was released later.
   const auto app = [](const std::string &id, const std::string &hash, const std::string &released) {

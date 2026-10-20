@@ -499,7 +499,8 @@ std::vector<Item> mergeServers(std::vector<ServerItems> lists) {
                 continue;
             }
             auto& kept = merged[at->second].alsoOn;
-            if (std::find(kept.begin(), kept.end(), list.server) == kept.end()) kept.push_back(list.server);
+            if (std::none_of(kept.begin(), kept.end(), [&](const Item::Copy& c) { return c.server == list.server; }))
+                kept.push_back({list.server, item.url});
         }
     return merged;
 }

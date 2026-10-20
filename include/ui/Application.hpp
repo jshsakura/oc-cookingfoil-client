@@ -532,6 +532,7 @@ private:
   // band and the editor it opens (AdminEditor.cpp).
   struct AdminTarget {
     std::string kind, id, name; // kind: homebrew, retro or game
+    std::string server;         // the server it came from: edits go there
   };
   struct AdminEdit {
     bool open = false, busy = false, changed = false;
@@ -557,6 +558,7 @@ private:
   struct VoteTarget {
     std::string kind, id;
     votes::Votes votes;
+    std::string server; // the server it came from: the vote goes there
   };
   std::optional<VoteTarget> voteTarget() const;
   bool voteAction(Action a, bool atTop);
@@ -591,7 +593,8 @@ private:
   // A shortcut made here, in its queue turn: the server's picture as its
   // icon (the .nro's when that cannot be had). payload: a homebrew app's
   // JSON, "retro:" and a game's, or "self".
-  void queueShortcut(const std::string &name, const std::string &icon, const std::string &payload);
+  void queueShortcut(const std::string &name, const std::string &icon, const std::string &payload,
+                     const std::string &server = ""); // the server its picture comes from
   bool makeHomebrewShortcutHere(const homebrew::App &app); // queued; false where none can be made
   bool makeRetroShortcutHere(const retro::Game &game);
   std::string shortcutApp(const history::Entry &entry) const; // the app id, "" when none
@@ -622,6 +625,11 @@ private:
   // The configured server a record names (its url), as set now; the one in
   // use for a record that names none or a server since taken out.
   Server serverFor(const std::string &url) const;
+  // Its dot's colour, as the server's form shows it.
+  SDL_Color serverDot(const std::string &url) const;
+  // The install popup's 받을 서버: the d-pad steps through the servers
+  // holding every chosen file.
+  void stepInstallServer(int by);
   std::string serverInUse() const;
   bool runHomebrew(const homebrew::App &app, const Server &server);
   // The app's HOME Menu shortcut: made now, or queued behind a download
@@ -990,7 +998,7 @@ private:
   UserPatch patchQueueNow_; // the queued patch the worker has
   void gallery();
   int screenshotStrip(int y);
-  std::string shopAddress(const std::string &url) const;
+  std::string shopAddress(const std::string &url, const std::string &server = "") const; // server: by url, empty the one in use
   float chipRow(const std::string &title, const std::vector<std::string> &labels, float y);
   std::string homebrewNotesOf_, homebrewNotes_; // the app whose notes homebrewNotes_ holds, as plain text
   std::string galleryName() const;
@@ -1103,6 +1111,7 @@ private:
   enum class AppUpdate { Unknown, Checking, Latest, Available, Missing, Failed, Downloading };
   AppUpdate appUpdate_ = AppUpdate::Unknown;
   update::Release appRelease_;
+  std::string appReleaseServer_; // the server with the newest build: it is downloaded from there
   std::string appUpdateError_, selfPath_;
   void noticeRollBack(); // an update undone at start says so (AppUpdate.cpp)
   // A secure connection failed and the console clock is off from internet

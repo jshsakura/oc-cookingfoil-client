@@ -5,15 +5,23 @@
 #include "ui/Application.hpp"
 namespace foil::ui {
 std::optional<Application::AdminTarget> Application::adminTarget() const {
-  if (!features_.count("admin-edit") || (!session_ && !adminPreview_)) return std::nullopt;
+  if (!session_ && !adminPreview_) return std::nullopt;
+  std::optional<AdminTarget> target;
   if (screen_ == Screen::Detail && detailGroup_ < groups_.size()) {
     const auto &group = groups_[detailGroup_];
-    return AdminTarget{"game", group.id, detail_.name.empty() ? group.representative.name : detail_.name};
-  }
-  if (screen_ == Screen::RetroDetail && !retroPick_.id.empty()) return AdminTarget{"retro", retroPick_.id, retroPick_.name};
-  if (homebrewAsk_ && (screen_ == Screen::Homebrew || screen_ == Screen::Downloads))
-    if (const auto *app = homebrewPicked(); app && !app->cardOnly) return AdminTarget{"homebrew", app->id, app->name};
-  return std::nullopt;
+    target = AdminTarget{"game", group.id, detail_.name.empty() ? group.representative.name : detail_.name,
+                         group.base ? group.base->server : group.representative.server};
+  } else if (screen_ == Screen::RetroDetail && !retroPick_.id.empty())
+    target = AdminTarget{"retro", retroPick_.id, retroPick_.name, retroPick_.server};
+  else if (homebrewAsk_ && (screen_ == Screen::Homebrew || screen_ == Screen::Downloads))
+    if (const auto *app = homebrewPicked(); app && !app->cardOnly)
+      target = AdminTarget{"homebrew", app->id, app->name, app->server};
+  if (!target) return std::nullopt;
+  // The item's own server must take edits from this console.
+  const auto features = serverFeatures_.find(target->server.empty() ? serverInUse() : target->server);
+  const bool offered = adminPreview_ ? features_.count("admin-edit") > 0
+                                     : features != serverFeatures_.end() && features->second.count("admin-edit");
+  return offered ? target : std::nullopt;
 }
 bool Application::adminFocused() const { return adminFocus_ && adminTarget(); }
 // Up from the panel's first row reaches the chip, Down leaves it, A opens
@@ -67,7 +75,7 @@ void Application::openAdminEdit() {
     return;
   }
   adminEdit_.busy = true;
-  const auto server = session_->server();
+  const auto server = serverFor(target->server);
   const auto state = state_;
   adminJob_.run("fields", [this, server, state, target = *target]() -> Job::Finish {
     auto fields = net::adminFields(server, state, target.kind, target.id, &stop_);
@@ -88,7 +96,7 @@ void Application::sendAdminChange(const std::string &body) {
     return;
   }
   adminEdit_.busy = true;
-  const auto server = session_->server();
+  const auto server = serverFor(adminEdit_.target.server);
   const auto state = state_;
   adminJob_.run("change", [this, server, state, target = adminEdit_.target, body]() -> Job::Finish {
     auto fields = net::setAdminField(server, state, target.kind, target.id, body, &stop_);

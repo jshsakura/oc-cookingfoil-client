@@ -1545,6 +1545,7 @@ void Application::action(Action a) {
     return;
   }
   if (confirmInstall_) {
+    if (a == Action::Left || a == Action::Right) stepInstallServer(a == Action::Left ? -1 : 1);
     if (a == Action::Accept && settled()) {
       confirmInstall_ = false;
       installSelected();
@@ -2562,6 +2563,10 @@ void Application::requestInstall() {
   }
   confirmInstall_ = true;
   dialogFocus_ = 0;
+  // From several servers it comes from the game's own unless picked.
+  const auto servers = selection_->servers();
+  if (std::find(servers.begin(), servers.end(), selection_->server) == servers.end())
+    selection_->server = servers.empty() ? std::string() : servers.front();
 }
 } // namespace foil::ui
 
@@ -2937,6 +2942,19 @@ Server Application::serverFor(const std::string &url) const {
     for (const auto &server : config_.servers)
       if (server.url == url) return server;
   return session_ ? session_->server() : Server{};
+}
+SDL_Color Application::serverDot(const std::string &url) const {
+  for (size_t i = 0; i < config_.servers.size(); ++i)
+    if (config_.servers[i].url == url) return serverColor(config_.servers[i].color, i);
+  return serverColor(-1, 0);
+}
+void Application::stepInstallServer(int by) {
+  const auto servers = selection_->servers();
+  if (servers.size() < 2) return;
+  const auto at = std::find(servers.begin(), servers.end(), selection_->server);
+  const int now = at == servers.end() ? 0 : int(at - servers.begin()), count = int(servers.size());
+  selection_->server = servers[size_t((now + by + count) % count)];
+  sounds_.play(Cue::Move);
 }
 std::vector<Server> Application::serversWith(const std::string &feature) const {
   std::vector<Server> servers;
