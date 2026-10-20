@@ -476,3 +476,31 @@ int groupIntegrity(const Group &g) {
   return worst;
 }
 } // namespace foil
+
+namespace foil {
+std::vector<Item> mergeServers(std::vector<ServerItems> lists) {
+    std::vector<Item> merged;
+    size_t total = 0;
+    for (const auto& list : lists) total += list.items.size();
+    merged.reserve(total);
+    // A file without a Title ID cannot be told apart from another: kept.
+    std::map<std::string, size_t> seen;
+    for (auto& list : lists)
+        for (auto& item : list.items) {
+            item.server = list.server;
+            if (item.titleId.empty()) {
+                merged.push_back(std::move(item));
+                continue;
+            }
+            const auto key = item.titleId + '|' + std::string(item.type) + '|' + std::to_string(item.version);
+            const auto [at, fresh] = seen.emplace(key, merged.size());
+            if (fresh) {
+                merged.push_back(std::move(item));
+                continue;
+            }
+            auto& kept = merged[at->second].alsoOn;
+            if (std::find(kept.begin(), kept.end(), list.server) == kept.end()) kept.push_back(list.server);
+        }
+    return merged;
+}
+}

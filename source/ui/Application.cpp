@@ -874,6 +874,18 @@ void Application::connect(size_t index) {
   session_ = std::make_unique<net::Session>(config_.servers[index], state_,
                                             statePath_, &stop_);
   session_->setConfigPath(configPath_);
+  others_.clear();
+  serverItems_.clear();
+  serverStatus_.clear();
+  std::vector<Server> others;
+  for (size_t i = 0; i < config_.servers.size(); ++i) {
+    const auto &server = config_.servers[i];
+    if (i == index || !server.enabled) continue;
+    others_.push_back(std::make_unique<net::Session>(server, state_, statePath_, &stop_));
+    others_.back()->setConfigPath(configPath_);
+    renewTokensWith(server);
+    others.push_back(server);
+  }
   if (keep) {
     // The covers already drawn stay; only the keys may be new.
     images_->updateState(state_);
@@ -882,6 +894,7 @@ void Application::connect(size_t index) {
     images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
     images_->source(config_.servers[index], state_, imageCacheFolder(), fixture_);
   }
+  images_->alsoFrom(others);
   renewTokensWith(config_.servers[index]);
   refresh();
 }
@@ -901,12 +914,24 @@ void Application::refresh() {
     // Reading the catalog (seconds of JSON) stays off the drawing core too.
     const platform::OnCore off(platform::NetworkCore);
     incomingError_ = {};
+    incomingCatalog_ = false;
     const bool ok = guarded("catalog", [this] {
-      if (session_->refresh(incomingError_) && !session_->unchanged())
-      {
-        // Grouped here, off the drawing thread: it takes a few hundred
-        // milliseconds for a large catalog, which stopped the screen.
-        incomingGroups_ = groupedCatalog(session_->takeItems());
+      const bool read = session_->refresh(incomingError_);
+      const bool changed = read && !session_->unchanged();
+      // Grouped here, off the drawing thread: it takes a few hundred
+      // milliseconds for a large catalog, which stopped the screen.
+      if (read && readOthers(changed)) {
+        incomingCatalog_ = true;
+        incomingGroups_ = groupedCatalog(mergeServers([&] {
+          std::vector<ServerItems> lists{{session_->server().url, serverItems_[session_->server().url]}};
+          for (const auto &other : others_)
+            if (const auto kept = serverItems_.find(other->server().url); kept != serverItems_.end())
+              lists.push_back({other->server().url, kept->second});
+          return lists;
+        }()));
+      } else if (changed && others_.empty()) {
+        incomingCatalog_ = true;
+        incomingGroups_ = groupedCatalog(mergeServers({{session_->server().url, session_->takeItems()}}));
       }
     });
     if (!ok)
@@ -1138,7 +1163,7 @@ void Application::takeNetwork() {
   if (detailRequest_) {
     detailLoading_ = false;
     if (!incomingError_) {
-      details_[session_->server().url + requestedId_] = {incomingDetail_,
+      details_[detailServer_ + requestedId_] = {incomingDetail_,
                                                          SDL_GetTicks()};
       if (screen_ == Screen::Detail && detailGroup_ < groups_.size() &&
           groups_[detailGroup_].id == requestedId_)
@@ -1198,7 +1223,18 @@ void Application::takeNetwork() {
     state_.sounds = mine.sounds;
     state_.installTarget = mine.installTarget;
     state_.pairMessages = mine.pairMessages;
+    // Each other server's keys come from its own session.
+    for (const auto &other : others_) {
+      const auto &url = other->server().url;
+      const auto &theirs = other->state();
+      if (const auto key = theirs.accessKeys.find(url); key != theirs.accessKeys.end()) state_.accessKeys[url] = key->second;
+      else state_.accessKeys.erase(url);
+      if (const auto secret = theirs.pairSecrets.find(url); secret != theirs.pairSecrets.end()) state_.pairSecrets[url] = secret->second;
+      else state_.pairSecrets.erase(url);
+    }
   }
+  serverStatus_ = std::move(incomingStatus_);
+  incomingStatus_.clear();
   features_ = session_->features();
   // Same server: keep decoded covers; only the access keys may have changed.
   images_->updateState(state_);
@@ -1206,7 +1242,7 @@ void Application::takeNetwork() {
     screen_ = previous_;
   // A 304 keeps the catalog already on screen.
   retries_ = 0;
-  if (session_->unchanged() && !groups_.empty()) {
+  if (!incomingCatalog_ && !groups_.empty()) {
     connected_ = true;
     serverAnsweredAt_ = SDL_GetTicks();
     error_ = {};
@@ -2894,6 +2930,41 @@ Server Application::serverFor(const std::string &url) const {
     for (const auto &server : config_.servers)
       if (server.url == url) return server;
   return session_ ? session_->server() : Server{};
+}
+net::Session *Application::sessionFor(const std::string &url) const {
+  for (const auto &other : others_)
+    if (other->server().url == url) return other.get();
+  return session_.get();
+}
+bool Application::readOthers(bool primaryChanged) {
+  incomingStatus_.clear();
+  if (others_.empty()) return false;
+  if (primaryChanged) serverItems_[session_->server().url] = session_->takeItems();
+  bool changed = primaryChanged;
+  std::set<std::string> ids;
+  if (!session_->serverId().empty()) ids.insert(session_->serverId());
+  for (const auto &other : others_) {
+    const auto &url = other->server().url;
+    Error error;
+    const bool read = other->refresh(error);
+    // Two addresses of one server (its own and a tunnel's): listed once.
+    if (read && !other->serverId().empty() && !ids.insert(other->serverId()).second) {
+      incomingStatus_[url] = "same";
+      changed = serverItems_.erase(url) > 0 || changed;
+      continue;
+    }
+    if (!read) {
+      incomingStatus_[url] = other->pairingPending() ? "pairing" : "failed";
+      if (!other->pairingPending()) logLine("server " + url + " not read: " + error.message);
+      continue; // its games from before stay until it answers again
+    }
+    incomingStatus_[url] = "";
+    if (!other->unchanged()) {
+      serverItems_[url] = other->takeItems();
+      changed = true;
+    }
+  }
+  return changed;
 }
 Error Application::launchQueued() {
   // One download at a time, whatever it is; a paused one holds the rest, and

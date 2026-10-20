@@ -177,6 +177,9 @@ public:
     std::map<std::string, std::string> scoreLabels() const { return namesIn(scoreLabels_, languageCode()); }
     const State& state() const { return state_; }
     const Server& server() const { return server_; }
+    // The server's own id (/api/shop/info server_id): two addresses of one
+    // server give the same. Empty until it answers, or from a server without one.
+    const std::string& serverId() const { return serverId_; }
     bool pairingPending() const { return pairingPending_; }
     const PairingInfo& pairingInfo() const { return pairingInfo_; }
     // The note for this server's approval request, from the app; a changed
@@ -204,7 +207,7 @@ private:
     std::string pairSecret();
     Server server_;
     State state_;
-    std::string path_, etag_, patchesEtag_, configPath_;
+    std::string path_, etag_, patchesEtag_, configPath_, serverId_;
     int patchesRetryAfter_ = 0;
     std::vector<UserPatch> patches_;
     std::vector<Item> items_;
