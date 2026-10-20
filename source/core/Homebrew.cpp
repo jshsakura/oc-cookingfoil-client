@@ -467,7 +467,11 @@ Status status(const App &app, const Ledger &ledger, const std::function<bool(con
   if (found == ledger.end() || !exists(found->second.file))
     return cardVersion ? cardStatus(app.version, *cardVersion) : Status::Available;
   // Same build in another place (the server moved it) also reads as an update.
-  return found->second.hash == app.hash && found->second.file == app.installPath ? Status::Installed : Status::Update;
+  // The build's version is a second sign beside the hash, when both sides
+  // have one (a record from before versions goes by the hash alone).
+  const auto &record = found->second;
+  const bool newVersion = !record.version.empty() && !app.version.empty() && record.version != app.version;
+  return record.hash == app.hash && record.file == app.installPath && !newVersion ? Status::Installed : Status::Update;
 }
 const App *findApp(const std::vector<App> &apps, const std::string &folder) {
   if (folder.empty()) return nullptr;
