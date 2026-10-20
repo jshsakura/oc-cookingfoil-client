@@ -41,6 +41,9 @@ struct Item {
     Tags languages, categories;
     // The configured server it came from (its url); empty: the one in use.
     std::string server;
+    // Other configured servers that hold the same file (same title, kind and
+    // version): it can be downloaded from any of them.
+    std::vector<std::string> alsoOn;
 };
 inline constexpr int ServerColorCount = 12;
 struct Server {

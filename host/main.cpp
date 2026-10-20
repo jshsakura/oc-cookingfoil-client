@@ -96,7 +96,7 @@ namespace foil::platform {
 void setHostSpace(uint64_t bytes);
 }
 int main(int argc, char **argv) {
-  std::string shot, fixture, url, configPath, statePath = "out/cookingfoil.db", language, self, retroDetail;
+  std::string shot, fixture, url, configPath, appConfig, statePath = "out/cookingfoil.db", language, self, retroDetail;
   int servePort = 0;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -113,6 +113,8 @@ int main(int argc, char **argv) {
       url = value;
     else if (arg == "--config")
       configPath = value;
+    else if (arg == "--app-config")
+      appConfig = value; // the app reads it and connects to every server itself, as on the console
     else if (arg == "--serve")
       servePort = std::atoi(value.c_str());
     else if (arg == "--state")
@@ -193,7 +195,7 @@ int main(int argc, char **argv) {
     std::cerr << SDL_GetError() << '\n';
     return 1;
   }
-  foil::ui::Application ui(app.renderer(), "", "",
+  foil::ui::Application ui(app.renderer(), appConfig, appConfig.empty() ? "" : statePath,
                            fixture.empty() ? "" : "host/fixtures/art");
   if (!ui.open()) {
     std::cerr << "Font initialization failed\n";
@@ -215,7 +217,7 @@ int main(int argc, char **argv) {
     ui.setSession(std::move(liveSession));
   if (!genres.empty())
     ui.setGenreTable(std::move(genres));
-  if (!pending)
+  if (!pending && appConfig.empty()) // with --app-config the app reads its own list
     ui.setItems(std::move(items));
   if (!language.empty())
     ui.chooseLanguage(foil::languageFromCode(language, foil::Language::Korean));

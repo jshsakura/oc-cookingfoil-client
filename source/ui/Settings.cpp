@@ -55,8 +55,15 @@ void Application::settings() {
     const bool active = size_t(i) == serverIndex_ && connected_;
     paint_.fonts.middle(server.title, Inner + 27, mid, 21, Ink, true, 640);
     const bool current = size_t(i) == serverIndex_ && session_;
+    const auto other = serverStatus_.find(server.url);
+    const bool read = other != serverStatus_.end() && !current;
+    const bool waiting = read && other->second == "pairing", same = read && other->second == "same"; // i18n: as is
     // The Korean status is a key: statusColor() reads it, tr() draws it.
     const char *status = !server.enabled                         ? "Off|kept" // i18n: keep
+                        : read && other->second.empty()         ? "Connected" // i18n: keep
+                        : waiting                               ? "Awaiting approval" // i18n: keep
+                        : same                                  ? "Same server" // i18n: keep
+                        : read                                  ? "Failed|connection" // i18n: keep
                         : active                                ? "Connected" // i18n: keep
                         : current && pairingPending_            ? "Awaiting approval" // i18n: keep
                         : current && network_.joinable() && !detailRequest_ ? "Connecting" // i18n: keep

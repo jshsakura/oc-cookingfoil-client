@@ -169,7 +169,7 @@ public:
 #ifndef __SWITCH__
   void previewInstall(install::Progress p) { installer_.preview(std::move(p)); }
   void previewQueued(Item file, std::string name, std::string icon) {
-    installQueue_.push_back({std::move(file), std::move(name), std::move(icon), "sd", 0, 0, "", ""});
+    installQueue_.push_back({std::move(file), std::move(name), std::move(icon), "sd", 0, 0, "", "", ""});
   }
   // The queue as tests drive it: picks go in as from a game's page, and the
   // installer's work on the host is whatever setHostInstall() says.
@@ -178,7 +178,7 @@ public:
   }
   // A game paused before it began, its history row `entry`, on the top card.
   void previewHeld(Item file, std::string name, uint64_t entry) {
-    installQueue_.push_back({std::move(file), std::move(name), "", "sd", 0, entry, "", ""});
+    installQueue_.push_back({std::move(file), std::move(name), "", "sd", 0, entry, "", "", ""});
     queueHeld_ = true;
   }
   // The top card's 상세 정보, pressed: false when the card has none.
@@ -1391,6 +1391,24 @@ private:
 
   size_t serverIndex_ = 0, detailGroup_ = 0;
   std::unique_ptr<net::Session> session_;
+  // The other enabled servers, read after session_'s on the same thread:
+  // their games join its list (mergeServers). In config.json's order.
+  std::vector<std::unique_ptr<net::Session>> others_;
+  // Each server's last list, by url, while more than one is read: one that
+  // answers 304 keeps its part. Only the network thread touches it.
+  std::map<std::string, std::vector<Item>> serverItems_;
+  // How each of the others answered its last read, by url: "" fine,
+  // "pairing" (awaiting approval), "same" (another address of a server
+  // already read) or "failed". incoming* is the network thread's.
+  std::map<std::string, std::string> serverStatus_, incomingStatus_;
+  bool incomingCatalog_ = false; // the network thread brought a list (incomingGroups_)
+  std::string detailServer_;     // the server the detail being read is asked of
+  // The session for a configured server (by url); session_ for none or one
+  // not read now.
+  net::Session *sessionFor(const std::string &url) const;
+  // The others, read in turn after session_'s list (the network thread):
+  // true when any part of the list changed.
+  bool readOthers(bool primaryChanged);
   std::thread network_;
   std::atomic<bool> done_{false};
   std::atomic<bool> stop_{false};

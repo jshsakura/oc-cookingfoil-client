@@ -1320,7 +1320,12 @@ bool Session::refresh(Error& error) {
             markPairPasswordOnly(originOf(server_.url), pairPasswordOnly_ || features_.count("pair-password-only") > 0);
             forgetPasswordOnceKeyed();
         }
-        if (response.status == 200) recommendConnections(server_.url, parseMaxConnections(response.body));
+        if (response.status == 200) {
+            recommendConnections(server_.url, parseMaxConnections(response.body));
+            Error ignored;
+            const auto body = parseJson(response.body, ignored);
+            serverId_ = body ? stringField(body.get(), "server_id") : std::string();
+        }
         // Only a server that says so is asked for a session token.
         if (response.status == 200 || response.status == 404) {
             if (features_.count("session-token")) offerSessionFor(server_, state_);

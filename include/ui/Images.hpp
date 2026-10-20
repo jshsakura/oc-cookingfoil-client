@@ -35,6 +35,9 @@ public:
               std::string fixture = "");
   // New access keys after pairing; decoded images and textures are kept.
   void updateState(State state);
+  // The other servers read beside the source's: a picture on one of their
+  // addresses goes with that server's keys.
+  void alsoFrom(std::vector<Server> servers);
   void request(const std::string &url);
   // Where the picture at `url` is kept on the card once fetched (empty
   // without a cache folder); it may not be there yet.
@@ -64,6 +67,7 @@ private:
   SDL_Renderer *renderer_;
   float scale_ = 1;
   Server server_;
+  std::vector<Server> others_;
   State state_;
   std::string cache_, fixture_;
   std::atomic<bool> stop_{false};

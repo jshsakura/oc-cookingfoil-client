@@ -60,6 +60,7 @@ const Translation rows[] = {
     {"Go to Settings", "설정으로 이동", "設定を開く", "前往设置"},
     {"Connected", "연결됨", "接続済み", "已连接"},
     {"Awaiting approval", "승인 대기", "承認待ち", "等待批准"},
+    {"Same server", "같은 서버", "同じサーバー", "同一服务器"},
     {"Connecting", "연결 중", "接続中", "连接中"},
     {"No internet", "인터넷 없음", "インターネットなし", "无网络"},
     {"Failed|connection", "연결 실패", "接続失敗", "连接失败"},

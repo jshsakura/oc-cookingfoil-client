@@ -26,6 +26,14 @@ std::string genreLabel(const GenreNames &names, const std::string &key);
 std::string dateText(int date);
 enum class Filter { All, Korean, Update, Dlc, Custom };
 std::vector<Group> groupCatalog(std::vector<Item> items);
+// Several servers' lists as one: each item names its server (`lists` in the
+// servers' order, by url), and a file more than one holds (same title,
+// kind and version) is listed once, from the first, naming the others.
+struct ServerItems {
+    std::string server;
+    std::vector<Item> items;
+};
+std::vector<Item> mergeServers(std::vector<ServerItems> lists);
 std::vector<size_t> selectCatalog(const std::vector<Group> &groups,
                                   const std::string &query = "",
                                   Filter filter = Filter::All);
