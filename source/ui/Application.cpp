@@ -1638,6 +1638,7 @@ void Application::action(Action a) {
   if (a == Action::Reload) {
     retries_ = patchRetries_ = retroRetries_ = 0; // a refresh by hand earns the automatic tries again
     pairSince_ = 0;
+    menuKnown_ = false; // the menu waits for the answer, as at start
     reload();
     return;
   }
@@ -1665,6 +1666,8 @@ void Application::action(Action a) {
     return;
   }
   if (sidebar_) {
+    // While the menu is placeholders there is nothing to move to yet.
+    if (menuPending()) return;
     // Closed items are stepped over, so before approval Up and Down move
     // between 홈 and 설정 only.
     if (a == Action::Up || a == Action::Down) {
@@ -2517,6 +2520,9 @@ void Application::refreshAll() {
   }
   message(tr("Refreshing."));
   refreshing_ = !configPath_.empty();
+  // The menu shows its placeholders until the server answers, as at start:
+  // what it lists may change with the answer.
+  if (!configPath_.empty()) menuKnown_ = false;
   if (!configPath_.empty()) reload();
   else if (screen_ == Screen::Patches) fetchPatches();
 }
