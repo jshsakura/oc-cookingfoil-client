@@ -1,5 +1,6 @@
 #include <atomic>
 #include "net/Segments.hpp"
+#include "net/Socket.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <sstream>
@@ -78,12 +79,8 @@ bool privateHost(const std::string &url) {
   return a == 10 || a == 127 || (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168) ||
          (a == 100 && b >= 64 && b <= 127);
 }
-namespace {
-std::atomic<int> recommended{0};
-}
-void recommendConnections(int most) { recommended = most > 0 ? std::min(most, 8) : 0; }
 int connectionsFor(const std::string &serverUrl, int setting) {
-  const int most = recommended;
+  const int most = recommendedConnections(serverUrl);
   if (setting == 1 || setting == 2 || setting == 4 || setting == 8)
     return most > 0 ? std::min(setting, most) : setting;
   // Automatic: what the server says it can take, else by its address.

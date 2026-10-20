@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <set>
 namespace foil::net {
 void setReceiveWindow(int bytes);
 int receiveWindow();
@@ -16,29 +17,36 @@ int receiveWindow();
 // over: the download screen's speed reads this, so it moves while pieces
 // that must arrive in order are still filling.
 void countReceived(size_t bytes);
-// The way to the server is down for now: the console says it has no
-// internet (its own link check), or the server said it is restarting. A
+// The way to `url`'s server is down for now: the console says it has no
+// internet (its own link check), or that server said it is restarting. A
 // download waits that out instead of giving up; false when it cannot tell.
-bool linkDown();
+bool linkDown(const std::string &url);
+// Everything below is kept per server, by the server's own origin: a
+// request URL finds its server by that origin or by the direct address
+// the server named, so one server's replies never touch another's token,
+// address or restart. serverOf gives that origin.
+std::string serverOf(const std::string &url);
 // A server restart, from its X-CookingFoil-Restarting header ("20; id=…"),
 // which every reply carries while it restarts. Each header line of every
-// reply passes here (heardHeader); a successful reply without it ends the
-// restart. restartSerial() counts the restarts heard, one per id, so the
-// screen says it once each.
-void heardHeader(const char *line, size_t bytes);
-bool serverRestarting();
+// reply passes here (heardHeader) with the URL it answered; a successful
+// reply without it ends the restart. restartSerial() counts the restarts
+// heard, one per id, so the screen says it once each.
+void heardHeader(const std::string &url, const char *line, size_t bytes);
+bool serverRestarting(const std::string &url);
+bool serverRestarting(); // any server
 // The download token the server hands out with its lists
 // (X-CookingFoil-Download-Token): downloads from its download host carry it
 // as a bearer token. downloadTokenRejected() says a download was refused
 // for it (401, X-CookingFoil-Token: expired or revoked) since the last one
 // came; a new one clears it.
-std::string downloadToken();
-bool downloadTokenRejected();
+std::string downloadToken(const std::string &url);
+bool downloadTokenRejected(const std::string &url);
 // The direct address the token is for (X-CookingFoil-Download-Origin,
 // "https://host:port"); empty while the server has not said. Once it has,
 // the token goes there and nowhere else.
-std::string downloadTokenOrigin();
-void forgetDownloadToken(); // tests
+std::string downloadTokenOrigin(const std::string &url);
+void forgetDownloadToken(const std::string &url);
+void forgetLinks(); // tests: every server's
 // How a fresh token is asked for (the app sets it with its server; it
 // returns the reply's status), and asking after a 401 for a request sent
 // with `sent`: true when a newer token is held, and the request goes again
@@ -46,17 +54,25 @@ void forgetDownloadToken(); // tests
 // server is asked at most once in RenewGapSeconds, so a refusal is never
 // hammered (a server login asked again and again locks the account).
 constexpr int RenewGapSeconds = 30;
-void setTokenRenewer(std::function<long()> renew);
-bool renewDownloadToken(const std::string &sent);
+void setTokenRenewer(const std::string &serverUrl, std::function<long()> renew);
+bool renewDownloadToken(const std::string &url, const std::string &sent);
 // The server refused the login itself when asked for a token: the console
 // needs its account checked, not another try. Cleared by the next token.
-bool downloadSignInRefused();
+bool downloadSignInRefused(const std::string &url);
+// How many connections the server takes from a console now
+// (X-CookingFoil-Max-Connections, or its info's download.maxConnections),
+// 0 when it has not said; and how many consoles download from it now.
+void recommendConnections(const std::string &url, int most);
+int recommendedConnections(const std::string &url);
+void heardActiveDownloads(const std::string &url, int count);
+int activeDownloads(const std::string &url);
 // The bearer token in a request's headers, or empty.
 std::string bearerOf(const std::vector<std::string> &headers);
 // A request's headers with the bearer token swapped for the current one.
-void freshenBearer(std::vector<std::string> &headers);
+void freshenBearer(const std::string &url, std::vector<std::string> &headers);
 uint64_t restartSerial();
-// For a curl handle with no header callback of its own (the engine's).
+// For a curl handle with no header callback of its own (the engine's): its
+// replies are heard as from the URL it asked.
 void watchRestart(void *curl);
 uint64_t receivedBytes();
 // Puts a curl handle on its thread's pool of open connections, TLS sessions
@@ -88,13 +104,14 @@ std::string sessionToken(const std::string &origin);
 // a new token is asked for once, true when one newer than `sent` is held.
 bool renewSession(const std::string &sent);
 bool isSessionToken(const std::string &token);
-// The X-CookingFoil-Session replies heard so far (expired | revoked | invalid).
-uint64_t sessionRefusals();
+// The X-CookingFoil-Session replies heard so far from `url`'s server
+// (expired | revoked | invalid).
+uint64_t sessionRefusals(const std::string &url);
 // The server took this console back (its account turned off or removed, its
 // password changed): a reply said X-CookingFoil-Session: revoked, or asking
-// for a session token was refused (401). True once per take-back, for the
-// screen to refresh and ask for approval again.
-bool takeConsoleRevoked();
+// for a session token was refused (401). Each server's origin once per
+// take-back, for the screen to refresh it and ask for approval again.
+std::set<std::string> takeConsoleRevoked();
 // Tests: every session forgotten.
 void forgetSessions();
 } // namespace foil::net

@@ -45,7 +45,7 @@ size_t writeBody(char* data, size_t size, size_t count, void* context) {
 }
 size_t writeHeader(char* data, size_t size, size_t count, void* context) {
     const auto bytes = size * count;
-    heardHeader(data, bytes);
+    heardHeader(static_cast<Response*>(context)->url, data, bytes);
     std::string line(data, bytes);
     auto colon = line.find(':');
     if (colon != std::string::npos) {
@@ -175,14 +175,30 @@ void offerSessionFor(const Server& server, const State& state) {
         (key == state.accessKeys.end() ? std::string() : key->second) + '\n' + deviceKeyFor(state, server.url));
     offerSession(originOf(server.url), credentials, [server, state] { return askSessionToken(server, state); });
 }
+namespace {
+// `origin` is another configured server's own or direct address.
+bool anotherServers(const Server& server, const std::string& origin) {
+    const auto list = knownServers();
+    if (!list) return false;
+    for (const auto& other : *list)
+        if (originOf(other) != originOf(server.url) && (originOf(other) == origin || downloadTokenOrigin(other) == origin))
+            return true;
+    return false;
+}
+}
 std::vector<std::string> downloadHeaders(const Server& server, const State& state, const std::string& url) {
     auto headers = authHeaders(server, state, url);
     // Only to the direct address: a list naming another host (a mirror)
     // never gets the token. A server that has not named it yet: any https
     // address off the server, as before.
-    const auto direct = downloadTokenOrigin();
-    if (originOf(url) != originOf(server.url) && url.rfind("https://", 0) == 0 && (direct.empty() || originOf(url) == direct))
-        if (const auto token = downloadToken(); !token.empty()) headers.push_back("Authorization: Bearer " + token);
+    // The token is this server's own: it goes to the direct address the
+    // server named, or, before it names one, to an https address off it.
+    // Another server's address is neither.
+    const auto direct = downloadTokenOrigin(server.url);
+    const auto origin = originOf(url);
+    if (origin != originOf(server.url) && !anotherServers(server, origin) && url.rfind("https://", 0) == 0 &&
+        (direct.empty() || origin == direct))
+        if (const auto token = downloadToken(server.url); !token.empty()) headers.push_back("Authorization: Bearer " + token);
     return headers;
 }
 // Compared by value (error_.message == offlineMessage()), so both sides go through tr().
@@ -255,17 +271,17 @@ Response getOnce(const std::string& url, const std::vector<std::string>& headers
 // A 401 for the session token (X-CookingFoil-Session): a new one, asked for
 // with the sign-in, and the request once more with it. Never twice.
 template <typename Send>
-Response withSession(const std::vector<std::string>& headers, Send send) {
+Response withSession(const std::string& url, const std::vector<std::string>& headers, Send send) {
     auto reply = send(headers);
     const auto sent = bearerOf(headers);
     if (reply.status != 401 || reply.session.empty() || !isSessionToken(sent) || !renewSession(sent)) return reply;
     auto again = headers;
-    freshenBearer(again);
+    freshenBearer(url, again);
     return send(again);
 }
 }
 Response get(const std::string& url, const std::vector<std::string>& headers, const std::string& etag, const std::atomic<bool>* cancel) {
-    return withSession(headers, [&](const std::vector<std::string>& h) { return getOnce(url, h, etag, cancel); });
+    return withSession(url, headers, [&](const std::vector<std::string>& h) { return getOnce(url, h, etag, cancel); });
 }
 namespace {
 Response getOnce(const std::string& url, const std::vector<std::string>& headers, const std::string& etag, const std::atomic<bool>* cancel) {
@@ -300,6 +316,7 @@ Response getOnce(const std::string& url, const std::vector<std::string>& headers
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeBody);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &result);
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, writeHeader);
+    result.url = url;
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &result);
     constexpr int ResolveRetryMs = 1500;
     auto code = curl_easy_perform(curl);
@@ -325,9 +342,9 @@ Response getOnce(const std::string& url, const std::vector<std::string>& headers
 void followDirectNaming(const std::string& url, const Response& response) {
     if (url.rfind("https://", 0) != 0) return; // plain http is never given one
     if (response.status != 200 && response.status != 304) return;
-    if (response.directNamed || downloadTokenOrigin().empty()) return;
+    if (response.directNamed || downloadTokenOrigin(url).empty()) return;
     logLine("download: the server no longer names a direct address; its own addresses from now");
-    forgetDownloadToken();
+    forgetDownloadToken(url);
 }
 long renewDownloadToken(const Server& server, const State& state) {
     const auto url = server.url + "/api/shop/info";
@@ -396,6 +413,7 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &context);
     // The ETag comes along (a homebrew download carries its SHA-256 there).
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, writeHeader);
+    result.url = url;
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &result);
     const auto code = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
@@ -436,7 +454,7 @@ namespace {
 Response postOnce(const std::string& url, const std::vector<std::string>& headers, const PostOptions& options, const std::atomic<bool>* cancel);
 }
 Response post(const std::string& url, const std::vector<std::string>& headers, const PostOptions& options, const std::atomic<bool>* cancel) {
-    return withSession(headers, [&](const std::vector<std::string>& h) { return postOnce(url, h, options, cancel); });
+    return withSession(url, headers, [&](const std::vector<std::string>& h) { return postOnce(url, h, options, cancel); });
 }
 namespace {
 Response postOnce(const std::string& url, const std::vector<std::string>& headers, const PostOptions& options, const std::atomic<bool>* cancel) {
@@ -491,6 +509,7 @@ Response postOnce(const std::string& url, const std::vector<std::string>& header
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, postBody);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &context);
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, writeHeader);
+    result.url = url;
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &result);
     const auto code = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
@@ -1298,7 +1317,7 @@ bool Session::refresh(Error& error) {
             markPairPasswordOnly(originOf(server_.url), pairPasswordOnly_ || features_.count("pair-password-only") > 0);
             forgetPasswordOnceKeyed();
         }
-        if (response.status == 200) recommendConnections(parseMaxConnections(response.body));
+        if (response.status == 200) recommendConnections(server_.url, parseMaxConnections(response.body));
         // Only a server that says so is asked for a session token.
         if (response.status == 200 || response.status == 404) {
             if (features_.count("session-token")) offerSessionFor(server_, state_);

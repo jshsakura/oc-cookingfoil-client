@@ -339,12 +339,12 @@ int runEnrollTests() {
     };
     net::takeConsoleRevoked(); // what tests before this one left
     net::get(url + "/api/shop/sections", {}, "", nullptr);
-    CHECK(net::takeConsoleRevoked() && !net::takeConsoleRevoked());
+    CHECK(net::takeConsoleRevoked() == std::set<std::string>{originOf(url)} && net::takeConsoleRevoked().empty());
     mock.answer = [](const std::string &) -> Reply {
       return {401, "X-CookingFoil-Session: expired\r\n", "{}"};
     };
     net::get(url + "/api/shop/sections", {}, "", nullptr);
-    CHECK(!net::takeConsoleRevoked()); // expired is renewed, not a take-back
+    CHECK(net::takeConsoleRevoked().empty()); // expired is renewed, not a take-back
     mock.take();
   }
   {

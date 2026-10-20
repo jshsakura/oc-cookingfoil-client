@@ -112,15 +112,15 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
       continue;
     }
     // The download token ran out: a fresh one, and on from the same place.
-    if (last.status == 401 && renewals < 3 && !cancelled(cancel) && renewDownloadToken(bearerOf(sendHeaders))) {
+    if (last.status == 401 && renewals < 3 && !cancelled(cancel) && renewDownloadToken(url, bearerOf(sendHeaders))) {
       ++renewals;
-      freshenBearer(sendHeaders);
+      freshenBearer(url, sendHeaders);
       --tries;
       continue;
     }
     // The server restarting (or no internet): not a try. Wait as long as it
     // asks and go on from the same place.
-    if (linkDown() && !cancelled(cancel)) {
+    if (linkDown(url) && !cancelled(cancel)) {
       const int waitMs = std::max(2, last.retryAfter) * 1000;
       for (int waited = 0; waited < waitMs && !cancelled(cancel); waited += WaitStepMs)
         std::this_thread::sleep_for(std::chrono::milliseconds(WaitStepMs));

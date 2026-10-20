@@ -75,15 +75,18 @@ int runPairingTests() {
   CHECK(foil::net::parseMaxConnections("{\"download\":{\"maxConnections\":3}}") == 3);
   CHECK(foil::net::parseMaxConnections("{\"features\":[]}") == 0);
   CHECK(foil::net::parseMaxConnections("{\"download\":{\"maxConnections\":0}}") == 0);
-  foil::net::recommendConnections(3);
-  CHECK(foil::net::connectionsFor("https://shop.example", 0) == 3);
-  CHECK(foil::net::connectionsFor("http://192.168.0.2", 0) == 3);
-  CHECK(foil::net::connectionsFor("http://192.168.0.2", 8) == 3);
-  foil::net::recommendConnections(8);
-  CHECK(foil::net::connectionsFor("http://192.168.0.2", 0) == 8);
+  // Each server's own: one server's recommendation leaves another's alone.
+  foil::net::recommendConnections("https://shop.example/api/shop/info", 3);
+  CHECK(foil::net::connectionsFor("https://shop.example/api/get/x", 0) == 3);
+  CHECK(foil::net::connectionsFor("https://shop.example", 8) == 3);
+  CHECK(foil::net::connectionsFor("http://127.0.0.1:38000", 0) == 2);
+  foil::net::recommendConnections("http://127.0.0.1:38000", 8);
+  CHECK(foil::net::connectionsFor("http://127.0.0.1:38000", 0) == 8);
   CHECK(foil::net::connectionsFor("https://shop.example", 2) == 2);
-  foil::net::recommendConnections(0);
-  CHECK(foil::net::connectionsFor("http://192.168.0.2", 0) == 2);
+  CHECK(foil::net::connectionsFor("https://shop.example", 0) == 3);
+  foil::net::recommendConnections("http://127.0.0.1:38000", 0);
+  foil::net::recommendConnections("https://shop.example", 0);
+  CHECK(foil::net::connectionsFor("http://127.0.0.1:38000", 0) == 2);
   CHECK(foil::net::connectionsFor("https://shop.example", 0) == 4);
   return failures;
 }
