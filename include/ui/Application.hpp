@@ -1135,7 +1135,7 @@ private:
   // presses it. `other` sits beside it, pressed by its own `otherKey` or a tap.
   void notice(const std::string &title, const std::string &body = "", int icon = -1, const std::string &button = "",
               std::function<void()> press = {}, const std::string &other = "", const std::string &otherKey = "",
-              std::function<void()> pressOther = {});
+              std::function<void()> pressOther = {}, int buttonIcon = -1);
   // A screen that needs the server, before it answers: still reading it,
   // or not connected at all.
   void offlineNotice(const std::string &body);

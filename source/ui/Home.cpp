@@ -95,7 +95,7 @@ void Application::home() {
       else
         notice(offline ? tr("No internet connection.") : tr("Couldn't connect to the server."),
                offline ? error_.message : error_.message + "\n" + tr("Check the server in Settings and press - to refresh."),
-               offline ? 20 : 25, tr("Try again"), [this] { refreshAll(); });
+               offline ? 20 : 25, tr("Try again"), [this] { refreshAll(); }, "", "", {}, 46);
       return;
     }
     if (connected_) {

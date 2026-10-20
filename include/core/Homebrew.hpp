@@ -34,6 +34,9 @@ struct App {
   std::string app;
   std::string id, name, version, author, description, hash, fileName, iconUrl, downloadUrl, source, releasedAt,
       repoUrl;
+  // The build's NACP display version as the server read it, for telling an
+  // update; empty before the server has the build (version is for showing).
+  std::string nacpVersion;
   uint64_t size = 0; // 0 when the server does not know it yet
   // The HOME Menu shortcut the server built for it; empty when there is none.
   std::string forwarderUrl, forwarderTitleId;
@@ -135,9 +138,11 @@ struct Record {
   CardFile seen;                   // size 0: never seen (a ledger from before)
   std::string fileSha;             // the .nro's own SHA-256, lowercase hex
   std::string shortcutKey;         // the server's forwarder_key its HOME Menu shortcut was made at
+  std::string nacpVersion;         // the installed build's NACP version; empty: unknown
   bool operator==(const Record &other) const {
     return hash == other.hash && version == other.version && file == other.file && files == other.files &&
-           seen == other.seen && fileSha == other.fileSha && shortcutKey == other.shortcutKey;
+           seen == other.seen && fileSha == other.fileSha && shortcutKey == other.shortcutKey &&
+           nacpVersion == other.nacpVersion;
   }
 };
 using Ledger = std::map<std::string, Record>; // by app id

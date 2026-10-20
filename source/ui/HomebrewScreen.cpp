@@ -459,7 +459,8 @@ void Application::settleHomebrew(const homebrew::App &app, const std::optional<h
                                        [&](const homebrew::CardNro &nro) { return nro.path == old; }),
                         homebrewCard_.end());
   }
-  homebrew::Record record{app.hash, app.version, app.installPath, {}, seen.value_or(homebrew::CardFile{}), fileSha, {}};
+  homebrew::Record record{app.hash, app.version, app.installPath, {}, seen.value_or(homebrew::CardFile{}), fileSha, {},
+                          app.nacpVersion};
   // The app came again; its HOME Menu shortcut did not change with it.
   if (const auto before = homebrewLedger_.find(app.id); before != homebrewLedger_.end())
     record.shortcutKey = before->second.shortcutKey;
