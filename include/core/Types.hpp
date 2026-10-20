@@ -39,6 +39,8 @@ struct Item {
     // only languages whose art differs from icon are sent.
     std::vector<std::string> icons;
     Tags languages, categories;
+    // The configured server it came from (its url); empty: the one in use.
+    std::string server;
 };
 inline constexpr int ServerColorCount = 12;
 struct Server {

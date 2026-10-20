@@ -187,7 +187,8 @@ void Application::fetchPatches() {
 // One job at a time: the worker owns the store until it reports back.
 bool Application::runPatchJob(
     const std::string &id, const std::string &label,
-    std::function<void(net::Session &, PatchStore &, Error &, std::string &)> job, const std::string &failTitle) {
+    std::function<void(net::Session &, PatchStore &, Error &, std::string &)> job, const std::string &failTitle,
+    const std::string &server) {
   if (patchWorker_.joinable() || !patchStore_ || !session_)
     return false;
   // A job that moves files comes first: the light check stops where it is.
@@ -200,7 +201,7 @@ bool Application::runPatchJob(
   patchMoving_ = 0;
   incomingPatchError_ = {};
   patchMessage_.clear();
-  auto session = std::make_shared<net::Session>(session_->server(), state_, "", &stop_);
+  auto session = std::make_shared<net::Session>(serverFor(server), state_, "", &stop_);
   patchWorker_ = std::thread([this, session, job = std::move(job)] {
     const bool ok = guarded("patches", [&] { job(*session, *patchStore_, incomingPatchError_, patchMessage_); });
     if (!ok)
@@ -561,7 +562,8 @@ void Application::startPatchGet(const UserPatch &patch, bool fresh) {
                 done = !over.empty() ? trf("Patch downloaded and on. Files it shares with '{0}' now come from this patch.", {over})
                        : patch.homebrewApp.empty() ? tr("Patch downloaded and on. Applies when the game restarts.")
                                                    : tr("Patch downloaded and on. Applies when the app restarts.");
-              });
+              },
+              "", patch.server);
 }
 // The next queued patch goes to the worker the 패치 screen uses, once it is
 // free and no alert (a failed patch's among them) waits to be read.
@@ -628,7 +630,7 @@ bool Application::startPatchReapply(const UserPatch &patch, bool onServer) {
     done = left ? trf("This patch is gone from the server, so {0} files could not be put back.", {std::to_string(left)})
            : app ? tr("Patch reapplied. Restart the app to apply it.")
                  : tr("Patch reapplied. Restart the game to apply it.");
-  });
+  }, "", patch.server);
 }
 void Application::startPatchEnable(const UserPatch &patch) {
   // Files it shares with patches already on come from this one from now on.

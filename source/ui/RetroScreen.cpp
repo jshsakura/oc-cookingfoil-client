@@ -375,9 +375,8 @@ bool Application::getRetroGame(const retro::Game &game, bool again) {
   // Its turn comes in 다운로드's queue, behind whatever downloads now.
   return queueJob("retro", game.name, game.iconUrl, game.bundleUrl, game.size, retro::serializeGame(game));
 }
-bool Application::runRetroGame(const retro::Game &game) {
+bool Application::runRetroGame(const retro::Game &game, const Server &server) {
   if (game.bundleUrl.empty()) return false;
-  const auto server = session_ ? session_->server() : Server{};
   const auto state = state_;
   const auto sd = sdRoot_;
   retroBytes_ = game.size;
@@ -514,8 +513,7 @@ bool Application::installShortcut(const std::string &name, const std::string &ic
 bool Application::syncRetroArch(bool full, bool first) {
   return queueJob("retroarch", "RetroArch", "", "retroarch", 0, full ? "full" : "", 0, first);
 }
-bool Application::runRetroArch(bool full) {
-  const auto server = session_ ? session_->server() : Server{};
+bool Application::runRetroArch(bool full, const Server &server) {
   const auto state = state_;
   const auto sd = sdRoot_;
   retroBytes_ = 0;

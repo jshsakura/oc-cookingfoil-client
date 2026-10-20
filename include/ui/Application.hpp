@@ -614,7 +614,11 @@ private:
   const InstalledGame *homebrewInstalledTitle(const homebrew::App &app) const;
   std::vector<int> homebrewRows() const; // homebrewAt() indexes in this tab and search
   bool getHomebrew(const homebrew::App &app);
-  bool runHomebrew(const homebrew::App &app);
+  // The configured server a record names (its url), as set now; the one in
+  // use for a record that names none or a server since taken out.
+  Server serverFor(const std::string &url) const;
+  std::string serverInUse() const;
+  bool runHomebrew(const homebrew::App &app, const Server &server);
   // The app's HOME Menu shortcut: made now, or queued behind a download
   // (NCM is the installer's while it runs); false when none can be made.
   bool homebrewShortcutPossible(const homebrew::App &app) const;
@@ -748,7 +752,7 @@ private:
   // false when it did not start (another retro job runs, no room, already there).
   bool getRetroGame(const retro::Game &game, bool again = false);
   // Its turn in the queue came: the download itself, on the retro worker.
-  bool runRetroGame(const retro::Game &game);
+  bool runRetroGame(const retro::Game &game, const Server &server);
   bool finishRetroEntry(const std::string &kind, history::Outcome outcome, const std::string &error, uint64_t bytes, uint64_t kept = 0);
   // A retro game or RetroArch downloading (not a list loading).
   bool retroDownloading() const { return !retroBusy_.empty(); }
@@ -770,7 +774,7 @@ private:
   void scoreBadge(int score, float right, float y);
   // Into the queue; `first` puts it ahead of what waits (a game's core).
   bool syncRetroArch(bool full = false, bool first = false); // full: every file again, settings kept
-  bool runRetroArch(bool full);
+  bool runRetroArch(bool full, const Server &server);
   bool retroCoreMissing(const retro::Game &game) const;
   bool retroReady(const retro::Game &game) const; // RetroArch and its core on the card
   bool retroArchPending() const;                   // a RetroArch job waits or runs
@@ -1020,10 +1024,11 @@ private:
   void patchAction(Action action);
   void fetchPatches();
   void pollPatches();
-  // `failTitle` heads the alert when the job fails (patch failure when empty).
+  // `failTitle` heads the alert when the job fails (patch failure when empty);
+  // `server` is the configured server it talks to (empty: the one in use).
   bool runPatchJob(const std::string &id, const std::string &label,
                    std::function<void(net::Session &, PatchStore &, Error &, std::string &)> job,
-                   const std::string &failTitle = "");
+                   const std::string &failTitle = "", const std::string &server = "");
   // Shared by 유저 패치 and an app's patches in 홈브류.
   void startPatchGet(const UserPatch &patch, bool fresh);
   void startPatchEnable(const UserPatch &patch);
@@ -1650,6 +1655,7 @@ private:
     int group = 0; // one pick: a base game that fails takes the rest of it (update, DLC, patches) along
     uint64_t entry = 0; // its row in 다운로드's history, which keeps the queue across launches
     std::string kind, payload;
+    std::string server; // the configured server it comes from; empty: the one in use
   };
   // A job other than an install goes in behind the rest (or `first`); false
   // when the same one already waits or runs.

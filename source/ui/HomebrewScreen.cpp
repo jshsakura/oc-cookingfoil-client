@@ -337,13 +337,12 @@ bool Application::getHomebrew(const homebrew::App &app) {
   }
   return queueJob("homebrew", app.name, app.iconUrl, app.downloadUrl, bytes ? bytes : app.size, homebrew::serialize(app));
 }
-bool Application::runHomebrew(const homebrew::App &app) {
+bool Application::runHomebrew(const homebrew::App &app, const Server &server) {
   if (app.cardOnly) return false;
   uint64_t bytes = app.files.empty() ? (app.filesSize ? app.filesSize : app.size) : 0;
   for (const auto &file : app.files) bytes += file.size;
   if (!app.bundleUrl.empty() && !app.files.empty()) bytes = homebrew::bundleSize(app);
   if (app.archive.usable()) bytes = app.archive.size;
-  const auto server = session_ ? session_->server() : Server{};
   const auto state = state_;
   const auto sd = sdRoot_;
   retroBytes_ = bytes;

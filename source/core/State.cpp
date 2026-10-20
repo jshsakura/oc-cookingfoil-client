@@ -527,6 +527,7 @@ std::string serializePending(const PendingInstall& pending) {
     auto* entry = json_object_new_object();
     auto add = [](json_object* o, const char* key, const std::string& value) { json_object_object_add(o, key, json_object_new_string(value.c_str())); };
     add(entry, "name", pending.name); add(entry, "icon", pending.icon); add(entry, "target", pending.target);
+    if (!pending.server.empty()) add(entry, "server", pending.server);
     auto* files = json_object_new_array();
     for (const auto& f : pending.files) {
         auto* file = json_object_new_object();
@@ -551,6 +552,7 @@ std::optional<PendingInstall> parsePending(const std::string& queueJson) {
     pending.name = stringField(entry, "name");
     pending.icon = stringField(entry, "icon");
     pending.target = stringField(entry, "target", "sd") == "nand" ? "nand" : "sd";
+    pending.server = stringField(entry, "server");
     auto* files = field(entry, "files");
     if (!json_object_is_type(files, json_type_array)) return std::nullopt;
     for (size_t i = 0; i < json_object_array_length(files) && i < 512; ++i) {
