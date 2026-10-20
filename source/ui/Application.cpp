@@ -2200,6 +2200,22 @@ float Application::statusBar() {
   }
   return x;
 }
+bool Application::refreshSkeleton() const {
+  return menuPending() && !fullPage() && screen_ != Screen::Home;
+}
+// A menu screen's shape while the server is asked: its title, then cards
+// for the screens of games, rows for the others.
+void Application::screenSkeleton() {
+  paint_.skeleton(260, 30, 180, 34, 10);
+  const bool cards = screen_ == Screen::Library || screen_ == Screen::Installed || screen_ == Screen::Homebrew ||
+                     screen_ == Screen::Retro;
+  if (cards) {
+    paint_.skeletonCards(260, 104, 12);
+    return;
+  }
+  constexpr float Top = 96, Row = 64, Gap = 10;
+  for (int n = 0; n < 8; ++n) paint_.skeleton(260, Top + n * (Row + Gap), 992, Row, 16);
+}
 void Application::render() {
   poll();
   // An alert that comes up says so once with the error cue.
@@ -2227,6 +2243,10 @@ void Application::render() {
       autoSidebar_ = false;
     }
   }
+  // While the server is asked again every menu screen is placeholders: the
+  // cursor waits on the menu (which does not move meanwhile) and comes back
+  // in once the answer is there.
+  if (refreshSkeleton() && !sidebar_) sidebar_ = autoSidebar_ = true;
   // With nothing to select the cursor waits on the menu; once the screen
   // has something (a list finished loading) it moves in by itself.
   if (!sidebar_ && !hasFocusable() && !managedGame_ && headerFocus_.empty()) {
@@ -2244,7 +2264,9 @@ void Application::render() {
     shell();
   SDL_Rect clip{fullPage() ? 0 : 232, 0, fullPage() ? 1280 : 1048, 660};
   SDL_RenderSetClipRect(paint_.renderer, &clip);
-  if (pairingPending_ && screen_ != Screen::Settings)
+  if (refreshSkeleton())
+    screenSkeleton();
+  else if (pairingPending_ && screen_ != Screen::Settings)
     pairing();
   else if (screen_ == Screen::Home)
     home();

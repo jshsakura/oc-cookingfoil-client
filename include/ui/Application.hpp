@@ -400,6 +400,8 @@ private:
   std::optional<homebrew::App> homebrewOpenLike_; // a page asked for by an app known from before
   // Until the server first answers (or while the records are still being
   // read), the menu and the buttons are placeholders.
+  bool refreshSkeleton() const;
+  void screenSkeleton();
   bool menuPending() const { return !menuKnown_ && (network_.joinable() || stateWaiting_); }
   void onTheWayButton(float x, float w, bool downloading, double percent, double skipped = 0);
   // False when there was nothing new to write.
