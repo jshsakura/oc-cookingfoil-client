@@ -365,6 +365,18 @@ int runHomebrewTests() {
     auto moved = apps.front();
     moved.installPath = "switch/ytb/ytb-player.nro";
     CHECK(status(moved, ledger, there) == Status::Update);
+    // The build's own version is a second sign: the same hash with a new
+    // version is an update; a record from before versions, or a server
+    // without one, goes by the hash alone.
+    auto bumped = apps.front();
+    bumped.version = "build-" + bumped.version;
+    CHECK(status(bumped, ledger, there) == Status::Update);
+    auto unversioned = ledger;
+    unversioned.begin()->second.version.clear();
+    CHECK(status(bumped, unversioned, there) == Status::Installed);
+    auto quiet = apps.front();
+    quiet.version.clear();
+    CHECK(status(quiet, ledger, there) == Status::Installed);
   }
   {
     // The card is the truth, the ledger a cache: marks round trip, the same
