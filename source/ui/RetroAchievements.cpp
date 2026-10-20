@@ -264,7 +264,7 @@ void Application::raDialog() {
                             : signedIn    ? tr("Sign out|achievements")
                             : raRow_ < Fields ? tr("Enter")
                                               : tr("Sign in");
-  const auto body = modal(700, bodyH, "RetroAchievements", busy ? "" : tr("Close"), "", accept, 31);
+  const auto body = modal(700, bodyH, "RetroAchievements", busy ? "" : tr("Close"), "", accept, 28);
   const float x = body.x + 32;
   float y = body.y + 24;
   // What it is, where else the id goes, and what it needs.
@@ -361,17 +361,24 @@ void Application::raListDialog() {
   const auto &list = raList_.list;
   // Found by title only: a changed ROM (a translation) may not earn them.
   const bool byTitle = retroMeta_.achievements.byTitle;
-  const auto body = modal(900, 24 + 34 + (byTitle ? 30 : 0) + Shown * (Row + Gap) + 8, retroPick_.name, tr("Close"), "", NoAccept, 31);
+  const auto body = modal(900, 24 + 34 + (byTitle ? 30 : 0) + Shown * (Row + Gap) + 8, retroPick_.name, tr("Close"), "", NoAccept, 28);
   const float x = body.x + 32, w = body.w - 64;
   float y = body.y + 24;
   // Whose progress, or how to get it shown.
   const std::string head = raList_.hasUser
-                               ? trf("{0}: {1} of {2} earned · {3} points",
-                                     {raList_.username, std::to_string(raList_.earned), std::to_string(list.size()),
-                                      std::to_string(raList_.userPoints)})
+                               ? trf("{0}: {1} of {2} earned", {raList_.username, std::to_string(raList_.earned),
+                                                                std::to_string(list.size())})
                            : loading ? std::string()
                                                : std::string(tr("Sign in or register the id to see your progress."));
-  paint_.fonts.middle(head, x, y + 12, 18, raList_.hasUser ? Ink : Secondary, true, w);
+  // On the right the points: the player's out of the game's, or the game's alone.
+  int total = 0;
+  for (const auto &a : list) total += a.points;
+  const auto score = list.empty() ? std::string()
+                     : raList_.hasUser ? trf("{0} of {1} points", {std::to_string(raList_.userPoints), std::to_string(total)})
+                                       : trf("{0} points in all", {std::to_string(total)});
+  const float scoreW = score.empty() ? 0 : paint_.fonts.measure(score, 18, true);
+  if (!score.empty()) paint_.fonts.middle(score, x + w - scoreW, y + 12, 18, raList_.hasUser ? Good : Secondary, true);
+  paint_.fonts.middle(head, x, y + 12, 18, raList_.hasUser ? Ink : Secondary, true, w - scoreW - 24);
   y += 34;
   if (byTitle) {
     paint_.fonts.middle(tr("Found by title, so a ROM changed from the original, such as a translation, may not earn them."), x, y + 8,
