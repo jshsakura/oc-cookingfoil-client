@@ -118,12 +118,15 @@ std::string Application::countLabel(size_t count, const std::string &query) cons
 void Application::offlineNotice(const std::string &body) {
   if (session_ && !error_ && !pairingPending_)
     notice(tr("Loading from the server."), tr("This appears once the server answers."), 21);
+  // No internet: what to fix is the console's link, as on 홈.
+  else if (error_ && error_.message == net::offlineMessage())
+    notice(tr("No internet connection."), error_.message, 20, tr("Try again"), [this] { refreshAll(); }, "", "", {}, 46);
   else
     notice(tr("Not connected to a server."), body, 21);
 }
 void Application::notice(const std::string &title, const std::string &body, int icon, const std::string &button,
                          std::function<void()> press, const std::string &other, const std::string &otherKey,
-                         std::function<void()> pressOther) {
+                         std::function<void()> pressOther, int buttonIcon) {
   // Centered between the page header and the footer.
   constexpr float Width = 640, Left = 260 + (992 - Width) / 2, BodyTop = 110,
                   BodyBottom = 660, Center = Left + Width / 2, TextWidth = Width - 80;
@@ -153,14 +156,27 @@ void Application::notice(const std::string &title, const std::string &body, int 
     // 연결하기 is); the other beside it in the card's grey, with its own key.
     const bool focused = !sidebar_ && headerFocus_.empty();
     constexpr float Gap = 14;
-    const float width = (focused ? paint_.keyLabelWidth("A", button, 20, true) : paint_.fonts.measure(button, 20, true)) + 64;
+    // An icon before the label when the button names one (다시 시도's arrows).
+    constexpr float Mark = 22, MarkGap = 8;
+    const float mark = buttonIcon >= 0 ? Mark + MarkGap : 0;
+    const float width = (focused ? paint_.keyLabelWidth("A", button, 20, true) : paint_.fonts.measure(button, 20, true)) + mark + 64;
     const float otherWidth = other.empty() ? 0 : paint_.keyLabelWidth(otherKey, other, 20, true) + 64;
     const float total = width + (other.empty() ? 0 : Gap + otherWidth);
     const float x = Center - total / 2, y = Top + height - 44 - ButtonH;
     if (focused) paint_.ring(x, y, width, ButtonH, 14);
     paint_.rect(x, y, width, ButtonH, Butter, 14);
-    if (focused) paint_.keyLabel("A", button, x + 32, y + ButtonH / 2, 20, Ink, true);
-    else paint_.fonts.middle(button, x + 32, y + ButtonH / 2, 20, Ink, true);
+    // With A the key leads, then the icon and the label.
+    float lx = x + 32;
+    if (focused) {
+      const float key = paint_.keyLabelWidth("A", button, 20, true) - paint_.fonts.measure(button, 20, true);
+      paint_.key("A", lx, y + ButtonH / 2);
+      lx += key;
+    }
+    if (buttonIcon >= 0) {
+      paint_.icon(buttonIcon, lx, y + (ButtonH - Mark) / 2, Ink, int(Mark));
+      lx += mark;
+    }
+    paint_.fonts.middle(button, lx, y + ButtonH / 2, 20, Ink, true);
     if (press) buttonHit({x, y, width, ButtonH}, 14, press);
     if (!other.empty()) {
       const float ox = x + width + Gap;
