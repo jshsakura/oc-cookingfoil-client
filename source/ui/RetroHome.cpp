@@ -1,22 +1,32 @@
 #include "ui/Application.hpp"
 #include <algorithm>
+#include <map>
 namespace foil::ui {
 namespace {
 // A shelf: the system line, the covers and one line of name (no second line
 // as on 홈), then room before the next system.
 constexpr float ShelfHeight = 262, BannerHeight = 64, CardStep = 170, Card = 150;
 constexpr int Columns = 6;
-// A picked row's icon, from the same set as 홈's rows, by what its id says
-// first: a decade (decade:1990:genre:rpg too) before a genre.
+// A picked row's icon, from the same set as 홈's rows, by the kind its id
+// names first (arcade:decade:1990 is an arcade row). A kind the server adds
+// later gets the genre rows' package until it has its own.
 int pickedIcon(const std::string &id) {
-  const auto kind = id.substr(0, id.find(':'));
-  if (kind == "decade") return 11;       // calendar
-  if (kind == "coop") return 13;         // users, as 홈's party row
-  if (kind == "korean") return 17;       // globe, as 홈's Korean row
-  if (kind == "achievements") return 28; // trophy
-  if (kind == "classic" || kind == "hidden") return 31; // star, as 홈's rated rows
-  if (kind == "recent") return 29;       // sparkle, as 홈's new releases
-  return 22;                             // package, as 홈's genre rows
+  static const std::map<std::string, int> icons{
+      {"recent", 29},                                         // sparkle, as 홈's new releases
+      {"arcade", 35},                                         // joystick, as 레트로 게임's menu
+      {"coop", 13},        {"versus", 13}, {"players", 13},   // users, as 홈's party row
+      {"family", 13},
+      {"decade", 11},                                         // calendar
+      {"classic", 31},     {"good", 31},   {"hidden", 31},    // star, as 홈's rated rows
+      {"popular", 28},     {"achievements", 28},              // trophy, as 홈's popular row
+      {"maker", 12},                                          // building
+      {"series", 42},                                         // layers
+      {"theme", 15},                                          // tag
+      {"korean", 17},                                         // globe, as 홈's Korean row
+      {"light", 30},                                          // clock
+  };
+  const auto found = icons.find(id.substr(0, id.find(':')));
+  return found == icons.end() ? 22 : found->second; // package, as 홈's genre rows
 }
 } // namespace
 // The retro header, the same on the home and on 업적: the title with every
