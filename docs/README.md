@@ -1,9 +1,11 @@
 # CookingFoil documentation
 
+[English](README.md) · [한국어](README.ko.md)
+
 [English overview](../README.md) · [한국어 소개](../README.ko.md) · [Get the client](https://github.com/jshsakura/oc-cookingfoil#connecting-a-client) · [Server](https://github.com/jshsakura/oc-cookingfoil)
 
 Start with the client setup, then read the feature guide for the parts you use.
-The detailed guides below are in English; both overview pages cover the main features and first steps.
+The setup, feature and build guides are available in English and Korean. Development rules remain in English.
 
 | Using CookingFoil | |
 |---|---|

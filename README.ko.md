@@ -2,7 +2,12 @@
   <h1><img src="brand/cookingfoil-readme-256.png" alt="CookingFoil" width="192" height="192" /></h1>
   <p><strong>파일은 서버에. 설치와 관리는 본체에서.</strong></p>
   <p>게임, 홈브루, 세이브, 패치를 한곳에서 관리하는 개인용 홈브루 클라이언트입니다.</p>
-  <p><a href="https://github.com/jshsakura/oc-cookingfoil#connecting-a-client">클라이언트 받기</a> · <a href="https://jshsakura.github.io/oc-cookingfoil/">웹사이트</a> · <a href="https://github.com/jshsakura/oc-cookingfoil">서버 준비하기</a> · <a href="docs/README.md">문서</a></p>
+  <p>
+  <a href="https://jshsakura.github.io/oc-cookingfoil/?lang=ko"><img src="brand/buttons/website-ko.svg" alt="웹사이트" width="160" height="44" /></a>
+  <a href="https://github.com/jshsakura/oc-cookingfoil/blob/main/README.ko.md#클라이언트-연결"><img src="brand/buttons/connect-ko.svg" alt="본체 연결" width="160" height="44" /></a>
+  <a href="https://github.com/jshsakura/oc-cookingfoil/blob/main/README.ko.md#빠른-시작"><img src="brand/buttons/setup-ko.svg" alt="설치 안내" width="160" height="44" /></a>
+  <a href="docs/README.ko.md"><img src="brand/buttons/docs-ko.svg" alt="사용 안내" width="160" height="44" /></a>
+  </p>
   <p><a href="README.md">English</a> · <a href="README.ko.md">한국어</a></p>
   <a href="https://github.com/jshsakura/oc-cookingfoil-client/actions/workflows/ci.yml"><img src="https://github.com/jshsakura/oc-cookingfoil-client/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/jshsakura/oc-cookingfoil-client/releases"><img src="https://img.shields.io/github/v/release/jshsakura/oc-cookingfoil-client?color=FFC23D" alt="GitHub release" /></a>
@@ -11,7 +16,7 @@
 
 ![CookingFoil 홈 화면](docs/screenshots/en/01-home.png)
 
-직접 운영하는 [CookingFoil 서버](https://github.com/jshsakura/oc-cookingfoil)에 연결해 파일을 둘러보고,
+직접 운영하는 [CookingFoil 서버](https://github.com/jshsakura/oc-cookingfoil/blob/main/README.ko.md)에 연결해 파일을 둘러보고,
 필요한 항목을 골라 설치합니다. 여러 서버의 목록을 함께 보고, 설치된 버전과 업데이트를 비교하고,
 중간에 끊긴 다운로드는 이어서 진행합니다.
 
@@ -52,7 +57,7 @@
 홈브루 앱을 실행할 수 있는 본체가 필요합니다. 세이브 관리 등 본체 권한이 필요한 작업은
 애플리케이션 모드로 실행합니다. 애플릿 모드에서 접근할 수 없으면 앱이 실행 방법을 안내합니다.
 
-설정 예시, 인증과 여러 서버 연결은 [시작 안내](docs/GETTING-STARTED.md)에 있습니다.
+설정 예시, 인증과 여러 서버 연결은 [시작 안내](docs/GETTING-STARTED.ko.md)에 있습니다.
 
 ## 개발과 미리보기
 
@@ -68,25 +73,25 @@ make test host
 ```
 
 `http://localhost:38520/`을 엽니다. 본체 설치·세이브 접근·삭제는 실기기에서 확인합니다.
-의존성, 본체 빌드와 화면 촬영은 [빌드 안내](docs/BUILDING.md)에 있습니다.
+의존성, 본체 빌드와 화면 촬영은 [빌드 안내](docs/BUILDING.ko.md)에 있습니다.
 
 ## 더 알아보기
 
 | 문서 | 내용 |
 |---|---|
-| [시작 안내](docs/GETTING-STARTED.md) | 설치, 설정, QR 승인, 여러 서버, SD 카드의 파일 |
-| [기능 안내](docs/FEATURES.md) | 다운로드, 홈브루, 세이브, 패치, 레트로의 동작과 조건 |
-| [빌드와 미리보기](docs/BUILDING.md) | 호스트·본체 빌드, 테스트, 브라우저 미리보기 |
-| [디자인 규칙](docs/DESIGN.md) | 화면 구성, 포커스, 입력과 피드백 |
-| [문구와 번역](docs/WRITING.md) | 영문 번역 키, 네 언어의 문구와 작성 규칙 |
-| [작업 규칙](docs/CONTRIBUTING-GUIDE.md) | 스레드, 파일 안전성, 테스트와 PR 절차 |
-| [서드파티 구성](third_party/README.md) | 설치 엔진과 패치 관리 |
+| [시작 안내](docs/GETTING-STARTED.ko.md) | 설치, 설정, QR 승인, 여러 서버, SD 카드의 파일 |
+| [기능 안내](docs/FEATURES.ko.md) | 다운로드, 홈브루, 세이브, 패치, 레트로의 동작과 조건 |
+| [빌드와 미리보기](docs/BUILDING.ko.md) | 호스트·본체 빌드, 테스트, 브라우저 미리보기 |
+| [디자인 규칙 (영문)](docs/DESIGN.md) | 화면 구성, 포커스, 입력과 피드백 |
+| [문구와 번역 (영문)](docs/WRITING.md) | 영문 번역 키, 네 언어의 문구와 작성 규칙 |
+| [작업 규칙 (영문)](docs/CONTRIBUTING-GUIDE.md) | 스레드, 파일 안전성, 테스트와 PR 절차 |
+| [서드파티 구성 (영문)](third_party/README.md) | 설치 엔진과 패치 관리 |
 
 ## 라이선스와 콘텐츠
 
 클라이언트는 [GPL-3.0-or-later](LICENSE), 별도 프로젝트인 서버는 MIT 라이선스입니다.
 클라이언트는 Awoo Installer와 Tinfoil에서 파생한 [CyberFoil](https://github.com/luketanti/CyberFoil)의
-설치 엔진을 사용합니다. 구성 요소별 라이선스는 [서드파티 고지](THIRD_PARTY_NOTICES.md)에 있습니다.
+설치 엔진을 사용합니다. 구성 요소별 라이선스는 [서드파티 고지 (영문)](THIRD_PARTY_NOTICES.md)에 있습니다.
 
 게임, 키, BIOS, RetroArch는 포함하지 않습니다. 합법적으로 소유하거나 사용 권한이 있는 콘텐츠와
 배포가 허용된 패치만 사용합니다.

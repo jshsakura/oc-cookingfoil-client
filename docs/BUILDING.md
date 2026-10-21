@@ -1,5 +1,7 @@
 # Building and previewing
 
+[English](BUILDING.md) · [한국어](BUILDING.ko.md)
+
 [All guides](README.md) · [Working rules](CONTRIBUTING-GUIDE.md) · [Third-party code](../third_party/README.md)
 
 CookingFoil uses C++17 and SDL2. The host build and console build share the interface and core

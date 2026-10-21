@@ -1,5 +1,7 @@
 # Feature guide
 
+[English](FEATURES.md) · [한국어](FEATURES.ko.md)
+
 [All guides](README.md) · [Getting started](GETTING-STARTED.md)
 
 CookingFoil connects your console to files you keep on your own server. The server supplies
