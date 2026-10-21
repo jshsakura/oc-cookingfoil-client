@@ -153,7 +153,7 @@ constexpr int ThemeRows = 6, ThemeGames = 12, ThemeFewest = 6;
 // The first `shown` rows spreadThemes keeps, in the server's order, as
 // shelves above the systems'. Which rows and when they change is the
 // server's (it picks and rotates them); the client only draws.
-constexpr int ThemesShown = 3;
+constexpr int ThemesShown = 6; // as many as the server makes, up to six
 std::vector<Shelf> themeShelves(std::vector<Theme> themes, int shown = ThemesShown);
 std::vector<Theme> spreadThemes(std::vector<Theme> themes, int rows = ThemeRows, int perRow = ThemeGames,
                                 int fewest = ThemeFewest);

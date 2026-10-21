@@ -152,7 +152,8 @@ void Application::loadRetroHome() {
                     systems.end());
     } else
       for (const auto &shelf : shelves) systems.push_back(shelf.system);
-    // Three picked rows above the systems'; a server without them adds none,
+    // Up to six picked rows above the systems', drawn afresh on every visit
+    // (the server picks anew each time); a server without them adds none,
     // and none failing leaves the home as it was.
     if (!noHome && !reply.error) {
       std::vector<std::pair<std::string, std::vector<retro::Theme>>> themes;

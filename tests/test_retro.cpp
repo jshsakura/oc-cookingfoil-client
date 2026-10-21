@@ -68,15 +68,17 @@ int runRetroTests() {
     for (const auto &theme : spread)
       for (const auto &game : theme.games) twice |= !seen.insert(game.id).second;
     CHECK(!twice);
-    // Three drawn, in the server's order.
+    // Up to six drawn, in the server's order; fewer when it sends fewer.
     std::vector<Theme> six;
-    for (int r = 0; r < 6; ++r) {
+    for (int r = 0; r < 7; ++r) {
       std::vector<std::string> names;
       for (int g = 0; g < 8; ++g) names.push_back(std::to_string(r) + "-" + std::to_string(g));
       six.push_back(row("r" + std::to_string(r), names));
     }
     const auto drawn = themeShelves(six);
-    CHECK(drawn.size() == 3 && drawn[0].theme == "r0" && drawn[2].theme == "r2" && drawn[0].system.id.empty());
+    CHECK(drawn.size() == 6 && drawn[0].theme == "r0" && drawn[5].theme == "r5" && drawn[0].system.id.empty());
+    six.resize(2);
+    CHECK(themeShelves(six).size() == 2);
     CHECK(themeShelves({}).empty());
   }
   {

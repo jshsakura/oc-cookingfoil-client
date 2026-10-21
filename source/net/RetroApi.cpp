@@ -71,7 +71,7 @@ Parsed<std::vector<retro::Shelf>> retroHome(const Server &server, const State &s
 }
 Parsed<std::vector<retro::Theme>> retroThemes(const Server &server, const State &state, RetroReply &reply,
                                               const std::atomic<bool> *cancel) {
-  const auto response = fetch(server, state, "/api/retro/themes?limit=12", reply, cancel);
+  const auto response = fetch(server, state, "/api/retro/themes?limit=12&rows=" + std::to_string(retro::ThemesShown), reply, cancel);
   if (reply.error) return {{}, reply.error};
   return {retro::parseThemes(response.body, server.url), {}};
 }
