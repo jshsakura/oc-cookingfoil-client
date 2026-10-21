@@ -138,11 +138,11 @@ void Application::retroHome() {
       x = paint_.fonts.middle(retro::systemName(shelf.system, languageCode()), x, y + HeaderMid, 26, Ink, true, 600);
       paint_.pill(std::to_string(shelf.system.romCount), x + 12, y + HeaderMid - 13);
     }
-    if (focused && !theme) paint_.keyChip("R", tr("See all"), 1252, y + HeaderMid);
+    if (!theme) paint_.keyChip("R", tr("See all"), 1252, y + HeaderMid);
     if (!theme) {
       // A finger gets the chip's size and a little more; pressed, the chip darkens.
       const float chipW = paint_.keyChipWidth("R", tr("See all"));
-      hit(1252 - chipW - 6, y, chipW + 12, 34, [this, n] { openRetroList(n); }, {1252 - chipW, y + HeaderMid - 14, chipW, 28}, 14);
+      hit(1252 - chipW - 6, y, chipW + 12, 34, [this, n] { openRetroList(retroSystemAt(n)); }, {1252 - chipW, y + HeaderMid - 14, chipW, 28}, 14);
     }
     const int count = int(shelf.games.size()), cards = theme ? count : count + 1;
     // Sideways like 홈's shelves: the cursor's place, or the finger's while it
