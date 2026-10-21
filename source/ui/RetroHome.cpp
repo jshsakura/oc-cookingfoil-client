@@ -169,23 +169,26 @@ void Application::retroHome() {
       }
       const auto &game = shelf.games[i];
       cover(thumbnailUrl(game.iconUrl), cx, cy, int(Card), on, game.name, true);
-      // Size top left and score top right, as on 모든 게임's cards; on a theme
-      // row, where systems mix, the system's icon takes the size's place.
-      const auto system = theme ? std::find_if(retroSystems_.begin(), retroSystems_.end(),
-                                               [&](const auto &s) { return s.id == game.system; })
-                                : retroSystems_.end();
-      if (system != retroSystems_.end() && !system->iconUrl.empty()) {
-        paint_.rect(cx + 6, cy + 6, 30, 30, Surface, 8);
-        images_->draw(system->iconUrl, cx + 9, cy + 9, 24, 24, 4);
-      } else if (game.size > 0 && !theme) {
+      // Size top left and score top right, as on 모든 게임's cards.
+      if (game.size > 0) {
         const auto label = formatBytes(game.size);
         const float w = paint_.fonts.measure(label, 13, true) + 10, h = 19;
         paint_.rect(cx + 6, cy + 6, w, h, {22, 22, 26, 190}, 5);
         paint_.fonts.middle(label, cx + 11, cy + 6 + h / 2, 13, Surface, true);
       }
       scoreBadge(game.rating, cx + Card - 6, cy + 6);
-      // Bottom left: how many versions it has, when more than one.
-      versionsBadge(game.variants, cx + 6, cy + Card - 25, true);
+      // Bottom left: on a picked row, where systems mix, the system's icon on
+      // a white tile (some are dark line art); then how many versions it has.
+      float badgeX = cx + 6;
+      const auto system = theme ? std::find_if(retroSystems_.begin(), retroSystems_.end(),
+                                               [&](const auto &s) { return s.id == game.system; })
+                                : retroSystems_.end();
+      if (system != retroSystems_.end() && !system->iconUrl.empty()) {
+        paint_.rect(badgeX, cy + Card - 34, 28, 28, Surface, 8);
+        images_->draw(system->iconUrl, badgeX + 3, cy + Card - 31, 22, 22, 4);
+        badgeX += 34;
+      }
+      versionsBadge(game.variants, badgeX, cy + Card - 25, true);
       // Bottom right: its region's flag, left of the check once it is on the card.
       const bool installed = retroInstalled(game) && !retroBezelMissing(game);
       paint_.region(game.region, cx + Card - (installed ? 64 : 34), cy + Card - 26, 27, 18);
