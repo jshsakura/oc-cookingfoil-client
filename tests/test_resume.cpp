@@ -245,6 +245,48 @@ int runResumeTests() {
   int failures = 0;
   using foil::RangeReply;
   {
+    // An update over files already on the card: a file is replaced only once
+    // it is whole and checked. Cut short, or refused, the old one stays and
+    // nothing is left beside it.
+    const auto root = fs::temp_directory_path() / ("cf-replace-" + std::to_string(getpid()));
+    fs::remove_all(root);
+    fs::create_directories(root / "switch/app");
+    const std::string path = "switch/app/app.nro", fresh = body(5000, 'n');
+    const auto onCard = (root / path).string();
+    const auto leftovers = [&] {
+      int n = 0;
+      for (const auto &entry : fs::directory_iterator(root / "switch/app"))
+        n += entry.path().filename() != "app.nro";
+      return n;
+    };
+    const auto allow = [](const std::string &) { return true; };
+    const std::string data = archive({{path, fresh}});
+    std::string ignored;
+    CHECK(foil::atomicWrite(onCard, "old build", ignored));
+    {
+      foil::TarWriter cut(root.string(), allow);
+      CHECK(feedAll(cut, data, 0, 512 + 2000));
+      cut.abandon();
+    }
+    CHECK(foil::readFile(onCard) == "old build" && leftovers() == 0);
+    {
+      foil::TarWriter refused(root.string(), allow);
+      refused.check([](const std::string &, uint64_t, const std::string &) { return false; });
+      CHECK(!feedAll(refused, data, 0, data.size()));
+    }
+    CHECK(foil::readFile(onCard) == "old build" && leftovers() == 0);
+    {
+      foil::TarWriter whole(root.string(), allow);
+      CHECK(feedAll(whole, data, 0, data.size()) && whole.finish());
+    }
+    CHECK(foil::readFile(onCard) == fresh && leftovers() == 0);
+    // replaceFile: the new file in the old one's place, nothing beside it.
+    CHECK(foil::atomicWrite(onCard + ".new", "next", ignored));
+    CHECK(foil::replaceFile(onCard + ".new", onCard, ignored));
+    CHECK(foil::readFile(onCard) == "next" && leftovers() == 0);
+    fs::remove_all(root);
+  }
+  {
     // What a resumed request asks for, past 4 GiB too.
     CHECK(foil::rangeHeaders(0, "\"h\"").empty());
     const auto headers = foil::rangeHeaders(FiveGiB, "\"abc123\"");

@@ -224,6 +224,11 @@ const char *patchKindLabel(const std::string &kind) {
   return tr("Other");
 }
 
+std::string writingPart(const std::string &target) {
+  Sha256 name;
+  name.update(target.data(), target.size());
+  return fs::path(target).parent_path().string() + "/.cfw-" + name.hex().substr(0, 16) + ".part";
+}
 uint64_t tarSize(const char *field) {
   const auto first = static_cast<unsigned char>(field[0]);
   if (!(first & 0x80))
@@ -252,6 +257,8 @@ bool TarWriter::fail(const std::string &message) {
   if (file_) {
     std::fclose(file_);
     file_ = nullptr;
+    std::error_code ec;
+    fs::remove_all(writingPart(root_ + "/" + current_), ec); // the file it would have replaced stays
   }
   return false;
 }
@@ -262,12 +269,15 @@ void TarWriter::abandon() {
   }
   if (!current_.empty() && remaining_ > 0) {
     std::error_code ec;
-    fs::remove(root_ + "/" + current_, ec);
+    fs::remove_all(writingPart(root_ + "/" + current_), ec);
   }
   current_.clear();
 }
+// Each file is written beside its place and takes it only once whole and
+// checked, so an update cut short leaves the files it had not reached as
+// they were.
 bool TarWriter::openFile(const std::string &path, uint64_t size) {
-  const fs::path full = root_ + "/" + path;
+  const fs::path full = writingPart(root_ + "/" + path);
   std::error_code ec;
   makeDirectories(std::filesystem::path(full.parent_path()).string());
   // 4 GiB or more: made as a split file first, or FAT32 would cut it short.
@@ -349,14 +359,22 @@ bool TarWriter::header() {
 // The entry's last byte is written: closed, then held against the list.
 bool TarWriter::fileDone() {
   const auto path = std::exchange(current_, "");
+  const auto part = writingPart(root_ + "/" + path);
   const bool closed = std::fclose(file_) == 0;
   file_ = nullptr;
-  if (!closed)
+  std::error_code ec;
+  if (!closed) {
+    fs::remove_all(part, ec);
     return fail(tr("Could not write to the SD card. Check the free space."));
+  }
   if (check_ && !check_(path, entrySize_, hash_.hex())) {
-    std::error_code ec;
-    fs::remove(root_ + "/" + path, ec);
+    fs::remove_all(part, ec);
     return fail(tr("The downloaded file does not match the server's. Try again."));
+  }
+  if (std::string reason; !replaceFile(part, root_ + "/" + path, reason)) {
+    fs::remove_all(part, ec);
+    logLine("tar: cannot put " + path + " in place: " + reason);
+    return fail(trf("Could not write the file: {0}", {path}) + " (" + reason + ")");
   }
   return true;
 }

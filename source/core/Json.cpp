@@ -132,17 +132,25 @@ bool atomicWrite(const std::string& path, const std::string& contents, std::stri
     const bool flushed = ::fsync(fd) == 0;
     const bool closed = ::close(fd) == 0;
     if (!flushed || !closed) { error = std::strerror(errno); ::unlink(temp.c_str()); return false; }
-    if (::rename(temp.c_str(), path.c_str()) != 0) {
-        // The console's SD card refuses to rename over an existing file
-        // (EEXIST). Move the old file aside, rename, then drop the old one,
-        // so a power cut leaves either file readable rather than neither.
-        const std::string old = path + ".old";
-        ::unlink(old.c_str());
-        if (::rename(path.c_str(), old.c_str()) != 0 || ::rename(temp.c_str(), path.c_str()) != 0) {
-            error = std::strerror(errno); ::unlink(temp.c_str()); return false;
-        }
-        ::unlink(old.c_str());
+    if (!replaceFile(temp, path, error)) { ::unlink(temp.c_str()); return false; }
+    return true;
+}
+bool replaceFile(const std::string& from, const std::string& to, std::string& error) {
+    if (::rename(from.c_str(), to.c_str()) == 0) return true;
+    // The console's SD card refuses to rename over an existing file
+    // (EEXIST). Move the old file aside, rename, then drop the old one, so a
+    // power cut leaves either file readable rather than neither. A file of
+    // 4 GB or more is a folder there: removed as one.
+    const std::string old = to + ".old";
+    std::error_code ec;
+    std::filesystem::remove_all(old, ec);
+    if (::rename(to.c_str(), old.c_str()) != 0) { error = std::strerror(errno); return false; }
+    if (::rename(from.c_str(), to.c_str()) != 0) {
+        error = std::strerror(errno);
+        ::rename(old.c_str(), to.c_str()); // the old file stays in its place
+        return false;
     }
+    std::filesystem::remove_all(old, ec);
     return true;
 }
 static std::string absoluteUrl(const std::string& value, const std::string& base) {
