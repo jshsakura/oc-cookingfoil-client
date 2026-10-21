@@ -96,6 +96,8 @@ Application::~Application() {
     shopSavesWorker_.join();
   if (stateWorker_.joinable())
     stateWorker_.join();
+  if (reloadWorker_.joinable())
+    reloadWorker_.join();
   if (backupSummaryWorker_.joinable())
     backupSummaryWorker_.join();
   if (dropboxWorker_.joinable())
@@ -782,37 +784,63 @@ void Application::reload(int prefer) {
     message(tr("Connecting to the server."));
     return;
   }
-  poll();
-  auto parsed = loadConfig(configPath_);
+  if (loading_) {
+    poll();
+    applyReload(prefer, readForReload(true));
+    return;
+  }
+  reloadPrefer_ = prefer;
+  if (reloadWorker_.joinable()) {
+    reloadAgain_ = true;
+    return;
+  }
+  reloadWorker_ = std::thread([this] {
+    guarded("reload", [&] { reloadRead_ = readForReload(false); });
+    reloadDone_ = true;
+  });
+}
+Application::ReloadRead Application::readForReload(bool waitOut) {
+  ReloadRead read;
+  read.config = loadConfig(configPath_);
   // Read with no servers at start: read again a few times before 설정 takes
   // over (a console was seen reading none at start and its servers a moment
   // later). Only the first time: a refresh with none answers at once. A file made just now (a first start) has none to wait for.
   const bool first = std::exchange(configReadOnce_, true) == false;
-  for (int again = 0; first && !parsed.created && again < 3 && !parsed.error && parsed.value.servers.empty(); ++again) {
+  for (int again = 0; first && !read.config.created && again < 3 && !read.config.error && read.config.value.servers.empty(); ++again) {
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
-    parsed = loadConfig(configPath_);
+    read.config = loadConfig(configPath_);
   }
+  if (read.config.error) return read;
+  {
+    // The stored device key gives way to the console's own once all of these
+    // took it (core/State), as the state is read below.
+    std::vector<std::string> urls;
+    for (const auto &s : read.config.value.servers) urls.push_back(s.url);
+    setKnownServers(std::move(urls));
+  }
+  writePendingState(); // what was just set, before it is read back
+  read.state = loadState(statePath_, &read.busy);
+  // At start the loading screen waits for a write still going, so the app
+  // opens once, read, rather than showing its menu and then reading again.
+  for (const auto until = SDL_GetTicks() + 15000; waitOut && read.state.error && read.busy && SDL_GetTicks() < until;) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    read.state = loadState(statePath_, &read.busy);
+  }
+  return read;
+}
+void Application::applyReload(int prefer, ReloadRead read) {
+  if (network_.joinable() && !done_) {
+    message(tr("Connecting to the server."));
+    return;
+  }
+  auto &parsed = read.config;
   if (parsed.error) {
     error_ = parsed.error;
     screen(Screen::Settings);
     return;
   }
-  {
-    // The stored device key gives way to the console's own once all of these
-    // took it (core/State).
-    std::vector<std::string> urls;
-    for (const auto &s : parsed.value.servers) urls.push_back(s.url);
-    setKnownServers(std::move(urls));
-  }
-  writePendingState(); // what was just set, before it is read back
-  bool busy = false;
-  auto state = loadState(statePath_, &busy);
-  // At start the loading screen waits for a write still going, so the app
-  // opens once, read, rather than showing its menu and then reading again.
-  for (const auto until = SDL_GetTicks() + 15000; loading_ && state.error && busy && SDL_GetTicks() < until;) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    state = loadState(statePath_, &busy);
-  }
+  auto &state = read.state;
+  const bool busy = read.busy;
   if (state.error && busy && !session_) {
     // Held by a write still going, not broken: the servers show now (not an
     // empty 설정) and the records are read again until they can be.
@@ -960,6 +988,16 @@ void Application::waitForState(int prefer) {
   });
 }
 void Application::poll() {
+  // Applied once a connection still running is done, as reload() itself
+  // would wait for it.
+  if (reloadDone_ && !(network_.joinable() && !done_) && reloadDone_.exchange(false)) {
+    reloadWorker_.join();
+    const bool dropped = std::exchange(reloadDrop_, false);
+    if (std::exchange(reloadAgain_, false))
+      reload(reloadPrefer_);
+    else if (!dropped)
+      applyReload(reloadPrefer_, std::move(reloadRead_));
+  }
   if (stateReady_.exchange(false)) {
     stateWorker_.join();
     stateWaiting_ = false;

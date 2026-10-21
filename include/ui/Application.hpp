@@ -110,6 +110,8 @@ public:
   bool imagesReady() const { return images_->ready(); }
   Screen current() const { return screen_; }
   size_t groupCount() const { return groups_.size(); }
+  // A reload still reading the card (reload() from the drawing thread).
+  bool reloading() const { return reloadWorker_.joinable(); }
   std::string selectedName() const;
   void setDetail(net::Detail detail);
   bool confirmingInstall() const { return confirmInstall_; }
@@ -410,7 +412,7 @@ private:
   // read), the menu and the buttons are placeholders.
   bool refreshSkeleton() const;
   void screenSkeleton();
-  bool menuPending() const { return !menuKnown_ && (network_.joinable() || stateWaiting_); }
+  bool menuPending() const { return !menuKnown_ && (network_.joinable() || stateWaiting_ || reloadWorker_.joinable()); }
   void onTheWayButton(float x, float w, bool downloading, double percent, double skipped = 0);
   // False when there was nothing new to write.
   bool keepResumeChanges();
@@ -1189,7 +1191,7 @@ private:
   void offlineNotice(const std::string &body);
   // 홈 with nothing to show and a button on its notice: 설정 when no server
   // is set up, 다시 시도 when the one set up did not answer.
-  bool homeOffersSettings() const { return groups_.empty() && !session_ && !stateWaiting_; }
+  bool homeOffersSettings() const { return groups_.empty() && !session_ && !stateWaiting_ && !reloadWorker_.joinable(); }
 public:
   // The banner's tags, as the website's (#218): score, sale (else the
   // regular price), Korean, size,
@@ -1212,7 +1214,23 @@ private:
   void connect(size_t server);
   void clearCatalog();
   // `prefer`: the server to connect to when it is on, else the first one on.
+  // At start (on the loading thread) it reads and applies at once; from the
+  // drawing thread the card is read on reloadWorker_ and applied in poll().
   void reload(int prefer = -1);
+  struct ReloadRead {
+    Parsed<Config> config;
+    Parsed<State> state;
+    bool busy = false; // the records held by a write still going
+  };
+  // `waitOut`: at start, wait for a write still holding the records.
+  ReloadRead readForReload(bool waitOut);
+  void applyReload(int prefer, ReloadRead read);
+  std::thread reloadWorker_;
+  std::atomic<bool> reloadDone_{false};
+  ReloadRead reloadRead_;
+  int reloadPrefer_ = -1;
+  bool reloadAgain_ = false; // asked again while reading: what was read may be old
+  bool reloadDrop_ = false;  // the servers were saved and applied while it read
   // 설정's server form (ServerForm.cpp): + 서버 추가 opens it empty, A on a
   // server opens that one. Rows: the four fields, then 저장 and 삭제.
   struct ServerForm {
