@@ -9,6 +9,9 @@ constexpr float BackLine = 30;
 // The band's chips (votes, 업적, admin) sit a little lower, off the screen's
 // corner where a finger hardly lands; their touch reaches up to the edge.
 constexpr float ChipLine = 42;
+// A game card: its labels just under the name, and the step from one row
+// of cards to the next in a grid.
+constexpr float CardLabelTop = 186, CardRowStep = 226;
 constexpr float BandRight = 1248; // the band's chips end here
 constexpr SDL_Color Ground{242, 241, 238, 255}, Surface{255, 255, 255, 255};
 constexpr SDL_Color Ink{22, 22, 26, 255}, Secondary{85, 85, 94, 255};

@@ -2035,25 +2035,21 @@ void Application::card(const Group &g, float x, float y, bool selected,
   if (badges) {
     if (selected) marquee(g.representative.name, x, y + 158, 18, 150, false);
     else paint_.fonts.text(g.representative.name, x, y + 158, 18, Ink, false, 150);
-    // Badges in priority order; one that would spill past the card is left out.
-    std::vector<std::string> labels;
-    if (g.representative.koreanPatches || (g.base && g.base->koreanPatches))
-      labels.push_back(tr("Korean patch|badge")); // first: the reason many come here
-    if (g.representative.requiredPatches || (g.base && g.base->requiredPatches))
-      labels.push_back(tr("Required patch")); // it does not run without one
-    if (const int integrity = groupIntegrity(g)) // said, never blocking
-      labels.push_back(integrity == 2 ? tr("May be damaged") : tr("Modified|file"));
-    if (g.base && !g.base->priceDiscount.empty())
-      labels.push_back(tr("eShop sale"));
-    if (g.update)
-      labels.push_back(tr("Update|item"));
-    if (!g.dlc.empty())
-      labels.push_back("DLC " + std::to_string(g.dlc.size()));
+    // Most wanted first; one that would spill past the card is skipped and
+    // the next, maybe shorter, still gets its chance.
     float at = x;
-    for (const auto &label : labels) {
-      if (at + paint_.fonts.measure(label, 15, true) + 18 > x + 150)
-        break;
-      at += paint_.pill(label, at, y + 194) + 6;
+    for (const auto kind : cardLabels(g)) {
+      using L = CardLabel;
+      const std::string label = kind == L::KoreanPatch     ? tr("Korean patch|badge")
+                                : kind == L::RequiredPatch ? tr("Required patch")
+                                : kind == L::Damaged       ? tr("May be damaged")
+                                : kind == L::Modified      ? tr("Modified|file")
+                                : kind == L::Latest        ? tr("Latest version")
+                                : kind == L::Update        ? tr("Update|item")
+                                : kind == L::Sale          ? tr("eShop sale")
+                                                           : "DLC " + std::to_string(g.dlc.size());
+      if (at + paint_.fonts.measure(label, 15, true) + 18 > x + 150) continue;
+      at += paint_.pill(label, at, y + CardLabelTop) + 6;
     }
   } else if (selected)
     marquee(g.representative.name, x, y + 158, 18, 150, false);

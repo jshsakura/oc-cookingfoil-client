@@ -475,6 +475,18 @@ int groupIntegrity(const Group &g) {
   for (const auto &d : g.dlc) worst = std::max<int>(worst, d.integrity);
   return worst;
 }
+std::vector<CardLabel> cardLabels(const Group &g) {
+  const auto either = [&](auto field) { return g.representative.*field || (g.base && (*g.base).*field); };
+  std::vector<CardLabel> labels;
+  if (either(&Item::koreanPatches)) labels.push_back(CardLabel::KoreanPatch);
+  if (either(&Item::requiredPatches)) labels.push_back(CardLabel::RequiredPatch);
+  const uint32_t latest = g.base ? g.base->latestVersion : g.representative.latestVersion;
+  if (const int integrity = groupIntegrity(g)) labels.push_back(integrity == 2 ? CardLabel::Damaged : CardLabel::Modified);
+  else if (g.update) labels.push_back(latest && g.update->version >= latest ? CardLabel::Latest : CardLabel::Update);
+  if (g.base && !g.base->priceDiscount.empty()) labels.push_back(CardLabel::Sale);
+  if (!g.dlc.empty()) labels.push_back(CardLabel::Dlc);
+  return labels;
+}
 } // namespace foil
 
 namespace foil {

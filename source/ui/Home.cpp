@@ -106,7 +106,7 @@ void Application::home() {
     shape();
     return;
   }
-  constexpr int RowTop = 300, RowHeight = 283, Columns = 6;
+  constexpr int RowTop = 300, RowHeight = 268, Columns = 6;
   constexpr uint32_t HeroMs = 6000, HeroWaitMs = 6000;
   // What a slide draws: its backdrop (the admin banner or the blurred cover)
   // and the cover itself.

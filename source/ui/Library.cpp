@@ -43,7 +43,7 @@ void Application::library() {
   }
   // Rows of six; about two and a half fit on screen. The row at the top
   // follows the cursor, or the finger (fractional while it glides).
-  constexpr float Top = 104, RowHeight = 240;
+  constexpr float Top = 104, RowHeight = CardRowStep;
   const int rows = int((list.size() + 5) / 6);
   const float top = glide("library", 232, Top - 8, 1048, 660 - Top + 8, float(std::max(0, selected_ / 6 - 1)),
                           float(rows - 2), RowHeight);

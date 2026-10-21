@@ -34,6 +34,25 @@ int runCatalogTests() {
     CHECK(foil::groupIntegrity(g) == 2);
   }
   {
+    // A card's labels: 한글패치 first, one label for the file's state.
+    using L = foil::CardLabel;
+    foil::Group g;
+    g.base = foil::Item{};
+    g.base->latestVersion = 131072;
+    g.update = foil::Item{};
+    g.update->version = 65536;
+    CHECK(foil::cardLabels(g) == std::vector<L>{L::Update});
+    g.update->version = 131072;
+    g.base->koreanPatches = 1;
+    g.dlc.push_back(foil::Item{});
+    CHECK((foil::cardLabels(g) == std::vector<L>{L::KoreanPatch, L::Latest, L::Dlc}));
+    g.base->integrity = 1;
+    CHECK((foil::cardLabels(g) == std::vector<L>{L::KoreanPatch, L::Modified, L::Dlc}));
+    g.base->latestVersion = 0;
+    g.base->integrity = 0;
+    CHECK((foil::cardLabels(g) == std::vector<L>{L::KoreanPatch, L::Update, L::Dlc}));
+  }
+  {
     // Shared words and lists: equal text is one copy, compared by content.
     foil::Item a, b;
     a.publisher = std::string("Butter Works");
