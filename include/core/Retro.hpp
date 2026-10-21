@@ -38,6 +38,10 @@ struct Game {
   enum class Bezel { None, System, Game } bezel = Bezel::None;
   // Its RetroAchievements match; count 0 when it has none.
   achievements::Summary achievements;
+  // What the server knows of it, for its tile: genre keys (named by the
+  // facets or themes that carry them), most players at once, release year.
+  std::vector<std::string> genres;
+  int players = 0, year = 0;
   // The configured server it came from (its url), and the others holding
   // the same game (same id): never serialized, the queue keeps its own.
   std::string server;
@@ -72,9 +76,16 @@ struct Filter {
   int minRating = 0;
   bool bezel = false; // a bezel made for the game, not the system's default
   uint64_t minSize = 0, maxSize = 0;
+  // Only what the system's facets offer is ever set (0 / empty: not set).
+  std::vector<std::string> genres; // any of these genre keys
+  int players = 0;                 // at least this many at once
+  int decade = 0;                  // released in 1990..1999 for 1990
+  bool korean = false;             // a Korean release or a Korean patch
+  bool achievements = false;       // matched on RetroAchievements
   bool operator==(const Filter &o) const {
     return query == o.query && sort == o.sort && minRating == o.minRating && bezel == o.bezel &&
-           minSize == o.minSize && maxSize == o.maxSize;
+           minSize == o.minSize && maxSize == o.maxSize && genres == o.genres && players == o.players &&
+           decade == o.decade && korean == o.korean && achievements == o.achievements;
   }
   bool operator!=(const Filter &o) const { return !(*this == o); }
 };
@@ -89,6 +100,26 @@ struct Shelf {
   System system;
   std::vector<Game> games;
 };
+// A row across systems (/api/retro/themes): a genre or another theme the
+// server picked, named in the asked language.
+struct Theme {
+  std::string id, name;
+  std::vector<Game> games;
+};
+// What a system's list can be filtered by (/api/retro/systems/:id/facets),
+// each with how many games it keeps. Only these are offered; an empty list
+// or a 0 count means the filter is not shown.
+struct Facet {
+  std::string key, name; // a genre's key and name; players and decades: the number as text
+  int count = 0;
+};
+struct Facets {
+  std::vector<Facet> genres, players, decades;
+  int korean = 0, achievements = 0;
+  bool empty() const {
+    return genres.empty() && players.empty() && decades.empty() && !korean && !achievements;
+  }
+};
 // Several servers' replies as one; each list in the servers' order, as
 // {server url, its part}. A game on several (same id) is listed once from
 // the first, naming the others.
@@ -101,6 +132,18 @@ void orderGames(std::vector<Game> &games, const std::string &sort);
 // games best rated first with one card per original title, and its count
 // the sum of the servers' (an upper bound when they share games).
 std::vector<Shelf> mergeShelves(std::vector<std::pair<std::string, std::vector<Shelf>>> lists);
+// Theme rows join by id in the order they first appear, their games best
+// rated first with one card per original title.
+std::vector<Theme> mergeThemes(std::vector<std::pair<std::string, std::vector<Theme>>> lists);
+// Several servers' facets as one: counts summed per key (an upper bound when
+// they share games), genres by count, players and decades in order.
+Facets mergeFacets(const std::vector<Facets> &all);
+// The theme rows the home shows: a game (by id or original title) only in
+// the first row that has it, a row left with fewer than `fewest` games
+// dropped, at most `rows` rows of `perRow` games. Few, varied, never long.
+constexpr int ThemeRows = 6, ThemeGames = 12, ThemeFewest = 6;
+std::vector<Theme> spreadThemes(std::vector<Theme> themes, int rows = ThemeRows, int perRow = ThemeGames,
+                                int fewest = ThemeFewest);
 struct PackFile {
   std::string path, sha256, url;
   uint64_t size = 0;
@@ -119,6 +162,9 @@ Page parseGames(const std::string &json, const std::string &base);
 // /api/retro/home: systems without games are left out, and versions of one
 // game (the same `original`) take one card, the best rated first.
 std::vector<Shelf> parseHome(const std::string &json, const std::string &base = "");
+// /api/retro/themes: themes without a name or games are left out.
+std::vector<Theme> parseThemes(const std::string &json, const std::string &base = "");
+Facets parseFacets(const std::string &json);
 // One game in the server's own shape, for 다운로드's history (다시 시도).
 std::string serializeGame(const Game &game);
 Game parseGameJson(const std::string &json);

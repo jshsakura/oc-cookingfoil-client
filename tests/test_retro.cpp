@@ -10,6 +10,101 @@ uint64_t sizeOf(const std::string &path) { return path == shortFile ? 4 : 10; }
 } // namespace
 int runRetroTests() {
   int failures = 0;
+  {
+    // Theme rows across systems: one card per title, a row without a name or
+    // games left out, an id with odd characters dropped.
+    const auto themes = parseThemes(R"({"themes":[
+      {"id":"fighting","name":"대전 격투","games":[
+        {"id":"a","name":"A","original":"Street Fighter II","system":"snes","bundleUrl":"/b/a","rating":90,
+         "genres":["fighting","action","Bad Key"],"players":2,"year":1992},
+        {"id":"b","name":"B","original":"Street Fighter II","system":"md","bundleUrl":"/b/b","rating":80}]},
+      {"id":"puzzle","name":"","games":[{"id":"c","bundleUrl":"/b/c"}]},
+      {"id":"empty","name":"Empty","games":[]},
+      {"id":"../x","name":"X","games":[{"id":"d","bundleUrl":"/b/d"}]}]})",
+                                    "https://shop.example.com");
+    CHECK(themes.size() == 1 && themes[0].id == "fighting" && themes[0].name == "대전 격투");
+    CHECK(themes.size() == 1 && themes[0].games.size() == 1 && themes[0].games[0].id == "a");
+    CHECK(themes.size() == 1 && themes[0].games[0].genres == std::vector<std::string>({"fighting", "action"}));
+    CHECK(themes.size() == 1 && themes[0].games[0].players == 2 && themes[0].games[0].year == 1992);
+    CHECK(themes.size() == 1 && themes[0].games[0].bundleUrl == "https://shop.example.com/b/a");
+    CHECK(parseThemes("not json").empty());
+    // Two servers: a theme joins by id, its games best rated first, each
+    // id once naming both servers.
+    auto other = themes;
+    other[0].games[0].rating = 90;
+    Game better;
+    better.id = "e", better.name = "E", better.original = "Garou", better.rating = 95, better.bundleUrl = "https://b/e";
+    other[0].games.push_back(better);
+    Theme shooting{"shooter", "슈팅", {better}};
+    other.push_back(shooting);
+    const auto merged = mergeThemes({{"https://one.example.com", themes}, {"https://two.example.com", other}});
+    CHECK(merged.size() == 2 && merged[0].id == "fighting" && merged[1].id == "shooter");
+    CHECK(merged.size() == 2 && merged[0].games.size() == 2 && merged[0].games[0].id == "e");
+    CHECK(merged.size() == 2 && merged[0].games[1].id == "a" && merged[0].games[1].alsoOn.size() == 1);
+  }
+  {
+    // The home's theme rows: no game twice, a thin row dropped, few rows.
+    const auto row = [](const std::string &id, std::vector<std::string> games) {
+      Theme t{id, id, {}};
+      for (const auto &name : games) {
+        Game g;
+        g.id = name, g.original = name, g.bundleUrl = "https://b/" + name;
+        t.games.push_back(g);
+      }
+      return t;
+    };
+    const auto spread = spreadThemes({row("action", {"a", "b", "c", "d"}), row("fighting", {"a", "b", "e"}),
+                                      row("rpg", {"c", "f", "g", "h"}), row("puzzle", {"i", "j", "k"}),
+                                      row("racing", {"l", "m", "n"})},
+                                     3, 3, 2);
+    CHECK(spread.size() == 3 && spread[0].id == "action" && spread[0].games.size() == 3);
+    CHECK(spread.size() == 3 && spread[1].id == "rpg" && spread[1].games.size() == 3 && spread[1].games[0].id == "f");
+    CHECK(spread.size() == 3 && spread[2].id == "puzzle");
+    std::set<std::string> seen;
+    bool twice = false;
+    for (const auto &theme : spread)
+      for (const auto &game : theme.games) twice |= !seen.insert(game.id).second;
+    CHECK(!twice);
+  }
+  {
+    // A system's facets: only what has games, values in range, names kept.
+    const auto facets = parseFacets(R"({
+      "genres":[{"key":"rpg","name":"롤플레잉","count":40},{"key":"action","count":12},{"key":"none","count":0},{"key":"Bad","count":5}],
+      "players":[{"value":1,"count":30},{"value":2,"count":9},{"value":0,"count":3},{"value":200,"count":1}],
+      "decades":[{"value":1990,"count":20},{"value":1995,"count":2},{"value":1980,"count":4}],
+      "korean":7,"achievements":0})");
+    CHECK(facets.genres.size() == 2 && facets.genres[0].key == "rpg" && facets.genres[0].name == "롤플레잉");
+    CHECK(facets.genres.size() == 2 && facets.genres[1].name == "action" && facets.genres[1].count == 12);
+    CHECK(facets.players.size() == 2 && facets.players[1].key == "2" && facets.players[1].count == 9);
+    CHECK(facets.decades.size() == 2 && facets.decades[0].key == "1990");
+    CHECK(facets.korean == 7 && facets.achievements == 0 && !facets.empty());
+    CHECK(parseFacets("{}").empty() && parseFacets("nope").empty());
+    // Several servers: counts summed per key, genres by count, numbers in order.
+    Facets more;
+    more.genres = {{"action", "Action", 50}, {"puzzle", "Puzzle", 3}};
+    more.players = {{"1", "", 5}};
+    more.decades = {{"1980", "", 1}};
+    more.achievements = 2;
+    const auto all = mergeFacets({facets, more});
+    CHECK(all.genres.size() == 3 && all.genres[0].key == "action" && all.genres[0].count == 62);
+    CHECK(all.genres.size() == 3 && all.genres[1].key == "rpg" && all.genres[2].key == "puzzle");
+    CHECK(all.players.size() == 2 && all.players[0].key == "1" && all.players[0].count == 35);
+    CHECK(all.decades.size() == 2 && all.decades[0].key == "1980" && all.decades[1].key == "1990");
+    CHECK(all.korean == 7 && all.achievements == 2);
+  }
+  {
+    // The new filters go in the list's query; a key with odd characters never does.
+    Filter f;
+    f.genres = {"fighting", "rpg", "x&y"};
+    f.players = 2;
+    f.decade = 1990;
+    f.korean = true;
+    f.achievements = true;
+    CHECK(filterQuery(f) == "&sort=rating&genre=fighting,rpg&players=2&decade=1990&korean=1&achievements=1");
+    Filter g = f;
+    g.genres.pop_back();
+    CHECK(g != f);
+  }
   const auto systems = parseSystems(R"({"systems":[
     {"id":"gba","name":"Game Boy Advance","names":{"ko":"게임보이 어드밴스"},"defaultCore":"mgba","coreName":"mGBA","romCount":181},
     {"id":"../x","name":"bad"},{"id":""}]})");

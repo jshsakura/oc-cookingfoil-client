@@ -35,6 +35,20 @@ bool plainPath(const std::string &path) {
 } // namespace
 
 namespace {
+// A genre key: lower case letters, digits, - and _ (empty for anything else).
+std::string plainKey(json_object *value) {
+  if (!json_object_is_type(value, json_type_string)) return {};
+  const std::string key = json_object_get_string(value);
+  return key.size() <= 32 && key.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-") == std::string::npos ? key
+                                                                                                                 : "";
+}
+// One card per original title, the first (best rated) kept.
+void oneCardPerTitle(std::vector<Game> &games) {
+  std::set<std::string> seen;
+  games.erase(std::remove_if(games.begin(), games.end(),
+                             [&](const Game &g) { return !g.original.empty() && !seen.insert(g.original).second; }),
+              games.end());
+}
 // Empty id (or one with odd characters) means the entry is skipped.
 System parseSystem(json_object *object, const std::string &base) {
   System s;
@@ -114,6 +128,11 @@ Game parseGame(json_object *object, const std::string &base) {
       g.bezel = json_object_get_boolean(field(bezel, "generic")) ? Game::Bezel::System : Game::Bezel::Game;
   }
   g.achievements = achievements::parseSummary(field(object, "achievements"));
+  if (auto *genres = field(object, "genres"); json_object_is_type(genres, json_type_array))
+    for (size_t i = 0; i < json_object_array_length(genres) && g.genres.size() < 8; ++i)
+      if (const auto key = plainKey(json_object_array_get_idx(genres, i)); !key.empty()) g.genres.push_back(key);
+  g.players = int(std::clamp<int64_t>(integerField(object, "players"), 0, 99));
+  g.year = int(std::clamp<int64_t>(integerField(object, "year"), 0, 9999));
   if (g.bundleUrl.empty()) g.id.clear();
   if (g.name.empty()) g.name = g.file;
   return g;
@@ -144,6 +163,15 @@ std::string filterQuery(const Filter &f) {
   if (f.bezel) out += "&bezel=1";
   if (f.minSize) out += "&minSize=" + std::to_string(f.minSize);
   if (f.maxSize) out += "&maxSize=" + std::to_string(f.maxSize);
+  std::string genres;
+  for (const auto &key : f.genres)
+    if (!key.empty() && key.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-") == std::string::npos)
+      genres += (genres.empty() ? "" : ",") + key;
+  if (!genres.empty()) out += "&genre=" + genres;
+  if (f.players > 0) out += "&players=" + std::to_string(std::min(f.players, 99));
+  if (f.decade > 0) out += "&decade=" + std::to_string(f.decade);
+  if (f.korean) out += "&korean=1";
+  if (f.achievements) out += "&achievements=1";
   return out;
 }
 std::vector<System> parseSystems(const std::string &json, const std::string &base) {
@@ -226,13 +254,59 @@ std::vector<Shelf> parseHome(const std::string &json, const std::string &base) {
   for (size_t i = 0; i < json_object_array_length(list) && out.size() < 200; ++i) {
     auto *object = json_object_array_get_idx(list, i);
     Shelf shelf{parseSystem(object, base), parseGameList(field(object, "games"), base)};
-    std::set<std::string> seen;
-    shelf.games.erase(std::remove_if(shelf.games.begin(), shelf.games.end(),
-                                     [&](const Game &g) { return !g.original.empty() && !seen.insert(g.original).second; }),
-                      shelf.games.end());
+    oneCardPerTitle(shelf.games);
     if (shelf.system.id.empty() || shelf.games.empty()) continue;
     out.push_back(std::move(shelf));
   }
+  return out;
+}
+std::vector<Theme> parseThemes(const std::string &json, const std::string &base) {
+  std::vector<Theme> out;
+  Error error;
+  auto root = parseJson(json, error);
+  auto *list = root ? field(root.get(), "themes") : nullptr;
+  if (!json_object_is_type(list, json_type_array)) return out;
+  for (size_t i = 0; i < json_object_array_length(list) && out.size() < 64; ++i) {
+    auto *object = json_object_array_get_idx(list, i);
+    Theme theme{plainKey(field(object, "id")), stringField(object, "name"), parseGameList(field(object, "games"), base)};
+    oneCardPerTitle(theme.games);
+    if (theme.id.empty() || theme.name.empty() || theme.games.empty()) continue;
+    out.push_back(std::move(theme));
+  }
+  return out;
+}
+Facets parseFacets(const std::string &json) {
+  Facets out;
+  Error error;
+  auto root = parseJson(json, error);
+  if (!root) return out;
+  const auto count = [](json_object *object, const char *key) {
+    return int(std::clamp<int64_t>(integerField(object, key), 0, 1 << 30));
+  };
+  if (auto *genres = field(root.get(), "genres"); json_object_is_type(genres, json_type_array))
+    for (size_t i = 0; i < json_object_array_length(genres) && out.genres.size() < 64; ++i) {
+      auto *object = json_object_array_get_idx(genres, i);
+      Facet facet{plainKey(field(object, "key")), stringField(object, "name"), count(object, "count")};
+      if (facet.key.empty() || facet.count <= 0) continue;
+      if (facet.name.empty()) facet.name = facet.key;
+      out.genres.push_back(std::move(facet));
+    }
+  // Players 1..99 and decades 1950..2090: the number as the key.
+  const auto numbers = [&](const char *name, int low, int high, int step, std::vector<Facet> &into) {
+    auto *list = field(root.get(), name);
+    if (!json_object_is_type(list, json_type_array)) return;
+    for (size_t i = 0; i < json_object_array_length(list) && into.size() < 32; ++i) {
+      auto *object = json_object_array_get_idx(list, i);
+      const auto value = integerField(object, "value");
+      const int n = count(object, "count");
+      if (value < low || value > high || value % step || n <= 0) continue;
+      into.push_back({std::to_string(value), "", n});
+    }
+  };
+  numbers("players", 1, 99, 1, out.players);
+  numbers("decades", 1950, 2090, 10, out.decades);
+  out.korean = count(root.get(), "korean");
+  out.achievements = count(root.get(), "achievements");
   return out;
 }
 Pack parsePack(const std::string &json, const std::string &base) {
@@ -437,6 +511,65 @@ void orderGames(std::vector<Game> &games, const std::string &sort) {
   games = std::move(kept);
   sortGames(games, sort);
 }
+std::vector<Theme> mergeThemes(std::vector<std::pair<std::string, std::vector<Theme>>> lists) {
+  std::vector<Theme> themes;
+  std::map<std::string, size_t> at;
+  std::map<std::string, std::vector<std::pair<std::string, std::vector<Game>>>> parts;
+  for (auto &[server, list] : lists)
+    for (auto &theme : list) {
+      if (at.emplace(theme.id, themes.size()).second) themes.push_back({theme.id, theme.name, {}});
+      parts[theme.id].push_back({server, std::move(theme.games)});
+    }
+  for (auto &theme : themes) {
+    auto &part = parts[theme.id];
+    const bool one = part.size() == 1;
+    theme.games = tagged(std::move(part));
+    if (one) continue;
+    sortGames(theme.games, "rating");
+    oneCardPerTitle(theme.games);
+  }
+  return themes;
+}
+std::vector<Theme> spreadThemes(std::vector<Theme> themes, int rows, int perRow, int fewest) {
+  std::vector<Theme> out;
+  std::set<std::string> shown;
+  const auto key = [](const Game &g) { return g.original.empty() ? "id:" + g.id : "title:" + g.original; };
+  for (auto &theme : themes) {
+    if (int(out.size()) >= rows) break;
+    std::vector<Game> fresh;
+    for (auto &game : theme.games)
+      if (int(fresh.size()) < perRow && !shown.count("id:" + game.id) && !shown.count(key(game))) fresh.push_back(std::move(game));
+    if (int(fresh.size()) < fewest) continue;
+    for (const auto &game : fresh) {
+      shown.insert("id:" + game.id);
+      shown.insert(key(game));
+    }
+    out.push_back({theme.id, theme.name, std::move(fresh)});
+  }
+  return out;
+}
+Facets mergeFacets(const std::vector<Facets> &all) {
+  Facets out;
+  const auto join = [](std::vector<Facet> &into, const std::vector<Facet> &from) {
+    for (const auto &facet : from) {
+      const auto found = std::find_if(into.begin(), into.end(), [&](const Facet &f) { return f.key == facet.key; });
+      if (found == into.end()) into.push_back(facet);
+      else found->count += facet.count;
+    }
+  };
+  for (const auto &facets : all) {
+    join(out.genres, facets.genres);
+    join(out.players, facets.players);
+    join(out.decades, facets.decades);
+    out.korean += facets.korean;
+    out.achievements += facets.achievements;
+  }
+  std::stable_sort(out.genres.begin(), out.genres.end(), [](const Facet &a, const Facet &b) { return a.count > b.count; });
+  const auto byNumber = [](const Facet &a, const Facet &b) { return std::stoi(a.key) < std::stoi(b.key); };
+  std::sort(out.players.begin(), out.players.end(), byNumber);
+  std::sort(out.decades.begin(), out.decades.end(), byNumber);
+  return out;
+}
 std::vector<Shelf> mergeShelves(std::vector<std::pair<std::string, std::vector<Shelf>>> lists) {
   std::vector<Shelf> shelves;
   std::map<std::string, size_t> at;
@@ -454,10 +587,7 @@ std::vector<Shelf> mergeShelves(std::vector<std::pair<std::string, std::vector<S
     shelf.games = tagged(std::move(part));
     if (one) continue;
     sortGames(shelf.games, "rating");
-    std::set<std::string> originals;
-    shelf.games.erase(std::remove_if(shelf.games.begin(), shelf.games.end(),
-                                     [&](const Game &g) { return !g.original.empty() && !originals.insert(g.original).second; }),
-                      shelf.games.end());
+    oneCardPerTitle(shelf.games);
   }
   return shelves;
 }
