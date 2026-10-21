@@ -5,7 +5,7 @@ namespace foil::ui {
 namespace {
 // A shelf: the system line, the covers and one line of name (no second line
 // as on 홈), then room before the next system.
-constexpr float ShelfHeight = 262, BannerHeight = 64, CardStep = 170, Card = 150;
+constexpr float ShelfHeight = 274, BannerHeight = 64, CardStep = 170, Card = 150;
 constexpr int Columns = 6;
 // A picked row's icon, from the same set as 홈's rows, by the kind its id
 // names first (arcade:decade:1990 is an arcade row). A kind the server adds
