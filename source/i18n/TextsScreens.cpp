@@ -623,6 +623,7 @@ const Translation rows[] = {
     {"Updates", "업데이트", "更新", "更新"},
     {"Languages", "지원 언어", "対応言語", "支持语言"},
     {"Required patch", "필수 패치", "必須パッチ", "必需补丁"},
+    {"Korean patch|badge", "한글패치", "韓国語パッチ", "韩化补丁"},
     {"Modified|file", "수정됨", "改変あり", "已修改"},
     {"Modified file", "수정된 파일", "改変されたファイル", "已修改的文件"},
     {"May be damaged", "손상 의심", "破損の疑い", "疑似损坏"},

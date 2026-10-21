@@ -2037,6 +2037,8 @@ void Application::card(const Group &g, float x, float y, bool selected,
     else paint_.fonts.text(g.representative.name, x, y + 158, 18, Ink, false, 150);
     // Badges in priority order; one that would spill past the card is left out.
     std::vector<std::string> labels;
+    if (g.representative.koreanPatches || (g.base && g.base->koreanPatches))
+      labels.push_back(tr("Korean patch|badge")); // first: the reason many come here
     if (g.representative.requiredPatches || (g.base && g.base->requiredPatches))
       labels.push_back(tr("Required patch")); // it does not run without one
     if (const int integrity = groupIntegrity(g)) // said, never blocking

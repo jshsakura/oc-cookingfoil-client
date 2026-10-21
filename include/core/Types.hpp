@@ -27,6 +27,7 @@ struct Item {
     Word scoreLabel, scoreSource;
     int patches = 0; // user patches the server holds for this game (feature user-patches)
     int requiredPatches = 0; // of those, the ones the game does not run without
+    int koreanPatches = 0;   // of those, the ones that put the game in Korean
     // The server's check of the file (feature item-integrity): 0 fine or not
     // checked yet, 1 modified (signature off: a mod or a repack), 2 maybe
     // damaged. Said only; installs go ahead either way.
