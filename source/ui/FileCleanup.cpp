@@ -64,7 +64,6 @@ bool Application::tidyPicked(int row) const {
 void Application::openFileCleanup() {
   tidyOpen_ = true;
   tidyRow_ = 0;
-  dialogFocus_ = 0;
   if (tidyBusy_) return; // a look still going: it shows when it ends
   tidyKnown_ = false;
   tidyOn_ = {true, true, false};

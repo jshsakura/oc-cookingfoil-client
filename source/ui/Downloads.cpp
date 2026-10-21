@@ -167,7 +167,6 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
     // Paused, it still opens its page: the held item's own history row.
     card.onDetails = held ? queuedDetails(installQueue_.front()) : runningDetails();
     card.onCancel = [this, held] {
-      dialogFocus_ = 0;
       if (held) { // paused before it began: taken off the queue, after asking
         unqueueAsk_ = 0;
         unqueuePick_ = false;
@@ -507,7 +506,6 @@ void Application::queueList(float y, float viewTop) {
     };
     button(tr("Cancel"), [this, i] {
       unqueueAsk_ = int(i);
-      dialogFocus_ = 0;
     });
     if (r + 1 < count)
       button(tr("Move down"), [this, r] { moveShown(r, false); });

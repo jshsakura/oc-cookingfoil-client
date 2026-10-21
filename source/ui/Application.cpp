@@ -1936,7 +1936,6 @@ void Application::action(Action a) {
       case 8:
         bugAsk_ = true;
         bugMessage_.clear();
-        dialogFocus_ = 0;
         break;
       default:
         // A server opens its form; "+ 서버 추가" an empty one.
@@ -2586,7 +2585,6 @@ void Application::requestInstall() {
     return;
   }
   confirmInstall_ = true;
-  dialogFocus_ = 0;
   // From several servers it comes from the game's own unless picked.
   const auto servers = selection_->servers();
   if (std::find(servers.begin(), servers.end(), selection_->server) == servers.end())
@@ -2645,7 +2643,6 @@ bool Application::requestQuit() {
   cancelRetro_ = false;
   confirmCancel_ = true;
   confirmExit_ = true;
-  dialogFocus_ = 0;
   return false;
 }
 int Application::pickedOnTheWay(double &percent) const {
@@ -2892,7 +2889,6 @@ void Application::runningAction(Action a) {
     const int row = downloadsRow_ - 1;
     if (a == Action::Queue) {
       unqueueAsk_ = int(shown[size_t(row)]);
-      dialogFocus_ = 0;
     }
     if (a == Action::Accept) moveShown(row, true);
     if (a == Action::Search) moveShown(row, false);
@@ -2911,7 +2907,6 @@ void Application::runningAction(Action a) {
   if (a == Action::Queue && queueHeld_ && !installer_.running() && !retroDownloading() && !installQueue_.empty()) {
     unqueueAsk_ = 0;
     unqueuePick_ = false;
-    dialogFocus_ = 0;
     return;
   }
   if (a == Action::Queue && retroDownloading() && retroCancel_) return; // already stopping
@@ -2919,7 +2914,6 @@ void Application::runningAction(Action a) {
     cancelRetro_ = !installer_.running();
     confirmCancel_ = true;
     confirmExit_ = false;
-    dialogFocus_ = 0;
   }
 }
 // One place sooner. The rows trade turns (ids), which keep the order on the card.
@@ -2935,7 +2929,6 @@ void Application::moveUp(size_t index) {
 // The running one asks as its card on 진행 중 does; a waiting one asks for
 // its first file in the queue, and takes the rest of its pick along.
 void Application::askCancelPick(bool running) {
-  dialogFocus_ = 0;
   if (running) {
     cancelRetro_ = false;
     confirmCancel_ = true;

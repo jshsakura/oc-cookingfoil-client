@@ -47,14 +47,12 @@ void Application::retroArchPageAction(Action a) {
   if (a != Action::Accept) return;
   // On its way: the button asks to cancel, as a game's does.
   if (retroBusy_ == "pack") {
-    dialogFocus_ = 0;
     cancelRetro_ = true;
     confirmCancel_ = true;
     confirmExit_ = false;
     return;
   }
   if (const int at = retroArchQueuedAt(); at >= 0) {
-    dialogFocus_ = 0;
     unqueueAsk_ = at;
     unqueuePick_ = false;
     return;

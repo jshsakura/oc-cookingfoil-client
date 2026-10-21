@@ -524,7 +524,6 @@ void Application::runPatchOp(int opIndex) {
   }
   if (op == PatchOp::Remove) {
     confirmPatchRemove_ = true;
-    dialogFocus_ = 1; // a stray A keeps the patch
     return;
   }
   managingPatch_ = false;

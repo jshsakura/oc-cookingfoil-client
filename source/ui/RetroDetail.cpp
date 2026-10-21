@@ -99,7 +99,6 @@ void Application::getRetroPick() {
   const int onTheWay = retroPageOnTheWay(percent, queueAt);
   if (onTheWay) {
     // Already on its way: whether to cancel it, as 다운로드 asks.
-    dialogFocus_ = 0;
     if (onTheWay == 2) {
       cancelRetro_ = true;
       confirmCancel_ = true;
