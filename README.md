@@ -2,7 +2,12 @@
   <h1><img src="brand/cookingfoil-readme-256.png" alt="CookingFoil" width="192" height="192" /></h1>
   <p><strong>Your files on your server. Your library on your console.</strong></p>
   <p>A personal homebrew client for games, homebrew apps, saves and patches.</p>
-  <p><a href="https://github.com/jshsakura/oc-cookingfoil#connecting-a-client">Get the client</a> · <a href="https://jshsakura.github.io/oc-cookingfoil/">Website</a> · <a href="https://github.com/jshsakura/oc-cookingfoil">Get the server</a> · <a href="docs/README.md">Documentation</a></p>
+  <p>
+  <a href="https://jshsakura.github.io/oc-cookingfoil/?lang=en"><img src="brand/buttons/website-en.svg" alt="Website" width="160" height="44" /></a>
+  <a href="https://github.com/jshsakura/oc-cookingfoil/blob/main/README.md#connecting-a-client"><img src="brand/buttons/connect-en.svg" alt="Connect console" width="160" height="44" /></a>
+  <a href="https://github.com/jshsakura/oc-cookingfoil/blob/main/README.md#quick-start"><img src="brand/buttons/setup-en.svg" alt="Setup guide" width="160" height="44" /></a>
+  <a href="docs/README.md"><img src="brand/buttons/docs-en.svg" alt="Documentation" width="160" height="44" /></a>
+  </p>
   <p><a href="README.md">English</a> · <a href="README.ko.md">한국어</a></p>
   <a href="https://github.com/jshsakura/oc-cookingfoil-client/actions/workflows/ci.yml"><img src="https://github.com/jshsakura/oc-cookingfoil-client/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/jshsakura/oc-cookingfoil-client/releases"><img src="https://img.shields.io/github/v/release/jshsakura/oc-cookingfoil-client?color=FFC23D" alt="GitHub release" /></a>

@@ -1,5 +1,7 @@
 # Getting started
 
+[English](GETTING-STARTED.md) · [한국어](GETTING-STARTED.ko.md)
+
 [All guides](README.md) · [Features](FEATURES.md) · [Build from source](BUILDING.md)
 
 ## Install the client
