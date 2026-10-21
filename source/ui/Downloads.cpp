@@ -317,7 +317,7 @@ void Application::topCard(const TopCard &c, float dy) {
   paint_.fonts.text(status, 418, dy + 181, 18, linkDown ? Bad : restarting ? Pending : Secondary, false, 810);
   float x = 418;
   for (const auto &[label, state] : c.chips) {
-    // A finished part leads with the check mark icon (the font has no ✓).
+    // A finished part leads with the check mark icon (the font has no check mark glyph).
     const bool done = state == 2, active = state == 1;
     const float mark = done ? 22 : 0;
     const auto width = paint_.fonts.measure(label, 15, true) + 24 + mark;

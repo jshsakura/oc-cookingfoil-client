@@ -152,6 +152,12 @@ make host     # build-host/cookingfoil-host
 
 설치 엔진을 고정하고 패치하는 방법은 [third_party/README.md](third_party/README.md)에 있습니다.
 
+## 함께 작업하기
+
+이 프로젝트가 지켜 온 규칙을 이유와 코드 위치와 함께 정리해 두었습니다:
+[디자인](docs/DESIGN.md), [문구와 번역](docs/WRITING.md), [작업 규칙](docs/CONTRIBUTING-GUIDE.md).
+풀 리퀘스트 전에 읽어 주십시오.
+
 ## 라이선스
 
 CookingFoil은 [GNU General Public License v3.0 이상](LICENSE)으로 배포합니다. GPL 라이선스인
