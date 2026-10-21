@@ -20,24 +20,27 @@ int runRetroTests() {
         {"id":"b","name":"B","original":"Street Fighter II","system":"md","bundleUrl":"/b/b","rating":80}]},
       {"id":"puzzle","name":"","games":[{"id":"c","bundleUrl":"/b/c"}]},
       {"id":"empty","name":"Empty","games":[]},
-      {"id":"../x","name":"X","games":[{"id":"d","bundleUrl":"/b/d"}]}]})",
+      {"id":"../x","name":"X","games":[{"id":"d","bundleUrl":"/b/d"}]},
+      {"id":"decade:1990:genre:rpg","name":"90년대 RPG","games":[{"id":"e","bundleUrl":"/b/e"}]}]})",
                                     "https://shop.example.com");
-    CHECK(themes.size() == 1 && themes[0].id == "fighting" && themes[0].name == "대전 격투");
-    CHECK(themes.size() == 1 && themes[0].games.size() == 1 && themes[0].games[0].id == "a");
-    CHECK(themes.size() == 1 && themes[0].games[0].genres == std::vector<std::string>({"fighting", "action"}));
-    CHECK(themes.size() == 1 && themes[0].games[0].players == 2 && themes[0].games[0].year == 1992);
-    CHECK(themes.size() == 1 && themes[0].games[0].bundleUrl == "https://shop.example.com/b/a");
+    CHECK(themes.size() == 2 && themes[0].id == "fighting" && themes[0].name == "대전 격투");
+    CHECK(themes.size() == 2 && themes[1].id == "decade:1990:genre:rpg");
+    CHECK(themes.size() == 2 && themes[0].games.size() == 1 && themes[0].games[0].id == "a");
+    CHECK(themes.size() == 2 && themes[0].games[0].genres == std::vector<std::string>({"fighting", "action"}));
+    CHECK(themes.size() == 2 && themes[0].games[0].players == 2 && themes[0].games[0].year == 1992);
+    CHECK(themes.size() == 2 && themes[0].games[0].bundleUrl == "https://shop.example.com/b/a");
     CHECK(parseThemes("not json").empty());
     // Two servers: a theme joins by id, its games best rated first, each
     // id once naming both servers.
-    auto other = themes;
+    const std::vector<Theme> one{themes[0]};
+    auto other = one;
     other[0].games[0].rating = 90;
     Game better;
     better.id = "e", better.name = "E", better.original = "Garou", better.rating = 95, better.bundleUrl = "https://b/e";
     other[0].games.push_back(better);
     Theme shooting{"shooter", "슈팅", {better}};
     other.push_back(shooting);
-    const auto merged = mergeThemes({{"https://one.example.com", themes}, {"https://two.example.com", other}});
+    const auto merged = mergeThemes({{"https://one.example.com", one}, {"https://two.example.com", other}});
     CHECK(merged.size() == 2 && merged[0].id == "fighting" && merged[1].id == "shooter");
     CHECK(merged.size() == 2 && merged[0].games.size() == 2 && merged[0].games[0].id == "e");
     CHECK(merged.size() == 2 && merged[0].games[1].id == "a" && merged[0].games[1].alsoOn.size() == 1);
@@ -72,7 +75,9 @@ int runRetroTests() {
       "genres":[{"key":"rpg","name":"롤플레잉","count":40},{"key":"action","count":12},{"key":"none","count":0},{"key":"Bad","count":5}],
       "players":[{"value":1,"count":30},{"value":2,"count":9},{"value":0,"count":3},{"value":200,"count":1}],
       "decades":[{"value":1990,"count":20},{"value":1995,"count":2},{"value":1980,"count":4}],
+      "regions":[{"value":"jp","count":11},{"value":"kr","count":4},{"value":"../x","count":2}],
       "korean":7,"achievements":0})");
+    CHECK(facets.regions.size() == 2 && facets.regions[0].key == "jp" && facets.regions[1].count == 4);
     CHECK(facets.genres.size() == 2 && facets.genres[0].key == "rpg" && facets.genres[0].name == "롤플레잉");
     CHECK(facets.genres.size() == 2 && facets.genres[1].name == "action" && facets.genres[1].count == 12);
     CHECK(facets.players.size() == 2 && facets.players[1].key == "2" && facets.players[1].count == 9);
@@ -98,9 +103,13 @@ int runRetroTests() {
     f.genres = {"fighting", "rpg", "x&y"};
     f.players = 2;
     f.decade = 1990;
+    f.region = "kr";
     f.korean = true;
     f.achievements = true;
-    CHECK(filterQuery(f) == "&sort=rating&genre=fighting,rpg&players=2&decade=1990&korean=1&achievements=1");
+    CHECK(filterQuery(f) == "&sort=rating&genre=fighting,rpg&players=2&decade=1990&region=kr&korean=1&achievements=1");
+    Filter odd;
+    odd.region = "k&r";
+    CHECK(filterQuery(odd) == "&sort=rating");
     Filter g = f;
     g.genres.pop_back();
     CHECK(g != f);

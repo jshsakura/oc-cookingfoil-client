@@ -36,11 +36,13 @@ bool plainPath(const std::string &path) {
 
 namespace {
 // A genre key: lower case letters, digits, - and _ (empty for anything else).
-std::string plainKey(json_object *value) {
+// A key the server names things by: lower-case letters, digits, _ and -,
+// and for a theme also : (decade:1990:genre:rpg).
+std::string plainKey(json_object *value, bool colons = false) {
   if (!json_object_is_type(value, json_type_string)) return {};
   const std::string key = json_object_get_string(value);
-  return key.size() <= 32 && key.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-") == std::string::npos ? key
-                                                                                                                 : "";
+  const char *allowed = colons ? "abcdefghijklmnopqrstuvwxyz0123456789_-:" : "abcdefghijklmnopqrstuvwxyz0123456789_-";
+  return key.size() <= 64 && key.find_first_not_of(allowed) == std::string::npos ? key : "";
 }
 // One card per original title, the first (best rated) kept.
 void oneCardPerTitle(std::vector<Game> &games) {
@@ -170,6 +172,9 @@ std::string filterQuery(const Filter &f) {
   if (!genres.empty()) out += "&genre=" + genres;
   if (f.players > 0) out += "&players=" + std::to_string(std::min(f.players, 99));
   if (f.decade > 0) out += "&decade=" + std::to_string(f.decade);
+  if (!f.region.empty() && f.region.size() <= 16 &&
+      f.region.find_first_not_of("abcdefghijklmnopqrstuvwxyz") == std::string::npos)
+    out += "&region=" + f.region;
   if (f.korean) out += "&korean=1";
   if (f.achievements) out += "&achievements=1";
   return out;
@@ -268,7 +273,7 @@ std::vector<Theme> parseThemes(const std::string &json, const std::string &base)
   if (!json_object_is_type(list, json_type_array)) return out;
   for (size_t i = 0; i < json_object_array_length(list) && out.size() < 64; ++i) {
     auto *object = json_object_array_get_idx(list, i);
-    Theme theme{plainKey(field(object, "id")), stringField(object, "name"), parseGameList(field(object, "games"), base)};
+    Theme theme{plainKey(field(object, "id"), true), stringField(object, "name"), parseGameList(field(object, "games"), base)};
     oneCardPerTitle(theme.games);
     if (theme.id.empty() || theme.name.empty() || theme.games.empty()) continue;
     out.push_back(std::move(theme));
@@ -290,6 +295,13 @@ Facets parseFacets(const std::string &json) {
       if (facet.key.empty() || facet.count <= 0) continue;
       if (facet.name.empty()) facet.name = facet.key;
       out.genres.push_back(std::move(facet));
+    }
+  // Regions from the ROMs' tags (kr, jp, us…), most games first.
+  if (auto *regions = field(root.get(), "regions"); json_object_is_type(regions, json_type_array))
+    for (size_t i = 0; i < json_object_array_length(regions) && out.regions.size() < 16; ++i) {
+      auto *object = json_object_array_get_idx(regions, i);
+      Facet facet{plainKey(field(object, "value")), "", count(object, "count")};
+      if (!facet.key.empty() && facet.count > 0) out.regions.push_back(std::move(facet));
     }
   // Players 1..99 and decades 1950..2090: the number as the key.
   const auto numbers = [&](const char *name, int low, int high, int step, std::vector<Facet> &into) {
@@ -561,10 +573,13 @@ Facets mergeFacets(const std::vector<Facets> &all) {
     join(out.genres, facets.genres);
     join(out.players, facets.players);
     join(out.decades, facets.decades);
+    join(out.regions, facets.regions);
     out.korean += facets.korean;
     out.achievements += facets.achievements;
   }
-  std::stable_sort(out.genres.begin(), out.genres.end(), [](const Facet &a, const Facet &b) { return a.count > b.count; });
+  const auto byCount = [](const Facet &a, const Facet &b) { return a.count > b.count; };
+  std::stable_sort(out.genres.begin(), out.genres.end(), byCount);
+  std::stable_sort(out.regions.begin(), out.regions.end(), byCount);
   const auto byNumber = [](const Facet &a, const Facet &b) { return std::stoi(a.key) < std::stoi(b.key); };
   std::sort(out.players.begin(), out.players.end(), byNumber);
   std::sort(out.decades.begin(), out.decades.end(), byNumber);

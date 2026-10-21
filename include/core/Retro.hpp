@@ -80,12 +80,13 @@ struct Filter {
   std::vector<std::string> genres; // any of these genre keys
   int players = 0;                 // at least this many at once
   int decade = 0;                  // released in 1990..1999 for 1990
+  std::string region;              // a ROM tagged with it (kr, jp, us…)
   bool korean = false;             // a Korean release or a Korean patch
   bool achievements = false;       // matched on RetroAchievements
   bool operator==(const Filter &o) const {
     return query == o.query && sort == o.sort && minRating == o.minRating && bezel == o.bezel &&
            minSize == o.minSize && maxSize == o.maxSize && genres == o.genres && players == o.players &&
-           decade == o.decade && korean == o.korean && achievements == o.achievements;
+           decade == o.decade && region == o.region && korean == o.korean && achievements == o.achievements;
   }
   bool operator!=(const Filter &o) const { return !(*this == o); }
 };
@@ -114,10 +115,10 @@ struct Facet {
   int count = 0;
 };
 struct Facets {
-  std::vector<Facet> genres, players, decades;
+  std::vector<Facet> genres, players, decades, regions; // regions: the tag as the key
   int korean = 0, achievements = 0;
   bool empty() const {
-    return genres.empty() && players.empty() && decades.empty() && !korean && !achievements;
+    return genres.empty() && players.empty() && decades.empty() && regions.empty() && !korean && !achievements;
   }
 };
 // Several servers' replies as one; each list in the servers' order, as
