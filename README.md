@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="assets/icon.jpg" alt="CookingFoil" width="96" />
-  <h1>CookingFoil</h1>
+  <h1><img src="brand/cookingfoil-readme-256.png" alt="CookingFoil" width="192" height="192" /></h1>
   <p><strong>Your files on your server. Your library on your console.</strong></p>
   <p>A personal homebrew client for games, homebrew apps, saves and patches.</p>
   <p><a href="https://github.com/jshsakura/oc-cookingfoil#connecting-a-client">Get the client</a> · <a href="https://jshsakura.github.io/oc-cookingfoil/">Website</a> · <a href="https://github.com/jshsakura/oc-cookingfoil">Get the server</a> · <a href="docs/README.md">Documentation</a></p>

@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="assets/icon.jpg" alt="CookingFoil" width="96" />
-  <h1>CookingFoil</h1>
+  <h1><img src="brand/cookingfoil-readme-256.png" alt="CookingFoil" width="192" height="192" /></h1>
   <p><strong>파일은 서버에. 설치와 관리는 본체에서.</strong></p>
   <p>게임, 홈브루, 세이브, 패치를 한곳에서 관리하는 개인용 홈브루 클라이언트입니다.</p>
   <p><a href="https://github.com/jshsakura/oc-cookingfoil#connecting-a-client">클라이언트 받기</a> · <a href="https://jshsakura.github.io/oc-cookingfoil/">웹사이트</a> · <a href="https://github.com/jshsakura/oc-cookingfoil">서버 준비하기</a> · <a href="docs/README.md">문서</a></p>
