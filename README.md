@@ -24,7 +24,7 @@ and pick up downloads that were interrupted.
 | Installed games | Saves and Dropbox |
 | ![Installed games](docs/screenshots/en/07-installed.png) | ![Saves and Dropbox](docs/screenshots/en/08-dropbox-linked.png) |
 
-Captured from the real UI in the host build, using sample artwork, fixture data and simulated states.
+Captured from the real English UI with sample data. Entries without icons use the app’s native first-letter tiles.
 
 ## Choose what you want. Keep the rest in order.
 
