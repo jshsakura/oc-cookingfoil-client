@@ -730,6 +730,7 @@ void Application::screen(Screen screen) {
   raOpen_ = raListOpen_ = false; // RetroAchievements' too
   raLinkClose();
   if (screen == Screen::Saves) {
+    savesFresh_ = false;
     readBackupSummary();
     refreshInstalled();
   }

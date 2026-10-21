@@ -338,6 +338,7 @@ void Application::pollBackupSummary() {
   // A failed read keeps what was known, else every game when nothing was.
   if (incomingSaved_) savedGames_ = std::move(incomingSaved_);
   if (std::exchange(backupSummaryAgain_, false)) readBackupSummary();
+  else savesFresh_ = true;
 }
 void Application::sortShopSaves() {
   // A popup holds a save by its place in the list: the order waits for it.

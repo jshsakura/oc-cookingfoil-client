@@ -1653,9 +1653,10 @@ private:
     return backupsOf(id) > 0 || !savedGames_ || savedGames_->count(id) || dropboxHas(id);
   }
   bool dropboxHas(uint64_t id) const;
-  // The console's saves are being read for the first time: the list waits
-  // (placeholders) rather than show every game and then drop most.
-  bool savesUnread() const { return !savedGames_ && backupSummaryWorker_.joinable(); }
+  // The read 세이브 asks for on each visit is not back: the list waits
+  // (placeholders) rather than show the last visit's and then change.
+  bool savesFresh_ = false;
+  bool savesUnread() const { return !savesFresh_ && (backupSummaryWorker_.joinable() || backupSummaryAgain_); }
   std::optional<int> saveOpen_;          // index into saves_
   std::vector<saves::LocalBackup> backups_;
   int saveRow_ = 0;                      // 0 back up, 1..n backups, n+1 delete
