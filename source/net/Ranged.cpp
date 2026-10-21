@@ -22,6 +22,7 @@
 #include <cstring>
 #include <filesystem>
 #include <thread>
+#include <utility>
 namespace foil::net {
 namespace fs = std::filesystem;
 namespace {
@@ -33,11 +34,12 @@ constexpr auto ResumeWindow = std::chrono::seconds(60);
 // A tar's boundary is saved this often, so a power cut costs little.
 constexpr uint64_t CheckpointBytes = 16ull << 20;
 bool cancelled(const std::atomic<bool> *cancel) { return cancel && cancel->load(); }
-// Feeds the first `size` bytes of a kept part to `sha`.
-bool hashFile(const std::string &path, uint64_t size, Sha256 &sha) {
+// Feeds bytes [from, size) of a kept part to `sha`.
+bool hashFile(const std::string &path, uint64_t size, Sha256 &sha, uint64_t from = 0) {
   std::unique_ptr<FILE, int (*)(FILE *)> in(std::fopen(path.c_str(), "rb"), std::fclose);
-  if (!in)
+  if (!in || from > size || (from && std::fseek(in.get(), long(from), SEEK_SET) != 0))
     return false;
+  size -= from;
   std::vector<char> buffer(1 << 20);
   while (size > 0) {
     const auto want = size_t(std::min<uint64_t>(size, buffer.size()));
@@ -165,9 +167,12 @@ constexpr uint64_t ParallelFrom = 4ull << 20;
 namespace {
 // The whole file over several connections into `part`. False when it did
 // not finish; the part is gone then, and the bytes it counted given back.
+// `sha`, when given, takes the bytes that land in order from the start as
+// they come (a file under ParallelFloor comes whole on one connection);
+// `hashed` says how far it got.
 bool fetchParallel(const std::string &url, const std::vector<std::string> &headers, const std::string &part,
                    const PartInfo &wanted, std::atomic<uint64_t> &received, const std::atomic<bool> *cancel,
-                   PartFetch &result, std::string &etag) {
+                   PartFetch &result, std::string &etag, Sha256 *sha, uint64_t &hashed) {
   const auto name = fs::path(part).filename().string();
   std::unique_ptr<FILE, int (*)(FILE *)> out(std::fopen(part.c_str(), "wb"), std::fclose);
   if (!out)
@@ -181,7 +186,7 @@ bool fetchParallel(const std::string &url, const std::vector<std::string> &heade
     return false;
   }
   uint64_t counted = 0;
-  bool tooLong = false, writeFailed = false;
+  bool tooLong = false, writeFailed = false, prepared = false;
   SegmentedOptions options;
   options.connections = connectionsFor(url, 0);
   options.headers = headers;
@@ -201,6 +206,11 @@ bool fetchParallel(const std::string &url, const std::vector<std::string> &heade
           tooLong = total > wanted.size;
           return false; // not the file asked for; the one-connection path says why
         }
+        // Asked again: the server's file changed and comes from the start.
+        if (sha && std::exchange(prepared, true)) {
+          *sha = Sha256{};
+          hashed = 0;
+        }
         return true;
       },
       [&](uint64_t offset, const char *data, size_t size) {
@@ -211,6 +221,10 @@ bool fetchParallel(const std::string &url, const std::vector<std::string> &heade
         if (std::fseek(out.get(), long(offset), SEEK_SET) != 0 || std::fwrite(data, 1, size, out.get()) != size) {
           writeFailed = true;
           return false;
+        }
+        if (sha && offset == hashed) {
+          sha->update(data, size);
+          hashed += size;
         }
         counted += size;
         received += size;
@@ -277,9 +291,11 @@ PartFetch fetchPart(const std::string &url, const std::vector<std::string> &head
   if (!written && wanted.size >= ParallelFrom && !platform::needsBigFile(wanted.size) &&
       connectionsFor(url, 0) > 1) {
     std::string etag;
-    if (fetchParallel(url, headers, part, wanted, received, cancel, result, etag)) {
+    uint64_t hashed = 0;
+    if (fetchParallel(url, headers, part, wanted, received, cancel, result, etag, hash ? &sha : nullptr, hashed)) {
       written = wanted.size;
-      if (hash && !hashFile(part, written, sha))
+      // Only what did not land in order is read back.
+      if (hash && hashed < written && !hashFile(part, written, sha, hashed))
         result.failure = trf("Could not write the file: {0}", {name});
       info.etag = etag;
       std::string ignored;
@@ -290,6 +306,7 @@ PartFetch fetchPart(const std::string &url, const std::vector<std::string> &head
     if (!result.response.error.empty() || !result.failure.empty() || result.tooLong)
       return finish();
     result = PartFetch{}; // anything else: once more on one connection, as before
+    sha = Sha256{};
   }
   std::unique_ptr<FILE, int (*)(FILE *)> out(nullptr, std::fclose);
   const auto open = [&](uint64_t at, uint64_t whole) {

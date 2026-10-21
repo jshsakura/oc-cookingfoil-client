@@ -430,6 +430,29 @@ int runResumeTests() {
     foil::net::dropPart(part);
   }
   {
+    // Big enough to come in two parts at once: the second lands out of
+    // order, so the hash takes the first as it comes and reads back the rest.
+    Mock server;
+    server.body = body(80u << 20, 'r');
+    for (size_t i = 0; i < server.body.size(); i += 4096)
+      server.body[i] = char(i / 4096); // a part in the wrong place would show
+    server.idleMs = 3000;
+    server.start(64);
+    const auto part = (root / "split.part").string();
+    std::atomic<uint64_t> received{0};
+    foil::PartInfo wanted{server.url + "/f", "", "", server.body.size(), 0};
+    const auto got = foil::net::fetchPart(server.url + "/f", {}, part, wanted, true, received, nullptr);
+    server.thread.join();
+    foil::Sha256 sha;
+    sha.update(server.body.data(), server.body.size());
+    CHECK(foil::net::rangedOk(got.response) && got.sha256 == sha.hex());
+    size_t asked = 0;
+    for (const auto &request : server.requests)
+      asked += rangeOf(request).rfind("0-", 0) != 0;
+    CHECK(asked > 0); // a part that starts past 0 was asked for: it did come split
+    foil::net::dropPart(part);
+  }
+  {
     // End to end: a file cut off mid-transfer continues with a Range ask.
     Mock server;
     server.body = body(300000, 'f');
