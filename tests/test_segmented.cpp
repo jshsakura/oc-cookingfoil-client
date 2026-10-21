@@ -224,5 +224,31 @@ int runSegmentedTests() {
     CHECK(server.asked == 2);
     if (!got.result.ok) std::printf("  first %s: %s, %d asked\n", busy, got.result.error.c_str(), server.asked.load());
   }
+  {
+    // Resuming a file of 8 bytes, a reply that names another size is another
+    // file: its bytes are not mixed in, and the file is taken again whole.
+    const std::string body = "NEWBYTES";
+    Scripted server({"HTTP/1.1 206 Partial\r\nConnection: close\r\nETag: \"v1\"\r\nContent-Range: bytes 4-4/5\r\n"
+                     "Content-Length: 4\r\n\r\nBBBB",
+                     whole(body)});
+    foil::net::SegmentedOptions options;
+    options.connections = 1;
+    options.resume = {{0, 8, 4}};
+    options.resumeTotal = 8;
+    options.etag = "\"v1\"";
+    const auto start = Clock::now();
+    options.cancelled = [start] { return Clock::now() - start > std::chrono::seconds(10); };
+    std::string data = "AAAA....";
+    const auto result = foil::net::segmentedFetch(
+        "http://127.0.0.1:" + std::to_string(server.port) + "/file", [](uint64_t) { return true; },
+        [&data](uint64_t offset, const char *bytes, size_t size) {
+          if (data.size() < offset + size) data.resize(offset + size);
+          data.replace(size_t(offset), size, bytes, size);
+          return true;
+        },
+        options);
+    CHECK(result.ok && data == body);
+    CHECK(server.asked == 2);
+  }
   return failures;
 }

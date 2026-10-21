@@ -145,6 +145,9 @@ struct Session {
   bool known = false;    // the size is known
   bool prepared = false; // the place for the bytes is ready: they may go to the writer
   bool ranged = true;   // the server answers ranges
+  // The whole file's size every range reply must name: from the first one,
+  // or a resume point of a whole file. total may be a stretch's end instead.
+  uint64_t fileSize = 0;
   std::string etag;
   std::chrono::steady_clock::time_point lastData = std::chrono::steady_clock::now();
 };
@@ -170,13 +173,20 @@ bool hand(Session &s, Conn &c) {
   });
 }
 
-void parseRange(const std::string &value, uint64_t &start, uint64_t &total) {
-  // "bytes a-b/total"
+// "bytes a-b/total", or "bytes a-b/*" (total 0: not said); false when it is
+// neither, or b is outside it.
+bool parseRange(const std::string &value, uint64_t &start, uint64_t &total) {
   unsigned long long a = 0, b = 0, t = 0;
-  if (std::sscanf(value.c_str(), "bytes %llu-%llu/%llu", &a, &b, &t) == 3) {
-    start = a;
-    total = t;
-  }
+  const bool sized = std::sscanf(value.c_str(), "bytes %llu-%llu/%llu", &a, &b, &t) == 3;
+  if (!sized && value.find('*') == std::string::npos)
+    return false;
+  if (!sized && std::sscanf(value.c_str(), "bytes %llu-%llu/", &a, &b) != 2)
+    return false;
+  if (b < a || (sized && b >= t))
+    return false;
+  start = a;
+  total = sized ? t : 0;
+  return true;
 }
 
 size_t onHeaderUnsafe(char *data, size_t size, size_t count, void *user);
@@ -237,15 +247,15 @@ size_t onBodyUnsafe(char *data, size_t size, size_t count, void *user) {
     c.checked = true;
     curl_easy_getinfo(c.curl, CURLINFO_RESPONSE_CODE, &c.status);
     uint64_t start = 0, total = 0;
-    parseRange(c.contentRange, start, total);
+    const bool range = parseRange(c.contentRange, start, total);
     if (c.openEnded && !s.known) {
       if (c.status == 200) { // no ranges: one connection to the end
         curl_off_t length = -1;
         curl_easy_getinfo(c.curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &length);
         s.ranged = false;
         s.total = length > 0 ? uint64_t(length) : 0;
-      } else if (c.status == 206 && total > 0 && start == c.pos) {
-        s.total = total;
+      } else if (c.status == 206 && range && total > 0 && start == c.pos) {
+        s.total = s.fileSize = total;
       } else {
         c.bad = true;
         return 0;
@@ -256,14 +266,21 @@ size_t onBodyUnsafe(char *data, size_t size, size_t count, void *user) {
     else if (c.status == 200 && !c.openEnded) { // If-Range failed: the file changed
       c.changed = true;
       return 0;
-    } else if (c.status != 206 || start != c.pos) {
+    } else if (c.status != 206 || !range || start != c.pos) {
       c.bad = true;
+      return 0;
+    } else if (s.fileSize && total && total != s.fileSize) {
+      // Another size than the file being read: it changed on the server
+      // (a proxy that ignored If-Range), and its bytes must not be mixed in.
+      c.changed = true;
       return 0;
     } else if (s.etag.empty() && !c.etag.empty()) {
       // A known stretch has no first probe: its first reply gives the
       // validator a resume point keeps.
       s.etag = c.etag;
     }
+    if (c.status == 206 && range && !s.fileSize)
+      s.fileSize = total;
   }
   const uint64_t room = c.stop > c.pos ? c.stop - c.pos : 0;
   const size_t take = size_t(std::min<uint64_t>(room, n));
@@ -452,6 +469,7 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
     if (resuming) {
       plan = SegmentPlan(options.resume);
       s.total = options.resumeTotal;
+      if (options.length == 0) s.fileSize = s.total;
       s.etag = options.etag;
       s.known = true;
       written.assign(plan.segments().size(), 0);
