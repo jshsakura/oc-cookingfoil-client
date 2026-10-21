@@ -314,7 +314,7 @@ std::vector<HomeTheme> homeThemes(const std::vector<Group> &groups, size_t hero,
   // games the row needs to show at all.
   auto add = [&](Theme theme, size_t pool = 0, const std::vector<size_t> *order = nullptr,
                  size_t least = 1) {
-    HomeTheme row{std::move(theme), {}};
+    HomeTheme row{std::move(theme), {}, {}};
     const bool shuffle = pool && seed;
     const size_t take = shuffle ? pool : HomeRowLimit;
     const auto sorted = order ? std::vector<size_t>{} : browseCatalog(groups, "", row.theme);

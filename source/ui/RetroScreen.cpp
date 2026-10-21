@@ -135,9 +135,12 @@ void Application::loadRetroHome() {
     // The one in use says how the home went; the others' shelves join it.
     std::vector<std::pair<std::string, std::vector<retro::Shelf>>> parts{
         {server.url, net::retroHome(server, state, reply, &stop_).value}};
+    // The servers' label dictionaries, the one in use first.
+    labels::Book book = reply.labels;
     for (size_t i = 1; i < servers.size() && !reply.missing && !reply.error; ++i) {
       net::RetroReply theirs;
       auto shelves = net::retroHome(servers[i], state, theirs, &stop_).value;
+      labels::merge(book, theirs.labels);
       if (theirs.error) logLine("retro: " + servers[i].url + " not read: " + theirs.error.message);
       else if (!theirs.missing) parts.push_back({servers[i].url, std::move(shelves)});
     }
@@ -160,6 +163,7 @@ void Application::loadRetroHome() {
       for (const auto &one : servers) {
         net::RetroReply theirs;
         auto rows = net::retroThemes(one, state, theirs, &stop_).value;
+        labels::merge(book, theirs.labels);
         if (!theirs.error && !theirs.missing) themes.push_back({one.url, std::move(rows)});
       }
       auto rows = retro::themeShelves(retro::mergeThemes(std::move(themes)));
@@ -171,8 +175,10 @@ void Application::loadRetroHome() {
         for (const auto *path : {&g.romPath, &g.bezelPath})
           if (!path->empty()) onCard[*path] = fileExists(sd + "/" + *path);
     return [this, shelves = std::move(shelves), systems = std::move(systems), reply, noHome,
-            onCard = std::move(onCard)]() mutable {
+            onCard = std::move(onCard), book = std::move(book)]() mutable {
       retroLoaded_ = true;
+      labels::merge(book, retroLabelBook_); // this reply's words win
+      retroLabelBook_ = std::move(book);
       retroMissing_ = reply.missing;
       retroError_ = reply.error;
       // A busy server's "ask again later", three times at most.
@@ -781,6 +787,29 @@ void Application::retroAction(Action a) {
 }
 // What a game is: its file format, a bezel, its score; for the list's
 // labels and the info popup.
+float Application::labelChip(const labels::Ref &ref, const labels::Book &book, float x, float top, float right,
+                             float height, int size) {
+  const auto found = book.find(ref.key.str());
+  if (found == book.end()) return 0;
+  const auto text = labels::text(book, ref, languageCode());
+  if (text.empty()) return 0;
+  const int icon = found->second.icon.empty() ? -1 : Painter::iconNamed(found->second.icon);
+  const float mark = icon >= 0 ? float(size) : 0;
+  const float w = 8 + (mark ? mark + 4 : 0) + paint_.fonts.measure(text, size, true) + 8;
+  if (x + w > right) return 0;
+  using labels::Tone;
+  const auto tone = found->second.tone;
+  const SDL_Color fill = tone == Tone::Accent ? Butter
+                         : tone == Tone::Good ? Good
+                         : tone == Tone::Warn ? Pending
+                         : tone == Tone::Bad  ? Bad
+                                              : Line;
+  const SDL_Color ink = tone == Tone::Neutral || tone == Tone::Accent ? Ink : Surface;
+  paint_.rect(x, top, w, height, fill, int(height / 3));
+  if (mark) paint_.icon(icon, x + 8, top + (height - mark) / 2, ink, int(mark));
+  paint_.fonts.middle(text, x + 8 + (mark ? mark + 4 : 0), top + height / 2, size, ink, true);
+  return w;
+}
 float Application::achievementLabel(const achievements::Summary &a, float x, float top, float height, int size) {
   if (a.count <= 0) return 0;
   const auto text = trf("Achievements {0}", {std::to_string(a.count)});

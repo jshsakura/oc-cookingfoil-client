@@ -4,6 +4,7 @@
 #include "core/Achievements.hpp"
 #include "core/Types.hpp"
 #include "core/Votes.hpp"
+#include "core/Labels.hpp"
 #include <map>
 namespace foil::retro {
 struct System {
@@ -42,6 +43,10 @@ struct Game {
   // facets or themes that carry them), most players at once, release year.
   std::vector<std::string> genres;
   int players = 0, year = 0;
+  // The server's labels for its card, in order (core/Labels.hpp); hasLabels
+  // false: an older server, the client words them itself.
+  bool hasLabels = false;
+  std::vector<labels::Ref> labels;
   // The configured server it came from (its url), and the others holding
   // the same game (same id): never serialized, the queue keeps its own.
   std::string server;
@@ -102,6 +107,7 @@ struct Shelf {
   std::vector<Game> games;
   std::string theme;   // a theme row's name (/api/retro/themes), above the systems'
   std::string themeId; // its id: genre:action, decade:1990, coop…
+  std::string icon;    // the icon the server names for a theme row; empty: the client's pick
 };
 // The keys agreed with the server: lower-case letters, digits and inner
 // hyphens (action, board-game, kr); a theme id is keys joined by colons
@@ -113,6 +119,7 @@ bool themeIdText(const std::string &id);
 struct Theme {
   std::string id, name;
   std::vector<Game> games;
+  std::string icon; // a name from the client's icon set, when the server gives one
 };
 // What a system's list can be filtered by (/api/retro/systems/:id/facets),
 // each with how many games it keeps. Only these are offered; an empty list
@@ -171,12 +178,13 @@ struct Pack {
 // URLs come as shop paths ("/api/...") or full http(s) addresses; `base`
 // is the shop address used for the former. Anything else is dropped.
 std::vector<System> parseSystems(const std::string &json, const std::string &base = "");
-Page parseGames(const std::string &json, const std::string &base);
+// `book`, when given, takes the reply's label dictionary.
+Page parseGames(const std::string &json, const std::string &base, labels::Book *book = nullptr);
 // /api/retro/home: systems without games are left out, and versions of one
 // game (the same `original`) take one card, the best rated first.
-std::vector<Shelf> parseHome(const std::string &json, const std::string &base = "");
+std::vector<Shelf> parseHome(const std::string &json, const std::string &base = "", labels::Book *book = nullptr);
 // /api/retro/themes: themes without a name or games are left out.
-std::vector<Theme> parseThemes(const std::string &json, const std::string &base = "");
+std::vector<Theme> parseThemes(const std::string &json, const std::string &base = "", labels::Book *book = nullptr);
 Facets parseFacets(const std::string &json);
 // One game in the server's own shape, for 다운로드's history (다시 시도).
 std::string serializeGame(const Game &game);

@@ -205,7 +205,8 @@ void Application::home() {
     const bool focused = !sidebar_ && row_ == int(n) + 1;
     // Icon and title share the row header's center line with "R 모두 보기".
     constexpr float HeaderMid = 17;
-    paint_.icon(themeIcon(row.theme), 260, y + HeaderMid - 13, Ink, 26);
+    const int named = Painter::iconNamed(row.icon); // the server's, for its own shelves
+    paint_.icon(named >= 0 ? named : themeIcon(row.theme), 260, y + HeaderMid - 13, Ink, 26);
     paint_.fonts.middle(row.theme.title, 296, y + HeaderMid, 26, Ink, true);
     // Always shown: a finger may open any row's list, not only the focused one's.
     paint_.keyChip("R", tr("See all"), 1252, y + HeaderMid);

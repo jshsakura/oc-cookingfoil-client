@@ -145,6 +145,7 @@ Game parseGame(json_object *object, const std::string &base) {
       if (const auto key = plainKey(json_object_array_get_idx(genres, i)); !key.empty()) g.genres.push_back(key);
   g.players = int(std::clamp<int64_t>(integerField(object, "players"), 0, 99));
   g.year = int(std::clamp<int64_t>(integerField(object, "year"), 0, 9999));
+  g.labels = labels::parseRefs(object, g.hasLabels);
   if (g.bundleUrl.empty()) g.id.clear();
   if (g.name.empty()) g.name = g.file;
   return g;
@@ -187,11 +188,12 @@ std::vector<System> parseSystems(const std::string &json, const std::string &bas
     if (auto s = parseSystem(json_object_array_get_idx(list, i), base); !s.id.empty()) out.push_back(std::move(s));
   return out;
 }
-Page parseGames(const std::string &json, const std::string &base) {
+Page parseGames(const std::string &json, const std::string &base, labels::Book *book) {
   Page page;
   Error error;
   auto root = parseJson(json, error);
   if (!root) return page;
+  if (book) *book = labels::parseBook(root.get());
   page.total = int(std::max<int64_t>(integerField(root.get(), "total"), 0));
   page.page = int(std::max<int64_t>(integerField(root.get(), "page", 1), 1));
   page.pageSize = int(std::clamp<int64_t>(integerField(root.get(), "pageSize", 50), 1, 200));
@@ -248,10 +250,11 @@ std::string releaseLabel(int date) {
   if (text.compare(6, 2, "00") == 0) return text.substr(0, 4) + "." + text.substr(4, 2);
   return text.substr(0, 4) + "." + text.substr(4, 2) + "." + text.substr(6, 2);
 }
-std::vector<Shelf> parseHome(const std::string &json, const std::string &base) {
+std::vector<Shelf> parseHome(const std::string &json, const std::string &base, labels::Book *book) {
   std::vector<Shelf> out;
   Error error;
   auto root = parseJson(json, error);
+  if (root && book) *book = labels::parseBook(root.get());
   auto *list = root ? field(root.get(), "systems") : nullptr;
   if (!json_object_is_type(list, json_type_array)) return out;
   for (size_t i = 0; i < json_object_array_length(list) && out.size() < 200; ++i) {
@@ -263,16 +266,18 @@ std::vector<Shelf> parseHome(const std::string &json, const std::string &base) {
   }
   return out;
 }
-std::vector<Theme> parseThemes(const std::string &json, const std::string &base) {
+std::vector<Theme> parseThemes(const std::string &json, const std::string &base, labels::Book *book) {
   std::vector<Theme> out;
   Error error;
   auto root = parseJson(json, error);
+  if (root && book) *book = labels::parseBook(root.get());
   auto *list = root ? field(root.get(), "themes") : nullptr;
   if (!json_object_is_type(list, json_type_array)) return out;
   for (size_t i = 0; i < json_object_array_length(list) && out.size() < 64; ++i) {
     auto *object = json_object_array_get_idx(list, i);
     Theme theme{plainKey(field(object, "id"), true), stringField(object, "name"), parseGameList(field(object, "games"), base)};
     oneCardPerTitle(theme.games);
+    if (const auto icon = stringField(object, "icon"); keyText(icon)) theme.icon = icon;
     if (theme.id.empty() || theme.name.empty() || theme.games.empty()) continue;
     out.push_back(std::move(theme));
   }
@@ -527,7 +532,7 @@ std::vector<Theme> mergeThemes(std::vector<std::pair<std::string, std::vector<Th
   std::map<std::string, std::vector<std::pair<std::string, std::vector<Game>>>> parts;
   for (auto &[server, list] : lists)
     for (auto &theme : list) {
-      if (at.emplace(theme.id, themes.size()).second) themes.push_back({theme.id, theme.name, {}});
+      if (at.emplace(theme.id, themes.size()).second) themes.push_back({theme.id, theme.name, {}, theme.icon});
       parts[theme.id].push_back({server, std::move(theme.games)});
     }
   for (auto &theme : themes) {
@@ -554,7 +559,7 @@ bool themeIdText(const std::string &id) {
 std::vector<Shelf> themeShelves(std::vector<Theme> themes, int shown) {
   std::vector<Shelf> out;
   for (auto &theme : spreadThemes(std::move(themes), shown))
-    out.push_back({{}, std::move(theme.games), std::move(theme.name), theme.id});
+    out.push_back({{}, std::move(theme.games), std::move(theme.name), theme.id, theme.icon});
   return out;
 }
 std::vector<Theme> spreadThemes(std::vector<Theme> themes, int rows, int perRow, int fewest) {

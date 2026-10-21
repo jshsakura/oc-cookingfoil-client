@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include "core/Tags.hpp"
+#include "core/Labels.hpp"
 namespace foil {
 struct Item {
     std::string url, name, titleId, baseId, icon;
@@ -32,6 +33,10 @@ struct Item {
     // checked yet, 1 modified (signature off: a mod or a repack), 2 maybe
     // damaged. Said only; installs go ahead either way.
     uint8_t integrity = 0;
+    // The server's labels for its card, in order (core/Labels.hpp);
+    // hasLabels false: an older server, the client words them itself.
+    bool hasLabels = false;
+    std::vector<labels::Ref> labels;
     // Store names per language (feature item-names): ko, en, ja, zh in that
     // order, empty when the server sends none. Left empty (no allocation)
     // for the many items without names.

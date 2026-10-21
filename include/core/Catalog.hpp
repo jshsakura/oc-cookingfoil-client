@@ -62,6 +62,7 @@ struct Theme {
 struct HomeTheme {
   Theme theme;
   std::vector<size_t> items;
+  std::string icon; // a server shelf's icon name; empty: picked from the theme
 };
 // A shelf holds this many, then a 모두 보기 card opens the full list.
 constexpr size_t HomeRowLimit = 30, HomeRowVisible = 6;

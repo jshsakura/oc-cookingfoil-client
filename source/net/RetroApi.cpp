@@ -55,7 +55,7 @@ Parsed<retro::Page> retroGames(const Server &server, const State &state, const s
                     retro::filterQuery(filter);
   const auto response = fetch(server, state, path, reply, cancel);
   if (reply.error) return {{}, reply.error};
-  return {retro::parseGames(response.body, server.url), {}};
+  return {retro::parseGames(response.body, server.url, &reply.labels), {}};
 }
 Parsed<retro::Detail> retroDetail(const Server &server, const State &state, const std::string &id, RetroReply &reply,
                                   const std::atomic<bool> *cancel) {
@@ -67,13 +67,13 @@ Parsed<std::vector<retro::Shelf>> retroHome(const Server &server, const State &s
                                              const std::atomic<bool> *cancel) {
   const auto response = fetch(server, state, "/api/retro/home?limit=20", reply, cancel);
   if (reply.error) return {{}, reply.error};
-  return {retro::parseHome(response.body, server.url), {}};
+  return {retro::parseHome(response.body, server.url, &reply.labels), {}};
 }
 Parsed<std::vector<retro::Theme>> retroThemes(const Server &server, const State &state, RetroReply &reply,
                                               const std::atomic<bool> *cancel) {
   const auto response = fetch(server, state, "/api/retro/themes?limit=12&rows=" + std::to_string(retro::ThemesShown), reply, cancel);
   if (reply.error) return {{}, reply.error};
-  return {retro::parseThemes(response.body, server.url), {}};
+  return {retro::parseThemes(response.body, server.url, &reply.labels), {}};
 }
 Parsed<retro::Pack> retroPack(const Server &server, const State &state, RetroReply &reply,
                               const std::atomic<bool> *cancel) {

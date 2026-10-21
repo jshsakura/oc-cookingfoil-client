@@ -9,6 +9,7 @@ struct RetroReply {
   Error error;
   bool missing = false; // 404: this shop has no retro games
   int retryAfter = 0;   // 503: the server is still hashing; ask again then
+  labels::Book labels;  // the reply's label dictionary, when it sends one
 };
 Parsed<std::vector<retro::System>> retroSystems(const Server &server, const State &state, RetroReply &reply,
                                                  const std::atomic<bool> *cancel);

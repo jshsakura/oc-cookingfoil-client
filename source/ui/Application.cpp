@@ -566,6 +566,7 @@ void Application::setSession(std::unique_ptr<net::Session> session) {
   features_ = session_->features();
   genreNames_ = session_->genres();
   scoreLabels_ = session_->scoreLabels();
+  labelBook_ = serverLabels();
   qr_.encode(pairingInfo_.url);
   pairPollAt_ = pairingPending_ ? SDL_GetTicks() : 0;
   if (!pairingPending_) pairSince_ = 0;
@@ -901,6 +902,12 @@ void Application::connect(size_t index) {
 }
 void Application::renewTokensWith(const Server &server) {
   net::setTokenRenewer(server.url, [server, state = state_] { return net::renewDownloadToken(server, state); });
+}
+labels::Book Application::serverLabels() const {
+  labels::Book book;
+  if (session_) labels::merge(book, session_->labels());
+  for (const auto &other : others_) labels::merge(book, other->labels());
+  return book;
 }
 void Application::refresh() {
   if (!session_ || network_.joinable())
@@ -1266,6 +1273,7 @@ void Application::takeNetwork() {
   featured_ = session_->featured();
   genreNames_ = session_->genres();
   scoreLabels_ = session_->scoreLabels();
+  labelBook_ = serverLabels();
   setGroups(std::move(incomingGroups_));
   incomingGroups_ = {};
   error_ = {};
@@ -1305,7 +1313,7 @@ void Application::rebuildHome() {
   std::vector<HomeTheme> pinned;
   heroBanner_.clear();
   for (const auto &shelf : featured_) {
-    HomeTheme row{{shelf.title, SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}, {}};
+    HomeTheme row{{shelf.title, SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}, {}, shelf.icon};
     for (const auto &id : shelf.titleIds) {
       const auto found = groupIndex_.find(id);
       if (found == groupIndex_.end()) continue;
@@ -2037,8 +2045,18 @@ void Application::card(const Group &g, float x, float y, bool selected,
     if (selected) marquee(g.representative.name, x, y + 158, 18, 150, false);
     else paint_.fonts.text(g.representative.name, x, y + 158, 18, Ink, false, 150);
     // Most wanted first; one that would spill past the card is skipped and
-    // the next, maybe shorter, still gets its chance.
+    // the next, maybe shorter, still gets its chance. The server's own
+    // labels when it words them, else the client's.
     float at = x;
+    const Item &labelled = g.base ? *g.base : g.representative;
+    // A server that words labels leaves the field out of a game without any.
+    if (labelled.hasLabels || !labelBook_.empty()) {
+      for (const auto &ref : labelled.labels) {
+        const float w = labelChip(ref, labelBook_, at, y + CardLabelTop, x + 150);
+        if (w > 0) at += w + 6;
+      }
+      return;
+    }
     for (const auto kind : cardLabels(g)) {
       using L = CardLabel;
       const std::string label = kind == L::KoreanPatch     ? tr("Korean patch|badge")

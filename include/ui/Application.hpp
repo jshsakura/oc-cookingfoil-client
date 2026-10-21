@@ -358,6 +358,7 @@ public:
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).
+  void setLabelBook(labels::Book book) { labelBook_ = std::move(book); } // fixtures only
   void setGenreTable(net::NameTable table) { genreTable_ = std::move(table); genreNames_ = net::namesIn(genreTable_, languageCode()); }
   // Where the PC preview keeps its fake SD card for user patches.
   void usePatchFolder(const std::string &sd);
@@ -428,6 +429,12 @@ private:
   // A trophy and 업적 40, butter when the ROM itself earns them, grey when
   // only its title matched; nothing (0) for a game without any.
   float achievementLabel(const achievements::Summary &a, float x, float top, float height, int size);
+  // One of the server's labels as a chip at x (its tone's colours, its
+  // icon), when it fits before `right`: its width, 0 when left out.
+  float labelChip(const labels::Ref &ref, const labels::Book &book, float x, float top, float right, float height = 26,
+                  int size = 15);
+  labels::Book serverLabels() const; // every connected server's, merged
+  labels::Book labelBook_, retroLabelBook_;
   void shell();
   float statusBar();
   // Before the shop approves this device only 홈 (the approval page) and

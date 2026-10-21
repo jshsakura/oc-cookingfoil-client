@@ -695,6 +695,7 @@ bool parseItem(json_object* object, Item& item) {
     item.patches = int(std::min<uint64_t>(positive(object, "patches"), 999));
     item.requiredPatches = int(std::min<uint64_t>(positive(object, "required_patches"), 999));
     item.koreanPatches = int(std::min<uint64_t>(positive(object, "korean_patches"), 999));
+    item.labels = labels::parseRefs(object, item.hasLabels);
     if (const auto integrity = stringField(object, "integrity"); integrity == "damaged") item.integrity = 2;
     else if (integrity == "modified") item.integrity = 1;
     if (auto* icons = field(object, "icons"); json_object_is_type(icons, json_type_object)) {
@@ -836,6 +837,7 @@ Parsed<Catalog> parseCatalog(const std::string& json) {
     result.value.featured = parseFeatured(rest.get());
     result.value.genres = parseNameTable(rest.get(), "genres");
     result.value.scoreLabels = parseNameTable(rest.get(), "score_labels");
+    result.value.labels = labels::parseBook(rest.get());
     return result;
 }
 Parsed<std::vector<Item>> parseSections(const std::string& json) {
@@ -857,6 +859,7 @@ std::vector<Featured> parseFeatured(json_object* root) {
         shelf.id = stringField(object, "id");
         shelf.title = stringField(object, "title");
         shelf.bannerUrl = stringField(object, "banner_url");
+        shelf.icon = stringField(object, "icon");
         if (!isHttp(shelf.bannerUrl)) shelf.bannerUrl.clear();
         auto* ids = field(object, "title_ids");
         if (json_object_is_type(ids, json_type_array)) for (size_t k = 0; k < json_object_array_length(ids); ++k) {
@@ -1349,6 +1352,7 @@ bool Session::refresh(Error& error) {
     featured_ = std::move(parsed.value.featured);
     genres_ = std::move(parsed.value.genres);
     scoreLabels_ = std::move(parsed.value.scoreLabels);
+    labels_ = std::move(parsed.value.labels);
     etag_ = response.etag;
     return true;
 }

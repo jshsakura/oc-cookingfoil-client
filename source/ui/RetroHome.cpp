@@ -125,7 +125,8 @@ void Application::retroHome() {
     if (theme) {
       // A picked row: its icon and name as on 홈's rows; no count, no 모두
       // 보기 (the row is what the server picked, not a list to go through).
-      paint_.icon(pickedIcon(shelf.themeId), x, y + HeaderMid - 13, Ink, 26);
+      const int named = Painter::iconNamed(shelf.icon);
+      paint_.icon(named >= 0 ? named : pickedIcon(shelf.themeId), x, y + HeaderMid - 13, Ink, 26);
       paint_.fonts.middle(shelf.theme, x + 36, y + HeaderMid, 26, Ink, true, 900);
     }
     // Header: the system's icon on a white tile, its name, its game count.
@@ -209,6 +210,11 @@ void Application::retroHome() {
       // 업적, 한글, its year, how many play at once. One that would spill
       // past the card is skipped and the next tried.
       float at = cx;
+      if (game.hasLabels || !retroLabelBook_.empty()) { // the server's words
+        for (const auto &ref : game.labels)
+          if (const float w = labelChip(ref, retroLabelBook_, at, cy + 186, cx + Card, 22, 13)) at += w + 4;
+        continue;
+      }
       if (const float w = achievementLabel(game.achievements, at, cy + 186, 22, 13)) at += w + 4;
       std::vector<std::string> facts;
       if (game.edition.korean) facts.push_back(tr("Korean|script"));

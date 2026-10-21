@@ -160,11 +160,11 @@ int runUiTests(SDL_Renderer *renderer) {
     app.drag(0, -120);
     app.render();
     CHECK(app.gliding());
-    CHECK(app.glidePos() > 0.4f && app.glidePos() < 0.6f); // 120px of a 240px row
+    CHECK(app.glidePos() > 0.4f && app.glidePos() < 0.6f); // 120px of a row (CardRowStep)
     CHECK(app.selectedName() == before);
     // Pulled far past the top it stretches at most 90px, then springs back.
     app.drag(0, 2000);
-    CHECK(app.glidePos() < 0 && app.glidePos() * 240 >= -90.5f);
+    CHECK(app.glidePos() < 0 && app.glidePos() * foil::ui::CardRowStep >= -90.5f);
     app.dragEnd(0, 0);
     for (int i = 0; i < 60; ++i) { SDL_Delay(5); app.render(); }
     CHECK(app.glidePos() == 0);
@@ -188,7 +188,7 @@ int runUiTests(SDL_Renderer *renderer) {
     // Pushed past the top it stretches a little, as under a finger, and
     // springs back once the stick is let go.
     app.stick(-1, 3.0f);
-    CHECK(app.glidePos() < 0 && app.glidePos() * 240 >= -90.5f);
+    CHECK(app.glidePos() < 0 && app.glidePos() * foil::ui::CardRowStep >= -90.5f);
     for (int i = 0; i < 80; ++i) { SDL_Delay(5); app.render(); }
     CHECK(app.glidePos() == 0);
     app.action(foil::ui::Action::Left);
