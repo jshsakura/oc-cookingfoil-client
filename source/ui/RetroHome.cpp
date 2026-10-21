@@ -205,7 +205,22 @@ void Application::retroHome() {
       // One line under the cover, as on 홈's shelves; the focused name runs.
       if (on) marquee(game.name, cx, cy + 158, 18, Card, false);
       else paint_.fonts.text(game.name, cx, cy + 158, 18, Ink, false, Card);
-      achievementLabel(game.achievements, cx, cy + 186, 22, 13); // under the name, when it has any
+      // Under the name what the server knows of it, so no card stands bare:
+      // 업적, 한글, its year, how many play at once. One that would spill
+      // past the card is skipped and the next tried.
+      float at = cx;
+      if (const float w = achievementLabel(game.achievements, at, cy + 186, 22, 13)) at += w + 4;
+      std::vector<std::string> facts;
+      if (game.edition.korean) facts.push_back(tr("Korean|script"));
+      if (game.year > 0) facts.push_back(std::to_string(game.year));
+      if (game.players > 1) facts.push_back(trf("{0}P|players", {std::to_string(game.players)}));
+      for (const auto &fact : facts) {
+        const float w = paint_.fonts.measure(fact, 13, true) + 16;
+        if (at + w > cx + Card) continue;
+        paint_.rect(at, cy + 186, w, 22, Line, 7);
+        paint_.fonts.middle(fact, at + 8, cy + 197, 13, Ink, true);
+        at += w + 4;
+      }
     }
     unclip();
   }
