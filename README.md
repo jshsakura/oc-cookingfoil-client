@@ -156,6 +156,12 @@ listens on all interfaces without authentication, so use it on a trusted network
 
 See [third_party/README.md](third_party/README.md) for how the install engine is pinned and patched.
 
+## Working on it
+
+The rules this project is built by, each with its reason and where the code follows it:
+[design](docs/DESIGN.md), [writing and translations](docs/WRITING.md) and
+[working rules](docs/CONTRIBUTING-GUIDE.md). Read them before a pull request.
+
 ## License
 
 CookingFoil is licensed under the [GNU General Public License v3.0 or later](LICENSE). It
