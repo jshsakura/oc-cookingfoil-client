@@ -18,7 +18,7 @@ ZSTD_C := $(addprefix third_party/zstd/lib/common/,entropy_common.c error_privat
           $(addprefix third_party/zstd/lib/decompress/,huf_decompress.c zstd_ddict.c zstd_decompress.c zstd_decompress_block.c) \
           source/zstd/ZstdSnapshot.c
 ZSTD_FLAGS := -DZSTD_DISABLE_ASM -DZSTD_LEGACY_SUPPORT=0 -DDEBUGLEVEL=0 -DZSTD_TRACE=0 -Ithird_party/zstd/lib -Ithird_party/zstd/lib/common
-# The version as makefiles/switch.mk writes it (scripts/ship.sh raises it):
+# The version as makefiles/switch.mk writes it (raised by hand for a release):
 # not the commit count, which a fresh clone, a shallow CI checkout or the
 # public repository's history would each read differently.
 APP_VERSION := $(shell sed -n 's/^APP_VERSION := //p' makefiles/switch.mk)

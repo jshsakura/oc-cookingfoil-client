@@ -18,9 +18,8 @@ break; "by convention" means nothing does, so review must.
    IPs, host names, domains, emails, account names, keys, tokens or machine paths. Use
    `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`, `example.com`, and keys that are plainly
    fake. (note) (history: 6db0cf2)
-   Enforced: `scripts/ship.sh:77-88` scans the `.nro` for private ranges, `/home/`, `/srv/`,
-   `/mnt/`, signed tokens and the untracked `COOK_PRIVATE_PATTERN`. Nothing in the repository scans
-   source or commits; a push hook on the maintainer's machine does, outside the repository.
+   Enforced: by convention in the repository. The maintainer's machine scans pushes and builds
+   outside it.
 3. **Never ship a server, or import another app's server settings.** A new `config.json` starts
    with no servers. Why: an imported shop showed up on the maintainer's console as if the app
    handed out their settings. (note) Where: `Config.cpp:195-214`. Enforced: by convention.
@@ -87,8 +86,7 @@ around the card refusing to rename over a file, and skips the write when nothing
 (code: 36 sites) (history: cc617d6) Where: `source/core/Json.cpp:117-146`.
 
 **Downloads go to a `.part` file and are renamed when complete.** (code: 3 sites) Where:
-`HomebrewApi.cpp:86`, `RetroApi.cpp:140`, `ClientUpdateApi.cpp:77`. The same rule holds off the
-console: `scripts/ship.sh:94-98`.
+`HomebrewApi.cpp:86`, `RetroApi.cpp:140`, `ClientUpdateApi.cpp:77`.
 
 **Persistent records go in the sqlite store, not a new JSON file.** (note) (history: b6d3264)
 Where: `include/core/DownloadStore.hpp`.
@@ -188,23 +186,15 @@ screen. Ask for a retry, then read the log. (note)
 
 ## Shipping
 
-```sh
-scripts/ship.sh --check    # build and scan; nothing raised, nothing leaves the machine
-scripts/ship.sh --server   # raise the version, build, scan, copy to the server only
-scripts/ship.sh            # all of the above, then tag vX.Y.Z and push; the tag builds the release
-```
+**A release is a tag.** Raise `APP_VERSION` in `makefiles/switch.mk` in its own
+`chore: release X.Y.Z` commit on a `chore/release-X.Y.Z` branch, merge it through a pull request,
+then push the tag `vX.Y.Z` on that merge. The release workflow builds the `.nro` from the tag and
+refuses a tag that does not match `APP_VERSION`. (history: 433fba7, the 0.4.3 release)
+Where: `.github/workflows/release.yml`.
 
-**The version is written in `makefiles/switch.mk` (`APP_VERSION`), and `ship.sh` raises it in its
-own `chore: release X.Y.Z` commit.** The release workflow refuses a tag that does not match.
-Where: `scripts/ship.sh:44-56`, `.github/workflows/release.yml`.
-
-**A build that fails the version check or the scan takes its version back.** Where:
-`scripts/ship.sh:53-56`.
-
-**The full `ship.sh` run pushes its release commit straight to `main`, which the PR rule above
-forbids.** Until the script changes, push the release commit on a `chore/release-X.Y.Z` branch,
-merge it through a pull request, then push the tag. (history: 433fba7, the 0.4.3 release)
-Where: `scripts/ship.sh:104-106`.
+**Servers take a release from GitHub; nobody else builds to ship.** A server that follows the
+repository picks up the new release by itself; one set to manual takes a `.nro` uploaded on its
+admin page.
 
 ## Commits and pull requests
 
