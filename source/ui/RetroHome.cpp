@@ -187,18 +187,8 @@ void Application::retroHome() {
         paint_.fonts.middle(label, cx + 11, cy + 6 + h / 2, 13, Surface, true);
       }
       scoreBadge(game.rating, cx + Card - 6, cy + 6);
-      // Bottom left: on a picked row, where systems mix, the system's icon on
-      // a see-through black tile as the size's; then how many versions it has.
-      float badgeX = cx + 6;
-      const auto system = theme ? std::find_if(retroSystems_.begin(), retroSystems_.end(),
-                                               [&](const auto &s) { return s.id == game.system; })
-                                : retroSystems_.end();
-      if (system != retroSystems_.end() && !system->iconUrl.empty()) {
-        paint_.rect(badgeX, cy + Card - 34, 28, 28, {22, 22, 26, 150}, 8);
-        images_->draw(system->iconUrl, badgeX + 3, cy + Card - 31, 22, 22, 4);
-        badgeX += 34;
-      }
-      versionsBadge(game.variants, badgeX, cy + Card - 25, true);
+      // Bottom left: how many versions it has, when more than one.
+      versionsBadge(game.variants, cx + 6, cy + Card - 25, true);
       // Bottom right: its region's flag, left of the check once it is on the card.
       const bool installed = retroInstalled(game) && !retroBezelMissing(game);
       paint_.region(game.region, cx + Card - (installed ? 64 : 34), cy + Card - 26, 27, 18);
