@@ -16,17 +16,17 @@ int runRetroTests() {
     const auto themes = parseThemes(R"({"themes":[
       {"id":"fighting","name":"대전 격투","games":[
         {"id":"a","name":"A","original":"Street Fighter II","system":"snes","bundleUrl":"/b/a","rating":90,
-         "genres":["fighting","action","Bad Key"],"players":2,"year":1992},
+         "genres":["fighting","board-game","Board Game"],"players":2,"year":1992},
         {"id":"b","name":"B","original":"Street Fighter II","system":"md","bundleUrl":"/b/b","rating":80}]},
       {"id":"puzzle","name":"","games":[{"id":"c","bundleUrl":"/b/c"}]},
       {"id":"empty","name":"Empty","games":[]},
-      {"id":"../x","name":"X","games":[{"id":"d","bundleUrl":"/b/d"}]},
+      {"id":"genre:Simulation","name":"X","games":[{"id":"d","bundleUrl":"/b/d"}]},
       {"id":"decade:1990:genre:rpg","name":"90년대 RPG","games":[{"id":"e","bundleUrl":"/b/e"}]}]})",
                                     "https://shop.example.com");
     CHECK(themes.size() == 2 && themes[0].id == "fighting" && themes[0].name == "대전 격투");
     CHECK(themes.size() == 2 && themes[1].id == "decade:1990:genre:rpg");
     CHECK(themes.size() == 2 && themes[0].games.size() == 1 && themes[0].games[0].id == "a");
-    CHECK(themes.size() == 2 && themes[0].games[0].genres == std::vector<std::string>({"fighting", "action"}));
+    CHECK(themes.size() == 2 && themes[0].games[0].genres == std::vector<std::string>({"fighting", "board-game"}));
     CHECK(themes.size() == 2 && themes[0].games[0].players == 2 && themes[0].games[0].year == 1992);
     CHECK(themes.size() == 2 && themes[0].games[0].bundleUrl == "https://shop.example.com/b/a");
     CHECK(parseThemes("not json").empty());
@@ -116,16 +116,18 @@ int runRetroTests() {
   {
     // The new filters go in the list's query; a key with odd characters never does.
     Filter f;
-    f.genres = {"fighting", "rpg", "x&y"};
+    f.genres = {"fighting", "board-game", "x&y", "Action"};
     f.players = 2;
     f.decade = 1990;
     f.region = "kr";
     f.korean = true;
     f.achievements = true;
-    CHECK(filterQuery(f) == "&sort=rating&genre=fighting,rpg&players=2&decade=1990&region=kr&korean=1&achievements=1");
+    CHECK(filterQuery(f) == "&sort=rating&genre=fighting,board-game&players=2&decade=1990&region=kr&korean=1&achievements=1");
     Filter odd;
     odd.region = "k&r";
     CHECK(filterQuery(odd) == "&sort=rating");
+    CHECK(keyText("board-game") && !keyText("Board") && !keyText("-x") && !keyText(""));
+    CHECK(themeIdText("decade:1990:genre:rpg") && themeIdText("coop") && !themeIdText("genre:") && !themeIdText("genre::x"));
     Filter g = f;
     g.genres.pop_back();
     CHECK(g != f);

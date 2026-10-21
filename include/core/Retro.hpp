@@ -100,8 +100,14 @@ struct Page {
 struct Shelf {
   System system; // empty on a theme row
   std::vector<Game> games;
-  std::string theme; // a theme row's name (/api/retro/themes), above the systems'
+  std::string theme;   // a theme row's name (/api/retro/themes), above the systems'
+  std::string themeId; // its id: genre:action, decade:1990, coop…
 };
+// The keys agreed with the server: lower-case letters, digits and inner
+// hyphens (action, board-game, kr); a theme id is keys joined by colons
+// (decade:1990:genre:rpg). Anything else is not a key and is dropped.
+bool keyText(const std::string &key);
+bool themeIdText(const std::string &id);
 // A row across systems (/api/retro/themes): a genre or another theme the
 // server picked, named in the asked language.
 struct Theme {

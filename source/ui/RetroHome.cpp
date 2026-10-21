@@ -6,6 +6,18 @@ namespace {
 // as on 홈), then room before the next system.
 constexpr float ShelfHeight = 262, BannerHeight = 64, CardStep = 170, Card = 150;
 constexpr int Columns = 6;
+// A picked row's icon, from the same set as 홈's rows, by what its id says
+// first: a decade (decade:1990:genre:rpg too) before a genre.
+int pickedIcon(const std::string &id) {
+  const auto kind = id.substr(0, id.find(':'));
+  if (kind == "decade") return 11;       // calendar
+  if (kind == "coop") return 13;         // users, as 홈's party row
+  if (kind == "korean") return 17;       // globe, as 홈's Korean row
+  if (kind == "achievements") return 28; // trophy
+  if (kind == "classic" || kind == "hidden") return 31; // star, as 홈's rated rows
+  if (kind == "recent") return 29;       // sparkle, as 홈's new releases
+  return 22;                             // package, as 홈's genre rows
+}
 } // namespace
 // The retro header, the same on the home and on 업적: the title with every
 // system's games, and L R 시스템별, Y RetroArch and X 업적 on the right.
@@ -101,11 +113,10 @@ void Application::retroHome() {
     constexpr float HeaderMid = 17;
     float x = 260;
     if (theme) {
-      // A theme row: a sparkle on butter and its name; no count, no 모두 보기
-      // (the row is what the server picked, not a list to go through).
-      paint_.rect(x, y + HeaderMid - 17, 34, 34, Butter, 17);
-      paint_.icon(29, x + 7, y + HeaderMid - 10, Ink, 20);
-      paint_.fonts.middle(shelf.theme, x + 46, y + HeaderMid, 26, Ink, true, 900);
+      // A picked row: its icon and name as on 홈's rows; no count, no 모두
+      // 보기 (the row is what the server picked, not a list to go through).
+      paint_.icon(pickedIcon(shelf.themeId), x, y + HeaderMid - 13, Ink, 26);
+      paint_.fonts.middle(shelf.theme, x + 36, y + HeaderMid, 26, Ink, true, 900);
     }
     // Header: the system's icon on a white tile, its name, its game count.
     else if (!shelf.system.iconUrl.empty()) {

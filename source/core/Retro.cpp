@@ -36,13 +36,23 @@ bool plainPath(const std::string &path) {
 
 namespace {
 // A genre key: lower case letters, digits, - and _ (empty for anything else).
-// A key the server names things by: lower-case letters, digits, _ and -,
-// and for a theme also : (decade:1990:genre:rpg).
-std::string plainKey(json_object *value, bool colons = false) {
+std::string plainKey(json_object *value, bool theme = false) {
   if (!json_object_is_type(value, json_type_string)) return {};
   const std::string key = json_object_get_string(value);
-  const char *allowed = colons ? "abcdefghijklmnopqrstuvwxyz0123456789_-:" : "abcdefghijklmnopqrstuvwxyz0123456789_-";
-  return key.size() <= 64 && key.find_first_not_of(allowed) == std::string::npos ? key : "";
+  return theme ? (themeIdText(key) ? key : "") : (keyText(key) ? key : "");
+}
+std::string encoded(const std::string &text) {
+  static const char *hex = "0123456789ABCDEF";
+  std::string out;
+  for (const unsigned char c : text) {
+    if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') out += char(c);
+    else {
+      out += '%';
+      out += hex[c >> 4];
+      out += hex[c & 15];
+    }
+  }
+  return out;
 }
 // One card per original title, the first (best rated) kept.
 void oneCardPerTitle(std::vector<Game> &games) {
@@ -149,16 +159,7 @@ std::vector<Game> parseGameList(json_object *list, const std::string &base) {
 } // namespace
 
 std::string filterQuery(const Filter &f) {
-  static const char *hex = "0123456789ABCDEF";
-  std::string q;
-  for (const unsigned char c : f.query) {
-    if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') q += char(c);
-    else {
-      q += '%';
-      q += hex[c >> 4];
-      q += hex[c & 15];
-    }
-  }
+  const auto q = encoded(f.query);
   std::string out = "&sort=" + (f.sort.empty() ? std::string("rating") : f.sort);
   if (!q.empty()) out += "&q=" + q;
   if (f.minRating > 0) out += "&minRating=" + std::to_string(std::min(f.minRating, 100));
@@ -167,14 +168,11 @@ std::string filterQuery(const Filter &f) {
   if (f.maxSize) out += "&maxSize=" + std::to_string(f.maxSize);
   std::string genres;
   for (const auto &key : f.genres)
-    if (!key.empty() && key.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-") == std::string::npos)
-      genres += (genres.empty() ? "" : ",") + key;
+    if (keyText(key)) genres += (genres.empty() ? "" : ",") + key;
   if (!genres.empty()) out += "&genre=" + genres;
   if (f.players > 0) out += "&players=" + std::to_string(std::min(f.players, 99));
   if (f.decade > 0) out += "&decade=" + std::to_string(f.decade);
-  if (!f.region.empty() && f.region.size() <= 16 &&
-      f.region.find_first_not_of("abcdefghijklmnopqrstuvwxyz") == std::string::npos)
-    out += "&region=" + f.region;
+  if (keyText(f.region)) out += "&region=" + f.region;
   if (f.korean) out += "&korean=1";
   if (f.achievements) out += "&achievements=1";
   return out;
@@ -542,6 +540,17 @@ std::vector<Theme> mergeThemes(std::vector<std::pair<std::string, std::vector<Th
   }
   return themes;
 }
+bool keyText(const std::string &key) {
+  return !key.empty() && key.size() <= 32 && key.front() != '-' && key.back() != '-' &&
+         key.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-") == std::string::npos;
+}
+bool themeIdText(const std::string &id) {
+  if (id.size() > 96) return false;
+  size_t from = 0;
+  for (size_t colon; (colon = id.find(':', from)) != std::string::npos; from = colon + 1)
+    if (!keyText(id.substr(from, colon - from))) return false;
+  return keyText(id.substr(from));
+}
 std::vector<Shelf> themeShelves(std::vector<Theme> themes, int turn, int shown) {
   auto ready = spreadThemes(std::move(themes));
   std::vector<Shelf> out;
@@ -549,7 +558,7 @@ std::vector<Shelf> themeShelves(std::vector<Theme> themes, int turn, int shown) 
   const int sets = (int(ready.size()) + shown - 1) / shown;
   const int from = (turn % sets + sets) % sets * shown;
   for (int i = from; i < int(ready.size()) && int(out.size()) < shown; ++i)
-    out.push_back({{}, std::move(ready[size_t(i)].games), std::move(ready[size_t(i)].name)});
+    out.push_back({{}, std::move(ready[size_t(i)].games), std::move(ready[size_t(i)].name), ready[size_t(i)].id});
   return out;
 }
 std::vector<Theme> spreadThemes(std::vector<Theme> themes, int rows, int perRow, int fewest) {
