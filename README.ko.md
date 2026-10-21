@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="assets/icon.jpg" alt="CookingFoil" width="96" />
-  <h1>CookingFoil</h1>
+  <h1><img src="brand/cookingfoil-readme-256.png" alt="CookingFoil" width="192" height="192" /></h1>
   <p><strong>파일은 서버에. 설치와 관리는 본체에서.</strong></p>
   <p>게임, 홈브루, 세이브, 패치를 한곳에서 관리하는 개인용 홈브루 클라이언트입니다.</p>
   <p><a href="https://github.com/jshsakura/oc-cookingfoil#connecting-a-client">클라이언트 받기</a> · <a href="https://jshsakura.github.io/oc-cookingfoil/">웹사이트</a> · <a href="https://github.com/jshsakura/oc-cookingfoil">서버 준비하기</a> · <a href="docs/README.md">문서</a></p>
@@ -10,7 +9,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-16161A" alt="GPL-3.0-or-later" /></a>
 </div>
 
-![CookingFoil 홈 화면](docs/screenshots/ko/01-home.png)
+![CookingFoil 홈 화면](docs/screenshots/en/01-home.png)
 
 직접 운영하는 [CookingFoil 서버](https://github.com/jshsakura/oc-cookingfoil)에 연결해 파일을 둘러보고,
 필요한 항목을 골라 설치합니다. 여러 서버의 목록을 함께 보고, 설치된 버전과 업데이트를 비교하고,
@@ -20,11 +19,11 @@
 
 | 게임 상세 | 다운로드 |
 |---|---|
-| ![게임 상세](docs/screenshots/ko/02-detail.png) | ![다운로드](docs/screenshots/ko/04-downloads.png) |
+| ![게임 상세](docs/screenshots/en/02-detail.png) | ![다운로드](docs/screenshots/en/04-downloads.png) |
 | 설치된 게임 | 세이브와 Dropbox |
-| ![설치된 게임](docs/screenshots/ko/07-installed.png) | ![세이브와 Dropbox](docs/screenshots/ko/08-dropbox-linked.png) |
+| ![설치된 게임](docs/screenshots/en/07-installed.png) | ![세이브와 Dropbox](docs/screenshots/en/08-dropbox-linked.png) |
 
-실제 UI를 호스트 빌드에서 촬영한 화면입니다. 게임 이미지는 예제 그림이며, 예제 데이터와 일부 상태를 사용합니다.
+실제 영문 UI를 예제 데이터로 촬영했습니다. 아이콘이 없는 항목은 앱이 원래 표시하는 제목 첫 글자 타일입니다.
 
 ## 고르는 일에 집중하세요
 

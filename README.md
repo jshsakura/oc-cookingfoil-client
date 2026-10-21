@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="assets/icon.jpg" alt="CookingFoil" width="96" />
-  <h1>CookingFoil</h1>
+  <h1><img src="brand/cookingfoil-readme-256.png" alt="CookingFoil" width="192" height="192" /></h1>
   <p><strong>Your files on your server. Your library on your console.</strong></p>
   <p>A personal homebrew client for games, homebrew apps, saves and patches.</p>
   <p><a href="https://github.com/jshsakura/oc-cookingfoil#connecting-a-client">Get the client</a> · <a href="https://jshsakura.github.io/oc-cookingfoil/">Website</a> · <a href="https://github.com/jshsakura/oc-cookingfoil">Get the server</a> · <a href="docs/README.md">Documentation</a></p>
@@ -24,7 +23,7 @@ and pick up downloads that were interrupted.
 | Installed games | Saves and Dropbox |
 | ![Installed games](docs/screenshots/en/07-installed.png) | ![Saves and Dropbox](docs/screenshots/en/08-dropbox-linked.png) |
 
-Captured from the real UI in the host build, using sample artwork, fixture data and simulated states.
+Captured from the real English UI with sample data. Entries without icons use the app’s native first-letter tiles.
 
 ## Choose what you want. Keep the rest in order.
 

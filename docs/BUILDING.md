@@ -55,10 +55,12 @@ stop the process when finished. Installs, save access, deletion and cleanup need
 
 ```sh
 ./build-host/cookingfoil-host --fixture host/fixtures --lang en --shot out/screens-en
-./build-host/cookingfoil-host --fixture host/fixtures --lang ko --shot out/screens-ko
 ```
 
-This writes PNGs for the main screens and simulated states. Fixture art is a placeholder.
+This writes PNGs for the main screens and simulated states. General test fixtures include sample artwork.
+Published screenshots use English in every documentation and website language. Omit artwork URLs
+from sample metadata when showing missing icons, so the actual UI draws its native first-letter
+tiles. Do not substitute the fixture illustrations for missing game icons.
 Only copy reviewed screenshots into `docs/screenshots`; keep generated data and private server
 configuration out of Git. [CI](../.github/workflows/ci.yml) also uploads host screenshots.
 
