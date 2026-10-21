@@ -315,11 +315,11 @@ void Application::raDialog() {
 // is the 업적 pill under the name. None when RetroAchievements has no match.
 float Application::raChip(float right) {
   if (!retroMeta_.achievements.raGameId) return right;
-  constexpr float Mid = BackLine, Height = 32, Badge = 22, Mark = 18;
+  constexpr float Mid = ChipLine, Height = 32, Badge = 22, Mark = 18;
   const std::string label = tr("See achievements");
   const float badge = std::max(Badge, paint_.fonts.measure("ZL", 12, true) + 10);
   const float w = 5 + badge + 8 + Mark + 6 + paint_.fonts.measure(label, 15, true) + 14, x = right - w;
-  hit(x - 4, Mid - 22, w + 8, 44, [this] { openRaList(); });
+  hit(x - 4, 0, w + 8, Mid + Height / 2 + 8, [this] { openRaList(); });
   paint_.rect(x, Mid - Height / 2, w, Height, Surface, int(Height / 2));
   paint_.rect(x + 5, Mid - Badge / 2, badge, Badge, Ink, int(Badge / 2));
   paint_.fonts.middle("ZL", x + 5 + (badge - paint_.fonts.measure("ZL", 12, true)) / 2, Mid, 12, Surface, true);
