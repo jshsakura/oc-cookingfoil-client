@@ -521,6 +521,37 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         saved[i].next = std::clamp(written[i], saved[i].start, saved[i].end);
       options.checkpoint(s.etag, s.total, SegmentPlan(saved).save());
     };
+    // The size arrived on the first reply: plan the parts (the rest open in
+    // the loop). Before the first reply's own bytes go to the writer, which
+    // waits for the place to be ready.
+    const auto begin = [&]() -> bool {
+      started = true;
+      bool ready = false;
+      try {
+        ready = prepare(s.total);
+      } catch (...) {
+      }
+      if (!ready)
+        return false;
+      s.prepared = true;
+      std::lock_guard<std::mutex> held(planLock);
+      auto &first = *conns.front();
+      if (!s.ranged || s.total == 0) {
+        plan = SegmentPlan(std::vector<Segment>{{0, s.total ? s.total : UINT64_MAX, first.pos}});
+        first.stop = s.total ? s.total : UINT64_MAX;
+        limit = wanted = 1;
+      } else {
+        plan = SegmentPlan(0, s.total, limit);
+        plan.segments()[0].next = first.pos;
+        first.stop = plan.segments()[0].end;
+      }
+      written.assign(plan.segments().size(), 0);
+      for (size_t i = 0; i < plan.segments().size(); ++i)
+        written[i] = plan.segments()[i].start;
+      fails.assign(plan.segments().size(), 0);
+      waitUntil.assign(plan.segments().size(), Clock::time_point());
+      return true;
+    };
     while (true) {
       if (cancelled()) {
         result.cancelled = true;
@@ -572,35 +603,17 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         checkpointNow();
         ++checkpointGiven;
       }
-      // The size arrived on the first reply: plan the parts and open the rest.
-      if (s.known && !started) {
-        started = true;
-        bool ready = false;
-        try {
-          ready = prepare(s.total);
-        } catch (...) {
-        }
-        if (!ready) {
-          failure = "prepare";
-          break;
-        }
-        s.prepared = true;
-        std::lock_guard<std::mutex> held(planLock);
-        auto &first = *conns.front();
-        if (!s.ranged || s.total == 0) {
-          plan = SegmentPlan(std::vector<Segment>{{0, s.total ? s.total : UINT64_MAX, first.pos}});
-          first.stop = s.total ? s.total : UINT64_MAX;
-          limit = wanted = 1;
-        } else {
-          plan = SegmentPlan(0, s.total, limit);
-          plan.segments()[0].next = first.pos;
-          first.stop = plan.segments()[0].end;
-        }
-        written.assign(plan.segments().size(), 0);
-        for (size_t i = 0; i < plan.segments().size(); ++i)
-          written[i] = plan.segments()[i].start;
-        fails.assign(plan.segments().size(), 0);
-        waitUntil.assign(plan.segments().size(), Clock::time_point());
+      if (s.known && !started && !begin()) {
+        failure = "prepare";
+        break;
+      }
+      // The first request answered 503/524/429, or broke, before it told the
+      // size: asked again once its wait is over (the resume window still
+      // bounds how long).
+      if (!started && !offline && active() == 0 && waitUntil[0] <= Clock::now()) {
+        conns.clear();
+        contexts.clear();
+        open(0, 0, UINT64_MAX, true);
       }
       if (started && !conns.empty() && conns.front()->curl && conns.front()->pending.size() >= s.batch &&
           !hand(s, *conns.front())) {
@@ -650,6 +663,13 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         if (c->status == 0)
           curl_easy_getinfo(c->curl, CURLINFO_RESPONSE_CODE, &c->status);
         lastStatus = c->status;
+        // The whole first reply came before the loop planned the parts (a
+        // small file, a fast link): planned now, or its bytes would be lost.
+        if (s.known && !started && !begin()) {
+          failure = "prepare";
+          close(*c);
+          break;
+        }
         const bool reachedEnd = c->pos >= c->stop || (!s.ranged && msg->data.result == CURLE_OK);
         if (!hand(s, *c)) {
           failure = "write";
