@@ -1407,7 +1407,7 @@ void Application::search(std::string query) {
     retroQuery_ = std::move(query);
     if (retroView_ != RetroView::List) {
       retroView_ = RetroView::List;
-      retroSystem_ = std::clamp(retroRow_, 0, std::max(0, int(retroSystems_.size()) - 1));
+      retroSystem_ = retroSystemAt(retroRow_);
     }
     retroGames_.clear();
     retroListSystem_.clear();

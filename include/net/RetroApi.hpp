@@ -21,6 +21,10 @@ Parsed<retro::Detail> retroDetail(const Server &server, const State &state, cons
 // Every system with its best rated games, for the shelves.
 Parsed<std::vector<retro::Shelf>> retroHome(const Server &server, const State &state, RetroReply &reply,
                                              const std::atomic<bool> *cancel);
+// The theme rows across systems (genres, decades, two players…), picked by
+// the server once a day; 404 on a server without them.
+Parsed<std::vector<retro::Theme>> retroThemes(const Server &server, const State &state, RetroReply &reply,
+                                              const std::atomic<bool> *cancel);
 Parsed<retro::Pack> retroPack(const Server &server, const State &state, RetroReply &reply,
                               const std::atomic<bool> *cancel);
 // Unpacks a game's bundle onto the SD card (only retro::bundlePathAllowed paths).

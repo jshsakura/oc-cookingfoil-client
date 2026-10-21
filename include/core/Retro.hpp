@@ -98,8 +98,9 @@ struct Page {
 };
 // One row of the retro home: a system and its best rated games.
 struct Shelf {
-  System system;
+  System system; // empty on a theme row
   std::vector<Game> games;
+  std::string theme; // a theme row's name (/api/retro/themes), above the systems'
 };
 // A row across systems (/api/retro/themes): a genre or another theme the
 // server picked, named in the asked language.
@@ -143,6 +144,10 @@ Facets mergeFacets(const std::vector<Facets> &all);
 // the first row that has it, a row left with fewer than `fewest` games
 // dropped, at most `rows` rows of `perRow` games. Few, varied, never long.
 constexpr int ThemeRows = 6, ThemeGames = 12, ThemeFewest = 6;
+// The rows spreadThemes keeps (six, ready), as shelves to go above the
+// systems': `shown` of them at a time, the `turn`th set (it wraps).
+constexpr int ThemesShown = 3;
+std::vector<Shelf> themeShelves(std::vector<Theme> themes, int turn = 0, int shown = ThemesShown);
 std::vector<Theme> spreadThemes(std::vector<Theme> themes, int rows = ThemeRows, int perRow = ThemeGames,
                                 int fewest = ThemeFewest);
 struct PackFile {

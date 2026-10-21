@@ -44,7 +44,7 @@ void Application::retroHeader() {
     const auto systems = tr("By system");
     const float sysW = paint_.keyWidth("L") + paint_.keyWidth("R") + paint_.fonts.measure(systems, 19, true) + 56,
                 sysX = getX - 16 - sysW;
-    headerItem("systems", sysX, 24, sysW, 48, [this] { openRetroList(retroRow_); });
+    headerItem("systems", sysX, 24, sysW, 48, [this] { openRetroList(retroSystemAt(retroRow_)); });
     paint_.rect(sysX, 24, sysW, 48, Surface, 12);
     paint_.key("L", sysX + 12, 48);
     const float textX = sysX + 12 + paint_.keyWidth("L") + 16;
@@ -60,7 +60,7 @@ void Application::retroHome() {
   const int rows = int(retroShelves_.size());
   retroRow_ = std::clamp(retroRow_, 0, std::max(0, rows - 1));
   if (retroRow_ >= 0 && retroRow_ < rows)
-    retroCol_ = std::clamp(retroCol_, 0, int(retroShelves_[retroRow_].games.size()));
+    retroCol_ = std::clamp(retroCol_, 0, int(retroShelves_[retroRow_].games.size()) - !retroShelves_[retroRow_].theme.empty());
   if (retroShelves_.empty()) {
     retroBanner(90); // RetroArch's state, always on the home
     const float top = 178;
@@ -97,35 +97,45 @@ void Application::retroHome() {
     if (y + ShelfHeight < 90) continue;
     const auto &shelf = retroShelves_[n];
     const bool focused = inContent() && retroRow_ == n;
-    // Header: the system's icon on a white tile, its name, its game count.
+    const bool theme = !shelf.theme.empty();
     constexpr float HeaderMid = 17;
     float x = 260;
-    if (!shelf.system.iconUrl.empty()) {
+    if (theme) {
+      // A theme row: a sparkle on butter and its name; no count, no 모두 보기
+      // (the row is what the server picked, not a list to go through).
+      paint_.rect(x, y + HeaderMid - 17, 34, 34, Butter, 17);
+      paint_.icon(29, x + 7, y + HeaderMid - 10, Ink, 20);
+      paint_.fonts.middle(shelf.theme, x + 46, y + HeaderMid, 26, Ink, true, 900);
+    }
+    // Header: the system's icon on a white tile, its name, its game count.
+    else if (!shelf.system.iconUrl.empty()) {
       paint_.rect(x, y + HeaderMid - 17, 34, 34, {255, 255, 255, 255}, 9);
       images_->draw(shelf.system.iconUrl, x + 4, y + HeaderMid - 13, 26, 26, 4);
       x += 44;
     }
-    x = paint_.fonts.middle(retro::systemName(shelf.system, languageCode()), x, y + HeaderMid, 26, Ink, true, 600);
-    paint_.pill(std::to_string(shelf.system.romCount), x + 12, y + HeaderMid - 13);
-    if (focused) paint_.keyChip("R", tr("See all"), 1252, y + HeaderMid);
-    {
+    if (!theme) {
+      x = paint_.fonts.middle(retro::systemName(shelf.system, languageCode()), x, y + HeaderMid, 26, Ink, true, 600);
+      paint_.pill(std::to_string(shelf.system.romCount), x + 12, y + HeaderMid - 13);
+    }
+    if (focused && !theme) paint_.keyChip("R", tr("See all"), 1252, y + HeaderMid);
+    if (!theme) {
       // A finger gets the chip's size and a little more; pressed, the chip darkens.
       const float chipW = paint_.keyChipWidth("R", tr("See all"));
       hit(1252 - chipW - 6, y, chipW + 12, 34, [this, n] { openRetroList(n); }, {1252 - chipW, y + HeaderMid - 14, chipW, 28}, 14);
     }
-    const int count = int(shelf.games.size());
+    const int count = int(shelf.games.size()), cards = theme ? count : count + 1;
     // Sideways like 홈's shelves: the cursor's place, or the finger's while it
     // glides, resting on whole cards; the last card (모두 보기) counts as one.
     const float left = glide("retroShelf" + std::to_string(n), 232, y + 40, 1048, ShelfHeight - 40,
                              focused ? float(std::max(0, retroCol_ - (Columns - 1))) : 0.f,
-                             float(count + 1 - Columns), CardStep, true, true);
+                             float(cards - Columns), CardStep, true, true);
     const int first = int(left);
     // Near the end, by cursor or by finger: the next of the system's games.
     if (first + Columns + 4 >= count) loadShelfMore(n);
     // From under the header, so the focus ring (8 px out from a card at y + 46)
     // shows whole at the top.
     clipTo(232, y + 36, 1048, ShelfHeight - 36);
-    for (int col = 0; col <= Columns && first + col <= count; ++col) {
+    for (int col = 0; col <= Columns && first + col < cards; ++col) {
       const int i = first + col;
       const float cx = 260 + CardStep * (i - left), cy = y + 46;
       const bool on = focused && retroCol_ == i;
@@ -148,8 +158,15 @@ void Application::retroHome() {
       }
       const auto &game = shelf.games[i];
       cover(thumbnailUrl(game.iconUrl), cx, cy, int(Card), on, game.name, true);
-      // Size top left and score top right, as on 모든 게임's cards.
-      if (game.size > 0) {
+      // Size top left and score top right, as on 모든 게임's cards; on a theme
+      // row, where systems mix, the system's icon takes the size's place.
+      const auto system = theme ? std::find_if(retroSystems_.begin(), retroSystems_.end(),
+                                               [&](const auto &s) { return s.id == game.system; })
+                                : retroSystems_.end();
+      if (system != retroSystems_.end() && !system->iconUrl.empty()) {
+        paint_.rect(cx + 6, cy + 6, 30, 30, Surface, 8);
+        images_->draw(system->iconUrl, cx + 9, cy + 9, 24, 24, 4);
+      } else if (game.size > 0 && !theme) {
         const auto label = formatBytes(game.size);
         const float w = paint_.fonts.measure(label, 13, true) + 10, h = 19;
         paint_.rect(cx + 6, cy + 6, w, h, {22, 22, 26, 190}, 5);
@@ -184,28 +201,33 @@ void Application::retroHome() {
 void Application::retroHomeAction(Action a) {
   const int rows = int(retroShelves_.size());
   const auto games = [&] { return retroRow_ >= 0 && retroRow_ < rows ? int(retroShelves_[retroRow_].games.size()) : 0; };
+  // A theme row ends at its last game; a system's has 모두 보기 after it.
+  const auto last = [&] {
+    const bool theme = retroRow_ >= 0 && retroRow_ < rows && !retroShelves_[retroRow_].theme.empty();
+    return theme ? std::max(0, games() - 1) : games();
+  };
   switch (a) {
   case Action::Up:
     retroRow_ = std::max(0, retroRow_ - 1);
-    retroCol_ = std::min(retroCol_, games());
+    retroCol_ = std::min(retroCol_, last());
     break;
   case Action::Down:
     retroRow_ = std::min(rows - 1, retroRow_ + 1);
-    retroCol_ = std::min(retroCol_, games());
+    retroCol_ = std::min(retroCol_, last());
     break;
   case Action::Left:
     if (retroCol_ > 0) retroCol_--;
     else sidebar_ = true;
     break;
   case Action::Right:
-    retroCol_ = std::min(games(), retroCol_ + 1);
+    retroCol_ = std::min(last(), retroCol_ + 1);
     break;
   case Action::Previous:
   case Action::Next:
-    openRetroList(retroRow_);
+    openRetroList(retroSystemAt(retroRow_));
     break;
   case Action::Accept:
-    if (retroCol_ >= games()) openRetroList(retroRow_);
+    if (retroCol_ >= games()) openRetroList(retroSystemAt(retroRow_));
     else if (const auto *game = retroFocused()) openRetroDetail(*game);
     break;
   default:

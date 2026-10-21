@@ -130,7 +130,8 @@ void Application::loadRetroHome() {
   const auto server = servers.front();
   const auto state = state_;
   const auto sd = sdRoot_;
-  runRetroJob("list", [this, servers, server, state, sd]() -> std::function<void()> {
+  const int turn = retroThemeTurn_++; // the other set of picked rows each load
+  runRetroJob("list", [this, servers, server, state, sd, turn]() -> std::function<void()> {
     net::RetroReply reply;
     // The one in use says how the home went; the others' shelves join it.
     std::vector<std::pair<std::string, std::vector<retro::Shelf>>> parts{
@@ -152,6 +153,18 @@ void Application::loadRetroHome() {
                     systems.end());
     } else
       for (const auto &shelf : shelves) systems.push_back(shelf.system);
+    // Three picked rows above the systems'; a server without them adds none,
+    // and none failing leaves the home as it was.
+    if (!noHome && !reply.error) {
+      std::vector<std::pair<std::string, std::vector<retro::Theme>>> themes;
+      for (const auto &one : servers) {
+        net::RetroReply theirs;
+        auto rows = net::retroThemes(one, state, theirs, &stop_).value;
+        if (!theirs.error && !theirs.missing) themes.push_back({one.url, std::move(rows)});
+      }
+      auto rows = retro::themeShelves(retro::mergeThemes(std::move(themes)), turn);
+      shelves.insert(shelves.begin(), std::make_move_iterator(rows.begin()), std::make_move_iterator(rows.end()));
+    }
     std::map<std::string, bool> onCard;
     for (const auto &shelf : shelves)
       for (const auto &g : shelf.games)
@@ -187,6 +200,13 @@ void Application::loadRetroHome() {
       }
     };
   });
+}
+// The system a home row stands for, in retroSystems_; a theme row's is the first.
+int Application::retroSystemAt(int row) const {
+  if (row < 0 || row >= int(retroShelves_.size())) return 0;
+  const auto &id = retroShelves_[size_t(row)].system.id;
+  const auto at = std::find_if(retroSystems_.begin(), retroSystems_.end(), [&](const auto &s) { return s.id == id; });
+  return at == retroSystems_.end() ? 0 : int(at - retroSystems_.begin());
 }
 void Application::openRetroList(int system) {
   if (system < 0 || system >= int(retroSystems_.size())) return;
@@ -691,7 +711,7 @@ void Application::retroAction(Action a) {
     return;
   }
   if (retroView_ == RetroView::Achievements && (a == Action::Previous || a == Action::Next)) {
-    if (!retroShelves_.empty()) openRetroList(retroRow_);
+    if (!retroShelves_.empty()) openRetroList(retroSystemAt(retroRow_));
     return;
   }
   if (retroView_ == RetroView::Achievements && a != Action::Queue) {

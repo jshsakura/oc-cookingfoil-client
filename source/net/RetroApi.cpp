@@ -69,6 +69,12 @@ Parsed<std::vector<retro::Shelf>> retroHome(const Server &server, const State &s
   if (reply.error) return {{}, reply.error};
   return {retro::parseHome(response.body, server.url), {}};
 }
+Parsed<std::vector<retro::Theme>> retroThemes(const Server &server, const State &state, RetroReply &reply,
+                                              const std::atomic<bool> *cancel) {
+  const auto response = fetch(server, state, "/api/retro/themes?limit=12", reply, cancel);
+  if (reply.error) return {{}, reply.error};
+  return {retro::parseThemes(response.body, server.url), {}};
+}
 Parsed<retro::Pack> retroPack(const Server &server, const State &state, RetroReply &reply,
                               const std::atomic<bool> *cancel) {
   const auto response = fetch(server, state, "/api/retro/base-pack/manifest", reply, cancel);
