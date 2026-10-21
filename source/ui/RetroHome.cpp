@@ -178,13 +178,13 @@ void Application::retroHome() {
       }
       scoreBadge(game.rating, cx + Card - 6, cy + 6);
       // Bottom left: on a picked row, where systems mix, the system's icon on
-      // a white tile (some are dark line art); then how many versions it has.
+      // a see-through black tile as the size's; then how many versions it has.
       float badgeX = cx + 6;
       const auto system = theme ? std::find_if(retroSystems_.begin(), retroSystems_.end(),
                                                [&](const auto &s) { return s.id == game.system; })
                                 : retroSystems_.end();
       if (system != retroSystems_.end() && !system->iconUrl.empty()) {
-        paint_.rect(badgeX, cy + Card - 34, 28, 28, Surface, 8);
+        paint_.rect(badgeX, cy + Card - 34, 28, 28, {22, 22, 26, 150}, 8);
         images_->draw(system->iconUrl, badgeX + 3, cy + Card - 31, 22, 22, 4);
         badgeX += 34;
       }

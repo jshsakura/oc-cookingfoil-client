@@ -150,10 +150,11 @@ Facets mergeFacets(const std::vector<Facets> &all);
 // the first row that has it, a row left with fewer than `fewest` games
 // dropped, at most `rows` rows of `perRow` games. Few, varied, never long.
 constexpr int ThemeRows = 6, ThemeGames = 12, ThemeFewest = 6;
-// The rows spreadThemes keeps (six, ready), as shelves to go above the
-// systems': `shown` of them at a time, the `turn`th set (it wraps).
+// The first `shown` rows spreadThemes keeps, in the server's order, as
+// shelves above the systems'. Which rows and when they change is the
+// server's (it picks and rotates them); the client only draws.
 constexpr int ThemesShown = 3;
-std::vector<Shelf> themeShelves(std::vector<Theme> themes, int turn = 0, int shown = ThemesShown);
+std::vector<Shelf> themeShelves(std::vector<Theme> themes, int shown = ThemesShown);
 std::vector<Theme> spreadThemes(std::vector<Theme> themes, int rows = ThemeRows, int perRow = ThemeGames,
                                 int fewest = ThemeFewest);
 struct PackFile {

@@ -1581,7 +1581,6 @@ private:
   std::vector<retro::Shelf> retroShelves_;
   bool retroHomeMissing_ = false; // an older server: straight to the list
   int retroRow_ = 0, retroCol_ = 0; // home focus: shelf and card
-  int retroThemeTurn_ = 0;          // which three of the six picked rows the home shows
   std::string retroQuery_;          // the list's search, kept across L R
   std::vector<int> retroFilters_;   // the filter popup's choices (indices, never 0 "전체")
   SortMode retroSort_ = SortMode::Score;

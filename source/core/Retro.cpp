@@ -551,14 +551,10 @@ bool themeIdText(const std::string &id) {
     if (!keyText(id.substr(from, colon - from))) return false;
   return keyText(id.substr(from));
 }
-std::vector<Shelf> themeShelves(std::vector<Theme> themes, int turn, int shown) {
-  auto ready = spreadThemes(std::move(themes));
+std::vector<Shelf> themeShelves(std::vector<Theme> themes, int shown) {
   std::vector<Shelf> out;
-  if (ready.empty() || shown <= 0) return out;
-  const int sets = (int(ready.size()) + shown - 1) / shown;
-  const int from = (turn % sets + sets) % sets * shown;
-  for (int i = from; i < int(ready.size()) && int(out.size()) < shown; ++i)
-    out.push_back({{}, std::move(ready[size_t(i)].games), std::move(ready[size_t(i)].name), ready[size_t(i)].id});
+  for (auto &theme : spreadThemes(std::move(themes), shown))
+    out.push_back({{}, std::move(theme.games), std::move(theme.name), theme.id});
   return out;
 }
 std::vector<Theme> spreadThemes(std::vector<Theme> themes, int rows, int perRow, int fewest) {

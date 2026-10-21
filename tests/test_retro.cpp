@@ -68,22 +68,16 @@ int runRetroTests() {
     for (const auto &theme : spread)
       for (const auto &game : theme.games) twice |= !seen.insert(game.id).second;
     CHECK(!twice);
-    // Six ready, three shown, the other three on the next turn.
+    // Three drawn, in the server's order.
     std::vector<Theme> six;
     for (int r = 0; r < 6; ++r) {
       std::vector<std::string> names;
       for (int g = 0; g < 8; ++g) names.push_back(std::to_string(r) + "-" + std::to_string(g));
       six.push_back(row("r" + std::to_string(r), names));
     }
-    const auto first = themeShelves(six, 0), second = themeShelves(six, 1), again = themeShelves(six, 2);
-    CHECK(first.size() == 3 && first[0].theme == "r0" && first[2].theme == "r2" && first[0].system.id.empty());
-    CHECK(second.size() == 3 && second[0].theme == "r3" && second[2].theme == "r5");
-    CHECK(again.size() == 3 && again[0].theme == "r0");
-    CHECK(themeShelves({}, 1).empty());
-    // Four ready: three, then the one left, never one shown twice.
-    six.resize(4);
-    const auto rest = themeShelves(six, 1);
-    CHECK(rest.size() == 1 && rest[0].theme == "r3");
+    const auto drawn = themeShelves(six);
+    CHECK(drawn.size() == 3 && drawn[0].theme == "r0" && drawn[2].theme == "r2" && drawn[0].system.id.empty());
+    CHECK(themeShelves({}).empty());
   }
   {
     // A system's facets: only what has games, values in range, names kept.

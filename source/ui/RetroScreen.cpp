@@ -130,8 +130,7 @@ void Application::loadRetroHome() {
   const auto server = servers.front();
   const auto state = state_;
   const auto sd = sdRoot_;
-  const int turn = retroThemeTurn_++; // the other set of picked rows each load
-  runRetroJob("list", [this, servers, server, state, sd, turn]() -> std::function<void()> {
+  runRetroJob("list", [this, servers, server, state, sd]() -> std::function<void()> {
     net::RetroReply reply;
     // The one in use says how the home went; the others' shelves join it.
     std::vector<std::pair<std::string, std::vector<retro::Shelf>>> parts{
@@ -162,7 +161,7 @@ void Application::loadRetroHome() {
         auto rows = net::retroThemes(one, state, theirs, &stop_).value;
         if (!theirs.error && !theirs.missing) themes.push_back({one.url, std::move(rows)});
       }
-      auto rows = retro::themeShelves(retro::mergeThemes(std::move(themes)), turn);
+      auto rows = retro::themeShelves(retro::mergeThemes(std::move(themes)));
       shelves.insert(shelves.begin(), std::make_move_iterator(rows.begin()), std::make_move_iterator(rows.end()));
     }
     std::map<std::string, bool> onCard;
