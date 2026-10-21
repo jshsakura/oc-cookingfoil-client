@@ -110,6 +110,7 @@ const Translation rows[] = {
     {"Enter the username", "아이디를 입력합니다", "ユーザー名を入力します", "输入用户名"},
     {"Enter the password", "비밀번호를 입력합니다", "パスワードを入力します", "输入密码"},
     {"Enter the name shown in the list", "목록에 보일 이름을 입력합니다", "リストに表示する名前を入力します", "输入列表中显示的名称"},
+    {"This address is not encrypted (http), so the password and keys cross the internet as they are. Use the https address if the server has one.", "암호화되지 않은 주소(http)라서 비밀번호와 키가 인터넷에 그대로 전송됩니다. 서버에 https 주소가 있다면 그 주소를 쓰십시오.", "暗号化されていないアドレス（http）のため、パスワードとキーがそのままインターネットを通ります。サーバーにhttpsのアドレスがあれば、そちらを使ってください。", "这是未加密的地址（http），密码和密钥会以原样经过互联网传输。如果服务器有 https 地址，请改用该地址。"},
     {"For a server that uses device approval, enter only the address and save to go to the QR approval screen; the message goes to the admin with the request.", "기기 승인을 쓰는 서버는 주소만 넣고 저장하면 QR 승인 화면으로 이어지고, 메시지는 승인 요청과 함께 관리자에게 전달됩니다.", "端末承認を使うサーバーは、アドレスだけ入力して保存するとQR承認画面に進みます。メッセージは承認リクエストと一緒に管理者に届きます。", "使用设备批准的服务器只需填写地址并保存，即可进入二维码批准页面；留言会随批准请求一起发送给管理员。"},
     {"Enter the address.", "주소를 입력해 주세요.", "アドレスを入力してください。", "请输入地址。"},
     {"The address must start with http:// or https://.", "주소는 http:// 또는 https://로 시작해야 합니다.", "アドレスは http:// または https:// で始めてください。", "地址必须以 http:// 或 https:// 开头。"},

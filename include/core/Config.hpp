@@ -3,6 +3,10 @@
 namespace foil {
 std::string normalizeUrl(const std::string& input);
 std::string originOf(const std::string& url);
+// An http:// address off the home network: what the console sends there (the
+// password, keys) crosses the internet unencrypted. A LAN, loopback or
+// Tailscale address, a .local or one-word host name is not.
+bool plainHttpOverInternet(const std::string& url);
 Parsed<Config> parseConfig(const std::string& json);
 Parsed<Config> loadConfig(const std::string& path);
 std::string serializeConfig(const Config& config, bool redact = false);

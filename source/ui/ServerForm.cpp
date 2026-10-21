@@ -344,11 +344,15 @@ void Application::serverFormDialog() {
   const bool existing = form.index >= 0;
   constexpr float Width = 760, Row = 56, Gap = 8;
   const float errorSpace = form.error.empty() ? 0 : 30;
+  // An http address off the home network: said, not refused (a server may
+  // have no https), so the owner can choose.
+  const bool exposed = plainHttpOverInternet(normalizeUrl(trimmed(form.server.url)));
+  const float exposedSpace = exposed ? 52 : 0;
   // With the prod.keys row the server is already approved, so its line
   // takes the place of the approval hint.
   const bool keys = keysRowShown();
   const int rows = serverFormRows();
-  const float bodyH = 20 + rows * (Row + Gap) - Gap + 18 + (keys ? 26 : 50) + errorSpace + 18;
+  const float bodyH = 20 + rows * (Row + Gap) - Gap + 18 + (keys ? 26 : 50) + errorSpace + exposedSpace + 18;
   const auto body = modal(Width, bodyH, existing ? tr("Edit server") : tr("Add server"), tr("Cancel"), tr("Save"),
                           form.row == ServerFields ? tr("Change|admin")
                           : form.row == KeysRow    ? tr("Send|prod.keys")
@@ -406,6 +410,11 @@ void Application::serverFormDialog() {
   if (!form.error.empty()) {
     paint_.fonts.text(form.error, x, lineY, 18, Bad, true, w);
     lineY += errorSpace;
+  }
+  if (exposed) {
+    paint_.fonts.wrapped(tr("This address is not encrypted (http), so the password and keys cross the internet as they are. Use the https address if the server has one."),
+                         x, lineY, 17, Pending, w, 2);
+    lineY += exposedSpace;
   }
   if (keys)
     paint_.fonts.text(keysNote_.empty() ? std::string(tr("Sent sealed for this server alone; only an admin console can send it."))
