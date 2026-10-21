@@ -37,6 +37,7 @@ struct PartFetch {
   std::string sha256; // its hash, when asked for
   std::string failure; // could not create or write the file (with the system's reason)
   bool tooLong = false; // more bytes than wanted.size: the server's file changed
+  bool keptPlan = false; // fetched in parts and stopped short: the part stays with its .plan
 };
 PartFetch fetchPart(const std::string &url, const std::vector<std::string> &headers, const std::string &part,
                     const PartInfo &wanted, bool hash, std::atomic<uint64_t> &received,

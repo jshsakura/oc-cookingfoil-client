@@ -35,12 +35,18 @@ struct PartInfo {
   std::string etag; // the server's validator, sent back as If-Range
   uint64_t size = 0;   // expected whole size, 0 when unknown
   uint64_t offset = 0; // a tar's last whole entry; a file resumes at its own size
+  std::string plan;    // a file fetched in parts: where each stood (net::SegmentPlan::save)
 };
 std::string serializePartInfo(const PartInfo &info);
 PartInfo parsePartInfo(const std::string &text);
 // The sidecar of a part file (or of a staging folder: <dir>/.resume).
 std::string partInfoPath(const std::string &part);
 constexpr const char *ResumeFile = ".resume";
+// The sidecar of a part fetched in parts that stopped short. Its own file:
+// the part is already its full size, and a build that knows no plans reads
+// a full-size part beside a .resume as a finished file.
+std::string partPlanPath(const std::string &part);
+constexpr const char *PlanFile = ".plan";
 // Whether `kept` is the same download as `wanted`: same address, size and
 // tag, and something to tell a changed file by (a size, a tag or a
 // validator). An unidentifiable part is never resumed.
