@@ -29,6 +29,8 @@ SHARED := $(wildcard source/core/*.cpp source/net/*.cpp source/ui/*.cpp source/i
 ifeq ($(shell pkg-config --exists minizip && echo yes),yes)
 HOST_FLAGS += $(shell pkg-config --cflags minizip)
 HOST_LIBS += $(shell pkg-config --libs minizip)
+else ifneq ($(and $(CI),$(filter test host,$(MAKECMDGOALS))),)
+$(error minizip not found: CI must run the zip tests (install libminizip-dev))
 else
 $(warning minizip not found: host build skips source/core/Zip.cpp (install libminizip-dev))
 SHARED := $(filter-out source/core/Zip.cpp,$(SHARED))
