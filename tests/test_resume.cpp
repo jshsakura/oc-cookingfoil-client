@@ -1,4 +1,5 @@
 #include "Test.hpp"
+#include "core/ClientUpdate.hpp"
 #include "core/Json.hpp"
 #include "core/Patches.hpp"
 #include "core/Resume.hpp"
@@ -569,7 +570,7 @@ int runResumeTests() {
       foil::homebrew::File file;
       file.path = f.path;
       file.size = f.body.size();
-      file.sha256 = std::string(64, 'a');
+      file.sha256 = foil::update::sha256Hex(f.body);
       app.files.push_back(file);
     }
     foil::Server server;
@@ -586,6 +587,33 @@ int runResumeTests() {
     // (which parent folders a server lists is its own choice).
     const auto estimate = foil::homebrew::bundleSize(app);
     CHECK(estimate + 4096 >= mock.body.size() && estimate <= mock.body.size() + 4096);
+    fs::remove_all(sd);
+  }
+  for (const bool missing : {false, true}) {
+    // A bundle whose file is not the one the list names, or lacks it: the
+    // file is taken by itself instead, and the card ends as the list says.
+    const auto sd = fs::temp_directory_path() / ("cf-bundle-check-" + std::to_string(getpid()));
+    fs::remove_all(sd);
+    fs::create_directories(sd);
+    const std::string good = body(3000, 'g');
+    const auto path = std::string("switch/pk/data.bin");
+    const std::vector<File> other{{path, body(3000, 'e')}};
+    Mock mock;
+    mock.paths["/api/homebrew/pk/bundle"] = missing ? std::string(1024, '\0') : archive(other);
+    mock.paths["/api/homebrew/pk/data"] = good;
+    mock.start(2);
+    foil::homebrew::App app;
+    app.id = "pk";
+    app.bundleUrl = mock.url + "/api/homebrew/pk/bundle";
+    app.files.push_back({path, foil::update::sha256Hex(good), mock.url + "/api/homebrew/pk/data", good.size()});
+    foil::Server server;
+    server.url = mock.url;
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(foil::net::homebrewDownload(server, foil::State{}, app, sd.string(), received, error, nullptr));
+    mock.thread.join();
+    CHECK(mock.requests.size() == 2);
+    CHECK(foil::readFile((sd / path).string()) == good);
     fs::remove_all(sd);
   }
   {

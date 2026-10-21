@@ -277,6 +277,8 @@ bool TarWriter::openFile(const std::string &path, uint64_t size) {
   }
   file_ = std::fopen(full.string().c_str(), "wb");
   current_ = path;
+  entrySize_ = size;
+  hash_ = Sha256{};
   writeBuffer(file_);
   if (!file_) {
     // The system's reason goes on screen too: on the console log.txt is out
@@ -342,10 +344,19 @@ bool TarWriter::header() {
     return true; // its bytes pass by with no file open
   if (!openFile(name, size))
     return false;
-  if (size == 0) {
-    std::fclose(file_);
-    file_ = nullptr;
-    current_.clear();
+  return size > 0 || fileDone();
+}
+// The entry's last byte is written: closed, then held against the list.
+bool TarWriter::fileDone() {
+  const auto path = std::exchange(current_, "");
+  const bool closed = std::fclose(file_) == 0;
+  file_ = nullptr;
+  if (!closed)
+    return fail(tr("Could not write to the SD card. Check the free space."));
+  if (check_ && !check_(path, entrySize_, hash_.hex())) {
+    std::error_code ec;
+    fs::remove(root_ + "/" + path, ec);
+    return fail(tr("The downloaded file does not match the server's. Try again."));
   }
   return true;
 }
@@ -382,20 +393,19 @@ bool TarWriter::feed(const char *data, size_t size) {
         paxData_.append(data, take);
       else if (file_ && std::fwrite(data, 1, take, file_) != take)
         return fail(tr("Could not write to the SD card. Check the free space."));
+      else if (file_ && check_)
+        hash_.update(data, take);
       remaining_ -= take;
       consume(take);
       if (remaining_ == 0) {
         if (pax_) {
           readPax();
           pax_ = false;
+        } else if (file_) {
+          if (!fileDone())
+            return false;
         } else {
           current_.clear();
-          if (file_) {
-            const bool closed = std::fclose(file_) == 0;
-            file_ = nullptr;
-            if (!closed)
-              return fail(tr("Could not write to the SD card. Check the free space."));
-          }
         }
       }
     } else if (padding_ > 0) {
