@@ -60,7 +60,19 @@ Application::~Application() {
   // place is written down, so the next start goes on from it.
   installer_.stop();
   installer_.wait();
+  // Finished in its last step as the app closed, or in the frame it closed
+  // in, before the screen heard: kept as done, or the next start would take
+  // it from the queue and fetch it all again.
+  if (observedInstall_ == install::Status::Running && installer_.progress().status == install::Status::Succeeded) {
+    logLine("install done as the app closed: " + installer_.progress().name);
+    history::finish(history_, history::Outcome::Done, "", int64_t(std::time(nullptr)));
+    saveHistory();
+    forgetInstall();
+  }
   keepResumeChanges();
+  // How the downloads stand goes to the card now, before the workers below
+  // are waited on: a close the system cuts short must not lose it.
+  flushHistory();
   if (network_.joinable())
     network_.join();
   if (deviceWorker_.joinable())
