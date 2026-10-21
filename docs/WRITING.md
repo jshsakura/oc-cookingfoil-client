@@ -12,13 +12,13 @@ break; "by convention" means nothing does, so review must.
    `tr()`/`trf()` is the English source string. Korean, Japanese and Chinese live only in the rows
    of `source/i18n/*.cpp`. Why: the code reads in English and English must not fall back to
    another language. (note) (history: the 0.2.154 conversion)
-   Enforced: partly. See [What the i18n test enforces](#what-the-i18n-test-enforces); a key in
-   Korean with a matching row would pass.
-2. **Never put Korean text in a string literal outside the tables.** Why: it cannot be translated
-   and shows Korean to every language. (note)
-   Enforced: `tests/test_i18n.cpp:90-114`, unless the line carries a legitimate marker.
+   Enforced: `tests/test_i18n.cpp:104-111` fails on any row key holding Korean, Japanese or
+   Chinese, and a `tr()` key with no row fails as untranslated.
+2. **Never put Korean, Japanese or Chinese text in a string literal outside the tables.** Why: it
+   cannot be translated and shows that language to everyone. (note)
+   Enforced: `tests/test_i18n.cpp:112-142`, unless the line carries a legitimate marker.
 3. **Never ship a string without all four languages, or with different `{0}` placeholders.**
-   Enforced: `tests/test_i18n.cpp:70-83`.
+   Enforced: `tests/test_i18n.cpp:82-95`.
 4. **Never use an em dash or an en dash, or join sentences with any dash**, in UI copy, messages,
    comments, commits or docs, in any language. Why: the maintainer's writing rule; it reads as two
    half-sentences glued together. (note) Enforced: by convention. The tables and sources hold none
@@ -50,15 +50,17 @@ stays a key until the draw call. Why: logic must not depend on the chosen langua
 `tests/test_i18n.cpp` runs in `make test` and in CI. It fails when:
 
 - a row lacks a key, ko, ja or zh, or a row's `{n}` placeholders differ from its English key's
-  (`:70-83`);
-- two rows share a key (`:84-89`);
+  (`:82-95`);
+- two rows share a key (`:96-101`);
+- a row's key holds Korean, Japanese or Chinese (`:104-111`);
 - a string literal in `source/`, `include/` or `engine-shim/` (outside `source/i18n/` and the
-  `I18n.*` files) holds Hangul and is not the argument of `tr(` or `trf(` (`:90-114`);
-- a literal passed to `tr(`/`trf(`, or a literal on an `i18n: keep` line, has no row (`:115-118`).
+  `I18n.*` files) holds Korean, Japanese or Chinese and is not the argument of `tr(` or `trf(`
+  (`:112-142`);
+- a literal passed to `tr(`/`trf(`, or a literal on an `i18n: keep` line, has no row (`:112-142`).
 
-What it does not catch: a Korean key that has a matching row; Japanese or Chinese text in a literal
-(it looks for Hangul lead bytes only, `:8-14`); text in `host/` or `tests/`; a translation that
-reads badly.
+"Korean, Japanese or Chinese" is Hangul, kana, CJK ideographs, their punctuation and full-width
+forms (`:9-25`). What it does not catch: text in `host/` or `tests/`, and a translation that reads
+badly.
 
 The two line markers, and when they are legitimate:
 

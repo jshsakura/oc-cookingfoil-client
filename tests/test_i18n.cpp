@@ -1,15 +1,27 @@
 #include "Test.hpp"
 #include "core/I18n.hpp"
 #include "core/Json.hpp"
+#include <cstdint>
 #include <filesystem>
 #include <set>
 #include <sstream>
 namespace {
-bool hangul(const std::string &text) {
-  // Hangul syllables are U+AC00..U+D7A3: UTF-8 lead bytes 0xEA..0xED.
-  for (unsigned char c : text)
-    if (c >= 0xEA && c <= 0xED)
+// Korean, Japanese or Chinese: Hangul, kana, CJK ideographs and their
+// punctuation and full-width forms. Everything outside the tables is English.
+bool cjk(const std::string &text) {
+  for (size_t i = 0; i < text.size();) {
+    const unsigned char c = text[i];
+    const int length = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+    uint32_t point = length == 1 ? c : c & (0xFF >> (length + 1));
+    for (int k = 1; k < length && i + k < text.size(); ++k)
+      point = point << 6 | (static_cast<unsigned char>(text[i + k]) & 0x3F);
+    i += length;
+    if ((point >= 0x1100 && point <= 0x11FF) || (point >= 0x3000 && point <= 0x30FF) ||
+        (point >= 0x3130 && point <= 0x318F) || (point >= 0x3400 && point <= 0x4DBF) ||
+        (point >= 0x4E00 && point <= 0x9FFF) || (point >= 0xAC00 && point <= 0xD7A3) ||
+        (point >= 0xFF00 && point <= 0xFFEF))
       return true;
+  }
   return false;
 }
 std::set<std::string> placeholders(const char *text) {
@@ -87,9 +99,19 @@ int runI18nTests() {
     if (!keys.insert(row->key).second)
       std::cerr << "duplicate translation key: " << row->key << '\n';
   CHECK(keys.size() == rows);
+  CHECK(cjk("설정") && cjk("ダウンロード") && cjk("下载") && cjk("「設定」") && cjk("ＡＢ"));
+  CHECK(!cjk("Settings · 3 files → v2 “quoted” …"));
+  // Keys are the English text: no Korean, Japanese or Chinese in them.
+  int foreignKeys = 0;
+  for (const auto *row : foil::allTranslations())
+    if (row->key && cjk(row->key)) {
+      std::cerr << "translation key not in English: " << row->key << '\n';
+      ++foreignKeys;
+    }
+  CHECK(foreignKeys == 0);
   // Screen text in the code is an English key in tr()/trf() (or a key kept
-  // for later, marked "i18n: keep") with a row in the tables; Korean lives
-  // only in the tables.
+  // for later, marked "i18n: keep") with a row in the tables; Korean,
+  // Japanese and Chinese live only in the tables.
   int unwrapped = 0, missing = 0;
   for (const auto *root : {"source", "include", "engine-shim"}) {
     for (const auto &entry : fs::recursive_directory_iterator(root)) {
@@ -108,8 +130,8 @@ int runI18nTests() {
         const bool kept = line.find("i18n: keep") != std::string::npos;
         for (const auto &literal : literals(line)) {
           if (!kept && !wrapped(literal.before)) {
-            if (hangul(literal.text)) {
-              std::cerr << path << ':' << number << ": Korean text outside the tables: " << literal.text << '\n';
+            if (cjk(literal.text)) {
+              std::cerr << path << ':' << number << ": Korean, Japanese or Chinese text outside the tables: " << literal.text << '\n';
               ++unwrapped;
             }
           } else if (!literal.text.empty() && !foil::findTranslation(literal.text)) {
