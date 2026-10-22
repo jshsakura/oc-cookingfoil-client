@@ -959,6 +959,7 @@ Parsed<PairingInfo> parsePairingInfo(const std::string& json, const Server& serv
     Parsed<PairingInfo> result;
     auto root = parseJson(json, result.error); if (result.error) return result;
     if (stringField(root.get(), "status") != "pending") return result;
+    result.value.deviceLimit = stringField(root.get(), "limit") == "device";
     const auto url = stringField(root.get(), "pairUrl");
     // Newer servers hand out /pair/ (login first, then back); older ones /admin/pair/.
     auto prefix = server.url + "/pair/";
@@ -967,7 +968,9 @@ Parsed<PairingInfo> parsePairingInfo(const std::string& json, const Server& serv
     if (url.size() != prefix.size() + 32 || url.rfind(prefix, 0) != 0 ||
         url.substr(prefix.size()).find_first_not_of("0123456789abcdef") != std::string::npos ||
         code.size() != 8 || code.find_first_not_of("0123456789ABCDEF") != std::string::npos) return result;
-    result.value = {url, code, std::max<int64_t>(0, integerField(root.get(), "expiresAt"))};
+    result.value.url = url;
+    result.value.code = code;
+    result.value.expiresAt = std::max<int64_t>(0, integerField(root.get(), "expiresAt"));
     return result;
 }
 std::string cleanPairMessage(const std::string& text) {
@@ -1275,16 +1278,19 @@ bool Session::enroll(Error& error, bool replacing) {
     // A server that does not know enroll (before it, or with pairing off):
     // the token is not for it, and the console connects as before.
     if (sent.status == 404 || sent.status == 405) return true;
-    // Expired or spent: out of config.json, and the console asks for approval
+    // Expired or spent, or past the account's limits (403: as many consoles
+    // as it may hold): out of config.json, and the console asks for approval
     // as any other does (the QR code), instead of stopping here.
-    if (sent.status == 401) {
+    if (sent.status == 401 || (sent.status == 403 && sent.enroll == "limit")) {
         logLine("enroll: refused (" + (sent.enroll.empty() ? std::string("401") : sent.enroll) + "); asking for approval");
         std::string failure;
         if (!dropEnrollToken(configPath_, server_.url, failure)) logLine("enroll: token not taken out of config.json: " + failure);
         server_.enrollToken.clear();
         // The server put this console in its queue under the download's account;
         // the approval screen says why it waits.
-        enrollRefusal_ = sent.enroll == "used" || sent.enroll == "expired" || sent.enroll == "revoked" ? sent.enroll : "";
+        // A 403's limit is the account's, which the approval check says too.
+        const bool told = sent.enroll == "used" || sent.enroll == "expired" || sent.enroll == "revoked" || sent.enroll == "limit";
+        enrollRefusal_ = sent.status == 401 && told ? sent.enroll : "";
         return true;
     }
     if (sent.status == 409) {

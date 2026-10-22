@@ -27,6 +27,12 @@ int runPairingTests() {
   CHECK(foil::net::parsePairingInfo(response("javascript:alert(1)"), server).value.url.empty());
   CHECK(foil::net::parsePairingInfo("{\"status\":\"pending\"}", server).value.url.empty());
   CHECK(foil::net::parsePairingInfo("bad-json", server).error);
+  // An account full of consoles: still pending, and it says waiting will not do.
+  CHECK(!valid.value.deviceLimit);
+  const auto full = foil::net::parsePairingInfo(
+      "{\"status\":\"pending\",\"limit\":\"device\",\"pairUrl\":\"" + server.url + path + "\",\"pairCode\":\"1234ABCD\"}", server);
+  CHECK(full.value.deviceLimit && full.value.url == server.url + path);
+  CHECK(foil::net::parsePairingInfo("{\"status\":\"pending\",\"limit\":\"device\"}", server).value.deviceLimit);
   CHECK(foil::net::parsePairingInfo(response("https://user:secret@shop.example.com" + path), server).value.url.empty());
   // The note sent with an approval request: no message, no body at all.
   const std::string key(64, 'f');

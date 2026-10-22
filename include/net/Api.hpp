@@ -129,8 +129,12 @@ struct PairingInfo {
     std::string url, code;
     int64_t expiresAt = 0;
     // Why the download's token did not connect this console (X-CookingFoil-Enroll:
-    // "used", "expired", "revoked"); empty when there was none or it was unknown.
+    // "used", "expired", "revoked", "limit": as many consoles by download this
+    // hour as the account may); empty when there was none or it was unknown.
     std::string refusal;
+    // The account holds as many consoles as it may (limit: "device"): waiting
+    // approves nothing until one is removed.
+    bool deviceLimit = false;
 };
 Parsed<PairingInfo> parsePairingInfo(const std::string& json, const Server& server);
 // The note sent with an approval request, read as the server reads it: line

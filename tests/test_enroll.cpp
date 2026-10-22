@@ -101,15 +101,17 @@ int runEnrollTests() {
   using namespace foil;
   Mock mock;
   int enrollStatus = 200, sectionsStatus = 200;
-  std::string pairStatus = "approved";
+  std::string pairStatus = "approved", enrollReason = "invalid", pairLimit;
   mock.answer = [&](const std::string &request) -> Reply {
     if (request.rfind("POST /api/pair/enroll", 0) == 0) {
-      if (enrollStatus == 401) return {401, "X-CookingFoil-Enroll: invalid\r\n", R"({"error":"x"})"};
+      if (enrollStatus == 401 || enrollStatus == 403)
+        return {enrollStatus, "X-CookingFoil-Enroll: " + enrollReason + "\r\n", R"({"error":"x"})"};
       if (enrollStatus != 200) return {enrollStatus, "", R"({"error":"x"})"};
       return {200, "", R"({"status":"approved","accessKey":"enrolled-key","shopUrl":null})"};
     }
     if (request.rfind("GET /api/shop/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
-    if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
+    if (request.rfind("GET /api/pair/status", 0) == 0)
+      return {200, "", R"({"status":")" + pairStatus + R"(")" + (pairLimit.empty() ? "" : R"(,"limit":")" + pairLimit + "\"") + "}"};
     if (request.rfind("GET /api/shop/sections", 0) == 0)
       return sectionsStatus == 200 ? Reply{200, "", R"({"sections":[]})"} : Reply{sectionsStatus, "", R"({"error":"denied"})"};
     return {200, "", "{}"};
@@ -278,6 +280,29 @@ int runEnrollTests() {
     for (const auto &request : sent)
       if (request.rfind("POST /api/pair/enroll", 0) != 0) CHECK(!has(request, token));
     CHECK(!session.refresh(waiting) && count(mock.take(), "/api/pair/enroll") == 0);
+    pairStatus = "approved";
+  }
+  {
+    // Past the account's limits: by download this hour (401 limit), said on
+    // the approval screen; the account full (403 limit), where the approval
+    // check says waiting will not do. Both ask for approval by QR code.
+    for (const int status : {401, 403}) {
+      withoutKey();
+      enrollStatus = status;
+      enrollReason = "limit";
+      pairStatus = "pending";
+      pairLimit = status == 403 ? "device" : "";
+      net::Session session(server(), loadState(db).value, db);
+      session.setConfigPath(configPath);
+      Error waiting;
+      CHECK(!session.refresh(waiting) && session.pairingPending());
+      CHECK(server().enrollToken.empty());
+      CHECK(session.pairingInfo().refusal == (status == 401 ? "limit" : ""));
+      CHECK(session.pairingInfo().deviceLimit == (status == 403));
+      mock.take();
+    }
+    enrollReason = "invalid";
+    pairLimit.clear();
     pairStatus = "approved";
   }
   {
