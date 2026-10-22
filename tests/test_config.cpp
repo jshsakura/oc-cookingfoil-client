@@ -10,6 +10,24 @@
 #include <unistd.h>
 int runConfigTests() {
     int failures = 0;
+    {
+        // A plain http address on the internet is warned about; https, and
+        // http at home (LAN, loopback, CGNAT/Tailscale, .local, one word), not.
+        using foil::plainHttpOverInternet;
+        CHECK(plainHttpOverInternet("http://shop.example.com"));
+        CHECK(plainHttpOverInternet("http://203.0.113.5:8000"));
+        CHECK(plainHttpOverInternet("http://[2001:db8::1]:8000"));
+        CHECK(!plainHttpOverInternet("https://shop.example.com"));
+        CHECK(!plainHttpOverInternet("https://203.0.113.5"));
+        for (const char* home : {"http://192.168.1.10:8000", "http://10.0.0.2", "http://172.20.0.3", // privacy-ok: private ranges
+                                 "http://127.0.0.1:8000", "http://100.100.1.1", "http://169.254.1.1", // privacy-ok: private ranges
+                                 "http://nas.local", "http://nas", "http://localhost:8000", "http://[::1]:8000",
+                                 "http://[fd00::5]", "http://box.home.arpa"})
+            CHECK(!plainHttpOverInternet(home));
+        CHECK(plainHttpOverInternet("http://172.32.0.1")); // privacy-ok: just past 172.16/12
+        CHECK(plainHttpOverInternet("http://100.128.0.1")); // privacy-ok: just past 100.64/10
+        CHECK(!plainHttpOverInternet("not a url"));
+    }
     CHECK(foil::normalizeUrl("shop.example.com/SHOP.TFL/") == "https://shop.example.com");
     CHECK(foil::normalizeUrl("http://host:9080/prefix/shop.json") == "http://host:9080/prefix");
     CHECK(foil::normalizeUrl("ftp://host").empty());
