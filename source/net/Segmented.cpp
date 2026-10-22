@@ -148,7 +148,7 @@ struct Session {
   // The whole file's size every range reply must name: from the first one,
   // or a resume point of a whole file. total may be a stretch's end instead.
   uint64_t fileSize = 0;
-  std::string etag;
+  std::string etag{};
   std::chrono::steady_clock::time_point lastData = std::chrono::steady_clock::now();
 };
 
