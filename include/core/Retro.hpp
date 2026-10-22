@@ -5,6 +5,7 @@
 #include "core/Types.hpp"
 #include "core/Votes.hpp"
 #include "core/Labels.hpp"
+#include "core/RetroFilters.hpp"
 #include <map>
 namespace foil::retro {
 struct System {
@@ -77,22 +78,9 @@ struct Detail {
 // What the system list asks the server for: search words, order, and the
 // filter popup's conditions (0 / false: not set).
 struct Filter {
-  std::string query, sort = "rating"; // rating, name, size (largest first), added
-  int minRating = 0;
-  bool bezel = false; // a bezel made for the game, not the system's default
-  uint64_t minSize = 0, maxSize = 0;
-  // Only what the system's facets offer is ever set (0 / empty: not set).
-  std::vector<std::string> genres; // any of these genre keys
-  int players = 0;                 // at least this many at once
-  int decade = 0;                  // released in 1990..1999 for 1990
-  std::string region;              // a ROM tagged with it (kr, jp, us…)
-  bool korean = false;             // a Korean release or a Korean patch
-  bool achievements = false;       // matched on RetroAchievements
-  bool operator==(const Filter &o) const {
-    return query == o.query && sort == o.sort && minRating == o.minRating && bezel == o.bezel &&
-           minSize == o.minSize && maxSize == o.maxSize && genres == o.genres && players == o.players &&
-           decade == o.decade && region == o.region && korean == o.korean && achievements == o.achievements;
-  }
+  std::string query, sort = "rating"; // sort: a key from the server's sorts
+  Params params;                      // the picked filters' (pickParams)
+  bool operator==(const Filter &o) const { return query == o.query && sort == o.sort && params == o.params; }
   bool operator!=(const Filter &o) const { return !(*this == o); }
 };
 // The query string for /api/retro/games after system and page.
@@ -121,20 +109,6 @@ struct Theme {
   std::vector<Game> games;
   std::string icon; // a name from the client's icon set, when the server gives one
 };
-// What a system's list can be filtered by (/api/retro/systems/:id/facets),
-// each with how many games it keeps. Only these are offered; an empty list
-// or a 0 count means the filter is not shown.
-struct Facet {
-  std::string key, name; // a genre's key and name; players and decades: the number as text
-  int count = 0;
-};
-struct Facets {
-  std::vector<Facet> genres, players, decades, regions; // regions: the tag as the key
-  int korean = 0, achievements = 0;
-  bool empty() const {
-    return genres.empty() && players.empty() && decades.empty() && regions.empty() && !korean && !achievements;
-  }
-};
 // Several servers' replies as one; each list in the servers' order, as
 // {server url, its part}. A game on several (same id) is listed once from
 // the first, naming the others.
@@ -150,9 +124,6 @@ std::vector<Shelf> mergeShelves(std::vector<std::pair<std::string, std::vector<S
 // Theme rows join by id in the order they first appear, their games best
 // rated first with one card per original title.
 std::vector<Theme> mergeThemes(std::vector<std::pair<std::string, std::vector<Theme>>> lists);
-// Several servers' facets as one: counts summed per key (an upper bound when
-// they share games), genres by count, players and decades in order.
-Facets mergeFacets(const std::vector<Facets> &all);
 // The theme rows the home shows: a game (by id or original title) only in
 // the first row that has it, a row left with fewer than `fewest` games
 // dropped, at most `rows` rows of `perRow` games. Few, varied, never long.
@@ -185,7 +156,6 @@ Page parseGames(const std::string &json, const std::string &base, labels::Book *
 std::vector<Shelf> parseHome(const std::string &json, const std::string &base = "", labels::Book *book = nullptr);
 // /api/retro/themes: themes without a name or games are left out.
 std::vector<Theme> parseThemes(const std::string &json, const std::string &base = "", labels::Book *book = nullptr);
-Facets parseFacets(const std::string &json);
 // One game in the server's own shape, for 다운로드's history (다시 시도).
 std::string serializeGame(const Game &game);
 Game parseGameJson(const std::string &json);

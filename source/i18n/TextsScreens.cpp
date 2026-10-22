@@ -280,6 +280,7 @@ const Translation rows[] = {
     {"System|retro", "기종", "機種", "机种"},
     {"Core|retro", "코어", "コア", "核心"},
     {"Bezel", "베젤", "ベゼル", "边框"},
+    {"Rating|group", "평점", "評価", "评分"},
     {"None|bezel", "없음", "なし", "无"},
     {"Install location", "설치 위치", "インストール先", "安装位置"},
     {"With the game|shortcut", "게임과 함께", "ゲームと一緒に", "随游戏一起"},

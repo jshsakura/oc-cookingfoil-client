@@ -1589,8 +1589,30 @@ private:
   bool retroHomeMissing_ = false; // an older server: straight to the list
   int retroRow_ = 0, retroCol_ = 0; // home focus: shelf and card
   std::string retroQuery_;          // the list's search, kept across L R
-  std::vector<int> retroFilters_;   // the filter popup's choices (indices, never 0 "전체")
-  SortMode retroSort_ = SortMode::Score;
+  // The list's filters as the server words them for the open system (the
+  // client's own few when it words none), what is picked, and the popup's draft.
+  retro::FilterBook retroBook_;
+  std::string retroBookSystem_;
+  retro::Picks retroPicks_, draftPicks_;
+  std::string retroSortKey_ = "rating", draftSortKey_;
+  int filterFocus_ = 0;     // the popup's chip under the cursor (0: 전체)
+  float filterScroll_ = 0;
+  retro::FilterBook retroFilterBook() const;
+  void clearRetroFilters(); // another system: its own filters, none picked
+  std::string retroFilterSummary() const;
+  struct FilterChip {
+    std::string group, option, label, count;
+    float x, y, w;
+    int line;
+  };
+  struct FilterLayout {
+    std::vector<FilterChip> chips;
+    std::vector<std::pair<float, std::string>> headings;
+    float height = 0;
+  };
+  FilterLayout retroFilterLayout(float width);
+  void retroFilterPopup();
+  void retroFilterAction(Action a);
   retro::Filter retroFilter() const;
   // The filter popup serves 모든 게임 and 레트로 게임: what it lists depends on the screen.
   std::vector<std::string> popupFilterLabels() const;

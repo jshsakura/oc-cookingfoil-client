@@ -1362,8 +1362,17 @@ void Application::openViewPopup() {
   viewPopup_ = true;
   popupColumn_ = 0;
   popupRow_ = 0;
-  draftChips_ = retro ? retroFilters_ : activeChips_;
-  draftSort_ = retro ? retroSort_ : librarySort_;
+  draftChips_ = activeChips_;
+  draftSort_ = librarySort_;
+  if (retro) {
+    draftPicks_ = retro::keptPicks(retroFilterBook(), retroPicks_);
+    draftSortKey_ = retroSortKey_;
+    filterFocus_ = 0;
+    filterScroll_ = 0;
+    const auto sorts = retroFilterBook().sorts;
+    const auto at = std::find_if(sorts.begin(), sorts.end(), [&](const auto &s) { return s.key == retroSortKey_; });
+    popupRow_ = at == sorts.end() ? 0 : int(at - sorts.begin());
+  }
 }
 bool Application::draftOn(int index) const {
   return index == 0 ? draftChips_.empty()
@@ -1510,6 +1519,10 @@ void Application::action(Action a) {
     askPairMessage();
     return;
   }
+  if (viewPopup_ && screen_ == Screen::Retro) {
+    retroFilterAction(a);
+    return;
+  }
   if (viewPopup_) {
     // Filters sit in a two-column grid, sorts in one column to its right.
     constexpr int Cols = PopupFilterColumns;
@@ -1551,14 +1564,7 @@ void Application::action(Action a) {
     if (a == Action::Queue) {
       viewPopup_ = false;
       selected_ = 0;
-      if (screen_ == Screen::Retro) {
-        retroFilters_ = draftChips_;
-        retroSort_ = draftSort_;
-        retroGames_.clear();
-        retroListSystem_.clear();
-        retroTotal_ = 0;
-        if (!retroListWorker_.joinable()) loadRetroPage(false);
-      } else {
+      {
         activeChips_ = draftChips_;
         librarySort_ = draftSort_;
       }
@@ -2630,8 +2636,8 @@ void Application::refreshAll() {
   retroGames_.clear();
   retroListSystem_.clear();
   retroQuery_.clear();
-  retroFilters_.clear();
-  retroSort_ = SortMode::Score;
+  clearRetroFilters();
+  retroSortKey_ = "rating";
   retroOnCard_.clear();
   retroRow_ = retroCol_ = 0;
   retroTotal_ = 0;

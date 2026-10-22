@@ -188,6 +188,10 @@ void Application::notice(const std::string &title, const std::string &body, int 
   unclip();
 }
 void Application::viewPopup() {
+  if (screen_ == Screen::Retro) {
+    retroFilterPopup();
+    return;
+  }
   // Wide enough that every filter fits: a two-column checkbox grid on the left,
   // the sort radios on the right.
   constexpr float Width = 1080, RowHeight = 44, Gap = 10, SortWidth = 260;

@@ -161,21 +161,10 @@ std::vector<Game> parseGameList(json_object *list, const std::string &base) {
 
 std::string filterQuery(const Filter &f) {
   const auto q = encoded(f.query);
-  std::string out = "&sort=" + (f.sort.empty() ? std::string("rating") : f.sort);
+  std::string out = "&sort=" + (keyText(f.sort) ? f.sort : std::string("rating"));
   if (!q.empty()) out += "&q=" + q;
-  if (f.minRating > 0) out += "&minRating=" + std::to_string(std::min(f.minRating, 100));
-  if (f.bezel) out += "&bezel=1";
-  if (f.minSize) out += "&minSize=" + std::to_string(f.minSize);
-  if (f.maxSize) out += "&maxSize=" + std::to_string(f.maxSize);
-  std::string genres;
-  for (const auto &key : f.genres)
-    if (keyText(key)) genres += (genres.empty() ? "" : ",") + key;
-  if (!genres.empty()) out += "&genre=" + genres;
-  if (f.players > 0) out += "&players=" + std::to_string(std::min(f.players, 99));
-  if (f.decade > 0) out += "&decade=" + std::to_string(f.decade);
-  if (keyText(f.region)) out += "&region=" + f.region;
-  if (f.korean) out += "&korean=1";
-  if (f.achievements) out += "&achievements=1";
+  // Names and values were checked when the server's filters were read.
+  for (const auto &[name, value] : f.params) out += "&" + name + "=" + value;
   return out;
 }
 std::vector<System> parseSystems(const std::string &json, const std::string &base) {
@@ -281,47 +270,6 @@ std::vector<Theme> parseThemes(const std::string &json, const std::string &base,
     if (theme.id.empty() || theme.name.empty() || theme.games.empty()) continue;
     out.push_back(std::move(theme));
   }
-  return out;
-}
-Facets parseFacets(const std::string &json) {
-  Facets out;
-  Error error;
-  auto root = parseJson(json, error);
-  if (!root) return out;
-  const auto count = [](json_object *object, const char *key) {
-    return int(std::clamp<int64_t>(integerField(object, key), 0, 1 << 30));
-  };
-  if (auto *genres = field(root.get(), "genres"); json_object_is_type(genres, json_type_array))
-    for (size_t i = 0; i < json_object_array_length(genres) && out.genres.size() < 64; ++i) {
-      auto *object = json_object_array_get_idx(genres, i);
-      Facet facet{plainKey(field(object, "key")), stringField(object, "name"), count(object, "count")};
-      if (facet.key.empty() || facet.count <= 0) continue;
-      if (facet.name.empty()) facet.name = facet.key;
-      out.genres.push_back(std::move(facet));
-    }
-  // Regions from the ROMs' tags (kr, jp, us…), most games first.
-  if (auto *regions = field(root.get(), "regions"); json_object_is_type(regions, json_type_array))
-    for (size_t i = 0; i < json_object_array_length(regions) && out.regions.size() < 16; ++i) {
-      auto *object = json_object_array_get_idx(regions, i);
-      Facet facet{plainKey(field(object, "value")), "", count(object, "count")};
-      if (!facet.key.empty() && facet.count > 0) out.regions.push_back(std::move(facet));
-    }
-  // Players 1..99 and decades 1950..2090: the number as the key.
-  const auto numbers = [&](const char *name, int low, int high, int step, std::vector<Facet> &into) {
-    auto *list = field(root.get(), name);
-    if (!json_object_is_type(list, json_type_array)) return;
-    for (size_t i = 0; i < json_object_array_length(list) && into.size() < 32; ++i) {
-      auto *object = json_object_array_get_idx(list, i);
-      const auto value = integerField(object, "value");
-      const int n = count(object, "count");
-      if (value < low || value > high || value % step || n <= 0) continue;
-      into.push_back({std::to_string(value), "", n});
-    }
-  };
-  numbers("players", 1, 99, 1, out.players);
-  numbers("decades", 1950, 2090, 10, out.decades);
-  out.korean = count(root.get(), "korean");
-  out.achievements = count(root.get(), "achievements");
   return out;
 }
 Pack parsePack(const std::string &json, const std::string &base) {
@@ -578,31 +526,6 @@ std::vector<Theme> spreadThemes(std::vector<Theme> themes, int rows, int perRow,
     }
     out.push_back({theme.id, theme.name, std::move(fresh)});
   }
-  return out;
-}
-Facets mergeFacets(const std::vector<Facets> &all) {
-  Facets out;
-  const auto join = [](std::vector<Facet> &into, const std::vector<Facet> &from) {
-    for (const auto &facet : from) {
-      const auto found = std::find_if(into.begin(), into.end(), [&](const Facet &f) { return f.key == facet.key; });
-      if (found == into.end()) into.push_back(facet);
-      else found->count += facet.count;
-    }
-  };
-  for (const auto &facets : all) {
-    join(out.genres, facets.genres);
-    join(out.players, facets.players);
-    join(out.decades, facets.decades);
-    join(out.regions, facets.regions);
-    out.korean += facets.korean;
-    out.achievements += facets.achievements;
-  }
-  const auto byCount = [](const Facet &a, const Facet &b) { return a.count > b.count; };
-  std::stable_sort(out.genres.begin(), out.genres.end(), byCount);
-  std::stable_sort(out.regions.begin(), out.regions.end(), byCount);
-  const auto byNumber = [](const Facet &a, const Facet &b) { return std::stoi(a.key) < std::stoi(b.key); };
-  std::sort(out.players.begin(), out.players.end(), byNumber);
-  std::sort(out.decades.begin(), out.decades.end(), byNumber);
   return out;
 }
 std::vector<Shelf> mergeShelves(std::vector<std::pair<std::string, std::vector<Shelf>>> lists) {

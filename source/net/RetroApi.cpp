@@ -57,6 +57,12 @@ Parsed<retro::Page> retroGames(const Server &server, const State &state, const s
   if (reply.error) return {{}, reply.error};
   return {retro::parseGames(response.body, server.url, &reply.labels), {}};
 }
+Parsed<retro::FilterBook> retroFilters(const Server &server, const State &state, const std::string &system,
+                                       RetroReply &reply, const std::atomic<bool> *cancel) {
+  const auto response = fetch(server, state, "/api/retro/systems/" + query(system) + "/filters", reply, cancel);
+  if (reply.error) return {{}, reply.error};
+  return {retro::parseFilterBook(response.body), {}};
+}
 Parsed<retro::Detail> retroDetail(const Server &server, const State &state, const std::string &id, RetroReply &reply,
                                   const std::atomic<bool> *cancel) {
   const auto response = fetch(server, state, "/api/retro/games/" + query(id), reply, cancel);

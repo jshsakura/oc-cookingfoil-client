@@ -16,24 +16,6 @@ namespace {
 constexpr float RowHeight = 84, RowStep = 96;
 const std::string PackRecordPath = "/switch/cookingfoil/retro-pack.json";
 // The retro list's filters; several combine (the strictest of each kind wins).
-struct RetroCondition {
-  const char *title;
-  int minRating;
-  bool bezel;
-  uint64_t minSize, maxSize;
-};
-constexpr uint64_t MB = 1024 * 1024;
-// Titles go through tr() where the popup lists them.
-const RetroCondition RetroConditions[] = {
-    {"All", 0, false, 0, 0},             // i18n: keep
-    {"Rated 80+", 80, false, 0, 0},     // i18n: keep
-    {"Rated 90+", 90, false, 0, 0},     // i18n: keep
-    {"Own bezel", 0, true, 0, 0},          // i18n: keep
-    {"Under 1 MB", 0, false, 0, MB},         // i18n: keep
-    {"Under 10 MB", 0, false, 0, 10 * MB},   // i18n: keep
-    {"100 MB and up", 0, false, 100 * MB, 0}, // i18n: keep
-};
-constexpr SortMode RetroSorts[] = {SortMode::Score, SortMode::Name, SortMode::Largest, SortMode::Recent};
 bool fileExists(const std::string &path) {
   struct stat st {};
   return stat(path.c_str(), &st) == 0;
@@ -218,6 +200,7 @@ void Application::openRetroList(int system) {
   if (system < 0 || system >= int(retroSystems_.size())) return;
   raLinkClose(); // from 업적: its QR goes
   retroView_ = RetroView::List;
+  if (system != retroSystem_) clearRetroFilters();
   retroSystem_ = system;
   retroQuery_.clear();
   retroGames_.clear();
@@ -302,16 +285,31 @@ void Application::loadRetroPage(bool next) {
   const int page = next ? retroPage_ + 1 : 1;
   const auto sd = sdRoot_;
   const auto filter = retroFilter();
-  runRetroJob("list", [this, servers, state, system, page, sd, filter]() -> std::function<void()> {
+  const bool wantBook = system != retroBookSystem_;
+  runRetroJob("list", [this, servers, state, system, page, sd, filter, wantBook]() -> std::function<void()> {
+    // A system's filters come with its first page, asked at the same time.
+    std::vector<retro::FilterBook> books(wantBook ? servers.size() : 0);
+    std::vector<std::thread> asking;
+    for (size_t i = 0; i < books.size(); ++i)
+      asking.emplace_back([&, i] {
+        net::RetroReply theirs;
+        books[i] = net::retroFilters(servers[i], state, system, theirs, &stop_).value;
+      });
     net::RetroReply reply;
     auto result = retroPages(servers, state, system, page, filter, reply);
+    for (auto &t : asking) t.join();
+    auto book = retro::mergeFilterBooks(books);
     // Which of these are already on the card, looked up here, off the UI thread.
     std::map<std::string, bool> onCard;
     for (const auto &g : result.value.games)
       for (const auto *path : {&g.romPath, &g.bezelPath})
         if (!path->empty()) onCard[*path] = fileExists(sd + "/" + *path);
-    return [this, result = std::move(result.value), reply, system, page, filter, servers,
-            onCard = std::move(onCard)]() mutable {
+    return [this, result = std::move(result.value), reply, system, page, filter, servers, wantBook,
+            book = std::move(book), onCard = std::move(onCard)]() mutable {
+      if (wantBook && !retroSystems_.empty() && retroSystems_[retroSystem_].id == system) {
+        retroBook_ = std::move(book);
+        retroBookSystem_ = system;
+      }
       // Switched system, search or filter meanwhile: pollRetro asks for the right one.
       if (retroSystems_.empty() || retroSystems_[retroSystem_].id != system || retroFilter() != filter) {
         retroListSystem_.clear();
@@ -333,32 +331,16 @@ void Application::loadRetroPage(bool next) {
 retro::Filter Application::retroFilter() const {
   retro::Filter f;
   f.query = retroQuery_;
-  f.sort = retroSort_ == SortMode::Name      ? "name"
-           : retroSort_ == SortMode::Largest ? "size"
-           : retroSort_ == SortMode::Recent  ? "added"
-                                             : "rating";
-  for (const int n : retroFilters_) {
-    if (n <= 0 || n >= int(std::size(RetroConditions))) continue;
-    const auto &c = RetroConditions[n];
-    f.minRating = std::max(f.minRating, c.minRating);
-    f.bezel = f.bezel || c.bezel;
-    f.minSize = std::max(f.minSize, c.minSize);
-    if (c.maxSize) f.maxSize = f.maxSize ? std::min(f.maxSize, c.maxSize) : c.maxSize;
-  }
+  f.sort = retroSortKey_;
+  f.params = retro::pickParams(retroFilterBook(), retroPicks_);
   return f;
 }
 std::vector<std::string> Application::popupFilterLabels() const {
   std::vector<std::string> out;
-  if (screen_ == Screen::Retro)
-    for (const auto &c : RetroConditions) out.push_back(tr(c.title));
-  else
-    for (const auto &chip : chips_) out.push_back(chip.title);
+  for (const auto &chip : chips_) out.push_back(chip.title);
   return out;
 }
-std::vector<SortMode> Application::popupSorts() const {
-  if (screen_ == Screen::Retro) return {std::begin(RetroSorts), std::end(RetroSorts)};
-  return {std::begin(SortOrders), std::end(SortOrders)};
-}
+std::vector<SortMode> Application::popupSorts() const { return {std::begin(SortOrders), std::end(SortOrders)}; }
 const retro::Game *Application::retroFocused() const {
   if (!inContent()) return nullptr;
   if (retroView_ == RetroView::Home) {
@@ -766,6 +748,7 @@ void Application::retroAction(Action a) {
   if ((a == Action::Previous || a == Action::Next) && !retroSystems_.empty()) {
     const int count = int(retroSystems_.size());
     retroSystem_ = (retroSystem_ + (a == Action::Next ? 1 : count - 1)) % count;
+    clearRetroFilters();
     retroGames_.clear();
     retroListSystem_.clear();
     retroTotal_ = 0;
@@ -895,9 +878,7 @@ void Application::retroList() {
   const auto *system = retroSystems_.empty() ? nullptr : &retroSystems_[retroSystem_];
   // Right: the same filter button and search box as 모든 게임.
   searchBar(retroQuery_);
-  std::string summary = retroFilters_.empty() ? std::string(tr("All")) : popupFilterLabels()[retroFilters_.front()];
-  if (retroFilters_.size() > 1) summary = trf("{0} +{1}", {summary, std::to_string(retroFilters_.size() - 1)});
-  summary += " · " + std::string(sortLabel(retroSort_));
+  std::string summary = retroFilterSummary();
   const float viewW = std::min(300.f, paint_.keyLabelWidth("Y", summary, 18, true) + 66), viewX = SearchX - 16 - viewW;
   headerItem("filter", viewX, 24, viewW, 48, [this] { openViewPopup(); });
   paint_.rect(viewX, 24, viewW, 48, Surface, 12);

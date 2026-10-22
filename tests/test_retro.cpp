@@ -82,51 +82,58 @@ int runRetroTests() {
     CHECK(themeShelves({}).empty());
   }
   {
-    // A system's facets: only what has games, values in range, names kept.
-    const auto facets = parseFacets(R"({
-      "genres":[{"key":"rpg","name":"롤플레잉","count":40},{"key":"action","count":12},{"key":"none","count":0},{"key":"Bad","count":5}],
-      "players":[{"value":1,"count":30},{"value":2,"count":9},{"value":0,"count":3},{"value":200,"count":1}],
-      "decades":[{"value":1990,"count":20},{"value":1995,"count":2},{"value":1980,"count":4}],
-      "regions":[{"value":"jp","count":11},{"value":"kr","count":4},{"value":"../x","count":2}],
-      "korean":7,"achievements":0})");
-    CHECK(facets.regions.size() == 2 && facets.regions[0].key == "jp" && facets.regions[1].count == 4);
-    CHECK(facets.genres.size() == 2 && facets.genres[0].key == "rpg" && facets.genres[0].name == "롤플레잉");
-    CHECK(facets.genres.size() == 2 && facets.genres[1].name == "action" && facets.genres[1].count == 12);
-    CHECK(facets.players.size() == 2 && facets.players[1].key == "2" && facets.players[1].count == 9);
-    CHECK(facets.decades.size() == 2 && facets.decades[0].key == "1990");
-    CHECK(facets.korean == 7 && facets.achievements == 0 && !facets.empty());
-    CHECK(parseFacets("{}").empty() && parseFacets("nope").empty());
-    // Several servers: counts summed per key, genres by count, numbers in order.
-    Facets more;
-    more.genres = {{"action", "Action", 50}, {"puzzle", "Puzzle", 3}};
-    more.players = {{"1", "", 5}};
-    more.decades = {{"1980", "", 1}};
-    more.achievements = 2;
-    const auto all = mergeFacets({facets, more});
-    CHECK(all.genres.size() == 3 && all.genres[0].key == "action" && all.genres[0].count == 62);
-    CHECK(all.genres.size() == 3 && all.genres[1].key == "rpg" && all.genres[2].key == "puzzle");
-    CHECK(all.players.size() == 2 && all.players[0].key == "1" && all.players[0].count == 35);
-    CHECK(all.decades.size() == 2 && all.decades[0].key == "1980" && all.decades[1].key == "1990");
-    CHECK(all.korean == 7 && all.achievements == 2);
-  }
-  {
-    // The new filters go in the list's query; a key with odd characters never does.
+    // The server's filters: groups and options in its order; anything odd dropped.
+    const auto book = parseFilterBook(R"({
+      "groups":[
+        {"key":"genre","ko":"장르","en":"Genre","pick":"many","options":[
+          {"key":"beat-em-up","ko":"벨트스크롤 액션","en":"Beat 'em up","count":12,"params":{"genre":"beat-em-up"}},
+          {"key":"rpg","ko":"롤플레잉","count":40,"params":{"genre":"rpg"}},
+          {"key":"bad","ko":"나쁨","params":{"genre":"a&b"}},
+          {"key":"Odd","ko":"x","params":{"genre":"x"}},
+          {"key":"none","ko":"없음"}]},
+        {"key":"players","ko":"인원","pick":"one","options":[
+          {"key":"2","ko":"2인 이상","params":{"players":2}},{"key":"4","ko":"4인 이상","params":{"players":"4"}}]},
+        {"key":"rating","ko":"평점","pick":"one","options":[{"key":"80","ko":"80점 이상","params":{"minRating":"80","x y":"1"}}]},
+        {"key":"empty","ko":"빈","options":[]},
+        {"key":"nameless","options":[{"key":"a","ko":"a","params":{"a":"1"}}]}],
+      "sorts":[{"key":"rating","ko":"평점순","en":"Rating"},{"key":"Bad","ko":"x"},{"key":"added","en":"Newest"}]})");
+    CHECK(book.groups.size() == 3 && book.sorts.size() == 2);
+    CHECK(book.groups[0].options.size() == 2 && book.groups[0].options[0].count == 12 && !book.groups[0].single);
+    CHECK(book.groups[1].single && book.groups[1].options[0].params[0].second == "2");
+    CHECK(book.groups[2].options[0].params.size() == 1);
+    CHECK(textIn(book.groups[0].options[0].text, "ko") == "벨트스크롤 액션");
+    CHECK(textIn(book.groups[0].options[0].text, "ja") == "Beat 'em up");
+    CHECK(textIn(book.groups[0].options[1].text, "ja") == "롤플레잉");
+    CHECK(textIn(book.groups[0].text, "ja") == "Genre" && book.groups[0].text.size() == 2);
+    CHECK(parseFilterBook("{}").empty() && parseFilterBook("nope").empty());
+    // Many in a group: any of them; single: the newer replaces; groups AND.
+    Picks picks;
+    picks = togglePick(book, picks, "genre", "beat-em-up");
+    picks = togglePick(book, picks, "genre", "rpg");
+    picks = togglePick(book, picks, "players", "2");
+    picks = togglePick(book, picks, "players", "4");
+    picks = togglePick(book, picks, "genre", "gone");
+    CHECK(picks.size() == 3);
     Filter f;
-    f.genres = {"fighting", "board-game", "x&y", "Action"};
-    f.players = 2;
-    f.decade = 1990;
-    f.region = "kr";
-    f.korean = true;
-    f.achievements = true;
-    CHECK(filterQuery(f) == "&sort=rating&genre=fighting,board-game&players=2&decade=1990&region=kr&korean=1&achievements=1");
-    Filter odd;
-    odd.region = "k&r";
-    CHECK(filterQuery(odd) == "&sort=rating");
+    f.params = pickParams(book, picks);
+    CHECK(filterQuery(f) == "&sort=rating&genre=beat-em-up,rpg&players=4");
+    picks = togglePick(book, picks, "genre", "rpg");
+    CHECK((pickParams(book, picks) == Params{{"genre", "beat-em-up"}, {"players", "4"}}));
+    // Another system's book keeps only what it offers.
+    FilterBook other;
+    other.groups = {book.groups[1]};
+    CHECK((keptPicks(other, picks) == Picks{{"players", "4"}}));
+    // Several servers: options join by key, counts summed.
+    FilterBook more;
+    more.groups = {{"genre", {{"en", "Genre"}}, false, {{"rpg", {{"en", "RPG"}}, 5, {{"genre", "rpg"}}}, {"puzzle", {{"en", "Puzzle"}}, 3, {{"genre", "puzzle"}}}}}};
+    const auto all = mergeFilterBooks({book, more});
+    CHECK(all.groups.size() == 3 && all.groups[0].options.size() == 3 && all.groups[0].options[1].count == 45);
+    CHECK(all.sorts.size() == 2);
+    Filter g = f;
+    g.params.pop_back();
+    CHECK(g != f);
     CHECK(keyText("board-game") && !keyText("Board") && !keyText("-x") && !keyText(""));
     CHECK(themeIdText("decade:1990:genre:rpg") && themeIdText("coop") && !themeIdText("genre:") && !themeIdText("genre::x"));
-    Filter g = f;
-    g.genres.pop_back();
-    CHECK(g != f);
   }
   const auto systems = parseSystems(R"({"systems":[
     {"id":"gba","name":"Game Boy Advance","names":{"ko":"게임보이 어드밴스"},"defaultCore":"mgba","coreName":"mGBA","romCount":181},
@@ -242,10 +249,10 @@ int runRetroTests() {
     CHECK(filterQuery(f) == "&sort=rating");
     f.query = "젤 다";
     f.sort = "size";
-    f.minRating = 120;
-    f.bezel = true;
-    f.maxSize = 1048576;
-    CHECK(filterQuery(f) == "&sort=size&q=%EC%A0%A4%20%EB%8B%A4&minRating=100&bezel=1&maxSize=1048576");
+    f.params = {{"minRating", "90"}, {"bezel", "1"}};
+    CHECK(filterQuery(f) == "&sort=size&q=%EC%A0%A4%20%EB%8B%A4&minRating=90&bezel=1");
+    f.sort = "../x";
+    CHECK(filterQuery(f).rfind("&sort=rating", 0) == 0);
   }
 
   CHECK(packPathAllowed("switch/retroarch_switch.nro"));
