@@ -50,8 +50,8 @@ integrations appear according to the server's capabilities. You choose when to a
 ## Get started
 
 1. **Prepare a server.** Follow the [CookingFoil server guide](https://github.com/jshsakura/oc-cookingfoil#readme), or use a server you have permission to access.
-2. **Copy the client.** Sign in to your server’s web page, download its `cookingfoil.nro` and copy it to `switch/cookingfoil/` on your SD card. The operator must provide a client build first.
-3. **Connect.** Launch the app from the Homebrew Menu and enter the address in **Settings → Add server**. You can also create a `config.json` on a PC.
+2. **Copy the client.** Download [`cookingfoil.nro`](https://github.com/jshsakura/oc-cookingfoil-client/releases/latest/download/cookingfoil.nro) from the latest release, or from your server’s web page, and copy it to `switch/cookingfoil/` on your SD card. No config file is needed.
+3. **Connect.** Launch the app from the Homebrew Menu and enter the address in **Settings → Add server**. A `config.json` written on a PC works too.
 4. **Approve the device.** If the server requires approval, scan the QR code on the console, sign in on your phone and approve it. The console connects when approved.
 
 You need a console that can run homebrew. Use application mode for operations that need console

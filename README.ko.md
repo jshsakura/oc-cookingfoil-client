@@ -50,7 +50,7 @@
 ## 시작하기
 
 1. **서버를 준비합니다.** [CookingFoil 서버 안내](https://github.com/jshsakura/oc-cookingfoil/blob/main/README.ko.md)를 따라 직접 설치하거나, 사용 권한이 있는 서버를 준비합니다.
-2. **클라이언트를 넣습니다.** 서버 웹페이지에 로그인해 `cookingfoil.nro`를 받고 SD 카드의 `switch/cookingfoil/` 폴더에 복사합니다. 서버 운영자가 클라이언트 빌드를 준비해야 합니다.
+2. **클라이언트를 넣습니다.** 최신 릴리즈의 [`cookingfoil.nro`](https://github.com/jshsakura/oc-cookingfoil-client/releases/latest/download/cookingfoil.nro)를 받거나 서버 웹페이지에서 받아 SD 카드의 `switch/cookingfoil/` 폴더에 복사합니다. 설정 파일은 없어도 됩니다.
 3. **서버를 연결합니다.** 홈브루 메뉴에서 앱을 열고 **설정 → 서버 추가**에서 주소를 입력합니다. PC에서 `config.json`을 만들어 넣어도 됩니다.
 4. **기기를 승인합니다.** 승인이 필요한 서버는 본체에 QR 코드를 보여 줍니다. 휴대폰에서 로그인해 승인하면 본체가 연결됩니다.
 
