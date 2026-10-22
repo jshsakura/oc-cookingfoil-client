@@ -1221,23 +1221,38 @@ void Session::rebind() {
 namespace {
 std::mutex enrollLock;
 std::map<std::string, std::string> enrollRefused; // url + token -> why, this run
+// url + token -> the key it gave, this run: a token is sent once. A session
+// made from an older copy of the files (or a try again after the key could
+// not be saved) takes that key; sent again, the server says "used".
+std::map<std::string, std::string> enrollSpent;
+// One enroll at a time, so a second session for the server waits for the
+// first one's key instead of sending the token beside it.
+std::mutex enrollSending;
 }
 void Session::forgetEnrollAttempts() {
     std::lock_guard<std::mutex> held(enrollLock);
     enrollRefused.clear();
+    enrollSpent.clear();
 }
 bool Session::enroll(Error& error, bool replacing) {
-    const auto& token = server_.enrollToken;
+    const auto token = server_.enrollToken;
     const auto key = state_.accessKeys.find(server_.url);
     if (token.empty() || (!replacing && key != state_.accessKeys.end() && !key->second.empty())) return true;
     const auto tried = server_.url + '\n' + token;
-    {
-        // Refused once: said again, not asked again (the token is spent or gone).
-        std::lock_guard<std::mutex> held(enrollLock);
-        if (const auto at = enrollRefused.find(tried); at != enrollRefused.end()) { error.message = tr(at->second.c_str()); return false; }
-    }
+    std::lock_guard<std::mutex> one(enrollSending);
     // The key made from the console: the one the server approves.
     const auto device = state_.derivedKey.empty() ? state_.deviceKey : state_.derivedKey;
+    {
+        // Refused once: said again, not asked again (the token is spent or gone).
+        std::unique_lock<std::mutex> held(enrollLock);
+        if (const auto at = enrollRefused.find(tried); at != enrollRefused.end()) { error.message = tr(at->second.c_str()); return false; }
+        if (const auto at = enrollSpent.find(tried); at != enrollSpent.end()) {
+            const auto spent = at->second;
+            held.unlock();
+            logLine("enroll: the token was spent earlier this run; its key goes on");
+            return keepEnrolledKey(spent, device, error);
+        }
+    }
     const auto url = server_.url + "/api/pair/enroll";
     auto headers = authHeaders(server_, state_, url);
     for (auto& header : headers)
@@ -1284,15 +1299,28 @@ bool Session::enroll(Error& error, bool replacing) {
         error.message = trf("Check the server connection. HTTP {0}", {std::to_string(sent.status)});
         return false;
     }
-    // Saved as a key from approval is, from the file (settings chosen since
-    // this session began stay); the server knows the console by the made key.
+    {
+        std::lock_guard<std::mutex> held(enrollLock);
+        enrollSpent[tried] = accessKey;
+    }
+    return keepEnrolledKey(accessKey, device, error);
+}
+// Saved as a key from approval is, from the file (settings chosen since this
+// session began stay); the server knows the console by the made key. Not
+// saved, the token stays in config.json and the next try takes the key from
+// enrollSpent, not from the server.
+bool Session::keepEnrolledKey(const std::string& accessKey, const std::string& device, Error& error) {
     auto saved = loadState(path_);
     auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
     updated.derivedKey = state_.derivedKey;
     updated.accessKeys[server_.url] = accessKey;
     updated.pairSecrets.erase(server_.url);
     if (device != updated.deviceKey) updated.rebound.insert(server_.url);
-    if (!saveState(path_, updated, error)) { error.message = tr("Could not save the issued key. Check where the state file is stored."); return false; }
+    if (!saveState(path_, updated, error)) {
+        logLine("enroll: the key not saved: " + error.message);
+        error.message = tr("Could not save the issued key. Check where the state file is stored.");
+        return false;
+    }
     state_ = std::move(updated);
     // Spent: out of config.json (kept there when refused, to tell why).
     std::string failure;

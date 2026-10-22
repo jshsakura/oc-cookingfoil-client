@@ -198,6 +198,7 @@ private:
     // access key before anything else; false (with the reason) when refused.
     // replacing: spent even with a key kept, which the server no longer approves.
     bool enroll(Error& error, bool replacing = false);
+    bool keepEnrolledKey(const std::string& accessKey, const std::string& device, Error& error);
     bool pair(Error& error);
     void rebind();
     void sendPairMessage();

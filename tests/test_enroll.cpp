@@ -143,6 +143,7 @@ int runEnrollTests() {
     CHECK(server().enrollToken == token);
     net::Session::forgetEnrollAttempts();
     const auto state = loadState(db).value;
+    const auto before = server();
     net::Session session(server(), state, db);
     session.setConfigPath(configPath);
     CHECK(session.refresh(error));
@@ -157,6 +158,17 @@ int runEnrollTests() {
     CHECK(server().enrollToken.empty() && readFile(configPath).find(token) == std::string::npos);
     for (size_t i = 1; i < sent.size(); ++i)
       CHECK(!has(sent[i], "Authorization: Basic") && has(sent[i], "X-Access-Key: enrolled-key"));
+    {
+      // A session made from the files as they were before (read while the
+      // first was enrolling): the token is not sent twice, which the server
+      // would refuse as used; the key it gave goes on.
+      net::Session stale(before, state, db);
+      stale.setConfigPath(configPath);
+      CHECK(stale.refresh(error));
+      const auto again = mock.take();
+      CHECK(count(again, "/api/pair/enroll") == 0 && count(again, "X-Access-Key: enrolled-key") >= 1);
+      CHECK(loadState(db).value.accessKeys.at(url) == "enrolled-key");
+    }
     // With the key, never again (even with the token back in the file).
     writeConfig();
     net::Session again(server(), loadState(db).value, db);

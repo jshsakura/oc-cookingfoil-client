@@ -908,6 +908,9 @@ void Application::connect(size_t index) {
     return;
   }
   poll();
+  // Files read before this connection (a reload still reading) are older
+  // than what it saves (an enrolled key, the token gone): read again after.
+  if (reloadWorker_.joinable()) reloadAgain_ = true;
   const bool keep = std::exchange(keepCatalog_, false) && session_ && connected_ &&
                     session_->server().url == config_.servers[index].url;
   if (!keep) clearCatalog();
