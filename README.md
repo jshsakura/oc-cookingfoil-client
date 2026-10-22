@@ -1,170 +1,97 @@
-# CookingFoil
+<div align="center">
+  <h1><img src="brand/cookingfoil-readme-256.png" alt="CookingFoil" width="192" height="192" /></h1>
+  <p><strong>Your files on your server. Your library on your console.</strong></p>
+  <p>A personal homebrew client for games, homebrew apps, saves and patches.</p>
+  <p>
+  <a href="https://jshsakura.github.io/oc-cookingfoil/?lang=en"><img src="brand/buttons/website-en.svg" alt="Website" width="160" height="44" /></a>
+  <a href="https://github.com/jshsakura/oc-cookingfoil/blob/main/README.md#connecting-a-client"><img src="brand/buttons/connect-en.svg" alt="Connect console" width="160" height="44" /></a>
+  <a href="https://github.com/jshsakura/oc-cookingfoil/blob/main/README.md#quick-start"><img src="brand/buttons/setup-en.svg" alt="Setup guide" width="160" height="44" /></a>
+  <a href="docs/README.md"><img src="brand/buttons/docs-en.svg" alt="Documentation" width="160" height="44" /></a>
+  </p>
+  <p><a href="README.md">English</a> · <a href="README.ko.md">한국어</a></p>
+  <a href="https://github.com/jshsakura/oc-cookingfoil-client/actions/workflows/ci.yml"><img src="https://github.com/jshsakura/oc-cookingfoil-client/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/jshsakura/oc-cookingfoil-client/releases"><img src="https://img.shields.io/github/v/release/jshsakura/oc-cookingfoil-client?color=FFC23D" alt="GitHub release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-16161A" alt="GPL-3.0-or-later" /></a>
+</div>
 
-[한국어](README.ko.md)
+![CookingFoil home screen](docs/screenshots/en/01-home.png)
 
-CookingFoil is a personal homebrew file client for the console. It connects to your own
-self-hosted [CookingFoil server](https://github.com/jshsakura/oc-cookingfoil), lists the files you
-keep there and installs them to the console.
+Connect to your own [CookingFoil server](https://github.com/jshsakura/oc-cookingfoil), browse your files
+and choose what to install. Browse several servers together, compare installed versions with updates,
+and pick up downloads that were interrupted.
 
-This client pairs with the **[CookingFoil server](https://github.com/jshsakura/oc-cookingfoil)**
-(MIT, self-hosted, with production examples in its `deploy/` folder). Set up a server first,
-then point this app at it.
+## Take a look
 
-> **Notice.** An independent open-source project; it includes no software, keys, BIOS or RetroArch.
-> Only install content you legally own.
-
-| Home | Game detail | All games |
-|---|---|---|
-| ![Home](docs/screenshots/en/01-home.png) | ![Game detail](docs/screenshots/en/02-detail.png) | ![All games](docs/screenshots/en/03-library.png) |
-| **Downloads** | **Updates** | **Settings** |
-| ![Downloads](docs/screenshots/en/04-downloads.png) | ![Updates](docs/screenshots/en/05-updates.png) | ![Settings](docs/screenshots/en/06-settings.png) |
-
-Screenshots use placeholder art.
-
-## Features
-
-- **Home rows:** recently added, on sale, new, updated, popular, top rated, multiplayer, party and genre rows.
-- **All games:** filters, sort orders and search.
-- **Game detail:** description, facts, screenshots, and a choice of base, update and DLC, installed to the SD card or console storage.
-- **Install over HTTP:** NSP, NSZ, XCI and XCZ through the [CyberFoil](https://github.com/luketanti/CyberFoil) install engine.
-- **Install queue and resume:** after a cut-off, finished content is kept, a dropped connection is waited out, and the app offers to resume on the next launch. The console stays awake while downloading.
-- **Updates screen:** compares installed versions with the server.
-- **Installed games manager:** delete a game or its saves. Cancel is the default choice.
-- **User patches:** LayeredFS romfs/exefs, cheats merged per build ID, `exefs_patches` and FPSLocker.
-- **Leftover cleanup** in Settings: after a confirmation, deletes content that no installed title references and placeholders left by unfinished installs.
-- **QR device pairing** with the server.
-- **Languages:** Korean, English, Japanese and Chinese. Chosen in Settings, defaults to the console language.
-- **Touch and controller** input.
-- **Browser preview:** the real UI runs on a PC and is shown in a browser.
-
-## Requirements
-
-- A console that can run homebrew apps, for example through [Atmosphère](https://github.com/Atmosphere-NX/Atmosphere).
-- A CookingFoil server you are allowed to use.
-
-CookingFoil is built with devkitPro and libnx. Firmware support follows Atmosphère and libnx.
-
-## Install
-
-1. Download `cookingfoil.nro` from the [Releases](../../releases) page, or build it yourself.
-2. Copy it to `sdmc:/switch/cookingfoil/cookingfoil.nro` on the SD card.
-3. Put a `config.json` next to it (see below).
-4. Launch CookingFoil from the Homebrew Menu.
-
-## Configuration
-
-The app reads `sdmc:/switch/cookingfoil/config.json`. Edit it on a PC, then press Y on the
-Settings screen to reload it. The server's admin page shows a ready `config.json` when you create
-a user, and a signed-in browser can fetch one from `/api/client-config` (passwords and keys are
-never included).
-
-```json
-{
-  "servers": [
-    {
-      "title": "My server",
-      "url": "https://files.example.com",
-      "username": "",
-      "password": "",
-      "enabled": true
-    },
-    {
-      "title": "Backup server",
-      "url": "https://files2.example.com",
-      "cfClientId": "",
-      "cfClientSecret": "",
-      "enabled": false
-    }
-  ],
-  "language": "en",
-  "installTarget": "sd"
-}
-```
-
-| Key | Meaning |
+| Game detail | Downloads |
 |---|---|
-| `servers[].title` | Name shown in the app |
-| `servers[].url` | Server address |
-| `servers[].username`, `password` | HTTP Basic credentials, if the server uses them |
-| `servers[].cfClientId`, `cfClientSecret` | Cloudflare Access service token, if the server sits behind one |
-| `servers[].enabled` | Whether the server is used |
-| `language` | `ko`, `en`, `ja` or `zh` |
-| `installTarget` | `sd` (SD card) or `nand` (console storage) |
+| ![Game detail](docs/screenshots/en/02-detail.png) | ![Downloads](docs/screenshots/en/04-downloads.png) |
+| Installed games | Saves and Dropbox |
+| ![Installed games](docs/screenshots/en/07-installed.png) | ![Saves and Dropbox](docs/screenshots/en/08-dropbox-linked.png) |
 
-The same example is in [docs/config.example.json](docs/config.example.json).
+Captured from the real English UI with sample data. Entries without icons use the app’s native first-letter tiles.
 
-### Pairing
+## Choose what you want. Keep the rest in order.
 
-If the server requires device approval, the console shows a QR code. Scan it with a phone, and
-an administrator approves the device. CookingFoil then connects on its own and stores the
-access key in `sdmc:/switch/cookingfoil/state.json`. You never type an address or password on
-the console. Pairing needs a server version that supports it.
+| What you want to do | What CookingFoil handles |
+|---|---|
+| **Browse and install** | Search, filters, sorting and game details. Choose base, update and DLC files, and SD card or console storage. NSP, NSZ, XCI and XCZ installs use the CyberFoil engine. |
+| **Use several servers** | Browse their catalogs together and choose a download server when several offer the same item. |
+| **Continue a download** | Keep the queue and completed, failed and canceled records. Supported downloads resume from their saved position, wait for connectivity, and keep the console awake. |
+| **Find updates** | Compare installed games with server versions. Homebrew updates use content hashes supplied by the server. |
+| **Manage homebrew** | Install and update a single NRO or an app folder. Create HOME Menu shortcuts for supported apps. |
+| **Keep saves** | Back up and restore per-user saves locally, import server saves, and upload or download Dropbox backups. A rollback backup is made before a restore. |
+| **Apply patches** | Enable and disable game file, cheat, IPS and FPSLocker patches. Check file conflicts and merge cheats per build ID. |
+| **Browse retro games** | Pick games by system and download their bundles. Use server-provided RetroArch packs, shortcuts and RetroAchievements information. |
+| **Make room** | Manage installed games and confirm leftover cleanup. Cleanup targets content no installed title references. |
 
-## Server
+Korean, English, Japanese and Chinese; touch and controller input. Homebrew, patches, retro and some
+integrations appear according to the server's capabilities. You choose when to apply saves and patches.
 
-CookingFoil talks to the [CookingFoil server](https://github.com/jshsakura/oc-cookingfoil)
-(MIT). The game list is the server's real file list; the client groups the files into base,
-update and DLC.
+## Get started
 
-## Building
+1. **Prepare a server.** Follow the [CookingFoil server guide](https://github.com/jshsakura/oc-cookingfoil#readme), or use a server you have permission to access.
+2. **Copy the client.** Sign in to your server’s web page, download its `cookingfoil.nro` and copy it to `switch/cookingfoil/` on your SD card. The operator must provide a client build first.
+3. **Connect.** Launch the app from the Homebrew Menu and enter the address in **Settings → Add server**. You can also create a `config.json` on a PC.
+4. **Approve the device.** If the server requires approval, scan the QR code on the console, sign in on your phone and approve it. The console connects when approved.
 
-Clone with submodules:
+You need a console that can run homebrew. Use application mode for operations that need console
+permissions, including save management. If applet mode blocks access, the app explains how to launch it.
+
+See [Getting started](docs/GETTING-STARTED.md) for configuration, authentication and multiple servers.
+
+## Develop and preview
+
+The C++17 and SDL2 host build runs the real UI on a PC. Explore fixture data or connect a server,
+and control the app from your browser.
 
 ```sh
 git clone --recursive https://github.com/jshsakura/oc-cookingfoil-client
 cd oc-cookingfoil-client
+# Install the host dependencies from the build guide first.
+make test host
+./build-host/cookingfoil-host --fixture host/fixtures --lang en --serve 38520
 ```
 
-### Console
+Open `http://localhost:38520/`. Console installs, save access and deletion need hardware checks.
+See [Building and previewing](docs/BUILDING.md) for dependencies, console builds and screenshots.
 
-Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) and these packages:
+## Read more
 
-```sh
-dkp-pacman -S switch-sdl2 switch-sdl2_ttf switch-sdl2_image switch-curl switch-mbedtls \
-  switch-json-c switch-freetype switch-harfbuzz switch-libwebp switch-libpng \
-  switch-libjpeg-turbo switch-zstd switch-zlib switch-bzip2
-```
+| Guide | Covers |
+|---|---|
+| [Getting started](docs/GETTING-STARTED.md) | Installation, config, QR approval, multiple servers and SD card files |
+| [Features](docs/FEATURES.md) | Downloads, homebrew, saves, patches, retro and their requirements |
+| [Building and previewing](docs/BUILDING.md) | Host and console builds, tests and browser preview |
+| [Design](docs/DESIGN.md) | Layout, focus, input and feedback |
+| [Writing and translations](docs/WRITING.md) | English translation keys, four languages and writing rules |
+| [Working rules](docs/CONTRIBUTING-GUIDE.md) | Threads, safe file writes, tests and pull requests |
+| [Third-party code](third_party/README.md) | Install engine and patch maintenance |
 
-Then run `make`. It applies the engine patches in `third_party/patches` and builds
-`cookingfoil.nro`. Without `DEVKITPRO` set, `make` runs the build in the
-`devkitpro/devkita64` Docker image instead.
+## License and content
 
-### Host build, tests and browser preview
+The client is [GPL-3.0-or-later](LICENSE). The separate server project is MIT-licensed.
+The client uses the install engine from [CyberFoil](https://github.com/luketanti/CyberFoil),
+which derives from Awoo Installer and Tinfoil. See [Third-party notices](THIRD_PARTY_NOTICES.md).
 
-The host build needs SDL2, SDL2_ttf, SDL2_image, json-c and libcurl development packages. On
-Ubuntu (as in [CI](.github/workflows/ci.yml)):
-
-```sh
-sudo apt-get install libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev libjson-c-dev \
-  libcurl4-openssl-dev libssl-dev libminizip-dev fonts-noto-cjk ripgrep
-make test     # unit tests
-make host     # build-host/cookingfoil-host
-```
-
-The host binary runs the same UI code as the console, in docked 1920x1080. With `--serve` it
-streams frames to a browser and takes keyboard, button and mouse input back:
-
-```sh
-./build-host/cookingfoil-host --fixture host/fixtures --serve 38520   # sample data
-./build-host/cookingfoil-host --config <file> --serve 38520           # a real server
-```
-
-Open `http://localhost:38520/`. `--shot <dir>` saves PNG screenshots instead. The preview
-listens on all interfaces without authentication, so use it on a trusted network only.
-
-## Project layout
-
-See [third_party/README.md](third_party/README.md) for how the install engine is pinned and patched.
-
-## Working on it
-
-The rules this project is built by, each with its reason and where the code follows it:
-[design](docs/DESIGN.md), [writing and translations](docs/WRITING.md) and
-[working rules](docs/CONTRIBUTING-GUIDE.md). Read them before a pull request.
-
-## License
-
-CookingFoil is licensed under the [GNU General Public License v3.0 or later](LICENSE). It
-compiles the CyberFoil install engine, which is GPL-licensed and derives from Awoo Installer and
-Tinfoil. Third-party components and their licenses are listed in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+No games, keys, BIOS files or RetroArch are included. Use content you legally own or have permission
+to use, and patches you are allowed to distribute.
