@@ -137,7 +137,7 @@ Not "fix: update Touch.cpp" or "fix: pressed state bug".
 **The body says what was wrong and why the change fixes it**, in a few plain sentences.
 (history: 7e215d2, de8ac79, 17c14e6)
 
-**A release bump is its own commit, `chore: release X.Y.Z`, made by `scripts/ship.sh`.**
-(code: `ship.sh:50`)
+**A release bump is its own commit, `chore: release X.Y.Z`.**
+(history: 433fba7)
 
 **Release titles, notes and tag messages are in English.** (note)
