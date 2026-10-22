@@ -18,6 +18,8 @@ struct Response {
     uint64_t contentLength = 0; // 0 when absent
     std::string session; // X-CookingFoil-Session: why the session token was refused
     std::string enroll;  // X-CookingFoil-Enroll: "invalid" when an enroll token was refused
+    std::string auth;    // X-CookingFoil-Auth: why a 401 refused (no-access-key, access-key-wrong, ...)
+    std::string serverId; // X-CookingFoil-Server-Id: the same on every address of one server
     int curl = 0;        // curl's result; 7 (CURLE_COULDNT_CONNECT): nothing was sent
     int64_t date = 0;    // the Date header, Unix seconds; 0 when absent
     bool directNamed = false; // X-CookingFoil-Download-Origin came with it
@@ -204,6 +206,17 @@ private:
     // was taken back), and its session token with them.
     void forgetAccessKey();
     void forgetPasswordOnceKeyed();
+    // The server's id from a reply, kept with this address (State::serverIds).
+    void learnServerId(const std::string& id);
+    // No key for this address, but one for another address of the same
+    // server (the LAN one and a tunnel): that key, as the server takes it
+    // from any address. False when there is none.
+    bool borrowKey(const std::string& id);
+    // A list refused with 401: what its reason asks for (a key from another
+    // address, or approval again). True when the list should be asked once
+    // more; error set when approval is pending or failed.
+    bool answerRefusal(const Response& reply, Error& error);
+    std::string refusedKey_; // a key the server called wrong: never borrowed back
     bool pairPasswordOnly_ = false; // a /api/pair/* reply said passwordOnly
     // This server's pair secret, made and saved first when the console has no
     // key from it yet; empty when it has one or the secret could not be saved.

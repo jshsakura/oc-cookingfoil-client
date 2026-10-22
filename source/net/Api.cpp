@@ -66,6 +66,11 @@ size_t writeHeader(char* data, size_t size, size_t count, void* context) {
         } else if (key == "x-cookingfoil-session") {
             auto value = line.substr(colon + 1); const auto begin = value.find_first_not_of(" \t\r\n");
             static_cast<Response*>(context)->session = begin == std::string::npos ? "refused" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
+        } else if (key == "x-cookingfoil-auth" || key == "x-cookingfoil-server-id") {
+            auto value = line.substr(colon + 1); const auto begin = value.find_first_not_of(" \t\r\n");
+            value = begin == std::string::npos ? "" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
+            if (value.size() > 128) value.clear();
+            (key == "x-cookingfoil-auth" ? static_cast<Response*>(context)->auth : static_cast<Response*>(context)->serverId) = value;
         } else if (key == "date") {
             const auto when = curl_getdate(line.substr(colon + 1).c_str(), nullptr);
             static_cast<Response*>(context)->date = when > 0 ? int64_t(when) : 0;
@@ -1029,6 +1034,8 @@ bool Session::pair(Error& error) {
     auto headers = authHeaders(server_, state_, url);
     if (const auto secret = pairSecret(); !secret.empty()) headers.push_back("X-Pair-Secret: " + secret);
     const auto response = get(url, headers, "", cancel_);
+    learnServerId(response.serverId);
+    if (borrowKey(response.serverId)) { pairingPending_ = false; pairingInfo_ = {}; return true; }
     if (response.status == 404) { pairingPending_ = false; pairingInfo_ = {}; return true; }
     if (!response.error.empty() || response.status != 200) { error.message = response.error.empty() ? tr("Could not check the device approval status.") : response.error; return false; }
     auto root = parseJson(response.body, error); if (error) return false;
@@ -1105,6 +1112,55 @@ void Session::forgetAccessKey() {
     withdrawSession(originOf(server_.url));
     pairMessageSent_.clear();
     logLine("pair: the server took this console back; asking for approval again");
+}
+void Session::learnServerId(const std::string& id) {
+    if (id.empty() || id.size() > 128) return;
+    if (const auto known = state_.serverIds.find(server_.url); known != state_.serverIds.end() && known->second == id) return;
+    auto saved = loadState(path_);
+    auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
+    updated.serverIds[server_.url] = id;
+    Error error;
+    if (!saveState(path_, updated, error)) logLine("server id not saved: " + error.message);
+    state_ = std::move(updated);
+}
+bool Session::borrowKey(const std::string& id) {
+    if (id.empty()) return false;
+    if (const auto held = state_.accessKeys.find(server_.url); held != state_.accessKeys.end() && !held->second.empty()) return false;
+    std::string key;
+    for (const auto& [other, otherId] : state_.serverIds) {
+        if (other == server_.url || otherId != id) continue;
+        const auto found = state_.accessKeys.find(other);
+        if (found != state_.accessKeys.end() && !found->second.empty() && found->second != refusedKey_) { key = found->second; break; }
+    }
+    if (key.empty()) return false;
+    auto saved = loadState(path_);
+    auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
+    updated.accessKeys[server_.url] = key;
+    updated.pairSecrets.erase(server_.url); // no approval asked for: the key is here
+    Error error;
+    if (!saveState(path_, updated, error)) { logLine("pair: the key of another address not saved: " + error.message); return false; }
+    state_ = std::move(updated);
+    logLine("pair: this address takes the key another address of the same server holds");
+    return true;
+}
+bool Session::answerRefusal(const Response& reply, Error& error) {
+    const auto held = state_.accessKeys.find(server_.url);
+    const bool keyed = held != state_.accessKeys.end() && !held->second.empty();
+    auto reason = reply.auth;
+    // Servers before X-CookingFoil-Auth: a 401 with neither of the other
+    // headers is a missing key. With a key sent it may be something in front
+    // of the server, so the key stays.
+    if (reason.empty() && reply.session.empty() && reply.enroll.empty() && !keyed) reason = "no-access-key";
+    learnServerId(reply.serverId);
+    if (reason == "no-access-key") return borrowKey(reply.serverId);
+    if (reason != "access-key-wrong" && reason != "device-not-approved" && reason != "session-revoked") return false;
+    if (keyed) {
+        refusedKey_ = held->second;
+        forgetAccessKey();
+    }
+    // Approval again: the QR code shows when it is pending (error set), a
+    // key that comes asks for the list once more.
+    return pair(error);
 }
 void Session::sendPairMessage() {
     // The status poll already knocks; the request goes out to carry the pair
@@ -1299,6 +1355,7 @@ void logRefusal(const std::vector<std::string>& headers, const Response& reply) 
     logLine("list refused: HTTP " + std::to_string(reply.status) + ", signed in by " + auth +
             ", session header " + (reply.session.empty() ? "none" : reply.session) +
             ", enroll header " + (reply.enroll.empty() ? "none" : reply.enroll) +
+            ", auth header " + (reply.auth.empty() ? "none" : reply.auth) +
             (why.empty() ? std::string(", no error in the body") : ", error " + why));
 }
 }
@@ -1324,6 +1381,8 @@ bool Session::refresh(Error& error) {
             Error ignored;
             const auto body = parseJson(response.body, ignored);
             serverId_ = body ? stringField(body.get(), "server_id") : std::string();
+            if (serverId_.empty()) serverId_ = response.serverId;
+            learnServerId(serverId_);
         }
         // Only a server that says so is asked for a session token.
         if (response.status == 200 || response.status == 404) {
@@ -1332,8 +1391,16 @@ bool Session::refresh(Error& error) {
         }
     }
     const auto url = server_.url + "/api/shop/sections";
-    const auto signIn = authHeaders(server_, state_, url);
+    auto signIn = authHeaders(server_, state_, url);
     auto response = get(url, signIn, etag_, cancel_);
+    if (response.status == 401 && response.error.empty()) {
+        const bool again = answerRefusal(response, error);
+        if (again || error) logRefusal(signIn, response);
+        if (again) {
+            signIn = authHeaders(server_, state_, url);
+            response = get(url, signIn, etag_, cancel_);
+        } else if (error) return false; // approval pending: the QR code shows
+    }
     followDirectNaming(url, response);
     if (!response.error.empty()) { error.message = response.error; return false; }
     unchanged_ = response.status == 304;

@@ -27,6 +27,9 @@ struct State {
     // hex characters). Made before the first request, dropped once the key
     // came.
     std::map<std::string, std::string> pairSecrets;
+    // Per server address: the server's id (X-CookingFoil-Server-Id), so an
+    // address with no key can take the one another address of it holds.
+    std::map<std::string, std::string> serverIds;
     // The key made from this console (DeviceIdentity::deviceKey) this run;
     // not stored. Empty when the console's ID could not be read: then the
     // stored deviceKey is the one used.

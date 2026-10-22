@@ -175,9 +175,100 @@ int runEnrollTests() {
     flushLog();
     const auto line = readFile(logged);
     CHECK(line.find("list refused: HTTP 401, signed in by") != std::string::npos);
-    CHECK(line.find("session header none, enroll header none, error denied") != std::string::npos);
+    CHECK(line.find("session header none, enroll header none, auth header none, error denied") != std::string::npos);
     sectionsStatus = 200;
     mock.take();
+  }
+  {
+    // One server under two addresses (its LAN one and a tunnel): the key the
+    // first holds goes to the second, which the server knows by its id
+    // (X-CookingFoil-Server-Id), so it never asks for approval of its own.
+    // A key the server calls wrong goes, and approval is asked again.
+    const auto kept = mock.answer;
+    const std::string other = "http://localhost:" + std::to_string(mock.port);
+    bool idOnStatus = true;
+    std::string wrong;
+    mock.answer = [&](const std::string &request) -> Reply {
+      const std::string id = "X-CookingFoil-Server-Id: server-one\r\n";
+      if (request.rfind("GET /api/pair/status", 0) == 0)
+        return {200, idOnStatus ? id : "", R"({"status":")" + pairStatus + R"("})"};
+      if (request.rfind("GET /api/shop/sections", 0) == 0) {
+        if (!wrong.empty() && has(request, "X-Access-Key: " + wrong))
+          return {401, id + "X-CookingFoil-Auth: access-key-wrong\r\n", "no"};
+        if (has(request, "X-Access-Key: shared-key")) return {200, id, R"({"sections":[]})"};
+        return {401, id, "no access key"};
+      }
+      return {200, id, "{}"};
+    };
+    auto state = loadState(db).value;
+    state.accessKeys = {{url, "shared-key"}};
+    state.serverIds = {{url, "server-one"}};
+    state.pairSecrets.clear();
+    CHECK(saveState(db, state, error));
+    auto second = server();
+    second.url = other;
+    second.enrollToken.clear();
+    {
+      // Known at the approval check: the list is asked once, with the key.
+      net::Session session(second, loadState(db).value, db);
+      CHECK(session.refresh(error) && !session.pairingPending());
+      const auto sent = mock.take();
+      CHECK(count(sent, "/api/shop/sections") == 1 && count(sent, "/api/pair/request") == 0);
+      const auto saved = loadState(db).value;
+      CHECK(saved.accessKeys.count(other) && saved.accessKeys.at(other) == "shared-key");
+      CHECK(saved.serverIds.count(other) && saved.serverIds.at(other) == "server-one");
+      CHECK(!saved.pairSecrets.count(other));
+    }
+    {
+      // Known only from the refused list (no id on the approval check):
+      // the list is asked once more with the key.
+      auto again = loadState(db).value;
+      again.accessKeys.erase(other);
+      again.serverIds.erase(other);
+      CHECK(saveState(db, again, error));
+      idOnStatus = false;
+      net::Session session(second, loadState(db).value, db);
+      CHECK(session.refresh(error));
+      CHECK(count(mock.take(), "/api/shop/sections") == 2);
+      CHECK(loadState(db).value.accessKeys.at(other) == "shared-key");
+      idOnStatus = true;
+    }
+    {
+      // Another server's id: nothing is borrowed, the refusal shows.
+      auto again = loadState(db).value;
+      again.accessKeys.erase(other);
+      again.serverIds = {{url, "server-two"}};
+      CHECK(saveState(db, again, error));
+      net::Session session(second, loadState(db).value, db);
+      CHECK(!session.refresh(error) && error.message.find("401") != std::string::npos);
+      CHECK(!loadState(db).value.accessKeys.count(other));
+      mock.take();
+    }
+    {
+      // access-key-wrong: the key goes and approval is asked again (the
+      // QR code), not "try again"; the same key held by the other address
+      // is never borrowed back.
+      auto again = loadState(db).value;
+      again.accessKeys = {{url, "stale-key"}, {other, "stale-key"}};
+      again.serverIds = {{url, "server-one"}, {other, "server-one"}};
+      CHECK(saveState(db, again, error));
+      wrong = "stale-key";
+      pairStatus = "pending";
+      net::Session session(second, loadState(db).value, db);
+      Error waiting;
+      CHECK(!session.refresh(waiting) && session.pairingPending());
+      const auto saved = loadState(db).value;
+      CHECK(!saved.accessKeys.count(other) && saved.accessKeys.size() == 1);
+      CHECK(count(mock.take(), "POST /api/pair/request") == 1);
+      pairStatus = "approved";
+      wrong.clear();
+    }
+    auto restored = loadState(db).value;
+    restored.accessKeys = {{url, "enrolled-key"}};
+    restored.serverIds.clear();
+    restored.pairSecrets.clear();
+    CHECK(saveState(db, restored, error));
+    mock.answer = kept;
   }
   {
     // A key kept from before that the server no longer approves (the console

@@ -71,6 +71,7 @@ constexpr const char* SecretKind = "secret";
 constexpr const char* SealKind = "seal";
 constexpr const char* ReboundKind = "rebound"; // per server, the made key it took
 constexpr const char* DropboxKind = "dropbox"; // the Dropbox link, its tokens as JSON
+constexpr const char* ServerIdKind = "server-id"; // per server address, the server's own id
 constexpr const char* PendingSetting = "pendingInstall";
 DeviceIdentity currentIdentity() {
     std::lock_guard<std::mutex> held(identityLock);
@@ -162,6 +163,7 @@ State cleaned(State state) {
     keep(state.accessKeys, [](const std::string& v) { return !v.empty(); });
     keep(state.pairMessages, [](const std::string& v) { return !v.empty(); });
     keep(state.pairSecrets, validDeviceKey);
+    keep(state.serverIds, [](const std::string& v) { return !v.empty() && v.size() <= 128; });
     if (!parsePending(state.queueJson)) state.queueJson = "[]";
     return state;
 }
@@ -184,6 +186,7 @@ State fromRows(const DownloadStore::StateRows& rows) {
         if (at.first == DeviceKind) state.deviceKey = value;
         else if (at.first == AccessKind) state.accessKeys[at.second] = value;
         else if (at.first == SecretKind) state.pairSecrets[at.second] = value;
+        else if (at.first == ServerIdKind) state.serverIds[at.second] = value;
     }
     return cleaned(std::move(state));
 }
@@ -203,6 +206,7 @@ DownloadStore::StateRows toRows(const State& given, const DeviceIdentity& id) {
     rows.credentials[{FingerprintKind, ""}] = id.fingerprint;
     for (const auto& [server, key] : state.accessKeys) rows.credentials[{AccessKind, server}] = key;
     for (const auto& [server, secret] : state.pairSecrets) rows.credentials[{SecretKind, server}] = secret;
+    for (const auto& [server, id] : state.serverIds) rows.credentials[{ServerIdKind, server}] = id;
     if (!state.derivedKey.empty() && state.derivedKey != state.deviceKey)
         for (const auto& server : state.rebound) rows.credentials[{ReboundKind, server}] = state.derivedKey;
     return rows;
