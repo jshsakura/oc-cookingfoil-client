@@ -10,7 +10,7 @@ struct Group {
   Item representative;
   std::optional<Item> base, update;
   std::vector<Item> dlc, alternatives;
-  // Every file's name, title id and publisher, lowercased, one per line:
+  // Every file's name in each language, title id and publisher, lowercased, one per line:
   // what search looks at. Kept instead of a copy of every file (that copy
   // was most of the catalog's memory).
   std::string search;

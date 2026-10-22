@@ -551,6 +551,8 @@ void Application::chooseLanguage(Language lang) {
   paint_.fonts.preferLanguage(lang);
   state_.language = languageCode(lang);
   shopSavesLoaded_ = false; // server saves come in the language picked
+  // A failed check's message was worded in the old language; A asks again.
+  if (appUpdate_ == AppUpdate::Failed) appUpdate_ = AppUpdate::Unknown;
   saveOwnState();
   // Genre names, filter chips and home rows were built from text.
   if (session_) {

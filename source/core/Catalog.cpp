@@ -64,6 +64,9 @@ std::vector<Group> groupCatalog(std::vector<Item> items) {
     for (auto &file : files) {
       const auto line = lower(file.name + " " + file.titleId + " " + file.publisher);
       if (g.search.find(line) == std::string::npos) g.search += line + "\n";
+      // Every language's name, so the one shown (whichever it is) finds it.
+      for (const auto &name : file.names)
+        if (g.search.find(lower(name.text)) == std::string::npos) g.search += lower(name.text) + "\n";
       if (file.type == "base")
         bases.push_back(std::move(file));
       else if (file.type == "update")
