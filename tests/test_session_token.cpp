@@ -13,6 +13,7 @@
 #include <poll.h>
 #include <unistd.h>
 #include <atomic>
+#include <chrono>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -104,6 +105,41 @@ std::string grant(const std::string &token, int64_t seconds) {
 } // namespace
 int runSessionTokenTests() {
   int failures = 0;
+  {
+    // A server slow to give its token holds up only its own requests: another
+    // server's token comes at once meanwhile, and a second request to the slow
+    // one waits for the first ask rather than asking again.
+    using namespace std::chrono_literals;
+    const std::string slow = "https://slow.example.com", quick = "https://quick.example.com";
+    std::atomic<bool> letGo{false};
+    std::atomic<int> slowAsks{0};
+    foil::net::offerSession(slow, "a", [&] {
+      ++slowAsks;
+      while (!letGo) std::this_thread::sleep_for(5ms);
+      return foil::net::SessionGrant{200, "slow-token", 3600};
+    });
+    foil::net::offerSession(quick, "b", [] { return foil::net::SessionGrant{200, "quick-token", 3600}; });
+    std::string first, second;
+    std::thread asking([&] { first = foil::net::sessionToken(slow); });
+    while (slowAsks == 0) std::this_thread::sleep_for(1ms);
+    std::thread waiting([&] { second = foil::net::sessionToken(slow); });
+    std::thread release([&] { // so a build that holds one lock for all ends too
+      std::this_thread::sleep_for(1s);
+      letGo = true;
+    });
+    const auto started = std::chrono::steady_clock::now();
+    const auto other = foil::net::sessionToken(quick);
+    const bool prompt = std::chrono::steady_clock::now() - started < 500ms;
+    CHECK(other == "quick-token" && prompt);
+    letGo = true;
+    asking.join();
+    waiting.join();
+    release.join();
+    CHECK(first == "slow-token" && second == "slow-token" && slowAsks == 1);
+    CHECK(foil::net::isSessionToken("slow-token") && foil::net::isSessionToken("quick-token"));
+    foil::net::withdrawSession(slow);
+    foil::net::withdrawSession(quick);
+  }
   Mock mock;
   foil::Server server;
   server.url = "http://127.0.0.1:" + std::to_string(mock.port);
