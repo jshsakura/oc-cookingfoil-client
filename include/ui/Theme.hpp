@@ -31,7 +31,7 @@ inline SDL_Color serverColor(int color, size_t place) {
   constexpr int Count = int(std::size(ServerColors));
   return ServerColors[color >= 0 && color < Count ? color : int(place % Count)];
 }
-// `status` is the Korean key, never the translated text: callers pass the
+// `status` is the untranslated key, never the translated text: callers pass the
 // key here and draw tr(key).
 inline SDL_Color statusColor(std::string_view status) {
   return status == "Connected"                               ? Good // i18n: keep
