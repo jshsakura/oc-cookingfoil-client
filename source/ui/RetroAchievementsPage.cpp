@@ -167,7 +167,7 @@ void Application::raLinkCard() {
 // Signed in: the account row at `y`, the games' height; A on it signs out
 // (after asking).
 void Application::raAccountRow(float y, bool loading) {
-  hit(260, y, 992, RowHeight, [this] {
+  rowHit(260, y, 992, RowHeight, 16, [this] {
     if (inContent() && raPageRow_ == 0) action(Action::Accept);
     sidebar_ = false;
     raPageRow_ = 0;
@@ -248,7 +248,7 @@ void Application::raGamesPage() {
   for (int n = 0; n < int(rows.size()); ++n) {
     if (listTop + n * RowStep + RowHeight < Top - 8) continue;
     if (listTop + n * RowStep > Bottom) break;
-    hit(260, listTop + n * RowStep, 992, RowHeight, [this, n] {
+    rowHit(260, listTop + n * RowStep, 992, RowHeight, 16, [this, n] {
       if (inContent() && raPageRow_ == n + 1) action(Action::Accept);
       sidebar_ = false;
       raPageRow_ = n + 1;

@@ -210,7 +210,7 @@ void Application::viewPopup() {
                     bool on, bool checkbox) {
     const bool focused = popupColumn_ == column && popupRow_ == index;
     const float h = RowHeight - 6, mid = y + h / 2;
-    hit(x, y, w, h, [this, column, index] {
+    rowHit(x, y, w, h, 10, [this, column, index] {
       popupColumn_ = column;
       popupRow_ = index;
       action(Action::Accept);

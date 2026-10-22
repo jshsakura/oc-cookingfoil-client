@@ -172,7 +172,7 @@ void Application::adminEditDialog() {
   }
   for (int i = 0; i < count; ++i, y += Row + Gap) {
     const auto &field = edit.fields[i];
-    hit(x, y, w, Row, [this, i] {
+    rowHit(x, y, w, Row, 14, [this, i] {
       adminEdit_.row = i;
       adminEditAction(Action::Accept);
     });

@@ -1,4 +1,5 @@
 #include "ui/Application.hpp"
+#include "platform/Cores.hpp"
 #include "core/Log.hpp"
 #include "net/Api.hpp"
 #include "net/Ntp.hpp"
@@ -24,6 +25,7 @@ void Application::pollClock() {
   clockCheckedAt_ = now;
   clockFix_ = ClockFix::Checking; // nothing shows until it is known to be the clock
   clockWorker_ = std::thread([this] {
+    const platform::OnCore off(platform::NetworkCore);
     std::optional<int64_t> internet;
     guarded("clock", [&] { internet = net::networkTime(net::ntpServers()); });
     clockFinish_ = [this, internet] {
@@ -46,6 +48,7 @@ void Application::clockAction(Action a) {
     // Internet time as asked, moved on by the time the question was up.
     const auto target = clockInternet_ + int64_t((SDL_GetTicks() - clockAskedAt_) / 1000);
     clockWorker_ = std::thread([this, target] {
+      const platform::OnCore off(platform::NetworkCore);
       platform::ClockSet set;
       guarded("clock", [&] { set = platform::setClock(target); });
       clockFinish_ = [this, set] {

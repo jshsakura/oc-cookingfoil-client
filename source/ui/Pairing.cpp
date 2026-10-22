@@ -53,7 +53,7 @@ void Application::pairing() {
                        290, 440, 19, Secondary, 570, 3);
   // The note for the admin, under the card: Y or a touch edits it.
   constexpr float NoteY = 572, NoteH = 60;
-  hit(260, NoteY, 992, NoteH, [this] { askPairMessage(); });
+  rowHit(260, NoteY, 992, NoteH, 16, [this] { askPairMessage(); });
   paint_.rect(260, NoteY, 992, NoteH, Surface, 16);
   const float noteMid = NoteY + NoteH / 2;
   const float labelRight = paint_.keyLabel("Y", tr("Message"), 290, noteMid, 18, Secondary, true);

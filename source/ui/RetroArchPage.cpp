@@ -127,7 +127,7 @@ void Application::retroArchPage() {
   paint_.rect(818, 172, 430, 484, Surface, 20);
   paint_.fonts.text(tr("Manage|app"), X, 192, 22, Ink, true);
   if (present) {
-    hit(X, RowTop, W, Row, [this] {
+    rowHit(X, RowTop, W, Row, 12, [this] {
       retroArchPart_ = FullRow;
       action(Action::Accept);
     });

@@ -765,6 +765,27 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(reload.current() != foil::ui::Screen::Settings);
     std::filesystem::remove_all(root);
   }
+  char refreshDirectory[] = "/tmp/cookingfoil-refresh-XXXXXX";
+  if (const auto refreshRoot = mkdtemp(refreshDirectory)) {
+    // - on 홈 turns it to placeholders with the menu and the buttons, as on
+    // every menu screen: the cursor waits on the menu until the answer.
+    const auto configPath = std::string(refreshRoot) + "/config.json";
+    std::string error;
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:1"}]})", error));
+    foil::ui::Application home(renderer, configPath, std::string(refreshRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(home.open());
+    settle(home);
+    for (int frame = 0; frame < 400 && home.asking(); ++frame) { SDL_Delay(5); home.render(); }
+    home.setItems(parsed.value);
+    home.render();
+    home.action(foil::ui::Action::Right); // into the rows
+    home.render();
+    CHECK(home.current() == foil::ui::Screen::Home && !home.onMenu());
+    home.refreshAll(); // what - does (main.cpp)
+    home.render();
+    CHECK(home.onMenu());
+    std::filesystem::remove_all(refreshRoot);
+  }
   char bugDirectory[] = "/tmp/cookingfoil-bug-XXXXXX";
   if (const auto bugRoot = mkdtemp(bugDirectory)) {
     // A bug report goes to a server the player picks among the ones on,
@@ -786,6 +807,29 @@ int runUiTests(SDL_Renderer *renderer) {
     bug.action(foil::ui::Action::Back);
     CHECK(!bug.bugReportOpen());
     std::filesystem::remove_all(bugRoot);
+  }
+  char pullDirectory[] = "/tmp/cookingfoil-pull-XXXXXX";
+  if (const auto pullRoot = mkdtemp(pullDirectory)) {
+    // A list of short rows pulled past its top stretches more than a row:
+    // the first row drawn is still the first, not one before it (레트로
+    // 게임's versions closed the app this way).
+    const auto configPath = std::string(pullRoot) + "/config.json";
+    std::string error;
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"url":"http://127.0.0.1:1"},{"url":"http://127.0.0.1:2"},
+      {"url":"http://127.0.0.1:3"},{"url":"http://127.0.0.1:4"},{"url":"http://127.0.0.1:5"}]})", error));
+    foil::ui::Application pull(renderer, configPath, std::string(pullRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(pull.open());
+    pull.openBugReport("");
+    pull.render();
+    pull.fingerDown();
+    pull.dragBegin(640, 400);
+    pull.drag(0, 2000);
+    pull.render();
+    CHECK(pull.gliding() && pull.glidePos() < -1);
+    pull.dragEnd(0, 0);
+    for (int i = 0; i < 60; ++i) { SDL_Delay(5); pull.render(); }
+    CHECK(pull.glidePos() == 0 && pull.bugReportOpen());
+    std::filesystem::remove_all(pullRoot);
   }
   char formDirectory[] = "/tmp/cookingfoil-form-XXXXXX";
   const auto formRoot = mkdtemp(formDirectory);

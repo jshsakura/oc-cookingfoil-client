@@ -109,7 +109,7 @@ void Application::retroFilterPopup() {
                                        : std::count(draftPicks_.begin(), draftPicks_.end(), std::make_pair(chip.group, chip.option));
     const bool focused = popupColumn_ == 0 && filterFocus_ == n;
     if (y >= top - 4 && y + ChipH <= top + view + 4)
-      hit(x, y, chip.w, ChipH, [this, n] {
+      rowHit(x, y, chip.w, ChipH, 20, [this, n] {
         popupColumn_ = 0;
         filterFocus_ = n;
         retroFilterAction(Action::Accept);
@@ -131,7 +131,7 @@ void Application::retroFilterPopup() {
   for (int n = 0; n < int(book.sorts.size()); ++n) {
     const float y = top + n * 44.f, h = 38, mid = y + h / 2;
     const bool on = book.sorts[size_t(n)].key == draftSortKey_, focused = popupColumn_ == 1 && popupRow_ == n;
-    hit(sortLeft, y, SortWidth, h, [this, n] {
+    rowHit(sortLeft, y, SortWidth, h, 10, [this, n] {
       popupColumn_ = 1;
       popupRow_ = n;
       retroFilterAction(Action::Accept);

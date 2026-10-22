@@ -49,6 +49,17 @@ int runInstallerTests() {
   CHECK(foil::install::missingFirmware({newer}, "19.0.1").empty());
   CHECK(foil::install::missingFirmware({newer}, "").empty());
   CHECK(foil::install::missingFirmware({item}, "1.0.0").empty());
+  // A newer master key than the console's is never tried; the same key with
+  // a lower version installs with a warning.
+  CHECK(foil::install::masterKeyOf("1.0.0") == 0 && foil::install::masterKeyOf("9.2.0") == 10);
+  CHECK(foil::install::masterKeyOf("12.1.0") == 11 && foil::install::masterKeyOf("20.5.0") == 19);
+  CHECK(foil::install::masterKeyOf("21.0.0") == 20 && foil::install::masterKeyOf("23.1.0") == 22);
+  CHECK(foil::install::unreachableFirmware({item, newer}, "18.1.0") == "19.0.0");
+  auto patch = item;
+  patch.requiredFirmware = "19.0.1";
+  CHECK(foil::install::missingFirmware({patch}, "19.0.0") == "19.0.1");
+  CHECK(foil::install::unreachableFirmware({patch}, "19.0.0").empty());
+  CHECK(foil::install::unreachableFirmware({newer}, "").empty()); // unknown console: never blocks
   foil::install::Installer installer;
   auto error = installer.start({item}, "Title", "", "sd", {}, {});
   CHECK(error);

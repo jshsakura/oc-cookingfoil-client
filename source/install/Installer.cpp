@@ -2,6 +2,7 @@
 #include "install/Installer.hpp"
 #include <utility>
 #include <cstdio>
+#include <cstdlib>
 #include <chrono>
 #include "install/EngineHooks.hpp"
 #include "core/I18n.hpp"
@@ -36,6 +37,27 @@ std::string missingFirmware(const std::vector<Item> &files, const std::string &c
       need = file.requiredFirmware;
   if (need.empty() || console.empty() || compareVersions(console, need) >= 0) return "";
   return need;
+}
+int masterKeyOf(const std::string &firmware) {
+  // The firmware that brought each key; past the last one known, each major
+  // version has brought one (as every one from 13.0.0 to 21.0.0 did).
+  static const char *const Brought[] = {"1.0.0",  "3.0.0",  "3.0.1",  "4.0.0",  "5.0.0",  "6.0.0",  "6.2.0",
+                                         "7.0.0",  "8.1.0",  "9.0.0",  "9.1.0",  "12.1.0", "13.0.0", "14.0.0",
+                                         "15.0.0", "16.0.0", "17.0.0", "18.0.0", "19.0.0", "20.0.0", "21.0.0"};
+  constexpr int Known = int(sizeof(Brought) / sizeof(*Brought)), LastMajor = 21;
+  const int major = std::atoi(firmware.c_str());
+  if (major > LastMajor) return Known - 1 + major - LastMajor;
+  int key = 0;
+  while (key + 1 < Known && compareVersions(firmware, Brought[key + 1]) >= 0) ++key;
+  return key;
+}
+std::string firmwareShortfall(const std::string &need, const std::string &console) {
+  return trf("The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.",
+             {console, need});
+}
+std::string unreachableFirmware(const std::vector<Item> &files, const std::string &console) {
+  const auto need = missingFirmware(files, console);
+  return !need.empty() && masterKeyOf(need) > masterKeyOf(console) ? need : "";
 }
 Error preflight(const std::vector<Item> &files,
                 std::optional<uint64_t> space) {
@@ -128,14 +150,9 @@ Error Installer::start(std::vector<Item> files, std::string name,
   error = preflight(files, free ? free : platform::freeSpace(target));
   if (error)
     return error;
-  if (!state.skipFirmwareCheck) {
-    const auto console = platform::firmwareVersion();
-    const auto need = missingFirmware(files, console);
-    if (!need.empty()) {
-      error.message = trf("This needs firmware {1} or later; the console has {0}. Turn on Ignore firmware check in Settings to install it anyway.",
-                          {console, need});
-      return error;
-    }
+  if (const auto console = platform::firmwareVersion(); !unreachableFirmware(files, console).empty()) {
+    error.message = firmwareShortfall(unreachableFirmware(files, console), console);
+    return error;
   }
   if (thread_.joinable())
     thread_.join();
@@ -143,7 +160,6 @@ Error Installer::start(std::vector<Item> files, std::string name,
   stop_ = false;
   pause_ = false;
   skipSignature_ = state.skipSignatureCheck;
-  skipFirmware_ = state.skipFirmwareCheck;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     progress_ = {};

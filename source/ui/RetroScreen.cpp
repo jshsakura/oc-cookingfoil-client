@@ -57,6 +57,7 @@ bool Application::runRetroJob(const std::string &busy, std::function<std::functi
   if (busy == "list") {
     if (retroListWorker_.joinable()) return false;
     retroListWorker_ = std::thread([this, job = std::move(job)] {
+      const platform::OnCore off(platform::NetworkCore);
       std::function<void()> finish;
       if (!guarded("retro list", [&] { finish = job(); }))
         finish = [this] { message(tr("Something went wrong with the retro task. Check log.txt.")); };
@@ -865,7 +866,7 @@ void Application::retroBanner(float y) {
     paint_.rect(910, y + 28, std::max(8.f, 316 * ratio), 8, Butter, 4);
     return;
   }
-  hit(260, y, 992, Height, [this] { action(Action::Queue); });
+  rowHit(260, y, 992, Height, 16, [this] { action(Action::Queue); });
   const bool ready = retroArchPresent();
   paint_.icon(ready ? 24 : 25, 282, y + 19, ready ? Good : Pending, 26);
   // What the player needs to know: whether games will run, and where they show up.
@@ -937,14 +938,14 @@ void Application::retroList() {
   // The row at the top follows the cursor, or the finger while it glides.
   const float top = glide("retro", 232, Top, 1048, 660 - (Top), float(std::clamp(selected_ - Visible / 2, 0, std::max(0, count - Visible))),
                           float((count) - (Visible)), RowStep);
-  const int first = int(top);
+  const int first = std::max(0, int(top));
   paint_.scrollbar(1266, Top, RowStep * Visible - 12, top, Visible, float(std::max(retroTotal_, count)));
   // One row past the footer so a long list looks like it goes on.
   clipTo(232, Top - 8, 1048, 660 - Top + 8);
   for (int i = first; i < count && i <= first + Visible + 1; ++i) {
     const auto &game = retroGames_[i];
     const float y = Top + (i - top) * RowStep;
-    hit(260, y, 992, RowHeight, [this, i] {
+    rowHit(260, y, 992, RowHeight, 16, [this, i] {
       if (inContent() && selected_ == i) action(Action::Accept);
       sidebar_ = false;
       selected_ = i;

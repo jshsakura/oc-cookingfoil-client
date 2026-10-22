@@ -143,7 +143,7 @@ void Application::homebrewExtrasDialog() {
   clipTo(x, listTop, w, shown * (Row + Gap));
   for (int n = first; n < count && n <= first + Visible; ++n) {
     const float y = listTop + (n - top) * (Row + Gap);
-    hit(x, y, w, Row, [this, n] {
+    rowHit(x, y, w, Row, 12, [this, n] {
       homebrewExtraRow_ = n;
       action(Action::Accept);
     });

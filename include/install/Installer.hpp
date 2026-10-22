@@ -28,6 +28,16 @@ int compareVersions(const std::string &a, const std::string &b);
 // The highest firmware the files need when the console is older, else "".
 // Unknown versions on either side never block.
 std::string missingFirmware(const std::vector<Item> &files, const std::string &console);
+// The master key a firmware brought (0 for 1.0.0): content made for newer
+// firmware is encrypted with a key older firmware does not have.
+int masterKeyOf(const std::string &firmware);
+// What the console lacks, as a popup says it: the requirement, then what is
+// needed and what the console has.
+std::string firmwareShortfall(const std::string &need, const std::string &console);
+// missingFirmware when that firmware's master key is newer than the
+// console's: the console cannot open what it installs. Else "" (an older
+// firmware with the same key may still install and run).
+std::string unreachableFirmware(const std::vector<Item> &files, const std::string &console);
 // The speed shown, calm enough to read: everything received since this
 // download started over the time it has run, refreshed every three
 // seconds. Nothing is shown for the first five seconds and the first 4 MB
@@ -98,7 +108,6 @@ public:
   bool cancellationRequested() const { return cancel_; }
   // Set from 설정 when the install starts; the engine reads it per file.
   bool skipSignatureCheck() const { return skipSignature_; }
-  bool skipFirmwareCheck() const { return skipFirmware_; }
   // Where cut-off files stand (EngineHooks), held here so the install
   // thread never waits on the card: the UI thread loads them from
   // 다운로드's database and writes back what changed (takeResumeChanges).
@@ -126,7 +135,7 @@ private:
   void run(std::vector<Item> files, Server server, State state);
   mutable std::mutex mutex_;
   std::thread thread_;
-  std::atomic<bool> cancel_{false}, stop_{false}, pause_{false}, skipSignature_{false}, skipFirmware_{false};
+  std::atomic<bool> cancel_{false}, stop_{false}, pause_{false}, skipSignature_{false};
   Progress progress_;
   uint64_t completed_ = 0;
   std::map<std::string, uint64_t> contents_;

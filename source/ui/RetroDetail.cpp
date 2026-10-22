@@ -381,14 +381,14 @@ void Application::retroDetailPanel() {
   const int cursor = std::min(retroPart_, rows - 1);
   const float top = glide("retroVersions", 840, RowTop - 4, W, 4 * RowPitch, float(std::max(0, cursor - 3)),
                           float(rows - 4), RowPitch);
-  const int first = int(top);
+  const int first = std::max(0, int(top));
   clipTo(840, RowTop - 4, W, 4 * RowPitch);
   for (int i = 0; i < 5 && first + i < rows; ++i) {
     const int n = first + i;
     const auto &v = versions[size_t(n)];
     const float ry = RowTop + (n - top) * RowPitch, mid = ry + RowHeight / 2;
     const bool checked = retroChecked_.count(v.id) > 0;
-    hit(840, ry, W, RowHeight, [this, n] {
+    rowHit(840, ry, W, RowHeight, 12, [this, n] {
       descriptionFocus_ = false;
       if (retroPart_ == n) toggleRetroVersion(n);
       retroPart_ = n;

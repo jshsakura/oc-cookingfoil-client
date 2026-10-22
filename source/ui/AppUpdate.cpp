@@ -1,4 +1,5 @@
 #include "ui/Application.hpp"
+#include "platform/Cores.hpp"
 #include <cstdlib>
 #include <filesystem>
 #include <algorithm>
@@ -32,6 +33,7 @@ void Application::checkAppUpdate() {
   const auto servers = serversWith("");
   const auto state = state_;
   updateWorker_ = std::thread([this, servers, state] {
+    const platform::OnCore off(platform::NetworkCore);
     // The one in use says how the check went; another server with a newer
     // build is where it comes from.
     net::ClientUpdateReply reply;
@@ -108,6 +110,7 @@ void Application::installAppUpdate() {
   const auto state = state_;
   const auto target = nroPath(selfPath_, sdRoot_);
   updateWorker_ = std::thread([this, server, state, release = appRelease_, target]() mutable {
+    const platform::OnCore off(platform::WriterCore);
     Error error;
     bool ok = false;
     guarded("update", [&] {
@@ -204,7 +207,7 @@ void Application::bugReportDialog() {
   paint_.fonts.text(tr("Write what went wrong if you like. The app's log goes with it."), x, y, 19, Secondary, false, textW);
   // The note: Y or a tap opens the keyboard.
   y += 26 + 16;
-  hit(x, y, textW, Note, [this] { action(Action::Queue); });
+  rowHit(x, y, textW, Note, 12, [this] { action(Action::Queue); });
   paint_.rect(x, y, textW, Note, Ground, 12);
   if (bugMessage_.empty())
     paint_.fonts.text(tr("Tap to write (optional)"), x + 20, y + 16, 19, Secondary);
@@ -222,11 +225,11 @@ void Application::bugReportDialog() {
     const float top = glide("bugServers", x, y, rowW, listH, float(std::clamp(bugServer_ - Shown / 2, 0, std::max(0, count - Shown))),
                             float(std::max(0, count - Shown)), Row + Gap);
     clipTo(x, y, rowW, listH);
-    for (int n = int(top); n < count && n <= int(top) + Shown; ++n) {
+    for (int n = std::max(0, int(top)); n < count && n <= int(top) + Shown; ++n) {
       const auto &server = config_.servers[on[size_t(n)]];
       const float ry = y + (float(n) - top) * (Row + Gap), mid = ry + Row / 2;
       const bool chosen = n == bugServer_;
-      hit(x, ry, rowW, Row, [this, n] { bugServer_ = n; });
+      rowHit(x, ry, rowW, Row, 12, [this, n] { bugServer_ = n; });
       if (chosen) paint_.focusRow(x, ry, rowW, Row, Ground, 12);
       else paint_.rect(x, ry, rowW, Row, Ground, 12);
       paint_.rect(x + 20, mid - 6, 12, 12, serverDot(server.url), 6);
@@ -262,6 +265,7 @@ void Application::sendBugReport(const std::string &said) {
   // where the app stopped, which the log cannot).
   const auto note = said.empty() ? std::string() : "message: " + said + "\n\n";
   bugWorker_ = std::thread([this, server, state, note] {
+    const platform::OnCore off(platform::NetworkCore);
     Error error;
     bool ok = false;
     guarded("bug report", [&] {

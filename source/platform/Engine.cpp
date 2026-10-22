@@ -145,9 +145,9 @@ void nativeInstall(const Item &item, const std::string &target,
   // connection (8 x 2 x 8 MB = 128 MB at most), the album one (16 MB).
   tin::network::SetParallelDownload(current.connections, current.application ? 0x800000 : 0x400000,
                                     current.application ? 2 : 1);
-  // Off in 설정: the required system version is cleared so the console
-  // launches the game anyway (it may still fail on firmware that is too old).
-  const bool ignoreFirmware = sink && sink->skipFirmwareCheck();
+  // The required system version is always cleared so the console launches
+  // the game anyway; on firmware too old the queue warned it may fail.
+  constexpr bool ignoreFirmware = true;
   tin::network::ClearBasicAuth();
   tin::network::SetExtraHeaders(headers, originOf(from));
   struct Headers {

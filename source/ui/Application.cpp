@@ -755,6 +755,7 @@ void Application::screen(Screen screen) {
   sidebar_ = autoSidebar_ = !hasFocusable();
 }
 bool Application::hasFocusable() const {
+  if (refreshSkeleton()) return false; // placeholders while the server is asked again
   switch (screen_) {
   case Screen::Home:
     return !groups_.empty() || homeOffersSettings() || homeOffersRetry(); // its notice's button
@@ -803,6 +804,7 @@ void Application::reload(int prefer) {
     return;
   }
   reloadWorker_ = std::thread([this] {
+    const platform::OnCore off(platform::WriterCore);
     guarded("reload", [&] { reloadRead_ = readForReload(false); });
     reloadDone_ = true;
   });
@@ -992,6 +994,7 @@ void Application::waitForState(int prefer) {
   error_ = {};
   if (stateWorker_.joinable()) stateWorker_.join();
   stateWorker_ = std::thread([this, path = statePath_] {
+    const platform::OnCore off(platform::WriterCore);
     while (!stop_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(300));
       bool busy = false;
@@ -1273,7 +1276,6 @@ void Application::takeNetwork() {
     state_.queueJson = mine.queueJson;
     state_.language = mine.language;
     state_.skipSignatureCheck = mine.skipSignatureCheck;
-    state_.skipFirmwareCheck = mine.skipFirmwareCheck;
     state_.makeShortcuts = mine.makeShortcuts;
     state_.sounds = mine.sounds;
     state_.installTarget = mine.installTarget;
@@ -1995,14 +1997,13 @@ void Application::action(Action a) {
       case 3: openFileCleanup(); break;
       // The switches, together.
       case 4: toggleInstallCheck(state_.skipSignatureCheck); break;
-      case 5: toggleInstallCheck(state_.skipFirmwareCheck); break;
-      case 6: toggleInstallCheck(state_.makeShortcuts); break;
-      case 7:
+      case 5: toggleInstallCheck(state_.makeShortcuts); break;
+      case 6:
         toggleInstallCheck(state_.sounds);
         sounds_.setOn(state_.sounds);
         sounds_.play(Cue::Add); // turned on: heard at once
         break;
-      case 8: openBugReport(""); break;
+      case 7: openBugReport(""); break;
       default:
         // A server opens its form; "+ 서버 추가" an empty one.
         openServerForm(selected_ < int(config_.servers.size()) ? std::max(0, selected_) : -1);
@@ -2347,11 +2348,18 @@ float Application::statusBar() {
   return x;
 }
 bool Application::refreshSkeleton() const {
-  return menuPending() && !fullPage() && screen_ != Screen::Home;
+  return menuPending() && !fullPage();
 }
-// A menu screen's shape while the server is asked: its title, then cards
-// for the screens of games, rows for the others.
+// A menu screen's shape while the server is asked: 홈's banner and first
+// row; elsewhere its title, then cards for the screens of games, rows for
+// the others.
 void Application::screenSkeleton() {
+  if (screen_ == Screen::Home) {
+    paint_.skeleton(260, 24, 992, 248, 20);
+    paint_.skeleton(260, 300, 160, 28, 8);
+    paint_.skeletonCards(260, 346, 6);
+    return;
+  }
   paint_.skeleton(260, 30, 180, 34, 10);
   const bool cards = screen_ == Screen::Library || screen_ == Screen::Installed || screen_ == Screen::Homebrew ||
                      screen_ == Screen::Retro;
@@ -2465,7 +2473,7 @@ void Application::render() {
       using Hints = std::vector<std::pair<std::string, std::string>>;
       auto hints = descriptionFocus_ ? Hints{{"A", tr("Back to items")}, {"B", tr("Back")}}
                                        : Hints{{"A", onTheWay   ? tr("Cancel download")
-                                                     : onButton ? tr("Install")
+                                                     : onButton ? (pickedUnreachable().empty() ? tr("Install") : tr("See why"))
                                                      : onStorage ? tr("Choose this")
                                                      : part_ == 0 && selection_ && selection_->baseChoices() > 1 &&
                                                                selection_->parts().front().type == "base"
@@ -2638,6 +2646,8 @@ void Application::render() {
       SDL_RenderSetClipRect(paint_.renderer, nullptr);
       if (pressedLook_.w > 0)
         paint_.rect(pressedLook_.x, pressedLook_.y, pressedLook_.w, pressedLook_.h, {0, 0, 0, 36}, pressedRadius_);
+      else if (pressedRadius_ < 0) // a row (rowHit): exactly its shape
+        paint_.rect(pressed_.x, pressed_.y, pressed_.w, pressed_.h, {0, 0, 0, 36}, -pressedRadius_);
       else
         paint_.rect(pressed_.x - Pad, pressed_.y - Pad, pressed_.w + 2 * Pad, pressed_.h + 2 * Pad, {0, 0, 0, 36}, 18);
     }
@@ -2645,6 +2655,18 @@ void Application::render() {
   SDL_RenderPresent(paint_.renderer);
 }
 
+std::vector<Item> Application::pickedNeeds() const {
+  auto needs = selection_ ? selection_->files() : std::vector<Item>{};
+  if (!detail_.requiredFirmware.empty() && !needs.empty()) {
+    Item title;
+    title.requiredFirmware = detail_.requiredFirmware;
+    needs.push_back(std::move(title));
+  }
+  return needs;
+}
+std::string Application::pickedUnreachable() const {
+  return install::unreachableFirmware(pickedNeeds(), platform::firmwareVersion());
+}
 void Application::requestInstall() {
   if (!selection_ || detailGroup_ >= groups_.size())
     return;
@@ -2655,6 +2677,11 @@ void Application::requestInstall() {
   }
   if (!selection_->count()) {
     alert_ = tr("Turn on at least one item to install.");
+    return;
+  }
+  // Content for a newer master key than the console's: not tried at all.
+  if (const auto need = pickedUnreachable(); !need.empty()) {
+    alert_ = install::firmwareShortfall(need, platform::firmwareVersion());
     return;
   }
   confirmInstall_ = true;
@@ -2768,6 +2795,12 @@ void Application::installSelected() {
       alert_ = error.message;
       return;
     }
+    // Older firmware than the game asks for, with the same master key: it
+    // goes on, and says so.
+    const auto console = platform::firmwareVersion();
+    if (const auto need = install::missingFirmware(pickedNeeds(), console); !need.empty())
+      message(trf("The console's firmware {0} is older than the {1} this game needs. The install or the game may fail.",
+                  {console, need}));
   } else {
     queuePatchJobs(selection_->patchesOn(), ++installGroups_);
     const bool waits = downloadRunning() || installQueue_.size() > 1;
@@ -3284,6 +3317,7 @@ void Application::checkResumePoints() {
   for (const auto &[key, point] : resumeChecked_) keys.push_back(key);
   const auto started = std::filesystem::file_time_type::clock::now();
   resumeCheckWorker_ = std::thread([this, keys, started] {
+    const platform::OnCore off(platform::WriterCore);
     const platform::Behind behind; // runs while the splash is up
     ResumeLeftovers leftovers;
     guarded("resume check", [&] {
@@ -3358,6 +3392,7 @@ void Application::pollStorage() {
   std::vector<std::string> paths(asked.begin(), asked.end());
   const bool totals = !sdTotal_ || !nandTotal_;
   storageWorker_ = std::thread([this, paths = std::move(paths), totals, sd = sdRoot_, generation = cardGeneration_] {
+    const platform::OnCore off(platform::WriterCore);
     StorageFound found;
     found.generation = generation;
 #ifdef __SWITCH__
@@ -3485,7 +3520,7 @@ void Application::languageDialog() {
   const float w = (body.w - 48 - Gap * 2) / 2;
   for (int i = 0; i < LanguageCount; ++i) {
     const float x = body.x + 24 + (i / LanguageRows) * (w + Gap * 2), y = body.y + 16 + (i % LanguageRows) * (Row + Gap);
-    hit(x, y, w, Row, [this, i] {
+    rowHit(x, y, w, Row, 12, [this, i] {
       languageRow_ = i;
       action(Action::Accept);
     });

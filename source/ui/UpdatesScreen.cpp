@@ -130,14 +130,14 @@ void Application::updates() {
   // The row at the top follows the cursor, or the finger while it glides.
   const float top = glide("updates", 232, 90, 1048, 660 - (90), float(std::max(0, selected_ - 2)),
                           float((int(rows.size())) - (4)), 124);
-  const int first = int(top);
+  const int first = std::max(0, int(top));
   paint_.scrollbar(1266, 90, 480, top, 4, float(rows.size()));
   clipTo(232, 90 - 8, 1048, 660 - 90 + 8);
   for (int i = first; i < int(rows.size()) && i <= first + 5; ++i) {
     const auto &row = rows[i];
     const auto *group = findGroup(row.baseId);
     const float y = 90 + (i - top) * 124;
-    hit(260, y, 992, 108, [this, i] {
+    rowHit(260, y, 992, 108, 18, [this, i] {
       sidebar_ = false;
       selected_ = i;
     });

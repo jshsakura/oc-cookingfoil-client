@@ -122,6 +122,8 @@ public:
   size_t groupCount() const { return groups_.size(); }
   // A reload still reading the card (reload() from the drawing thread).
   bool reloading() const { return reloadWorker_.joinable(); }
+  // The server still asked (network_ not yet taken by a frame).
+  bool asking() const { return network_.joinable() && !done_; }
   std::string selectedName() const;
   void setDetail(net::Detail detail);
   bool confirmingInstall() const { return confirmInstall_; }
@@ -366,7 +368,7 @@ public:
   void saveOwnState();
   // 설정's options card: 언어, 기본 저장 위치, 앱 업데이트, 남은 파일 정리,
   // then the switches: 서명 검사, 펌웨어 검사, 홈 메뉴 바로가기, 오류 로그 전송.
-  static constexpr int SettingsOptions = 9;
+  static constexpr int SettingsOptions = 8;
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).
@@ -1310,6 +1312,14 @@ private:
   // A small button drawn at `look` (corner `radius`): it answers a little
   // above and below it, and shows pressed as itself, not as a larger card.
   void buttonHit(SDL_FRect look, int radius, std::function<void()> run);
+  // The picked files with the title's own firmware need, and the firmware
+  // among them the console cannot reach (install::unreachableFirmware).
+  std::vector<Item> pickedNeeds() const;
+  std::string pickedUnreachable() const;
+  // A row: pressed, it darkens as itself (its own corners), only the part on screen.
+  void rowHit(float x, float y, float w, float h, int radius, std::function<void()> run) {
+    hit(x, y, w, h, std::move(run), {}, -radius);
+  }
   // Under a popup nothing answers: no taps, and no list glides behind it.
   void blockTouch() {
     hit(0, 0, 1280, 720, [] {});
@@ -1322,7 +1332,7 @@ private:
     SDL_FRect area;
     std::function<void()> run;
     SDL_FRect look{}; // shown pressed as this when set; else a card around area
-    int radius = 0;
+    int radius = 0;   // below 0: a row (rowHit), pressed as area itself with these corners
   };
   std::vector<Hit> hits_;
   // The header's buttons (tabs, filter, search, Y buttons), recorded each

@@ -185,7 +185,7 @@ void Application::fileCleanupDialog() {
   for (int n = 0; n < 3; ++n) {
     const float y = top + n * (Row + Gap), mid = y + Row / 2;
     if (!tidyDeleting_)
-      hit(x, y, w, Row, [this, n] {
+      rowHit(x, y, w, Row, 12, [this, n] {
         tidyRow_ = n;
         action(Action::Accept);
       });

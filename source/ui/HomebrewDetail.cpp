@@ -235,7 +235,7 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
                          RowTop + 6, 17, Secondary, W, 3);
   for (int i = 0; i < int(extras.size()) && i < 6; ++i) {
     const float rowY = RowTop + i * (Row + Gap);
-    hit(X, rowY, W, Row, [this, i] {
+    rowHit(X, rowY, W, Row, 12, [this, i] {
       descriptionFocus_ = false;
       homebrewAskRow_ = i;
       action(Action::Accept);

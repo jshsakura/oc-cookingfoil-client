@@ -1,4 +1,5 @@
 #include "ui/Application.hpp"
+#include "platform/Cores.hpp"
 #include "core/I18n.hpp"
 #include "core/Log.hpp"
 #include <algorithm>
@@ -219,6 +220,7 @@ bool Application::runPatchJob(
   patchMessage_.clear();
   auto session = std::make_shared<net::Session>(serverFor(server), state_, "", &stop_);
   patchWorker_ = std::thread([this, session, job = std::move(job)] {
+    const platform::OnCore off(platform::WriterCore);
     const bool ok = guarded("patches", [&] { job(*session, *patchStore_, incomingPatchError_, patchMessage_); });
     if (!ok)
       incomingPatchError_.message = tr("Patch error. Check log.txt.");
@@ -273,6 +275,7 @@ void Application::startPatchCheck() {
   patchCheckStop_ = false;
   auto *checker = patchChecker_.get();
   patchCheckWorker_ = std::thread([this, checker, sd = patchStore_->sdRoot(), records = patchRecords_] {
+    const platform::OnCore off(platform::WriterCore);
     guarded("patch check", [&] {
       checker->run(CheckLooks, CheckBudget, &patchCheckStop_);
       if (!patchCheckStop_) incomingCardPatches_ = scanCardPatches(sd, records);
@@ -727,7 +730,7 @@ void Application::patchesScreen() {
   // The row at the top follows the cursor, or the finger while it glides.
   const float top = glide("patches", 232, RowTop, 1048, 660 - (RowTop), float(std::clamp(selected_ - VisibleRows / 2, 0, std::max(0, int(games.size()) - VisibleRows))),
                           float((int(games.size())) - (VisibleRows)), RowStep);
-  const int first = int(top);
+  const int first = std::max(0, int(top));
   paint_.scrollbar(1266, RowTop, RowStep * VisibleRows - 16, top, VisibleRows, float(games.size()));
   // One more row than fits, cut off by the footer, so a longer list looks
   // like it goes on instead of looking like four games in all.
@@ -735,7 +738,7 @@ void Application::patchesScreen() {
   for (int i = first; i < int(games.size()) && i <= first + VisibleRows + 1; ++i) {
     const auto &game = games[i];
     const float y = RowTop + (i - top) * RowStep;
-    hit(260, y, 992, RowHeight, [this, i] {
+    rowHit(260, y, 992, RowHeight, 18, [this, i] {
       if (inContent() && selected_ == i)
         action(Action::Accept);
       sidebar_ = false;
@@ -855,7 +858,7 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
   for (int n = first; n < count && n <= first + Visible; ++n) {
     const auto &row = rows[game.rows[n]];
     const float y = listTop + (n - pickTop) * (Row + Gap);
-    hit(x, y, w, Row, [this, n] {
+    rowHit(x, y, w, Row, 12, [this, n] {
       patchPickRow_ = n;
       action(Action::Accept);
     });
@@ -996,7 +999,7 @@ void Application::patchMenu(const PatchRow &row) {
   const float shotW = (w - 2 * ShotGap) / 3;
   for (size_t i = 0; i < shots.size() && i < 3; ++i) {
     const float sx = x + i * (shotW + ShotGap);
-    hit(sx, y, shotW, ShotH, [this, i] {
+    rowHit(sx, y, shotW, ShotH, 10, [this, i] {
       galleryOpen_ = true;
       screenshot_ = i;
     });
@@ -1010,7 +1013,7 @@ void Application::patchMenu(const PatchRow &row) {
   }
   y += shotRow;
   for (int i = 0; i < int(choices.size()); ++i) {
-    hit(x, y, w, ChoiceHeight, [this, i] {
+    rowHit(x, y, w, ChoiceHeight, 12, [this, i] {
       patchMenuRow_ = i;
       action(Action::Accept);
     });

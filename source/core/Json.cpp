@@ -144,9 +144,14 @@ bool replaceFile(const std::string& from, const std::string& to, std::string& er
     const std::string old = to + ".old";
     std::error_code ec;
     std::filesystem::remove_all(old, ec);
-    if (::rename(to.c_str(), old.c_str()) != 0) { error = std::strerror(errno); return false; }
+    // Which step failed and on what: a card that refuses one says so in the log.
+    const auto name = [](const std::string& path) { return std::filesystem::path(path).filename().string(); };
+    if (::rename(to.c_str(), old.c_str()) != 0) {
+        error = "moving " + name(to) + " aside: " + std::strerror(errno) + (ec ? " (" + name(old) + " stays: " + ec.message() + ")" : "");
+        return false;
+    }
     if (::rename(from.c_str(), to.c_str()) != 0) {
-        error = std::strerror(errno);
+        error = "putting " + name(to) + " in place: " + std::strerror(errno);
         ::rename(old.c_str(), to.c_str()); // the old file stays in its place
         return false;
     }

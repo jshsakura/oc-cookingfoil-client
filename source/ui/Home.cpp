@@ -67,13 +67,8 @@ void Application::home() {
       notice(tr("Reading the app's records on the SD card."), tr("If another CookingFoil is open, close it."), 25);
       return;
     }
-    const auto shape = [this] {
-      paint_.skeleton(260, 24, 992, 248, 20);
-      paint_.skeleton(260, 300, 160, 28, 8);
-      paint_.skeletonCards(260, 346, 6);
-    };
     if (stateWaiting_ || reloadWorker_.joinable()) {
-      shape();
+      screenSkeleton();
       return;
     }
     if (!session_) {
@@ -103,7 +98,7 @@ void Application::home() {
       return;
     }
     // Connecting: the shape of the home screen, pulsing.
-    shape();
+    screenSkeleton();
     return;
   }
   constexpr int RowTop = 300, RowHeight = 268, Columns = 6;

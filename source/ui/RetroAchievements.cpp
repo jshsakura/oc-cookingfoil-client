@@ -275,7 +275,7 @@ void Application::raDialog() {
                        Secondary, Text, 2);
   y = body.y + 24 + 128;
   const auto button = [&](int n, const std::string &label, float bx, float bw, float ry) {
-    hit(bx, ry, bw, Row, [this, n] {
+    rowHit(bx, ry, bw, Row, 14, [this, n] {
       raRow_ = n;
       action(Action::Accept);
     });
@@ -285,7 +285,7 @@ void Application::raDialog() {
   };
   const auto field = [&](int n, const std::string &label, const std::string &value) {
     const float ry = y + n * (Row + Gap);
-    hit(x, ry, Text, Row, [this, n] {
+    rowHit(x, ry, Text, Row, 12, [this, n] {
       raRow_ = n;
       action(Action::Accept);
     });
@@ -404,12 +404,12 @@ void Application::raListDialog() {
   raListRow_ = std::clamp(raListRow_, 0, count - 1);
   const float top = glide("raList", x, y, w, Shown * (Row + Gap), float(std::clamp(raListRow_ - Shown / 2, 0, std::max(0, count - Shown))),
                           float(count - Shown), Row + Gap);
-  const int first = int(top);
+  const int first = std::max(0, int(top));
   clipTo(x, y, w, Shown * (Row + Gap));
   for (int n = first; n < count && n <= first + Shown; ++n) {
     const auto &a = list[size_t(n)];
     const float ry = y + (n - top) * (Row + Gap);
-    hit(x, ry, w, Row, [this, n] { raListRow_ = n; });
+    rowHit(x, ry, w, Row, 12, [this, n] { raListRow_ = n; });
     if (n == raListRow_) paint_.focusRow(x, ry, w, Row, Ground, 12);
     else paint_.rect(x, ry, w, Row, Ground, 12);
     // The coloured badge once earned, the grey one until then.

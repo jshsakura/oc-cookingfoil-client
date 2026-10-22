@@ -44,7 +44,7 @@ void Application::settings() {
   for (int i = 0; i < count; ++i) {
     const float top = ViewTop + i * ServerStep + oy, mid = top + ServerCard / 2;
     if (shown(top, ServerCard))
-      hit(Left, top, Width, ServerCard, [this, i] {
+      rowHit(Left, top, Width, ServerCard, 12, [this, i] {
         sidebar_ = false;
         selected_ = i;
         action(Action::Accept);
@@ -79,7 +79,7 @@ void Application::settings() {
   paint_.rect(Left, addTop + oy, Width, 52, Surface, 12);
   paint_.fonts.middle(tr("+ Add server"), Inner, addTop + oy + 26, 21, Ink, true);
   if (shown(addTop + oy, 52))
-    hit(Left, addTop + oy, Width, 52, [this, count] {
+    rowHit(Left, addTop + oy, Width, 52, 12, [this, count] {
       sidebar_ = false;
       selected_ = count;
       action(Action::Accept);
@@ -113,7 +113,7 @@ void Application::settings() {
     if (index < SettingsOptions - 1)
       paint_.rect(Left, y + Row - 1, Width, 1, Line);
     if (shown(y, Row - 2))
-      hit(Left + 14, y, Width - 28, Row - 2, [this, count, index] {
+      rowHit(Left + 14, y, Width - 28, Row - 2, 10, [this, count, index] {
         sidebar_ = false;
         selected_ = count + 1 + index;
         action(Action::Accept);
@@ -136,24 +136,20 @@ void Application::settings() {
   // sigpatches, which is what most homebrew installers expect.
   option(4, 34, tr("Ignore signature check"), "", Ink, true, state_.skipSignatureCheck ? 1 : 0);
   note(4, tr("Installs unsigned files too. Needs sigpatches"));
-  // Ignoring firmware (the default) clears the version a game asks for, so
-  // it installs and launches on older firmware when it can run there.
-  option(5, 27, tr("Ignore firmware check"), "", Ink, true, state_.skipFirmwareCheck ? 1 : 0);
-  note(5, tr("Installs even when the firmware is older than required"));
   // A HOME Menu shortcut with each retro game and homebrew app (and this
   // app's own), when the server builds one.
-  option(6, 0, tr("Make HOME Menu shortcuts"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
+  option(5, 0, tr("Make HOME Menu shortcuts"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
   // Said as it is: made here, or only from the server's shortcuts when this
   // console cannot make them.
-  note(6, !state_.makeShortcuts            ? tr("Not made")
+  note(5, !state_.makeShortcuts            ? tr("Not made")
           : platform::canMakeShortcuts() ? tr("Creates a shortcut when a retro game or homebrew app downloads")
                                          : tr("Only for items the server has a shortcut for"));
   // The app's sounds: the start, cursor steps, the queue, done and errors.
-  option(7, 44, tr("Sound effects"), "", Ink, true, state_.sounds ? 1 : 0);
-  note(7, tr("Turns the startup sound and effects on or off"));
+  option(6, 44, tr("Sound effects"), "", Ink, true, state_.sounds ? 1 : 0);
+  note(6, tr("Turns the startup sound and effects on or off"));
   // The log's tail to the server, only when pressed: what went wrong reaches
   // whoever runs it.
-  option(8, 33, tr("Send a bug report"),
+  option(7, 33, tr("Send a bug report"),
          bugWorker_.joinable() ? std::string(tr("Sending")) : std::string(tr("Sends the end of the app's log to your server")),
          Secondary, false);
   // What the app leaves on the card: A shows how much each kind takes in a

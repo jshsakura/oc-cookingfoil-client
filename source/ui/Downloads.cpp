@@ -218,7 +218,7 @@ void Application::topCard(const TopCard &c, float dy) {
     downloadSpeed_.reset();
     timeLeft_.reset();
   }
-  hit(260, dy + 90, 992, 180, [this] {
+  rowHit(260, dy + 90, 992, 180, 20, [this] {
     sidebar_ = false;
     headerFocus_.clear();
     downloadsRow_ = 0;
@@ -485,7 +485,7 @@ void Application::queueList(float y, float viewTop) {
     if (ry < viewTop - 8 || ry > Bottom)
       continue;
     const auto &q = installQueue_[i];
-    hit(260, ry, 992, Row, [this, r] {
+    rowHit(260, ry, 992, Row, 16, [this, r] {
       sidebar_ = false;
       headerFocus_.clear();
       downloadsRow_ = r + 1;
@@ -604,7 +604,7 @@ void Application::downloadsHistory() {
   for (int n = first; n < count && n <= first + Visible + 1; ++n) {
     const auto &e = history_[list[n]];
     const float y = Top + (n - top) * Step;
-    hit(260, y, 992, Row, [this, n] {
+    rowHit(260, y, 992, Row, 16, [this, n] {
       // A second tap opens it, as A does.
       if (inContent() && downloadsRow_ == n) action(Action::Accept);
       sidebar_ = false;
