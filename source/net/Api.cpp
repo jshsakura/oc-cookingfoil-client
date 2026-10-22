@@ -1035,7 +1035,7 @@ bool Session::pair(Error& error) {
     if (const auto secret = pairSecret(); !secret.empty()) headers.push_back("X-Pair-Secret: " + secret);
     const auto response = get(url, headers, "", cancel_);
     learnServerId(response.serverId);
-    if (borrowKey(response.serverId)) { pairingPending_ = false; pairingInfo_ = {}; return true; }
+    if (borrowKey()) { pairingPending_ = false; pairingInfo_ = {}; return true; }
     if (response.status == 404) { pairingPending_ = false; pairingInfo_ = {}; return true; }
     if (!response.error.empty() || response.status != 200) { error.message = response.error.empty() ? tr("Could not check the device approval status.") : response.error; return false; }
     auto root = parseJson(response.body, error); if (error) return false;
@@ -1123,25 +1123,56 @@ void Session::learnServerId(const std::string& id) {
     if (!saveState(path_, updated, error)) logLine("server id not saved: " + error.message);
     state_ = std::move(updated);
 }
-bool Session::borrowKey(const std::string& id) {
-    if (id.empty()) return false;
+namespace {
+std::mutex probeLock;
+std::set<std::string> probed; // "address\nother address", tried this run
+}
+void Session::forgetKeyProbes() {
+    std::lock_guard<std::mutex> held(probeLock);
+    probed.clear();
+}
+bool Session::borrowKey() {
     if (const auto held = state_.accessKeys.find(server_.url); held != state_.accessKeys.end() && !held->second.empty()) return false;
-    std::string key;
-    for (const auto& [other, otherId] : state_.serverIds) {
-        if (other == server_.url || otherId != id) continue;
-        const auto found = state_.accessKeys.find(other);
-        if (found != state_.accessKeys.end() && !found->second.empty() && found->second != refusedKey_) { key = found->second; break; }
+    for (const auto& [other, id] : state_.serverIds) {
+        const auto lent = state_.accessKeys.find(other);
+        if (other == server_.url || lent == state_.accessKeys.end() || lent->second.empty() || lent->second == refusedKey_) continue;
+        {
+            std::lock_guard<std::mutex> held(probeLock);
+            if (!probed.insert(server_.url + '\n' + other).second) continue;
+        }
+        if (!sameServer(other, id)) continue;
+        auto saved = loadState(path_);
+        auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
+        updated.accessKeys[server_.url] = lent->second;
+        updated.serverIds[server_.url] = id;
+        updated.pairSecrets.erase(server_.url); // no approval asked for: the key is here
+        Error error;
+        if (!saveState(path_, updated, error)) { logLine("pair: the key of another address not saved: " + error.message); return false; }
+        state_ = std::move(updated);
+        logLine("pair: this address takes the key another address of the same server holds");
+        return true;
     }
-    if (key.empty()) return false;
-    auto saved = loadState(path_);
-    auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
-    updated.accessKeys[server_.url] = key;
-    updated.pairSecrets.erase(server_.url); // no approval asked for: the key is here
-    Error error;
-    if (!saveState(path_, updated, error)) { logLine("pair: the key of another address not saved: " + error.message); return false; }
-    state_ = std::move(updated);
-    logLine("pair: this address takes the key another address of the same server holds");
-    return true;
+    return false;
+}
+bool Session::sameServer(const std::string& other, const std::string& id) {
+    auto token = sessionToken(originOf(other));
+    if (token.empty()) {
+        Server lender;
+        lender.url = other;
+        if (const auto grant = askSessionToken(lender, state_); grant.status == 200) token = grant.token;
+    }
+    if (token.empty()) return false;
+    const auto url = server_.url + "/api/shop/info";
+    std::vector<std::string> headers{"Version: " COOKINGFOIL_VERSION, "Authorization: Bearer " + token};
+    if (const auto device = deviceKeyFor(state_, other); !device.empty()) headers.push_back("X-Device-Key: " + device);
+    if (!server_.cfClientId.empty()) headers.push_back("CF-Access-Client-Id: " + server_.cfClientId);
+    if (!server_.cfClientSecret.empty()) headers.push_back("CF-Access-Client-Secret: " + server_.cfClientSecret);
+    // Once, as it is: a refusal is not renewed and sent again (withSession).
+    const auto reply = getOnce(url, headers, "", cancel_);
+    const bool same = reply.status == 200 && reply.serverId == id;
+    logLine(std::string("pair: another address's session ") + (same ? "opens" : "does not open") +
+            " this one (HTTP " + std::to_string(reply.status) + (reply.serverId.empty() ? ", no server id)" : ")"));
+    return same;
 }
 bool Session::answerRefusal(const Response& reply, Error& error) {
     const auto held = state_.accessKeys.find(server_.url);
@@ -1152,7 +1183,7 @@ bool Session::answerRefusal(const Response& reply, Error& error) {
     // of the server, so the key stays.
     if (reason.empty() && reply.session.empty() && reply.enroll.empty() && !keyed) reason = "no-access-key";
     learnServerId(reply.serverId);
-    if (reason == "no-access-key") return borrowKey(reply.serverId);
+    if (reason == "no-access-key") return borrowKey();
     if (reason != "access-key-wrong" && reason != "device-not-approved" && reason != "session-revoked") return false;
     if (keyed) {
         refusedKey_ = held->second;

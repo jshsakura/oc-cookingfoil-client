@@ -180,39 +180,47 @@ int runEnrollTests() {
     mock.take();
   }
   {
-    // One server under two addresses (its LAN one and a tunnel): the key the
-    // first holds goes to the second, which the server knows by its id
-    // (X-CookingFoil-Server-Id), so it never asks for approval of its own.
-    // A key the server calls wrong goes, and approval is asked again.
+    // One server under two addresses (its LAN one and a tunnel): the second,
+    // with no key, sends the first's session token once; answered with the
+    // first's server id it takes the first's key and asks for no approval
+    // of its own. Another id, or none, and nothing is lent. A key the
+    // server calls wrong goes, and approval is asked again.
     const auto kept = mock.answer;
     const std::string other = "http://localhost:" + std::to_string(mock.port);
-    bool idOnStatus = true;
-    std::string wrong;
+    std::string probeId = "server-one", wrong;
     mock.answer = [&](const std::string &request) -> Reply {
-      const std::string id = "X-CookingFoil-Server-Id: server-one\r\n";
-      if (request.rfind("GET /api/pair/status", 0) == 0)
-        return {200, idOnStatus ? id : "", R"({"status":")" + pairStatus + R"("})"};
+      if (request.rfind("GET /api/session", 0) == 0)
+        return has(request, "X-Access-Key: shared-key") ? Reply{200, "", R"({"token":"cfs_lent","expiresAt":0})"}
+                                                        : Reply{401, "", "{}"};
+      if (request.rfind("GET /api/shop/info", 0) == 0 && has(request, "Authorization: Bearer cfs_lent"))
+        return probeId.empty() ? Reply{401, "X-CookingFoil-Auth: session-invalid\r\n", "{}"}
+                               : Reply{200, "X-CookingFoil-Server-Id: " + probeId + "\r\n", "{}"};
+      if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
       if (request.rfind("GET /api/shop/sections", 0) == 0) {
         if (!wrong.empty() && has(request, "X-Access-Key: " + wrong))
-          return {401, id + "X-CookingFoil-Auth: access-key-wrong\r\n", "no"};
-        if (has(request, "X-Access-Key: shared-key")) return {200, id, R"({"sections":[]})"};
-        return {401, id, "no access key"};
+          return {401, "X-CookingFoil-Server-Id: server-one\r\nX-CookingFoil-Auth: access-key-wrong\r\n", "no"};
+        if (has(request, "X-Access-Key: shared-key")) return {200, "", R"({"sections":[]})"};
+        return {401, "", "no access key"};
       }
-      return {200, id, "{}"};
+      return {200, "", "{}"};
     };
-    auto state = loadState(db).value;
-    state.accessKeys = {{url, "shared-key"}};
-    state.serverIds = {{url, "server-one"}};
-    state.pairSecrets.clear();
-    CHECK(saveState(db, state, error));
+    const auto lender = [&](const std::string &id) {
+      auto state = loadState(db).value;
+      state.accessKeys = {{url, "shared-key"}};
+      state.serverIds = {{url, id}};
+      state.pairSecrets.clear();
+      CHECK(saveState(db, state, error));
+      net::Session::forgetKeyProbes();
+    };
     auto second = server();
     second.url = other;
     second.enrollToken.clear();
     {
-      // Known at the approval check: the list is asked once, with the key.
+      lender("server-one");
       net::Session session(second, loadState(db).value, db);
       CHECK(session.refresh(error) && !session.pairingPending());
       const auto sent = mock.take();
+      CHECK(count(sent, "Authorization: Bearer cfs_lent") == 1);
       CHECK(count(sent, "/api/shop/sections") == 1 && count(sent, "/api/pair/request") == 0);
       const auto saved = loadState(db).value;
       CHECK(saved.accessKeys.count(other) && saved.accessKeys.at(other) == "shared-key");
@@ -220,29 +228,27 @@ int runEnrollTests() {
       CHECK(!saved.pairSecrets.count(other));
     }
     {
-      // Known only from the refused list (no id on the approval check):
-      // the list is asked once more with the key.
-      auto again = loadState(db).value;
-      again.accessKeys.erase(other);
-      again.serverIds.erase(other);
-      CHECK(saveState(db, again, error));
-      idOnStatus = false;
-      net::Session session(second, loadState(db).value, db);
-      CHECK(session.refresh(error));
-      CHECK(count(mock.take(), "/api/shop/sections") == 2);
-      CHECK(loadState(db).value.accessKeys.at(other) == "shared-key");
-      idOnStatus = true;
-    }
-    {
-      // Another server's id: nothing is borrowed, the refusal shows.
-      auto again = loadState(db).value;
-      again.accessKeys.erase(other);
-      again.serverIds = {{url, "server-two"}};
-      CHECK(saveState(db, again, error));
+      // A 200 alone proves nothing (anything can answer 200): the id must match.
+      lender("server-two");
       net::Session session(second, loadState(db).value, db);
       CHECK(!session.refresh(error) && error.message.find("401") != std::string::npos);
+      const auto sent = mock.take();
+      CHECK(count(sent, "Authorization: Bearer cfs_lent") == 1);
+      CHECK(!loadState(db).value.accessKeys.count(other));
+      // Tried once a run: the next refresh sends the token nowhere.
+      net::Session again(second, loadState(db).value, db);
+      CHECK(!again.refresh(error));
+      CHECK(count(mock.take(), "Authorization: Bearer cfs_lent") == 0);
+    }
+    {
+      // Another server (its own 401, no id): nothing is lent.
+      lender("server-one");
+      probeId.clear();
+      net::Session session(second, loadState(db).value, db);
+      CHECK(!session.refresh(error));
       CHECK(!loadState(db).value.accessKeys.count(other));
       mock.take();
+      probeId = "server-one";
     }
     {
       // access-key-wrong: the key goes and approval is asked again (the
@@ -252,6 +258,7 @@ int runEnrollTests() {
       again.accessKeys = {{url, "stale-key"}, {other, "stale-key"}};
       again.serverIds = {{url, "server-one"}, {other, "server-one"}};
       CHECK(saveState(db, again, error));
+      net::Session::forgetKeyProbes();
       wrong = "stale-key";
       pairStatus = "pending";
       net::Session session(second, loadState(db).value, db);
@@ -259,7 +266,8 @@ int runEnrollTests() {
       CHECK(!session.refresh(waiting) && session.pairingPending());
       const auto saved = loadState(db).value;
       CHECK(!saved.accessKeys.count(other) && saved.accessKeys.size() == 1);
-      CHECK(count(mock.take(), "POST /api/pair/request") == 1);
+      const auto sent = mock.take();
+      CHECK(count(sent, "POST /api/pair/request") == 1 && count(sent, "Authorization: Bearer") == 0);
       pairStatus = "approved";
       wrong.clear();
     }
@@ -268,6 +276,7 @@ int runEnrollTests() {
     restored.serverIds.clear();
     restored.pairSecrets.clear();
     CHECK(saveState(db, restored, error));
+    net::Session::forgetKeyProbes();
     mock.answer = kept;
   }
   {

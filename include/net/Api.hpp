@@ -194,6 +194,8 @@ public:
     void setConfigPath(std::string path) { configPath_ = std::move(path); }
     // Tests: enroll tokens refused earlier this run may be tried again.
     static void forgetEnrollAttempts();
+    // Tests: addresses tried for another address's key may be tried again.
+    static void forgetKeyProbes();
 private:
     // The enroll token from the website's download, spent for this server's
     // access key before anything else; false (with the reason) when refused.
@@ -210,8 +212,13 @@ private:
     void learnServerId(const std::string& id);
     // No key for this address, but one for another address of the same
     // server (the LAN one and a tunnel): that key, as the server takes it
-    // from any address. False when there is none.
-    bool borrowKey(const std::string& id);
+    // from any address. Same is proven first (sameServer); each pair of
+    // addresses is tried once a run. False when there is none.
+    bool borrowKey();
+    // Whether this address is `other`'s server: other's session token (short
+    // lived, so little is lost should this be another server) sent here
+    // once, answered 200 with other's server id (`id`).
+    bool sameServer(const std::string& other, const std::string& id);
     // A list refused with 401: what its reason asks for (a key from another
     // address, or approval again). True when the list should be asked once
     // more; error set when approval is pending or failed.
