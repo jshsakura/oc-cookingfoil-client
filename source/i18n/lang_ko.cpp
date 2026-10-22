@@ -314,6 +314,7 @@ const Translation rows[] = {
     {"This download has expired. Scan the QR code to approve this console.", "이 다운로드는 만료됐습니다. QR 코드로 이 기기를 승인해 주세요."},
     {"This download is no longer valid. Scan the QR code to approve this console.", "이 다운로드는 더 이상 쓸 수 없습니다. QR 코드로 이 기기를 승인해 주세요."},
     {"This account has as many consoles as it can register. Remove one you no longer use, then approve this one.", "이 계정은 등록할 수 있는 기기 수가 꽉 찼습니다. 쓰지 않는 기기를 해제한 뒤 이 기기를 승인해 주세요."},
+    {"This account can register up to {0} consoles. Remove one you no longer use, then approve this one.", "이 계정은 기기를 최대 {0}대까지 등록할 수 있습니다. 쓰지 않는 기기를 해제한 뒤 이 기기를 승인해 주세요."},
     {"This account has connected as many consoles by download as it can this hour. Scan the QR code to approve this one.", "이 계정은 이번 1시간 동안 다운로드로 자동 연결할 수 있는 기기 수를 다 썼습니다. QR 코드로 이 기기를 승인해 주세요."},
     {"If you cannot scan it, enter the device code in device approval. Connects automatically once approved.", "QR 코드를 찍기 어려우면 기기 승인 화면에 기기 코드를 입력합니다. 승인되면 자동으로 연결합니다."},
     {"This shop does not support QR approval. Enter the device code in device approval on the shop website.", "이 서버는 QR 승인을 지원하지 않습니다. 서버 웹페이지의 기기 승인 화면에 기기 코드를 입력합니다."},

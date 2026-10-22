@@ -47,7 +47,11 @@ void Application::pairing() {
                     : refusal == "revoked" ? "This download is no longer valid. Scan the QR code to approve this console."
                     : refusal == "limit"   ? "This account has connected as many consoles by download as it can this hour. Scan the QR code to approve this one."
                                            : "Sign in to the shop on your phone, open device approval and scan the code to approve this device for that account.";
-  paint_.fonts.wrapped(tr(why), 290, 230, 21, Secondary, 570, 3);
+  const auto said = pairingInfo_.deviceLimitCount > 0
+                        ? trf("This account can register up to {0} consoles. Remove one you no longer use, then approve this one.",
+                              {std::to_string(pairingInfo_.deviceLimitCount)})
+                        : tr(why);
+  paint_.fonts.wrapped(said, 290, 230, 21, Secondary, 570, 3);
   if (!pairingInfo_.code.empty()) {
     paint_.fonts.text(tr("Device code"), 290, 326, 18, Secondary);
     paint_.fonts.text(pairingInfo_.code, 290, 357, 30, Ink, true);

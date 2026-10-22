@@ -314,6 +314,7 @@ const Translation rows[] = {
     {"This download has expired. Scan the QR code to approve this console.", "此下載已過期。請掃描 QR 碼核准這台主機。"},
     {"This download is no longer valid. Scan the QR code to approve this console.", "此下載已失效。請掃描 QR 碼核准這台主機。"},
     {"This account has as many consoles as it can register. Remove one you no longer use, then approve this one.", "此帳號可註冊的主機數已滿。請先解除不再使用的主機，再核准這台主機。"},
+    {"This account can register up to {0} consoles. Remove one you no longer use, then approve this one.", "此帳號最多可註冊 {0} 台主機。請先解除不再使用的主機，再核准這台主機。"},
     {"This account has connected as many consoles by download as it can this hour. Scan the QR code to approve this one.", "此帳號本小時內透過下載自動連結的主機數已達上限。請掃描 QR 碼核准這台主機。"},
     {"If you cannot scan it, enter the device code in device approval. Connects automatically once approved.", "若無法掃描，請在裝置核准畫面輸入裝置代碼。核准後會自動連線。"},
     {"This shop does not support QR approval. Enter the device code in device approval on the shop website.", "此商店不支援 QR 核准。請在商店網站的裝置核准畫面輸入裝置代碼。"},

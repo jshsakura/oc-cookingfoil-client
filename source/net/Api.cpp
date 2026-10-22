@@ -960,6 +960,8 @@ Parsed<PairingInfo> parsePairingInfo(const std::string& json, const Server& serv
     auto root = parseJson(json, result.error); if (result.error) return result;
     if (stringField(root.get(), "status") != "pending") return result;
     result.value.deviceLimit = stringField(root.get(), "limit") == "device";
+    if (result.value.deviceLimit)
+        result.value.deviceLimitCount = int(std::clamp<int64_t>(integerField(root.get(), "deviceLimit"), 0, 9999));
     const auto url = stringField(root.get(), "pairUrl");
     // Newer servers hand out /pair/ (login first, then back); older ones /admin/pair/.
     auto prefix = server.url + "/pair/";

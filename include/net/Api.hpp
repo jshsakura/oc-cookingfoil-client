@@ -135,6 +135,7 @@ struct PairingInfo {
     // The account holds as many consoles as it may (limit: "device"): waiting
     // approves nothing until one is removed.
     bool deviceLimit = false;
+    int deviceLimitCount = 0; // its deviceLimit: how many; 0 when not said
 };
 Parsed<PairingInfo> parsePairingInfo(const std::string& json, const Server& server);
 // The note sent with an approval request, read as the server reads it: line

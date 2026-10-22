@@ -314,6 +314,7 @@ const Translation rows[] = {
     {"This download has expired. Scan the QR code to approve this console.", "Este download expirou. Escaneie o código QR para aprovar este console."},
     {"This download is no longer valid. Scan the QR code to approve this console.", "Este download não é mais válido. Escaneie o código QR para aprovar este console."},
     {"This account has as many consoles as it can register. Remove one you no longer use, then approve this one.", "Esta conta já tem todos os consoles que pode registrar. Remova um que você não usa mais e depois aprove este."},
+    {"This account can register up to {0} consoles. Remove one you no longer use, then approve this one.", "Esta conta pode registrar até {0} consoles. Remova um que você não usa mais e depois aprove este."},
     {"This account has connected as many consoles by download as it can this hour. Scan the QR code to approve this one.", "Esta conta já vinculou por download todos os consoles permitidos nesta hora. Escaneie o código QR para aprovar este."},
     {"If you cannot scan it, enter the device code in device approval. Connects automatically once approved.", "Se não conseguir escanear, digite o código do dispositivo na aprovação de dispositivos. Conecta sozinho assim que for aprovado."},
     {"This shop does not support QR approval. Enter the device code in device approval on the shop website.", "Esta loja não aceita aprovação por QR. Digite o código do dispositivo na aprovação de dispositivos no site da loja."},
