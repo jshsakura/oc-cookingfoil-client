@@ -1,6 +1,7 @@
 #include "Test.hpp"
 #include "core/Config.hpp"
 #include "core/Json.hpp"
+#include "core/Log.hpp"
 #include "core/State.hpp"
 #include "net/Api.hpp"
 #include "net/Socket.hpp"
@@ -99,7 +100,7 @@ int runEnrollTests() {
   int failures = 0;
   using namespace foil;
   Mock mock;
-  int enrollStatus = 200;
+  int enrollStatus = 200, sectionsStatus = 200;
   std::string pairStatus = "approved";
   mock.answer = [&](const std::string &request) -> Reply {
     if (request.rfind("POST /api/pair/enroll", 0) == 0) {
@@ -109,7 +110,8 @@ int runEnrollTests() {
     }
     if (request.rfind("GET /api/shop/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
     if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
-    if (request.rfind("GET /api/shop/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
+    if (request.rfind("GET /api/shop/sections", 0) == 0)
+      return sectionsStatus == 200 ? Reply{200, "", R"({"sections":[]})"} : Reply{sectionsStatus, "", R"({"error":"denied"})"};
     return {200, "", "{}"};
   };
   char temporary[] = "/tmp/cookingfoil-enroll-XXXXXX";
@@ -161,6 +163,21 @@ int runEnrollTests() {
     again.setConfigPath(configPath);
     CHECK(again.refresh(error));
     CHECK(count(mock.take(), "/api/pair/enroll") == 0);
+    // A list refused with none of the server's own headers: the screen names
+    // the host it went to, the log how it signed in and what came back.
+    const auto logged = (root / "log.txt").string();
+    openLog(logged);
+    sectionsStatus = 401;
+    net::Session refused(server(), loadState(db).value, db);
+    refused.setConfigPath(configPath);
+    CHECK(!refused.refresh(error));
+    CHECK(error.message.find("401") != std::string::npos && error.message.find("127.0.0.1") != std::string::npos);
+    flushLog();
+    const auto line = readFile(logged);
+    CHECK(line.find("list refused: HTTP 401, signed in by") != std::string::npos);
+    CHECK(line.find("session header none, enroll header none, error denied") != std::string::npos);
+    sectionsStatus = 200;
+    mock.take();
   }
   {
     // A key kept from before that the server no longer approves (the console

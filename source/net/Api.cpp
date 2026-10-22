@@ -1280,6 +1280,28 @@ bool Session::enroll(Error& error, bool replacing) {
     server_.enrollToken.clear();
     return true;
 }
+namespace {
+// A list the server did not give, in the log: how this console signed in
+// and what came back (the server's own headers and error, or none: a reply
+// from something in front of it). The log keeps no host (withoutAddresses);
+// the screen's message names it.
+void logRefusal(const std::vector<std::string>& headers, const Response& reply) {
+    std::string auth = "none";
+    for (const auto& header : headers) {
+        if (header.rfind("Authorization: Bearer ", 0) == 0) auth = "session token";
+        else if (header.rfind("Authorization: Basic ", 0) == 0 && auth == "none") auth = "password";
+        else if (header.rfind("X-Access-Key: ", 0) == 0) auth = auth == "none" ? "access key" : auth + " + access key";
+    }
+    Error unread;
+    const auto body = reply.body.size() < 4096 ? parseJson(reply.body, unread) : Json(nullptr);
+    auto why = body ? stringField(body.get(), "error") : std::string();
+    if (why.size() > 120) why.resize(120);
+    logLine("list refused: HTTP " + std::to_string(reply.status) + ", signed in by " + auth +
+            ", session header " + (reply.session.empty() ? "none" : reply.session) +
+            ", enroll header " + (reply.enroll.empty() ? "none" : reply.enroll) +
+            (why.empty() ? std::string(", no error in the body") : ", error " + why));
+}
+}
 bool Session::refresh(Error& error) {
     error = {};
     if (!enroll(error)) return false;
@@ -1310,12 +1332,18 @@ bool Session::refresh(Error& error) {
         }
     }
     const auto url = server_.url + "/api/shop/sections";
-    auto response = get(url, authHeaders(server_, state_, url), etag_, cancel_);
+    const auto signIn = authHeaders(server_, state_, url);
+    auto response = get(url, signIn, etag_, cancel_);
     followDirectNaming(url, response);
     if (!response.error.empty()) { error.message = response.error; return false; }
     unchanged_ = response.status == 304;
     if (unchanged_) return true;
-    if (response.status != 200) { error.message = trf("Check the server connection. HTTP {0}", {std::to_string(response.status)}); return false; }
+    if (response.status != 200) {
+        logRefusal(signIn, response);
+        // The host too: a photo of the screen says where the console went.
+        error.message = trf("Check the server connection. HTTP {0}", {std::to_string(response.status)}) + " · " + hostOf(url);
+        return false;
+    }
     // Read game by game (parseCatalog), then the text goes.
     auto parsed = parseCatalog(response.body);
     std::string().swap(response.body);
