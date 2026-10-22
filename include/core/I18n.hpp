@@ -64,7 +64,7 @@ const char *english(const char *key);
 struct Translation {
   const char *key, *text;
 };
-// Each source/i18n/<code>.cpp registers its language's table with a static
+// Each source/i18n/lang_<code>.cpp registers its language's table with a static
 // instance. English has none: its text is the key.
 struct TranslationTable {
   TranslationTable(Language language, const Translation *rows, size_t count);

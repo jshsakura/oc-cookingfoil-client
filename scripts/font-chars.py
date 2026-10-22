@@ -25,10 +25,10 @@ def table(codec, leads, trails=range(0xA1, 0xFF)):
 
 
 def translations(code, low=0x2E80, high=0x10FFFF):
-    # Rows in source/i18n/<code>.cpp: {"English key", "text"}
+    # Rows in source/i18n/lang_<code>.cpp: {"English key", "text"}
     root = Path(__file__).resolve().parents[1]
     row = re.compile(r'\{\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*\}')
-    path = root / f"source/i18n/{code}.cpp"
+    path = root / f"source/i18n/lang_{code}.cpp"
     if not path.exists():
         return
     for match in row.finditer(path.read_text()):

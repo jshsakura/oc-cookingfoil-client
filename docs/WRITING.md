@@ -38,7 +38,7 @@ break; "by convention" means nothing does, so review must.
 two keys read the same in English, add `|context` (`"Resume|download"`); English shows the part
 before the bar. (note) Where: `include/core/I18n.hpp:7-31`.
 
-**Each language is one file, `source/i18n/<code>.cpp`, of `{key, text}` rows; English comes from
+**Each language is one file, `source/i18n/lang_<code>.cpp`, of `{key, text}` rows; English comes from
 the key.** A new key goes into every language's file. Where: `I18n.hpp`.
 
 **Pass untranslated keys around and translate where you draw.** A label that code also compares

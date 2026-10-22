@@ -41,6 +41,13 @@ export TOPDIR := $(CURDIR)
 export VPATH := $(foreach dir,$(SOURCES) $(ENGINE_DIRS) $(QR_ROOT) $(SQLITE_ROOT) $(ZSTD_DIRS),$(CURDIR)/$(dir))
 export DEPSDIR := $(CURDIR)/$(BUILD)
 export OFILES := $(foreach dir,$(SOURCES),$(notdir $(patsubst %.cpp,%.o,$(wildcard $(dir)/*.cpp)))) $(notdir $(ENGINE_CPP:.cpp=.o) $(ENGINE_C:.c=.o)) qrcodegen.o sqlite3.o $(ZSTD_C:.c=.o)
+# Objects go in one folder by file name alone: two sources of the same name
+# (source/i18n/es.cpp and the engine's nx/ipc/es.c) would leave one of them
+# out, and the link fails far from the cause.
+SAME_NAME := $(shell printf '%s\n' $(OFILES) | sort | uniq -d)
+ifneq ($(SAME_NAME),)
+$(error Two sources build the same object, rename one: $(SAME_NAME))
+endif
 export INCLUDE := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) $(foreach dir,$(LIBDIRS),-I$(dir)/include) -I$(CURDIR)/$(BUILD)
 export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export LD := $(CXX)
