@@ -106,6 +106,75 @@ struct SlowFiles {
     close(client);
   }
 };
+// Answers each connection with the next reply in `replies` (the last one
+// again once they run out), counting the requests.
+struct Scripted {
+  std::vector<std::string> replies;
+  int listener = -1, port = 0;
+  std::atomic<bool> stop{false};
+  std::atomic<int> asked{0};
+  std::thread thread;
+  explicit Scripted(std::vector<std::string> said) : replies(std::move(said)) {
+    listener = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in at{};
+    at.sin_family = AF_INET;
+    at.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    bind(listener, reinterpret_cast<sockaddr *>(&at), sizeof(at));
+    listen(listener, 16);
+    socklen_t length = sizeof(at);
+    getsockname(listener, reinterpret_cast<sockaddr *>(&at), &length);
+    port = ntohs(at.sin_port);
+    thread = std::thread([this] {
+      while (!stop) {
+        pollfd ready{listener, POLLIN, 0};
+        if (poll(&ready, 1, 50) <= 0) continue;
+        const int client = accept(listener, nullptr, nullptr);
+        if (client < 0) continue;
+        std::string request;
+        char buffer[4096];
+        while (request.find("\r\n\r\n") == std::string::npos) {
+          const auto got = recv(client, buffer, sizeof buffer, 0);
+          if (got <= 0) break;
+          request.append(buffer, size_t(got));
+        }
+        const auto &reply = replies[std::min<size_t>(size_t(asked++), replies.size() - 1)];
+        send(client, reply.data(), reply.size(), MSG_NOSIGNAL);
+        close(client);
+      }
+    });
+  }
+  ~Scripted() {
+    stop = true;
+    thread.join();
+    close(listener);
+  }
+};
+std::string whole(const std::string &body) {
+  return "HTTP/1.1 206 Partial\r\nConnection: close\r\nETag: \"v1\"\r\nContent-Range: bytes 0-" +
+         std::to_string(body.size() - 1) + "/" + std::to_string(body.size()) +
+         "\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body;
+}
+// The file as segmentedFetch wrote it, asked from its start with no size.
+struct Fetched {
+  foil::net::SegmentedResult result;
+  std::string data;
+};
+Fetched fetchFrom(int port) {
+  Fetched out;
+  foil::net::SegmentedOptions options;
+  options.connections = 1;
+  const auto start = Clock::now();
+  options.cancelled = [start] { return Clock::now() - start > std::chrono::seconds(10); };
+  out.result = foil::net::segmentedFetch(
+      "http://127.0.0.1:" + std::to_string(port) + "/file", [](uint64_t) { return true; },
+      [&out](uint64_t offset, const char *data, size_t size) {
+        if (out.data.size() < offset + size) out.data.resize(offset + size);
+        out.data.replace(size_t(offset), size, data, size);
+        return true;
+      },
+      options);
+  return out;
+}
 } // namespace
 int runSegmentedTests() {
   int failures = 0;
@@ -134,6 +203,26 @@ int runSegmentedTests() {
     if (!seen) std::printf("  ended: %s, status %ld, %d asked\n", result.error.c_str(), result.status, files.asked.load());
     CHECK(most > 0 && most <= 2);
     if (most > 2) std::printf("  %d connections open after a 429 halved four\n", most);
+  }
+  {
+    // A small file that comes whole on the first reply is written, not lost
+    // while the parts are planned.
+    const std::string body(3000, 'g');
+    Scripted server({whole(body)});
+    const auto got = fetchFrom(server.port);
+    CHECK(got.result.ok && got.data == body);
+    CHECK(server.asked == 1);
+  }
+  for (const char *busy : {"429 Too Many", "503 Unavailable", "524 Timeout"}) {
+    // The first request turned away before it told the size: asked again
+    // after Retry-After, not left waiting.
+    const std::string body(3000, 'g');
+    Scripted server({std::string("HTTP/1.1 ") + busy + "\r\nRetry-After: 1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                     whole(body)});
+    const auto got = fetchFrom(server.port);
+    CHECK(got.result.ok && !got.result.cancelled && got.data == body);
+    CHECK(server.asked == 2);
+    if (!got.result.ok) std::printf("  first %s: %s, %d asked\n", busy, got.result.error.c_str(), server.asked.load());
   }
   return failures;
 }
