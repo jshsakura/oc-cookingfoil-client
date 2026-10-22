@@ -1,0 +1,101 @@
+diff --git a/include/install/hfs0.hpp b/include/install/hfs0.hpp
+index 9c02325..411de61 100755
+--- a/include/install/hfs0.hpp
++++ b/include/install/hfs0.hpp
+@@ -2,6 +2,8 @@
+ 
+ #include <switch/types.h>
+ 
++#include <string.h>
++
+ #define MAGIC_HFS0 0x30534648
+ 
+ namespace tin::install
+@@ -54,4 +56,11 @@ namespace tin::install
+     {
+         return hfs0GetStringTable(header) + entry->stringTableOffset;
+     }
++
++    // The entry's name starts inside the string table and ends there.
++    NX_INLINE bool hfs0NameFits(const HFS0BaseHeader *header, const HFS0FileEntry *entry)
++    {
++        return entry->stringTableOffset < header->stringTableSize &&
++               memchr(hfs0GetFileName(header, entry), 0, header->stringTableSize - entry->stringTableOffset) != NULL;
++    }
+ }
+\ No newline at end of file
+diff --git a/source/install/nsp.cpp b/source/install/nsp.cpp
+index 16d14a7..6014b73 100755
+--- a/source/install/nsp.cpp
++++ b/source/install/nsp.cpp
+@@ -23,6 +23,7 @@ SOFTWARE.
+ #include "install/nsp.hpp"
+ 
+ #include <threads.h>
++#include <cstring>
+ #include "data/buffered_placeholder_writer.hpp"
+ #include "util/title_util.hpp"
+ #include "util/error.hpp"
+@@ -32,7 +33,6 @@ namespace tin::install::nsp
+ {
+     NSP::NSP() {}
+ 
+-    // TODO: Do verification: PFS0 magic, sizes not zero
+     void NSP::RetrieveHeader()
+     {
+         LOG_DEBUG("Retrieving remote NSP header...\n");
+@@ -44,8 +44,19 @@ namespace tin::install::nsp
+         LOG_DEBUG("Base header: \n");
+         printBytes(m_headerBytes.data(), sizeof(PFS0BaseHeader), true);
+ 
++        // Checked before anything is sized from it, with the XCI header's limits.
++        const PFS0BaseHeader *base = this->GetBaseHeader();
++        if (base->magic != 0x30534650) // "PFS0"
++            THROW_FORMAT("Invalid NSP header: not a PFS0\n");
++        if (base->numFiles == 0 || base->numFiles > 0x10000)
++            THROW_FORMAT("Invalid NSP header: file count out of range (0x%x)\n", base->numFiles);
++        if (base->stringTableSize > (1 * 1024 * 1024))
++            THROW_FORMAT("Invalid NSP header: string table too large (0x%x)\n", base->stringTableSize);
++
+         // Retrieve the full header
+-        size_t remainingHeaderSize = this->GetBaseHeader()->numFiles * sizeof(PFS0FileEntry) + this->GetBaseHeader()->stringTableSize;
++        size_t remainingHeaderSize = base->numFiles * sizeof(PFS0FileEntry) + base->stringTableSize;
++        if (remainingHeaderSize > 2 * 1024 * 1024)
++            THROW_FORMAT("Invalid NSP header: header too large (0x%lx)\n", remainingHeaderSize);
+         m_headerBytes.resize(sizeof(PFS0BaseHeader) + remainingHeaderSize, 0);
+         this->BufferData(m_headerBytes.data() + sizeof(PFS0BaseHeader), sizeof(PFS0BaseHeader), remainingHeaderSize);
+ 
+@@ -122,6 +133,11 @@ namespace tin::install::nsp
+     const char* NSP::GetFileEntryName(const PFS0FileEntry* fileEntry)
+     {
+         u64 stringTableStart = sizeof(PFS0BaseHeader) + this->GetBaseHeader()->numFiles * sizeof(PFS0FileEntry);
++        const u32 tableSize = this->GetBaseHeader()->stringTableSize;
++        // The name starts inside the string table and ends there.
++        if (fileEntry->stringTableOffset >= tableSize ||
++            !memchr(m_headerBytes.data() + stringTableStart + fileEntry->stringTableOffset, 0, tableSize - fileEntry->stringTableOffset))
++            THROW_FORMAT("Invalid NSP header: file name outside its table\n");
+         return reinterpret_cast<const char*>(m_headerBytes.data() + stringTableStart + fileEntry->stringTableOffset);
+     }
+ 
+diff --git a/source/install/xci.cpp b/source/install/xci.cpp
+index d2a3fb3..083ecdf 100755
+--- a/source/install/xci.cpp
++++ b/source/install/xci.cpp
+@@ -70,6 +70,8 @@ namespace tin::install::xci
+         for (unsigned int i = 0; i < header->numFiles; i++)
+         {
+             const HFS0FileEntry *entry = hfs0GetFileEntry(header, i);
++            if (!hfs0NameFits(header, entry))
++                THROW_FORMAT("Invalid XCI header: file name outside its table\n");
+             std::string entryName(hfs0GetFileName(header, entry));
+ 
+             if (entryName != "secure")
+@@ -182,6 +184,8 @@ namespace tin::install::xci
+ 
+     const char* XCI::GetFileEntryName(const HFS0FileEntry* fileEntry)
+     {
++        if (!hfs0NameFits(this->GetSecureHeader(), fileEntry))
++            THROW_FORMAT("Invalid XCI secure header: file name outside its table\n");
+         return hfs0GetFileName(this->GetSecureHeader(), fileEntry);
+     }
+ }

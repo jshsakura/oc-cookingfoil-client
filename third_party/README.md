@@ -83,6 +83,14 @@ applied as a series rather than checked one by one.
   segmented engine's reader and writer threads. Every install request asks the socket for the
   app's large receive window (`foil::net::tuneSocket`).
 
+`patches/0010-cookingfoil-header-bounds.patch`:
+
+- An NSP header is checked before anything is sized from it: the PFS0 magic, 1 to 65536 files, a
+  string table of at most 1 MB and a header of at most 2 MB, the limits the XCI header already
+  had.
+- Every NSP and XCI file name must start inside its string table and end there; a name that
+  does not fails the install instead of being read past the header.
+
 ### Limits
 
 The patches were checked by applying them to the pinned commit in a clean checkout and comparing
