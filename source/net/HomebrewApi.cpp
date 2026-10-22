@@ -82,10 +82,9 @@ bool fetchFile(const Server &server, const State &state, const std::string &url,
   // and name are at the end, which a broken write would lose).
   if (sha256.empty() && path.size() > 4 && path.compare(path.size() - 4, 4, ".nro") == 0 && !platform::wholeNro(part))
     return fail(tr("The downloaded file does not match the server's. Try again."));
-  std::filesystem::remove(target, ec);
-  ec.clear();
-  std::filesystem::rename(part, target, ec);
-  if (ec) return fail(trf("Could not write the file: {0}", {path}) + " (" + ec.message() + ")");
+  // The old file goes only once the new one can take its place.
+  if (std::string reason; !replaceFile(part, target, reason))
+    return fail(trf("Could not write the file: {0}", {path}) + " (" + reason + ")");
   std::filesystem::remove(partInfoPath(part), ec);
   return true;
 }

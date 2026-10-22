@@ -148,9 +148,9 @@ bool retroFile(const Server &server, const State &state, const retro::PackFile &
   if (!rangedOk(got.response))
     return fail(trf("Could not get the file. HTTP {0}", {std::to_string(got.response.status)}));
   if (file.size && got.size != file.size) return fail(trf("The downloaded file has the wrong size: {0}", {file.path}));
-  std::filesystem::remove(target, ec);
-  std::filesystem::rename(part, target, ec);
-  if (ec) return fail(trf("Could not write the file: {0}", {file.path}));
+  // The old file goes only once the new one can take its place.
+  if (std::string reason; !replaceFile(part, target, reason))
+    return fail(trf("Could not write the file: {0}", {file.path}));
   std::filesystem::remove(partInfoPath(part), ec);
   return true;
 }
