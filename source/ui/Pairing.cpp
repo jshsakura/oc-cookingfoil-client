@@ -47,7 +47,7 @@ void Application::pairing() {
                     : refusal == "revoked" ? "This download is no longer valid. Scan the QR code to approve this console."
                     : refusal == "limit"   ? "This account has connected as many consoles by download as it can this hour. Scan the QR code to approve this one."
                                            : "Sign in to the shop on your phone, open device approval and scan the code to approve this device for that account.";
-  const auto said = pairingInfo_.deviceLimitCount > 0
+  const auto said = pairingInfo_.deviceLimitCount > 1 // one: the text without a number, whose words are plural
                         ? trf("This account can register up to {0} consoles. Remove one you no longer use, then approve this one.",
                               {std::to_string(pairingInfo_.deviceLimitCount)})
                         : tr(why);

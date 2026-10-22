@@ -221,6 +221,47 @@ int runEnrollTests() {
       CHECK(count(mock.take(), "POST /api/pair/request") == 1);
     }
     {
+      // A session refused (its renewal failed too): the key signs in once
+      // more and is kept; only what the key's own refusal says drops it.
+      std::vector<std::string> reasons;
+      mock.answer = [&](const std::string &request) -> Reply {
+        if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
+        if (request.rfind("GET /api/shop/sections", 0) == 0) {
+          if (reasons.empty()) return {200, "", R"({"sections":[]})"};
+          const auto why = reasons.front();
+          reasons.erase(reasons.begin());
+          return {401, "X-CookingFoil-Auth: " + why + "\r\n", "no"};
+        }
+        return {200, "", "{}"};
+      };
+      auto state = loadState(db).value;
+      state.accessKeys = {{url, "stale-key"}};
+      CHECK(saveState(db, state, error));
+      pairStatus = "approved";
+      reasons = {"session-revoked"};
+      {
+        net::Session session(plain, loadState(db).value, db);
+        CHECK(session.refresh(error) && !session.pairingPending());
+        CHECK(loadState(db).value.accessKeys.at(url) == "stale-key");
+        CHECK(count(mock.take(), "GET /api/shop/sections") == 2);
+      }
+      reasons = {"session-revoked", "access-key-wrong"};
+      pairStatus = "pending";
+      {
+        net::Session session(plain, loadState(db).value, db);
+        Error waiting;
+        CHECK(!session.refresh(waiting) && session.pairingPending());
+        CHECK(loadState(db).value.accessKeys.empty());
+        mock.take();
+      }
+      mock.answer = [&](const std::string &request) -> Reply {
+        if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
+        if (request.rfind("GET /api/shop/sections", 0) == 0)
+          return {401, reason.empty() ? "" : "X-CookingFoil-Auth: " + reason + "\r\n", "no"};
+        return {200, "", "{}"};
+      };
+    }
+    {
       auto state = loadState(db).value;
       state.accessKeys = {{url, "stale-key"}};
       CHECK(saveState(db, state, error));

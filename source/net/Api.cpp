@@ -1124,7 +1124,10 @@ void Session::forgetAccessKey() {
     logLine("pair: the server took this console back; asking for approval again");
 }
 bool Session::answerRefusal(const Response& reply, Error& error) {
-    if (reply.auth != "access-key-wrong" && reply.auth != "device-not-approved" && reply.auth != "session-revoked") return false;
+    // The session token refused, its renewal too: the key signs in once
+    // more, and the server's answer to the key itself decides about it.
+    if (reply.auth.rfind("session-", 0) == 0) return true;
+    if (reply.auth != "access-key-wrong" && reply.auth != "device-not-approved") return false;
     if (const auto held = state_.accessKeys.find(server_.url); held != state_.accessKeys.end() && !held->second.empty())
         forgetAccessKey();
     // Approval again: the QR code shows while it is pending (error set); a
@@ -1391,13 +1394,14 @@ bool Session::refresh(Error& error) {
     const auto url = server_.url + "/api/shop/sections";
     auto signIn = authHeaders(server_, state_, url);
     auto response = get(url, signIn, etag_, cancel_);
-    if (response.status == 401 && response.error.empty()) {
+    // Twice at most: a refused session, then what the key's own try says.
+    for (int answered = 0; answered < 2 && response.status == 401 && response.error.empty(); ++answered) {
         const bool again = answerRefusal(response, error);
         if (again || error) logRefusal(signIn, response);
-        if (again) {
-            signIn = authHeaders(server_, state_, url);
-            response = get(url, signIn, etag_, cancel_);
-        } else if (error) return false; // approval pending: the QR code shows
+        if (error) return false; // approval pending: the QR code shows
+        if (!again) break;
+        signIn = authHeaders(server_, state_, url);
+        response = get(url, signIn, etag_, cancel_);
     }
     followDirectNaming(url, response);
     if (!response.error.empty()) { error.message = response.error; return false; }

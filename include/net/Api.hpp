@@ -212,8 +212,9 @@ private:
     void forgetAccessKey();
     void forgetPasswordOnceKeyed();
     // A list refused with 401: approval again when its reason says the key
-    // is no good. True when the list should be asked once more (a key came);
-    // error set when approval is pending or failed.
+    // is no good, a new sign-in when it was the session token. True when the
+    // list should be asked once more; error set when approval is pending or
+    // failed.
     bool answerRefusal(const Response& reply, Error& error);
     bool pairPasswordOnly_ = false; // a /api/pair/* reply said passwordOnly
     // This server's pair secret, made and saved first when the console has no
