@@ -1,4 +1,5 @@
 #pragma once
+#include "core/Sha256.hpp"
 #include "core/Votes.hpp"
 #include "core/ArchiveWriter.hpp"
 #include <atomic>
@@ -80,6 +81,10 @@ public:
   // Entries `skip` names are read past without being written (files that
   // must stay as they are on the card).
   void skip(std::function<bool(const std::string &)> skip) { skip_ = std::move(skip); }
+  // Each file written is hashed as it goes and handed to `check` once whole
+  // (path, size, SHA-256 hex); false removes it and fails the archive.
+  using Check = std::function<bool(const std::string &, uint64_t, const std::string &)>;
+  void check(Check check) { check_ = std::move(check); }
   bool feed(const char *data, size_t size) override;
   // True when the archive ended with its two empty blocks.
   bool finish() override;
@@ -100,10 +105,13 @@ private:
   void readPax();
   bool fail(const std::string &message);
   bool openFile(const std::string &path, uint64_t size);
+  bool fileDone();
   std::string root_, titleId_, error_, block_, paxPath_, current_;
   std::function<bool(const std::string &)> allow_, skip_;
+  Check check_;
+  Sha256 hash_;
   std::FILE *file_ = nullptr;
-  uint64_t remaining_ = 0, padding_ = 0, fed_ = 0, boundary_ = 0;
+  uint64_t remaining_ = 0, padding_ = 0, fed_ = 0, boundary_ = 0, entrySize_ = 0;
   std::optional<uint64_t> paxSize_;
   bool pax_ = false, paxGlobal_ = false, ended_ = false;
   std::string paxData_;
