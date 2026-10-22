@@ -1017,6 +1017,13 @@ void Session::setPairMessage(const std::string& message) {
     if (note.empty()) state_.pairMessages.erase(server_.url);
     else state_.pairMessages[server_.url] = note;
 }
+namespace {
+// Servers are read side by side: each read-change-write of the records file
+// is one at a time, so none writes back a copy without another's key.
+std::mutex stateFile;
+// And one catalog read at a time: two large lists never in memory at once.
+std::mutex catalogReading;
+}
 std::string Session::pairSecret() {
     const auto key = state_.accessKeys.find(server_.url);
     if (key != state_.accessKeys.end() && !key->second.empty()) return "";
@@ -1025,6 +1032,7 @@ std::string Session::pairSecret() {
     // the one the server holds.
     const auto secret = randomKey();
     if (secret.empty()) return "";
+    std::unique_lock<std::mutex> filed(stateFile);
     auto saved = loadState(path_);
     auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
     updated.pairSecrets[server_.url] = secret;
@@ -1086,6 +1094,7 @@ bool Session::pair(Error& error) {
     if (!key.empty()) {
         // Start from the file: settings chosen since this session began
         // (language, install checks) must survive the key being added.
+        std::unique_lock<std::mutex> filed(stateFile);
         auto saved = loadState(path_);
         auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value; updated.accessKeys[server_.url] = key;
         updated.pairSecrets.erase(server_.url); // done with: the key came
@@ -1112,6 +1121,7 @@ void Session::forgetPasswordOnceKeyed() {
     server_.password.clear();
 }
 void Session::forgetAccessKey() {
+    std::unique_lock<std::mutex> filed(stateFile);
     auto saved = loadState(path_);
     auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
     updated.accessKeys.erase(server_.url);
@@ -1217,6 +1227,7 @@ void Session::rebind() {
         return;
     }
     // From the file: settings chosen since this session began must survive.
+    std::unique_lock<std::mutex> filed(stateFile);
     auto saved = loadState(path_);
     auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
     updated.derivedKey = state_.derivedKey;
@@ -1321,6 +1332,7 @@ bool Session::enroll(Error& error, bool replacing) {
 // saved, the token stays in config.json and the next try takes the key from
 // enrollSpent, not from the server.
 bool Session::keepEnrolledKey(const std::string& accessKey, const std::string& device, Error& error) {
+    std::unique_lock<std::mutex> filed(stateFile);
     auto saved = loadState(path_);
     auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
     updated.derivedKey = state_.derivedKey;
@@ -1414,7 +1426,10 @@ bool Session::refresh(Error& error) {
         return false;
     }
     // Read game by game (parseCatalog), then the text goes.
-    auto parsed = parseCatalog(response.body);
+    auto parsed = [&] {
+        std::lock_guard<std::mutex> one(catalogReading);
+        return parseCatalog(response.body);
+    }();
     std::string().swap(response.body);
     if (parsed.error) { error = parsed.error; return false; }
     items_.clear(); items_.shrink_to_fit();

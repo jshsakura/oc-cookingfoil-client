@@ -10,6 +10,7 @@
 #include <filesystem>
 #include "core/Log.hpp"
 #include <fstream>
+#include <mutex>
 #include <fcntl.h>
 #include <unistd.h>
 namespace foil {
@@ -200,8 +201,14 @@ bool finishCutSave(const std::string& path) {
 bool saveConfig(const std::string& path, const Config& config, std::string& error) {
     return atomicWrite(path, serializeConfig(config), error);
 }
+namespace {
+// Servers read side by side each take their own field out: one at a time,
+// so none writes back a copy that still holds another's.
+std::mutex dropping;
+}
 bool dropEnrollToken(const std::string& path, const std::string& serverUrl, std::string& error) {
     if (path.empty()) return true;
+    std::lock_guard<std::mutex> one(dropping);
     auto config = parseConfig(readFile(path));
     if (config.error) { error = config.error.message; return false; }
     bool changed = false;
@@ -211,6 +218,7 @@ bool dropEnrollToken(const std::string& path, const std::string& serverUrl, std:
 }
 bool dropPassword(const std::string& path, const std::string& serverUrl, std::string& error) {
     if (path.empty()) return true;
+    std::lock_guard<std::mutex> one(dropping);
     auto config = parseConfig(readFile(path));
     if (config.error) { error = config.error.message; return false; }
     bool changed = false;

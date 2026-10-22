@@ -6,6 +6,7 @@
 #include "core/ShopSaves.hpp"
 #include "ui/Application.hpp"
 #include "ui/Images.hpp"
+#include "MockServer.hpp"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -785,6 +786,39 @@ int runUiTests(SDL_Renderer *renderer) {
     home.render();
     CHECK(home.onMenu());
     std::filesystem::remove_all(refreshRoot);
+  }
+  char togetherDirectory[] = "/tmp/cookingfoil-together-XXXXXX";
+  if (const auto togetherRoot = mkdtemp(togetherDirectory)) {
+    // Two servers slow to give their lists are asked together: the home
+    // waits for the slower one, not for both in turn.
+    static constexpr int SlowMs = 700;
+    const auto slow = [](const std::string &request) -> Reply {
+      if (request.rfind("GET /api/shop/sections", 0) != 0) return {404, "", "{}"};
+      std::this_thread::sleep_for(std::chrono::milliseconds(SlowMs));
+      return {200, "", R"({"sections":[]})"};
+    };
+    Mock first, second;
+    first.answer = slow;
+    second.answer = slow;
+    const auto configPath = std::string(togetherRoot) + "/config.json";
+    std::string error;
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:)" + std::to_string(first.port) +
+                                            R"("},{"title":"B","url":"http://127.0.0.1:)" + std::to_string(second.port) + R"("}]})",
+                            error));
+    foil::ui::Application both(renderer, configPath, std::string(togetherRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(both.open());
+    for (int frame = 0; frame < 800 && both.asking(); ++frame) { SDL_Delay(5); both.render(); }
+    first.take();
+    second.take();
+    const auto started = std::chrono::steady_clock::now();
+    both.refreshAll();
+    settle(both);
+    for (int frame = 0; frame < 800 && both.asking(); ++frame) { SDL_Delay(5); both.render(); }
+    const auto took = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+    CHECK(!both.asking());
+    CHECK(first.take().size() >= 1 && second.take().size() >= 1);
+    CHECK(took < 2 * SlowMs - 100);
+    std::filesystem::remove_all(togetherRoot);
   }
   char bugDirectory[] = "/tmp/cookingfoil-bug-XXXXXX";
   if (const auto bugRoot = mkdtemp(bugDirectory)) {

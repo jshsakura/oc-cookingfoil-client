@@ -1461,8 +1461,8 @@ private:
 
   size_t serverIndex_ = 0, detailGroup_ = 0;
   std::unique_ptr<net::Session> session_;
-  // The other enabled servers, read after session_'s on the same thread:
-  // their games join its list (mergeServers). In config.json's order.
+  // The other enabled servers, read beside session_'s (askOthers): their
+  // games join its list (mergeServers). In config.json's order.
   std::vector<std::unique_ptr<net::Session>> others_;
   // Each server's last list, by url, while more than one is read: one that
   // answers 304 keeps its part. Only the network thread touches it.
@@ -1481,8 +1481,19 @@ private:
   // The session for a configured server (by url); session_ for none or one
   // not read now.
   net::Session *sessionFor(const std::string &url) const;
-  // The others, read in turn after session_'s list (the network thread):
-  // true when any part of the list changed.
+  // The others are asked each on its own thread as session_'s list is
+  // (askOthers), so the home waits for the slowest server, not for each in
+  // turn; readOthers waits for them all and takes their lists (the network
+  // thread): true when any part of the list changed.
+  struct OtherRead {
+    bool read = false;
+    Error error;
+  };
+  std::vector<OtherRead> othersRead_;
+  std::vector<std::thread> othersAsking_;
+  bool othersUnshown_ = false; // a change read while session_'s list failed
+  void askOthers();
+  void joinOthers();
   bool readOthers(bool primaryChanged);
   std::thread network_;
   std::atomic<bool> done_{false};

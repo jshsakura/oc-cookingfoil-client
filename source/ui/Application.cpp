@@ -966,11 +966,16 @@ void Application::refresh() {
     incomingError_ = {};
     incomingCatalog_ = false;
     const bool ok = guarded("catalog", [this] {
+      askOthers();
       const bool read = session_->refresh(incomingError_);
       const bool changed = read && !session_->unchanged();
+      // The others' lists are taken even when this one failed: what they
+      // read is not asked again (their next answer is a 304).
+      const bool othersChanged = readOthers(changed);
+      if (!read) othersUnshown_ = othersUnshown_ || othersChanged;
       // Grouped here, off the drawing thread: it takes a few hundred
       // milliseconds for a large catalog, which stopped the screen.
-      if (read && readOthers(changed)) {
+      if (read && (othersChanged || std::exchange(othersUnshown_, false))) {
         incomingCatalog_ = true;
         incomingGroups_ = groupedCatalog(mergeServers([&] {
           std::vector<ServerItems> lists{{session_->server().url, serverItems_[session_->server().url]}};
@@ -984,6 +989,7 @@ void Application::refresh() {
         incomingGroups_ = groupedCatalog(mergeServers({{session_->server().url, session_->takeItems()}}));
       }
     });
+    joinOthers(); // also when the list above stopped part way
     if (!ok)
       incomingError_.message = tr("Failed to process the list. Check log.txt.");
     done_ = true;
@@ -3109,17 +3115,31 @@ net::Session *Application::sessionFor(const std::string &url) const {
     if (other->server().url == url) return other.get();
   return session_.get();
 }
+void Application::askOthers() {
+  othersRead_.assign(others_.size(), {});
+  for (size_t i = 0; i < others_.size(); ++i)
+    othersAsking_.emplace_back([this, i] {
+      const platform::OnCore off(platform::NetworkCore);
+      guarded("catalog", [&] { othersRead_[i].read = others_[i]->refresh(othersRead_[i].error); });
+    });
+}
+void Application::joinOthers() {
+  for (auto &asking : othersAsking_) asking.join();
+  othersAsking_.clear();
+}
 bool Application::readOthers(bool primaryChanged) {
+  joinOthers();
   incomingStatus_.clear();
   if (others_.empty()) return false;
   if (primaryChanged) serverItems_[session_->server().url] = session_->takeItems();
   bool changed = primaryChanged;
   std::set<std::string> ids;
   if (!session_->serverId().empty()) ids.insert(session_->serverId());
-  for (const auto &other : others_) {
+  for (size_t i = 0; i < others_.size(); ++i) {
+    const auto &other = others_[i];
     const auto &url = other->server().url;
-    Error error;
-    const bool read = other->refresh(error);
+    const auto &error = othersRead_[i].error;
+    const bool read = othersRead_[i].read;
     // Two addresses of one server (its own and a tunnel's): listed once.
     if (read && !other->serverId().empty() && !ids.insert(other->serverId()).second) {
       incomingStatus_[url] = "same";
