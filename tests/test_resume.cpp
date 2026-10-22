@@ -951,6 +951,17 @@ int runResumeTests() {
     CHECK(entries.size() == 2 && entries[0].name == "a.nro" && entries[0].method == 8 && entries[0].size == 1000 &&
           entries[1].name == "b/c.txt" && entries[1].method == 0 && entries[1].size == 5 && entries[1].offset > 0);
     CHECK(!foil::zipDirectory("not a zip at all, just words", 0, 28, at, length));
+    // A zip64 locator whose offset wraps past 2^64 when its record's length
+    // is added: refused, not read from outside the tail.
+    const auto le = [](uint64_t v, int bytes) {
+      std::string out;
+      for (int i = 0; i < bytes; ++i) out += char(v >> (8 * i) & 0xFF);
+      return out;
+    };
+    const std::string wrapped = le(0x07064b50, 4) + le(0, 4) + le(0xFFFFFFFFFFFFFFF0ULL, 8) + le(1, 4) +
+                                le(0x06054b50, 4) + le(0, 4) + le(0xFFFF, 2) + le(0xFFFF, 2) +
+                                le(0xFFFFFFFF, 4) + le(0xFFFFFFFF, 4) + le(0, 2);
+    CHECK(!foil::zipDirectory(wrapped, 0, wrapped.size(), at, length));
   }
   return failures;
 }
