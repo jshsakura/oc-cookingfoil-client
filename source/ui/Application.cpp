@@ -3313,10 +3313,13 @@ void Application::pollStorage() {
     // missing number means unknown, not "still loading".
     storageChecked_ = true;
   }
-  if (storageWorker_.joinable() || (storageAt_ && SDL_GetTicks() - storageAt_ <= 5000)) return;
+  if (storageWorker_.joinable() || (cardAsked_.empty() && storageAt_ && SDL_GetTicks() - storageAt_ <= 5000)) return;
   storageAt_ = std::max<uint32_t>(1, SDL_GetTicks());
-  std::vector<std::string> paths;
-  for (const auto &[path, there] : cardSeen_) paths.push_back(path);
+  // RetroArch from the first run on, so the retro screens open knowing it.
+  std::set<std::string> asked = std::exchange(cardAsked_, {});
+  asked.insert(retro::RetroArchApp);
+  for (const auto &[path, there] : cardSeen_) asked.insert(path);
+  std::vector<std::string> paths(asked.begin(), asked.end());
   const bool totals = !sdTotal_ || !nandTotal_;
   storageWorker_ = std::thread([this, paths = std::move(paths), totals, sd = sdRoot_, generation = cardGeneration_] {
     StorageFound found;
@@ -3340,15 +3343,14 @@ void Application::pollStorage() {
   });
 }
 void Application::cardChanged() {
-  cardSeen_.clear();
   ++cardGeneration_;
   storageAt_ = 0;
 }
-bool Application::cardHas(const std::string &path) const {
+std::optional<bool> Application::cardKnows(const std::string &path) const {
   const auto seen = cardSeen_.find(path);
   if (seen != cardSeen_.end()) return seen->second;
-  std::error_code ec;
-  return cardSeen_[path] = std::filesystem::exists(sdRoot_ + "/" + path, ec);
+  cardAsked_.insert(path);
+  return std::nullopt;
 }
 void Application::saveHistory() {
   if (!store_.isOpen())

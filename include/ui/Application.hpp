@@ -1488,13 +1488,16 @@ private:
   std::atomic<bool> storageDone_{false};
   StorageFound storageFound_;
   void pollStorage();
-  // Whether a file (relative to the card's root) is there, as last read; a
-  // path never asked about is read once on the spot.
-  bool cardHas(const std::string &path) const;
+  // Whether a file (relative to the card's root) is there, as the storage
+  // worker last read it. A path never read yet is "not known" (nullopt) and
+  // goes to the worker's next run: the drawing thread never waits on the card.
+  std::optional<bool> cardKnows(const std::string &path) const;
+  bool cardHas(const std::string &path) const { return cardKnows(path).value_or(false); }
   mutable std::map<std::string, bool> cardSeen_;
+  mutable std::set<std::string> cardAsked_;
   uint64_t cardGeneration_ = 0;
-  // Something was written to or removed from the card: what was read goes,
-  // and free space is asked again.
+  // Something was written to or removed from the card: free space and every
+  // file are read again; until then the last answers stand.
   void cardChanged();
   void followTakeBack();
   bool takenBack_ = false; // heard while a refresh ran: the next poll refreshes

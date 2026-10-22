@@ -31,10 +31,11 @@ bool Application::retroInstalled(const retro::Game &game) const {
   const auto found = retroOnCard_.find(game.romPath);
   return found != retroOnCard_.end() && found->second;
 }
-// The game's core is not on the card while RetroArch is.
+// The game's core is not on the card while RetroArch is (read, not merely
+// not known yet).
 bool Application::retroCoreMissing(const retro::Game &game) const {
   const auto core = retro::corePath(game.core);
-  return !core.empty() && retroArchPresent() && !cardHas(core);
+  return !core.empty() && retroArchPresent() && cardKnows(core) == false;
 }
 // RetroArch and the game's core both on the card: it can start.
 bool Application::retroReady(const retro::Game &game) const {
@@ -658,8 +659,10 @@ bool Application::runRetroArch(bool full, const Server &server) {
         const int total = int(plan.fetch.size());
         const bool cancelled = retroCancel_;
         const uint64_t received = retroReceived_;
-        return [this, error, done, total, cancelled, received] {
+        const bool app = fileExists(sd + "/" + retro::RetroArchApp);
+        return [this, error, done, total, cancelled, received, app] {
           cardChanged();
+          cardSeen_[retro::RetroArchApp] = app; // read here, so 레트로 does not wait for the storage worker
           if (finishRetroEntry("retroarch",
                                cancelled ? history::Outcome::Cancelled : error ? history::Outcome::Failed : history::Outcome::Done,
                                cancelled ? "" : error.message, received))
