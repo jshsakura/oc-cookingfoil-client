@@ -163,6 +163,19 @@ int runRetroTests() {
       }
       CHECK(d.meta.description.empty() && d.meta.screenshots.empty() && !d.meta.releaseDate);
       CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","variants":3})").variants == 3);
+      // A shortcut takes the server's name; from an older server, the name
+      // with its version or region, only when there are several versions.
+      auto one = parseGameJson(R"({"id":"a","name":"World","variant":"J-K v2","region":"jp","shortcutName":"World · 한글 v2"})");
+      CHECK(shortcutName(one) == "World · 한글 v2");
+      CHECK(parseGameJson(serializeGame(one)).shortcutName == "World · 한글 v2");
+      one.shortcutName.clear();
+      CHECK(shortcutName(one) == "World");
+      one.variants = 2;
+      CHECK(shortcutName(one) == "World · J-K v2" && parseGameJson(serializeGame(one)).variants == 2);
+      one.variant.clear();
+      CHECK(shortcutName(one) == "World · " + regionName("jp"));
+      one.region.clear();
+      CHECK(shortcutName(one) == "World");
       CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b"})").variants == 1);
     }
     // What the server knows of a game besides its files: pictures resolved

@@ -108,6 +108,7 @@ Game parseGame(json_object *object, const std::string &base) {
   g.core = stringField(object, "core");
   g.original = stringField(object, "original");
   g.variant = stringField(object, "variant");
+  g.shortcutName = stringField(object, "shortcutName");
   g.region = region(object, "region");
   g.edition = edition(object);
   g.size = positive(object, "size");
@@ -364,6 +365,21 @@ bool planByBundle(const PackPlan &plan, uint64_t bundleSize) {
   constexpr size_t BundleFrom = 50; // fewer files come one by one whatever their size
   return bundleSize && plan.fetch.size() >= BundleFrom && plan.bytes >= bundleSize / 2;
 }
+std::string regionName(const std::string &code) {
+  if (code == "kr") return tr("Korea|region");
+  if (code == "jp") return tr("Japan|region");
+  if (code == "us") return tr("North America|region");
+  if (code == "eu") return tr("Europe|region");
+  if (code == "asia") return tr("Asia|region");
+  if (code == "br") return tr("Brazil|region");
+  if (code == "world") return tr("World|region");
+  return code;
+}
+std::string shortcutName(const Game &game) {
+  if (!game.shortcutName.empty()) return game.shortcutName;
+  const auto tag = game.variants < 2 ? std::string() : !game.variant.empty() ? game.variant : regionName(game.region);
+  return tag.empty() ? game.name : game.name + " · " + tag;
+}
 std::string serializeGame(const Game &game) {
   Json root(json_object_new_object());
   const auto text = [&](const char *key, const std::string &value) {
@@ -376,6 +392,7 @@ std::string serializeGame(const Game &game) {
   text("core", game.core);
   text("original", game.original);
   text("variant", game.variant);
+  text("shortcutName", game.shortcutName);
   text("region", game.region);
   auto *edition = json_object_new_object();
   json_object_object_add(edition, "korean", json_object_new_boolean(game.edition.korean));
@@ -390,6 +407,7 @@ std::string serializeGame(const Game &game) {
   json_object_object_add(root.get(), "size", json_object_new_int64(int64_t(game.size)));
   json_object_object_add(root.get(), "forwarderSize", json_object_new_int64(int64_t(game.forwarderSize)));
   json_object_object_add(root.get(), "rating", json_object_new_int(game.rating));
+  json_object_object_add(root.get(), "variants", json_object_new_int(game.variants));
   auto *install = json_object_new_object();
   json_object_object_add(install, "rom", json_object_new_string(game.romPath.c_str()));
   json_object_object_add(install, "bezelPng", json_object_new_string(game.bezelPath.c_str()));

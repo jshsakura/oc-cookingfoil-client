@@ -26,6 +26,9 @@ struct Game {
   } edition;
   // Its HOME Menu shortcut: a small NSP that starts the game's core and ROM.
   std::string forwarderUrl, forwarderTitleId;
+  // Its name on the HOME Menu, as the server names its shortcut (with what
+  // tells its versions apart); empty from an older server.
+  std::string shortcutName;
   uint64_t forwarderSize = 0;
   std::string romPath;   // where the bundle puts the ROM, SD-root relative
   std::string bezelPath; // and the bezel picture, when it has one
@@ -173,6 +176,11 @@ bool bundlePathAllowed(const std::string &path);
 std::string bundleFailure(long status, bool game);
 // 19900227 -> "1990.02.27"; a month or day the server does not know (00) is left off.
 std::string releaseLabel(int date);
+// A region code ("jp") in the interface language; an unknown code as it is.
+std::string regionName(const std::string &code);
+// The name a shortcut made on the console takes: the server's, else the
+// game's with its version or region when the server has more than one.
+std::string shortcutName(const Game &game);
 // The name shown for a system in the interface language.
 std::string systemName(const System &system, const std::string &languageCode);
 // Where the RetroArch app is expected (the forwarder chainloads it).

@@ -158,7 +158,7 @@ bool Application::makeHomebrewShortcutHere(const homebrew::App &app) {
 bool Application::installRetroShortcut(const retro::Game &game) {
   if (!retroReady(game)) return false; // it would open to an error
   if (!game.forwarderUrl.empty())
-    return installShortcut(game.name, game.iconUrl, game.forwarderUrl, game.forwarderTitleId, game.forwarderSize);
+    return installShortcut(retro::shortcutName(game), game.iconUrl, game.forwarderUrl, game.forwarderTitleId, game.forwarderSize);
   return state_.makeShortcuts && makeRetroShortcutHere(game);
 }
 bool Application::makeRetroShortcutHere(const retro::Game &game) {
@@ -166,10 +166,11 @@ bool Application::makeRetroShortcutHere(const retro::Game &game) {
     return false;
   const auto rom = "sdmc:/" + game.romPath;
   // The id comes from the core's path and the ROM, so each game has its own.
-  queueShortcut(game.name, game.iconUrl,
+  const auto name = retro::shortcutName(game);
+  queueShortcut(name, game.iconUrl,
                 serializePlan({retro::RetroArchApp, retro::corePath(game.core),
-                               rom.find(' ') == std::string::npos ? rom : "\"" + rom + "\"", game.name, "RetroArch",
-                               game.name, game.iconUrl, forwarder::serverShortcutId(game.forwarderTitleId)}),
+                               rom.find(' ') == std::string::npos ? rom : "\"" + rom + "\"", name, "RetroArch",
+                               name, game.iconUrl, forwarder::serverShortcutId(game.forwarderTitleId)}),
                 game.server);
   return true;
 }
