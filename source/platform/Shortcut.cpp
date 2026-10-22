@@ -211,7 +211,6 @@ Error makeShortcut(const ShortcutRequest &request, uint64_t &id) {
   if (R_FAILED(rc = nsPushApplicationRecord(id, NsApplicationRecordType_Installed, &record, 1)))
     return failure("record", rc);
   refreshShortcutIcon(id);
-  logLine("shortcut made " + forwarder::hexId(id) + " for " + input.nroPath);
   return {};
 }
 void refreshShortcutIcon(uint64_t id) {
@@ -232,14 +231,13 @@ void refreshShortcutIcon(uint64_t id) {
     }
     nsExit();
   }
-  logLine("shortcut refresh " + forwarder::hexId(id) + " " + code(rc));
+  if (R_FAILED(rc)) logLine("shortcut refresh " + forwarder::hexId(id) + " " + code(rc));
 }
 Error removeShortcut(uint64_t id) {
   Services services;
   if (R_FAILED(services.rc)) return failure("services", services.rc);
   const Result rc = nsDeleteApplicationCompletely(id);
   if (R_FAILED(rc) && rc != NotFound) return failure("remove", rc);
-  logLine("shortcut removed " + forwarder::hexId(id));
   return {};
 }
 std::set<uint64_t> presentShortcuts(const std::vector<uint64_t> &ids) {

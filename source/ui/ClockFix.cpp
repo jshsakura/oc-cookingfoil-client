@@ -29,15 +29,7 @@ void Application::pollClock() {
     clockFinish_ = [this, internet] {
       clockFix_ = ClockFix::None;
       const auto console = int64_t(std::time(nullptr));
-      if (!internet) {
-        logLine("clock: no internet time to compare with");
-        return;
-      }
-      if (std::llabs(*internet - console) <= ClockSlack) {
-        logLine("clock: within " + std::to_string(ClockSlack) + "s of internet time; not the cause");
-        return;
-      }
-      logLine("clock: console " + std::to_string(console) + ", internet " + std::to_string(*internet));
+      if (!internet || std::llabs(*internet - console) <= ClockSlack) return;
       clockInternet_ = *internet;
       clockAskedAt_ = SDL_GetTicks();
       clockAsked_ = true;
@@ -48,10 +40,7 @@ void Application::pollClock() {
 }
 void Application::clockAction(Action a) {
   if (clockFix_ == ClockFix::Ask) {
-    if (a == Action::Back) {
-      clockFix_ = ClockFix::None;
-      logLine("clock: the player kept the console clock");
-    }
+    if (a == Action::Back) clockFix_ = ClockFix::None;
     if (a != Action::Accept || !settled() || clockWorker_.joinable()) return;
     clockFix_ = ClockFix::Setting;
     // Internet time as asked, moved on by the time the question was up.
@@ -60,8 +49,8 @@ void Application::clockAction(Action a) {
       platform::ClockSet set;
       guarded("clock", [&] { set = platform::setClock(target); });
       clockFinish_ = [this, set] {
-        logLine(std::string(set.ok ? "clock set: " : "clock not set: ") + set.detail);
         if (!set.ok) {
+          logLine("clock not set: " + set.detail);
           clockFix_ = ClockFix::Failed;
           return;
         }

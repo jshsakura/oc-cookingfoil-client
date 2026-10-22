@@ -346,7 +346,6 @@ void followDirectNaming(const std::string& url, const Response& response) {
     if (url.rfind("https://", 0) != 0) return; // plain http is never given one
     if (response.status != 200 && response.status != 304) return;
     if (response.directNamed || downloadTokenOrigin(url).empty()) return;
-    logLine("download: the server no longer names a direct address; its own addresses from now");
     forgetDownloadToken(url);
 }
 long renewDownloadToken(const Server& server, const State& state) {
@@ -1094,7 +1093,6 @@ void Session::forgetPasswordOnceKeyed() {
         return;
     }
     server_.password.clear();
-    logLine("pair: approved; the password is out of config.json");
 }
 void Session::forgetAccessKey() {
     auto saved = loadState(path_);
@@ -1199,7 +1197,6 @@ void Session::rebind() {
     Error error;
     if (!saveState(path_, updated, error)) { logLine("rebind not saved: " + error.message); return; }
     state_ = std::move(updated);
-    logLine("rebind: " + status);
 }
 namespace {
 std::mutex enrollLock;
@@ -1242,7 +1239,7 @@ bool Session::enroll(Error& error, bool replacing) {
     if (!sent.error.empty()) { error.message = sent.error; return false; }
     // A server that does not know enroll (before it, or with pairing off):
     // the token is not for it, and the console connects as before.
-    if (sent.status == 404 || sent.status == 405) { logLine("enroll: the server does not offer it; token ignored"); return true; }
+    if (sent.status == 404 || sent.status == 405) return true;
     // Expired or spent: out of config.json, and the console asks for approval
     // as any other does (the QR code), instead of stopping here.
     if (sent.status == 401) {
@@ -1277,7 +1274,6 @@ bool Session::enroll(Error& error, bool replacing) {
     if (device != updated.deviceKey) updated.rebound.insert(server_.url);
     if (!saveState(path_, updated, error)) { error.message = tr("Could not save the issued key. Check where the state file is stored."); return false; }
     state_ = std::move(updated);
-    logLine("enroll: approved");
     // Spent: out of config.json (kept there when refused, to tell why).
     std::string failure;
     if (!dropEnrollToken(configPath_, server_.url, failure)) logLine("enroll: token not taken out of config.json: " + failure);
@@ -1387,7 +1383,6 @@ bool Session::downloadPatch(const UserPatch& patch, const std::string& dir, std:
     const uint64_t from = samePart(kept, wanted) ? kept.offset : 0;
     std::error_code ec;
     if (!from) std::filesystem::remove_all(dir, ec);
-    else logLine("patch " + patch.id + " resumes at " + std::to_string(from));
     const auto fetch = rangedTar(url, downloadHeaders(server_, state_, url), from, from ? kept.etag : "",
         [&](uint64_t at) {
             std::error_code ignored;

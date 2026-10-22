@@ -64,7 +64,6 @@ Application::~Application() {
   // in, before the screen heard: kept as done, or the next start would take
   // it from the queue and fetch it all again.
   if (observedInstall_ == install::Status::Running && installer_.progress().status == install::Status::Succeeded) {
-    logLine("install done as the app closed: " + installer_.progress().name);
     history::finish(history_, history::Outcome::Done, "", int64_t(std::time(nullptr)));
     saveHistory();
     forgetInstall();
@@ -196,7 +195,6 @@ void Application::followTakeBack() {
   if (session_ && net::takeConsoleRevoked(session_->server().url)) takenBack_ = true;
   if (!takenBack_ || !session_ || network_.joinable()) return;
   takenBack_ = false;
-  logLine("the server took this console back; refreshing to ask for approval again");
   refresh();
 }
 // Where a cut-off file stands, from the install thread to the card.
@@ -476,10 +474,7 @@ void Application::openCardRecords(const std::string &sd) {
   }
   if (!moved.empty() && lists) {
     std::string error;
-    if (atomicWrite(ledgerFile, homebrew::serializeLedger(homebrewLedger_), error))
-      logLine("homebrew ledger: file lists of " + std::to_string(moved.size()) + " app(s) moved to their own files");
-    else
-      logLine("homebrew ledger: " + error);
+    if (!atomicWrite(ledgerFile, homebrew::serializeLedger(homebrewLedger_), error)) logLine("homebrew ledger: " + error);
   }
   // An app that closed mid-install left that one running: it goes back in
   // the queue, which picks up again once the shop is reachable.
@@ -1120,9 +1115,9 @@ void Application::poll() {
                          : installStatus == install::Status::Cancelled ? history::Outcome::Cancelled
                                                                        : history::Outcome::Failed;
     const auto error = outcome == history::Outcome::Failed ? failureText(installer_.progress().error) : installer_.progress().error;
-    // How it ended, with what the player was told: a report shows it.
-    logLine("install " + std::string(outcome == history::Outcome::Done ? "done" : outcome == history::Outcome::Cancelled ? "cancelled" : "failed") +
-            ": " + installer_.progress().name + (installer_.progress().error.empty() ? "" : " · " + installer_.progress().error));
+    // A failure with what the player was told: a report shows it.
+    if (outcome == history::Outcome::Failed)
+      logLine("install failed: " + installer_.progress().name + (installer_.progress().error.empty() ? "" : " · " + installer_.progress().error));
     if (history::finish(history_, outcome, error, int64_t(std::time(nullptr)))) saveHistory();
   }
   pumpPatchQueue();
@@ -3181,7 +3176,6 @@ Error Application::launchJob(const QueuedInstall &next) {
     // addresses may have changed), so it does not fetch a file now gone.
     if (!apps.empty() && homebrewLoaded_)
       if (const auto now = homebrewLike(apps.front()); now != homebrew_.end() && now->id != apps.front().id) {
-        logLine("homebrew: " + apps.front().name + " is listed under a new id; fetched from there");
         apps.front() = *now;
       }
     started = !apps.empty() && runHomebrew(apps.front(), serverFor(next.server));
@@ -3303,8 +3297,6 @@ void Application::checkResumePoints() {
         return found == there.end() ? std::nullopt : std::optional<bool>(found->second);
       }, names);
       for (const auto &name : leftovers.windows) std::filesystem::remove(dir + "/" + name, ec);
-      if (!leftovers.windows.empty())
-        logLine("resume: removed " + std::to_string(leftovers.windows.size()) + " window file(s) no point owns");
       // Placeholders this app made whose point is gone (its file deleted, a
       // cut before the first one was kept) go, so nothing is left on the
       // console for good; one with a point stays to be gone on from. Not
@@ -3315,9 +3307,6 @@ void Application::checkResumePoints() {
       if (!orphans.empty() && !installer_.running()) {
         const auto dropped = platform::dropPlaceholders(orphans);
         for (const auto &key : dropped.gone) store_.dropMadePlaceholder(key);
-        if (!dropped.gone.empty())
-          logLine("resume: cleared " + std::to_string(dropped.gone.size()) + " placeholder(s) no point owns, " +
-                  std::to_string(dropped.bytes >> 20) + " MB");
         resumeCleared_ = dropped.bytes;
       }
     });
@@ -3337,7 +3326,6 @@ void Application::pollResumeCheck() {
     const auto then = resumeChecked_.find(key);
     if (!now || then == resumeChecked_.end() || now->plan != then->second.plan || now->url != then->second.url) continue;
     installer_.forgetResumePoint(key);
-    logLine("resume: " + key + " has no placeholder on the console; it starts over");
   }
   resumeChecked_.clear();
 }

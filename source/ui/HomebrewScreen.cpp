@@ -201,8 +201,6 @@ void Application::takeHomebrewLedgerCheck() {
       homebrewLedger_[id] = record;
       changed = true;
     }
-  for (const auto &id : check.followed)
-    logLine("homebrew " + id + ": the card's file is not the one installed; the ledger follows the card");
   homebrewLedgerLooked_.clear();
   if (changed) saveHomebrewLedger();
 }
@@ -400,7 +398,6 @@ bool Application::runHomebrew(const homebrew::App &app, const Server &server) {
           if (net::homebrewList(server, state, etag, now, unchanged, listError, &retroCancel_))
             for (const auto &fresh : now)
               if (fresh.id == app.id && fresh.hash != listed.hash) {
-                logLine("homebrew: " + app.name + " changed on the server, fetching the new build");
                 app = fresh;
                 error = {};
                 retroReceived_ = 0;

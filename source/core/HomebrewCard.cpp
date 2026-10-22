@@ -195,8 +195,6 @@ std::vector<CardNro> scanCard(const std::string &sdRoot, const std::vector<int> 
     NroInfo info;
     uint64_t size = 0;
     if (!readNroFile(full, languages, info, &size)) continue;
-    if (info.icon.empty())
-      logLine("homebrew card: " + path + " shows no icon: " + (info.iconProblem.empty() ? "unknown" : info.iconProblem));
     out.push_back({path, std::move(info.name), std::move(info.author), std::move(info.version), std::move(info.icon), size, mtime});
   }
   return out;

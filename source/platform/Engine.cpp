@@ -246,7 +246,6 @@ bool nczPoint(const std::string &nca, uint64_t size, std::string &point, std::ve
     return false;
   window.assign(bytes.begin(), bytes.end());
   point = kept->plan;
-  logLine("download resumes at " + std::to_string((at.zstdStart + at.consumed) >> 20) + " MB (compressed): " + nca);
   return true;
 }
 void keepNczPoint(const std::string &nca, uint64_t size, const std::string &point, const std::vector<uint8_t> &window,
@@ -327,8 +326,6 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
         foil::net::SegmentPlan::load(point->plan, options.resume)) {
       options.resumeTotal = point->total;
       options.etag = point->etag;
-      logLine("download resumes at " + std::to_string(foil::net::SegmentPlan(options.resume).received() >> 20) +
-              " MB: " + content);
     }
   // Where it stands, every 30 s at most, once the bytes are on the card: each
   // save rewrites the database file whole, so not more often than that (a

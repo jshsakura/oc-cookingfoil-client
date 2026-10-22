@@ -53,9 +53,9 @@ void trimLog(const std::string &path) {
 }
 } // namespace
 namespace {
-void writeOne(const std::string &raw);
-// Lines go to the card on a thread of their own: a screen that logs (every
-// finished download does) never waits for a write. It drains in batches, so
+void writeBatch(const std::deque<std::string> &raws);
+// Lines go to the card on a thread of their own: a screen that logs never
+// waits for a write. It drains in batches, each one open of the file, so
 // a card that stalls for a moment costs the screen nothing.
 class Writer {
 public:
@@ -91,7 +91,7 @@ private:
       batch.swap(lines_);
       busy_ = true;
       held.unlock();
-      for (const auto &raw : batch) writeOne(raw);
+      writeBatch(batch);
       held.lock();
       busy_ = false;
       idle_.notify_all();
@@ -228,27 +228,32 @@ std::string forReport(const std::string &text, const ReportPrivate &known) {
   return std::regex_replace(out, longHex, "$1...");
 }
 namespace {
-void writeOne(const std::string &raw) {
-  const auto line = withoutAddresses(raw);
+void writeBatch(const std::deque<std::string> &raws) {
   std::lock_guard<std::mutex> lock(mutex);
   if (logPath.empty())
     return;
-  if (line == lastLine) {
-    ++repeats;
-    return;
-  }
-  lastLine = line;
-  if (auto *file = std::fopen(logPath.c_str(), "a")) {
+  FILE *file = nullptr;
+  for (const auto &raw : raws) {
+    auto line = withoutAddresses(raw);
+    if (line == lastLine) {
+      ++repeats;
+      continue;
+    }
+    if (!file && !(file = std::fopen(logPath.c_str(), "a")))
+      return;
     if (repeats)
       writeLine(file, "(the line before " + std::to_string(repeats) + " more times)");
     repeats = 0;
     writeLine(file, line);
-    const long size = std::ftell(file);
-    std::fclose(file);
-    // A long session (or something logging in a loop) is cut back here too,
-    // not only at the next start: the log never grows past twice its size.
-    if (size > long(2 * MaxLogBytes)) trimLog(logPath);
+    lastLine = std::move(line);
   }
+  if (!file)
+    return;
+  const long size = std::ftell(file);
+  std::fclose(file);
+  // A long session (or something logging in a loop) is cut back here too,
+  // not only at the next start: the log never grows past twice its size.
+  if (size > long(2 * MaxLogBytes)) trimLog(logPath);
 }
 } // namespace
 void logLine(const std::string &raw) { writer().push(raw); }

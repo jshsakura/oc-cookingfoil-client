@@ -486,8 +486,7 @@ bool Application::finishRetroEntry(const std::string &kind, history::Outcome out
     return e.kind == kind && e.outcome == history::Outcome::Running;
   });
   if (running == history_.end()) return false;
-  logLine(kind + " " + (outcome == history::Outcome::Done ? "done" : outcome == history::Outcome::Cancelled ? "cancelled" : "failed") + ": " +
-          running->install.name + (error.empty() ? "" : " · " + error));
+  if (outcome == history::Outcome::Failed) logLine(kind + " failed: " + running->install.name + (error.empty() ? "" : " · " + error));
   if (outcome == history::Outcome::Done) sounds_.play(kind == "shortcut" ? Cue::Shortcut : Cue::Done);
   else if (outcome == history::Outcome::Failed) sounds_.play(Cue::Error);
   if (pausing && outcome == history::Outcome::Cancelled) {
@@ -571,7 +570,6 @@ bool Application::runRetroArch(bool full, const Server &server) {
         // The server still making its lists (503 with Retry-After): wait as
         // long as it says, a few times, before giving up.
         for (int tries = 0; reply.error && reply.retryAfter > 0 && tries < 4 && !retroCancel_ && !stop_; ++tries) {
-          logLine("retroarch manifest busy, again in " + std::to_string(reply.retryAfter) + " s");
           for (int waited = 0; waited < reply.retryAfter * 10 && !retroCancel_ && !stop_; ++waited) SDL_Delay(100);
           reply = {};
           pack = net::retroPack(server, state, reply, &stop_);
@@ -610,7 +608,6 @@ bool Application::runRetroArch(bool full, const Server &server) {
             cardCheck_.done = before + file.size;
           }
           if (adopted) {
-            logLine("retroarch: " + std::to_string(adopted) + " files already on the card kept");
             std::string kept;
             atomicWrite(sd + PackRecordPath, retro::serializePackRecord(record), kept);
           }

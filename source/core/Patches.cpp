@@ -710,8 +710,6 @@ bool PatchStore::place(const std::string &path, Error &error) {
       auto aside = base(path);
       for (int n = 1; fs::exists(aside, ec); ++n)
         aside = storeRoot_ + "/_kept/" + path + "." + std::to_string(n);
-      if (aside != base(path))
-        logLine("patches: kept a second file of the user's at " + aside);
       if (!move(sd(path), aside, error))
         return false;
     }

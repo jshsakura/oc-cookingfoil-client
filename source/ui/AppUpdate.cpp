@@ -123,7 +123,7 @@ void Application::installAppUpdate() {
         ok = net::installClient(server, state, release, target, updateReceived_, error, &updateCancel_);
       }
     });
-    logLine(ok ? "update: " + release.version + " -> " + target : "update failed: " + error.message);
+    if (!ok) logLine("update failed: " + error.message);
     const bool cancelled = updateCancel_;
     updateFinish_ = [this, ok, error, cancelled, target, release] {
       if (!ok) {

@@ -44,7 +44,6 @@ ConsoleSignIn signInOnConsole(const std::string &sd, const std::string &user, st
   if (login.error) return {"", login.error, !login.value.error.empty()};
   if (auto error = writeConfig(sd, achievements::signInValues(login.value.user, login.value.token)))
     return {"", error, false};
-  logLine("achievements: signed in on the console");
   return {login.value.user, {}, false};
 }
 Job::Finish crashed(Error &error) {

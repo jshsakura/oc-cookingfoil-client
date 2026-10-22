@@ -118,7 +118,6 @@ bool fetchBundle(const Server &server, const State &state, const homebrew::App &
   const auto record = sd + "/switch/cookingfoil/resume/homebrew-" + app.id + ".json";
   const auto kept = parsePartInfo(readFile(record));
   const uint64_t from = samePart(kept, wanted) ? kept.offset : 0;
-  if (from) logLine("homebrew " + app.id + " resumes at " + std::to_string(from >> 20) + " MB");
   // Each file the stream writes is held against the list as it ends.
   std::set<std::string> arrived;
   const auto fetch = rangedTar(app.bundleUrl, downloadHeaders(server, state, app.bundleUrl), from, from ? kept.etag : "",
@@ -248,7 +247,6 @@ bool fetchArchive(const Server &server, const State &state, const homebrew::App 
   const auto record = sd + "/switch/cookingfoil/resume/homebrew-" + app.id + ".json";
   const auto kept = parsePartInfo(readFile(record));
   const uint64_t from = samePart(kept, part) ? kept.offset : 0;
-  if (from) logLine("homebrew " + app.id + " resumes the zip at " + std::to_string(from >> 20) + " MB");
   const auto fetch = rangedTar(zip.url, headers, from, from ? kept.etag : "",
       [&](uint64_t) { return std::make_unique<ZipWriter>(sd, wanted); },
       [&](uint64_t boundary, const std::string &etag) {
@@ -292,7 +290,6 @@ bool homebrewArchive(const Server &server, const State &state, homebrew::App app
     if (fetchArchive(server, state, app, sd, received, error, cancel, unusable, retryAfter)) return true;
     if (cancel && *cancel) return false;
     if (retryAfter && round == 0) {
-      logLine("homebrew " + app.id + ": the zip changed on the server, listing again");
       const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(std::min(retryAfter, 30));
       while (std::chrono::steady_clock::now() < until && !(cancel && *cancel))
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -481,7 +478,6 @@ bool homebrewDownload(const Server &server, const State &state, const homebrew::
     int busy = 0;
     if (homebrewFiles(server, state, app, sd, received, error, cancel, keptBytes, busy, check)) return true;
     if ((cancel && *cancel) || !busy || round > 0) return false;
-    logLine("homebrew " + app.id + ": a file changed on the server, listing again");
     const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(std::min(busy, 30));
     while (std::chrono::steady_clock::now() < until && !(cancel && *cancel))
       std::this_thread::sleep_for(std::chrono::milliseconds(100));

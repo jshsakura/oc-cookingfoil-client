@@ -124,8 +124,7 @@ int main(int argc, char **argv) {
   foil::setIdentitySource(foil::platform::consoleIdentity);
   foil::net::setConsoleName(foil::platform::consoleNickname());
   foil::openLog("sdmc:/switch/cookingfoil/log.txt");
-  foil::logLine(std::string("start " COOKINGFOIL_VERSION " ") + (appletGetAppletType() == AppletType_Application ? "application" : "applet") + " mode, " + self);
-  if (!updateNote.empty()) foil::logLine(updateNote);
+  if (!updateNote.empty() && !swapped) foil::logLine(updateNote); // a swap that went well says nothing
   int result = 0;
   {
     foil::ui::Runtime app;

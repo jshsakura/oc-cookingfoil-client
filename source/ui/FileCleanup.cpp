@@ -143,7 +143,6 @@ void Application::pollFileCleanup() {
   const auto done = std::move(tidyIncoming_);
   tidyFound_ = {};
   const uint64_t freed = (done.leftovers.error ? 0 : done.leftovers.value.bytes) + done.pieceBytes + done.cacheBytes;
-  logLine("cleanup: freed " + std::to_string(freed >> 20) + " MB");
   if (tidyRemoving_[0] || tidyRemoving_[1]) cardChanged(); // free space changed
   if (tidyRemoving_[0]) refreshInstalled();
   if (done.leftovers.error) {

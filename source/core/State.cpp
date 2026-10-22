@@ -453,15 +453,13 @@ Parsed<State> loadState(const std::string& dbPath, bool* busy) {
         if (why == Rebound::None && plain && !storageKey(id).empty()) {
             // Written before encryption: encrypted now, once.
             Error saved;
-            if (saveState(dbPath, state, saved)) logLine("state: credentials encrypted with the console's key");
-            else logLine("state: " + saved.message);
+            if (!saveState(dbPath, state, saved)) logLine("state: " + saved.message);
         }
         if (why == Rebound::None) {
             // Every server took the made key: it is the stored one from now.
             if (const auto list = knownServers(); list && settleDeviceKey(state, *list)) {
                 Error saved;
-                if (saveState(dbPath, state, saved)) logLine("state: every server took the console's key; stored");
-                else logLine("state: " + saved.message);
+                if (!saveState(dbPath, state, saved)) logLine("state: " + saved.message);
             }
             result.value = std::move(state);
             return result;
@@ -478,7 +476,6 @@ Parsed<State> loadState(const std::string& dbPath, bool* busy) {
             result.value = std::move(state);
             return result;
         }
-        logLine("state: console identity read; credentials bound");
         // Moved in from a state.json earlier this run: it goes once bound.
         moved = legacy != dbPath && std::filesystem::exists(legacy, ec);
     } else if (legacy != dbPath && (std::filesystem::exists(legacy, ec) || std::filesystem::exists(legacy + ".old", ec))) {
@@ -490,7 +487,6 @@ Parsed<State> loadState(const std::string& dbPath, bool* busy) {
         if (old) {
             state = cleaned(std::move(*old));
             if (!validDeviceKey(state.deviceKey)) why = Rebound::Changed;
-            logLine("state: state.json moved into cookingfoil.db");
         } else {
             // Kept for whoever wants to look; a new key, approved again.
             std::filesystem::rename(legacy, legacy + ".broken", ec);

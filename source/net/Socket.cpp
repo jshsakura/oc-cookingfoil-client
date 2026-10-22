@@ -188,10 +188,7 @@ void heardHeader(const std::string &url, const char *data, size_t bytes) {
     // Down for at most the server's estimate and a minute more: a restart
     // that never ends does not keep a download waiting for good.
     link.restartUntil = std::chrono::steady_clock::now() + std::chrono::seconds(seconds + 60);
-    if (id != link.restartId) {
-      ++restarts;
-      logLine("server restarting (" + std::to_string(seconds) + " s, " + id + ")");
-    }
+    if (id != link.restartId) ++restarts;
     link.restartId = id;
     link.restarting = true;
   });
@@ -257,7 +254,7 @@ bool renewDownloadToken(const std::string &url, const std::string &sent) {
   const auto now = downloadToken(url);
   const bool fresh = !now.empty() && now != sent && !downloadTokenRejected(url);
   if (!fresh && (status == 401 || status == 403)) changeLink(url, [](Link &link) { link.signInRefused = true; });
-  logLine(fresh ? "download token renewed" : "download token not renewed: status " + std::to_string(status));
+  if (!fresh) logLine("download token not renewed: status " + std::to_string(status));
   return fresh;
 }
 bool downloadSignInRefused(const std::string &url) {
@@ -398,8 +395,6 @@ void askSession(const std::string &origin, std::unique_lock<std::mutex> &held) {
   if (grant.status == 200 && !grant.token.empty()) {
     now.token = grant.token;
     now.until = std::chrono::steady_clock::now() + std::chrono::seconds(grant.secondsLeft);
-    logLine("session token for " + origin + ": " + std::to_string(grant.secondsLeft / 60) + " min, renewed " +
-            std::to_string(RenewBeforeSeconds / 60) + " min before it ends");
     return;
   }
   // 403: this server keeps the sign-in; 401: the sign-in itself is wrong
