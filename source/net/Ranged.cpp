@@ -22,6 +22,7 @@
 #include <cstring>
 #include <filesystem>
 #include <thread>
+#include <utility>
 namespace foil::net {
 namespace fs = std::filesystem;
 namespace {
@@ -159,30 +160,50 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
 
 // A file this big or more, fetched from its start, comes over several
 // connections at once as a game does: one connection is slow on a link with a
-// long round trip (a phone's hotspot). Its parts land out of order, so a
-// download that stops is not resumed from the card; it starts over.
+// long round trip (a phone's hotspot). Its parts land out of order; where
+// each stood when it stopped goes in its .plan, and the next try goes on
+// from there.
 constexpr uint64_t ParallelFrom = 4ull << 20;
 namespace {
-// The whole file over several connections into `part`. False when it did
-// not finish; the part is gone then, and the bytes it counted given back.
+// The whole file over several connections into `part`, from where the parts
+// in `kept` stood (a kept .plan) or from nothing. False when it did not
+// finish: the bytes it counted are given back, and the part stays with its
+// .plan when the server said where the parts stood, else it is gone.
 bool fetchParallel(const std::string &url, const std::vector<std::string> &headers, const std::string &part,
-                   const PartInfo &wanted, std::atomic<uint64_t> &received, const std::atomic<bool> *cancel,
-                   PartFetch &result, std::string &etag) {
+                   const PartInfo &wanted, const PartInfo &kept, std::atomic<uint64_t> &received,
+                   const std::atomic<bool> *cancel, PartFetch &result, std::string &etag) {
   const auto name = fs::path(part).filename().string();
-  std::unique_ptr<FILE, int (*)(FILE *)> out(std::fopen(part.c_str(), "wb"), std::fclose);
+  std::vector<Segment> resume;
+  const bool resuming = !kept.plan.empty() && SegmentPlan::load(kept.plan, resume) && !resume.empty();
+  std::error_code gone;
+  fs::remove(partPlanPath(part), gone); // stands for nothing once bytes move again
+  std::unique_ptr<FILE, int (*)(FILE *)> out(std::fopen(part.c_str(), resuming ? "r+b" : "wb"), std::fclose);
   if (!out)
     return false;
   // The whole size up front: the parts land out of order, and a write past
   // the end must not depend on how the card's file system fills the gap.
-  if (wanted.size && (std::fseek(out.get(), long(wanted.size - 1), SEEK_SET) != 0 || std::fputc(0, out.get()) == EOF ||
-                      std::fflush(out.get()) != 0)) {
+  if (!resuming && wanted.size &&
+      (std::fseek(out.get(), long(wanted.size - 1), SEEK_SET) != 0 || std::fputc(0, out.get()) == EOF ||
+       std::fflush(out.get()) != 0)) {
     out.reset();
     dropPart(part);
     return false;
   }
-  uint64_t counted = 0;
-  bool tooLong = false, writeFailed = false;
+  uint64_t counted = resuming ? SegmentPlan(resume).received() : 0;
+  received += counted;
+  bool tooLong = false, writeFailed = false, prepared = false;
+  std::string plan, planEtag;
   SegmentedOptions options;
+  if (resuming) {
+    options.resume = resume;
+    options.resumeTotal = wanted.size;
+    options.etag = kept.etag;
+  }
+  // Heard as it goes and once more as it stops; kept only when it stops.
+  options.checkpoint = [&](const std::string &validator, uint64_t, const std::string &saved) {
+    planEtag = validator;
+    plan = saved;
+  };
   options.connections = connectionsFor(url, 0);
   options.headers = headers;
   options.batchBytes = 1u << 20;
@@ -200,6 +221,12 @@ bool fetchParallel(const std::string &url, const std::vector<std::string> &heade
         if (total != wanted.size) {
           tooLong = total > wanted.size;
           return false; // not the file asked for; the one-connection path says why
+        }
+        // Asked again: the server's file changed and every part starts over.
+        if (std::exchange(prepared, true)) {
+          received -= std::min<uint64_t>(counted, received.load());
+          counted = 0;
+          plan.clear();
         }
         return true;
       },
@@ -225,7 +252,16 @@ bool fetchParallel(const std::string &url, const std::vector<std::string> &heade
     return true;
   }
   received -= std::min<uint64_t>(counted, received.load());
-  dropPart(part);
+  PartInfo stood = wanted;
+  stood.etag = planEtag;
+  stood.plan = plan;
+  std::string ignored;
+  const bool keep = closed && !writeFailed && !tooLong && !plan.empty() && !planEtag.empty() &&
+                    atomicWrite(partPlanPath(part), serializePartInfo(stood), ignored);
+  if (keep)
+    result.keptPlan = true;
+  else
+    dropPart(part);
   if (writeFailed || !closed)
     result.failure = trf("Could not write the file: {0}", {name}) + " (" + std::strerror(errno) + ")";
   result.tooLong = tooLong;
@@ -239,6 +275,7 @@ void dropPart(const std::string &part) {
   std::error_code ec;
   fs::remove(part, ec);
   fs::remove(partInfoPath(part), ec);
+  fs::remove(partPlanPath(part), ec);
 }
 PartFetch fetchPart(const std::string &url, const std::vector<std::string> &headers, const std::string &part,
                     const PartInfo &wanted, bool hash, std::atomic<uint64_t> &received,
@@ -249,14 +286,21 @@ PartFetch fetchPart(const std::string &url, const std::vector<std::string> &head
   const auto kept = parsePartInfo(readFile(infoPath));
   std::error_code ec;
   const auto onCard = fs::file_size(part, ec);
-  uint64_t written = partResumeAt(kept, wanted, ec ? 0 : uint64_t(onCard));
+  // A file fetched in parts that stopped short: the parts go on where they
+  // stood. Never read as a file kept from its start: it is full size.
+  auto parts = parsePartInfo(readFile(partPlanPath(part)));
+  if (parts.plan.empty() || !samePart(parts, wanted) || ec || onCard != wanted.size || !wanted.size)
+    parts = PartInfo{};
+  uint64_t written = parts.plan.empty() ? partResumeAt(kept, wanted, ec ? 0 : uint64_t(onCard)) : 0;
   Sha256 sha;
   if (written && hash && !hashFile(part, written, sha)) {
     written = 0;
     sha = Sha256{};
   }
-  if (!written)
+  if (!written && parts.plan.empty())
     dropPart(part);
+  else if (!parts.plan.empty())
+    logLine("resume " + name + " in parts");
   else
     logLine("resume " + name + " at " + std::to_string(written));
   PartInfo info = wanted;
@@ -274,22 +318,35 @@ PartFetch fetchPart(const std::string &url, const std::vector<std::string> &head
     result.response.status = 206; // all of it was kept: nothing left to ask
     return finish();
   }
-  if (!written && wanted.size >= ParallelFrom && !platform::needsBigFile(wanted.size) &&
-      connectionsFor(url, 0) > 1) {
-    std::string etag;
-    if (fetchParallel(url, headers, part, wanted, received, cancel, result, etag)) {
-      written = wanted.size;
-      if (hash && !hashFile(part, written, sha))
-        result.failure = trf("Could not write the file: {0}", {name});
-      info.etag = etag;
-      std::string ignored;
-      atomicWrite(infoPath, serializePartInfo(info), ignored);
-      return finish();
+  if (!parts.plan.empty() || (!written && wanted.size >= ParallelFrom && !platform::needsBigFile(wanted.size) &&
+                                connectionsFor(url, 0) > 1)) {
+    // Once, and once more from where its parts stood when the server let it
+    // say so; without that, once more on one connection from the start.
+    for (int tries = 0; tries < 2; ++tries) {
+      std::string etag;
+      if (fetchParallel(url, headers, part, wanted, parts, received, cancel, result, etag)) {
+        written = wanted.size;
+        if (hash && !hashFile(part, written, sha))
+          result.failure = trf("Could not write the file: {0}", {name});
+        info.etag = etag;
+        std::string ignored;
+        atomicWrite(infoPath, serializePartInfo(info), ignored);
+        return finish();
+      }
+      // Stopped on purpose, or the card refused it: nothing more to try.
+      if (!result.response.error.empty() || !result.failure.empty() || result.tooLong)
+        return finish();
+      if (!result.keptPlan)
+        break;
+      parts = parsePartInfo(readFile(partPlanPath(part)));
+      if (tries == 1) {
+        // Kept for the next try, which goes on from it.
+        result.response.error = tr("The download was interrupted. Download it again.");
+        return finish();
+      }
+      result = PartFetch{};
     }
-    // Stopped on purpose, or the card refused it: nothing more to try.
-    if (!result.response.error.empty() || !result.failure.empty() || result.tooLong)
-      return finish();
-    result = PartFetch{}; // anything else: once more on one connection, as before
+    result = PartFetch{};
   }
   std::unique_ptr<FILE, int (*)(FILE *)> out(nullptr, std::fclose);
   const auto open = [&](uint64_t at, uint64_t whole) {
