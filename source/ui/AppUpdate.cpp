@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <strings.h>
+#include "core/Config.hpp"
 #include "core/Log.hpp"
 #include "core/Json.hpp"
 #include "core/Version.hpp"
@@ -171,14 +172,89 @@ std::string Application::recentCrashReport(size_t room) const {
   if (text.size() + head.size() > room) text.resize(room > head.size() ? room - head.size() : 0);
   return head + text;
 }
+std::vector<size_t> Application::reportServers() const {
+  std::vector<size_t> on;
+  for (size_t i = 0; i < config_.servers.size(); ++i)
+    if (config_.servers[i].enabled) on.push_back(i);
+  return on;
+}
+// It goes where the lists come from unless the player picks another.
+void Application::openBugReport(const std::string &note) {
+  const auto on = reportServers();
+  const auto open = std::find(on.begin(), on.end(), serverIndex_);
+  bugServer_ = open == on.end() ? 0 : int(open - on.begin());
+  bugMessage_ = note;
+  bugAsk_ = true;
+}
+void Application::bugReportDialog() {
+  constexpr int Shown = 3;
+  constexpr float Row = 62, Gap = 8, Note = 88;
+  const auto on = reportServers();
+  const int count = int(on.size());
+  const bool pick = count > 1; // one server: nothing to choose, as everywhere else
+  const float listH = float(std::min(count, Shown)) * (Row + Gap) - Gap;
+  const std::string where = pick ? tr("This goes to the server chosen above.\nTo reach the app's developer, open an issue on GitHub.")
+                                 : tr("This goes to the server you are connected to.\nTo reach the app's developer, open an issue on GitHub.");
+  const float width = 760, textW = width - 64;
+  const float whereH = float(paint_.fonts.lineCount(where, 16, textW, 3)) * 21;
+  const float bodyH = 24 + 26 + 16 + Note + (pick ? 24 + 30 + listH : 0) + 20 + whereH + 24;
+  const auto body = modal(width, bodyH, tr("Send a bug report"), tr("Close"), tr("Write"), tr("Send"), 33);
+  const float x = body.x + 32;
+  float y = body.y + 24;
+  paint_.fonts.text(tr("Write what went wrong if you like. The app's log goes with it."), x, y, 19, Secondary, false, textW);
+  // The note: Y or a tap opens the keyboard.
+  y += 26 + 16;
+  hit(x, y, textW, Note, [this] { action(Action::Queue); });
+  paint_.rect(x, y, textW, Note, Ground, 12);
+  if (bugMessage_.empty())
+    paint_.fonts.text(tr("Tap to write (optional)"), x + 20, y + 16, 19, Secondary);
+  else
+    paint_.fonts.wrapped(bugMessage_, x + 20, y + 14, 19, Ink, textW - 40, 3);
+  y += Note;
+  if (pick) {
+    y += 24;
+    paint_.fonts.middle(tr("Send to"), x, y + 11, 17, Ink, true);
+    y += 30;
+    bugServer_ = std::clamp(bugServer_, 0, count - 1);
+    // Rows of 설정's servers: its dot, its name and address; the cursor's
+    // row is the one it goes to. Past three it scrolls, by the d-pad or a finger.
+    const float rowW = textW - (count > Shown ? 18 : 0);
+    const float top = glide("bugServers", x, y, rowW, listH, float(std::clamp(bugServer_ - Shown / 2, 0, std::max(0, count - Shown))),
+                            float(std::max(0, count - Shown)), Row + Gap);
+    clipTo(x, y, rowW, listH);
+    for (int n = int(top); n < count && n <= int(top) + Shown; ++n) {
+      const auto &server = config_.servers[on[size_t(n)]];
+      const float ry = y + (float(n) - top) * (Row + Gap), mid = ry + Row / 2;
+      const bool chosen = n == bugServer_;
+      hit(x, ry, rowW, Row, [this, n] { bugServer_ = n; });
+      if (chosen) paint_.focusRow(x, ry, rowW, Row, Ground, 12);
+      else paint_.rect(x, ry, rowW, Row, Ground, 12);
+      paint_.rect(x + 20, mid - 6, 12, 12, serverDot(server.url), 6);
+      const auto host = hostOf(server.url);
+      const float nameX = x + 46, nameW = rowW - 46 - 56;
+      if (host.empty() || host == server.title) {
+        paint_.fonts.middle(server.title, nameX, mid, 19, Ink, true, nameW);
+      } else {
+        paint_.fonts.middle(server.title, nameX, mid - 11, 19, Ink, true, nameW);
+        paint_.fonts.middle(host, nameX, mid + 13, 15, Secondary, false, nameW);
+      }
+      if (chosen) paint_.icon(8, x + rowW - 44, mid - 13, Good, 26);
+    }
+    unclip();
+    if (count > Shown) paint_.scrollbar(x + rowW + 8, y, listH, top, Shown, float(count));
+    y += listH;
+  }
+  y += 20;
+  paint_.fonts.wrapped(where, x, y, 16, Secondary, textW, 3, false, 1.3f);
+}
 void Application::sendBugReport(const std::string &said) {
   if (bugWorker_.joinable()) return;
-  if (!session_ || !connected_) {
+  const size_t to = bugReportServer();
+  if (to == std::string::npos) {
     message(tr("Connect to a server to send a bug report."));
     return;
   }
-  logLine("bug report sent by the player");
-  const auto server = session_->server();
+  const auto server = config_.servers[to];
   const auto state = state_;
   // The server takes 64 KB at most; the end of the log is what tells.
   // What the player wrote comes first, then the log, then the console's

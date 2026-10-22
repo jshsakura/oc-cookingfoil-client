@@ -57,6 +57,11 @@ std::string originOf(const std::string& url) {
     curl_url_cleanup(h);
     return result;
 }
+std::string hostOf(const std::string& url) {
+    const auto origin = originOf(url);
+    const auto scheme = origin.find("://");
+    return scheme == std::string::npos ? "" : origin.substr(scheme + 3);
+}
 namespace {
 bool privateIpv4(const std::string& host) {
     unsigned a = 0, b = 0, c = 0, d = 0;
@@ -110,7 +115,7 @@ Parsed<Config> parseConfig(const std::string& json) {
         server.url = normalizeUrl(stringField(object, "url"));
         if (server.url.empty()) { fail(trf("Check the HTTP/HTTPS address of server {0}.", {std::to_string(i + 1)})); return result; }
         server.title = stringField(object, "title");
-        if (server.title.empty()) server.title = originOf(server.url).substr(originOf(server.url).find("://") + 3);
+        if (server.title.empty()) server.title = hostOf(server.url);
         server.username = stringField(object, "username"); server.password = stringField(object, "password");
         server.cfClientId = stringField(object, "cfClientId"); server.cfClientSecret = stringField(object, "cfClientSecret");
         // Letters, digits, '_' and '-' only (it goes into a JSON body); any

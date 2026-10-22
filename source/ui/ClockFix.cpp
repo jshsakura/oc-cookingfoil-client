@@ -68,8 +68,7 @@ void Application::clockAction(Action a) {
     if (a == Action::Accept && settled()) {
       // The log already holds each step's answer.
       clockFix_ = ClockFix::None;
-      bugAsk_ = true;
-      bugMessage_ = tr("The console clock could not be set.");
+      openBugReport(tr("The console clock could not be set."));
     }
   }
 }

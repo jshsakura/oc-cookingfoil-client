@@ -1705,6 +1705,10 @@ void Application::action(Action a) {
       raField_ = -1; // the keyboard is this field's now
       bugMessageField_ = true;
     }
+    // Up and down pick the server it goes to.
+    const int last = int(reportServers().size()) - 1;
+    if (a == Action::Up) bugServer_ = std::max(0, bugServer_ - 1);
+    if (a == Action::Down) bugServer_ = std::min(std::max(0, last), bugServer_ + 1);
     if (a == Action::Back) bugAsk_ = false;
     return;
   }
@@ -1998,10 +2002,7 @@ void Application::action(Action a) {
         sounds_.setOn(state_.sounds);
         sounds_.play(Cue::Add); // turned on: heard at once
         break;
-      case 8:
-        bugAsk_ = true;
-        bugMessage_.clear();
-        break;
+      case 8: openBugReport(""); break;
       default:
         // A server opens its form; "+ 서버 추가" an empty one.
         openServerForm(selected_ < int(config_.servers.size()) ? std::max(0, selected_) : -1);

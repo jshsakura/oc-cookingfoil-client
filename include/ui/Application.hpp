@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <ctime>
 #include "core/Catalog.hpp"
 #include "core/Selection.hpp"
@@ -84,6 +85,15 @@ enum class Action {
 int themeIcon(const Theme &theme);
 class Application {
 public:
+  // 설정 > 버그 리포트 보내기 (or the clock's failure): the popup, `note`
+  // already written, going to the server the lists come from.
+  void openBugReport(const std::string &note);
+  bool bugReportOpen() const { return bugAsk_; }
+  // The 설정 index of the server the report goes to; npos with none on.
+  size_t bugReportServer() const {
+    const auto on = reportServers();
+    return on.empty() ? std::string::npos : on[size_t(std::clamp(bugServer_, 0, int(on.size()) - 1))];
+  }
   // The approval message kept for a server address (tests and the form).
   std::string pairMessageFor(const std::string &url) const {
     const auto found = state_.pairMessages.find(url);
@@ -1163,7 +1173,10 @@ private:
   // 설정 > 버그 리포트 보내기: the log's tail to the server, on request.
   std::string recentCrashReport(size_t room) const;
   void sendBugReport(const std::string &said);
+  void bugReportDialog();
+  std::vector<size_t> reportServers() const; // the servers a report can go to: the ones on, in 설정's order
   bool bugAsk_ = false, bugMessageField_ = false; // the report's popup, and its note being typed
+  int bugServer_ = 0; // the row of reportServers() it goes to
   std::string bugMessage_;
   std::thread bugWorker_;
   std::atomic<bool> bugDone_{false};

@@ -765,6 +765,28 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(reload.current() != foil::ui::Screen::Settings);
     std::filesystem::remove_all(root);
   }
+  char bugDirectory[] = "/tmp/cookingfoil-bug-XXXXXX";
+  if (const auto bugRoot = mkdtemp(bugDirectory)) {
+    // A bug report goes to a server the player picks among the ones on,
+    // starting from the one the lists come from; one that is off is not offered.
+    const auto configPath = std::string(bugRoot) + "/config.json";
+    std::string error;
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:1"},
+      {"title":"B","url":"http://127.0.0.1:2","enabled":false},{"title":"C","url":"http://127.0.0.1:3"}]})", error));
+    foil::ui::Application bug(renderer, configPath, std::string(bugRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(bug.open());
+    bug.openBugReport("");
+    CHECK(bug.bugReportOpen() && bug.bugReportServer() == 0);
+    bug.action(foil::ui::Action::Down);
+    CHECK(bug.bugReportServer() == 2);
+    bug.action(foil::ui::Action::Down); // the last stays
+    CHECK(bug.bugReportServer() == 2);
+    bug.action(foil::ui::Action::Up);
+    CHECK(bug.bugReportServer() == 0);
+    bug.action(foil::ui::Action::Back);
+    CHECK(!bug.bugReportOpen());
+    std::filesystem::remove_all(bugRoot);
+  }
   char formDirectory[] = "/tmp/cookingfoil-form-XXXXXX";
   const auto formRoot = mkdtemp(formDirectory);
   CHECK(formRoot != nullptr);

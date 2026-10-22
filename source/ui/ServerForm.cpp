@@ -19,12 +19,6 @@ bool startsWith(const std::string &text, const std::string &prefix) {
     if (std::tolower(static_cast<unsigned char>(text[i])) != prefix[i]) return false;
   return true;
 }
-// What parseConfig names a server without a title: its host and port.
-std::string hostOf(const std::string &url) {
-  const auto origin = originOf(url);
-  const auto scheme = origin.find("://");
-  return scheme == std::string::npos ? "" : origin.substr(scheme + 3);
-}
 bool sameServer(const Server &a, const Server &b) {
   return a.title == b.title && a.url == b.url && a.username == b.username && a.password == b.password &&
          a.cfClientId == b.cfClientId && a.cfClientSecret == b.cfClientSecret && a.enabled == b.enabled &&

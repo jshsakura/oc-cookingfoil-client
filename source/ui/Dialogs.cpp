@@ -357,17 +357,7 @@ void Application::dialogs() {
                             tr("Close"), "", tr("OK"), 25);
     paint_.fonts.wrapped(alert_, body.x + 32, body.y + 24, 20, Ink, body.w - 64, 3);
   } else if (bugAsk_) {
-    const auto body = modal(760, 24 + 26 + 16 + 96 + 24, tr("Send a bug report"), tr("Close"), tr("Write"), tr("Send"), 33);
-    paint_.fonts.text(tr("Write what went wrong if you like. The app's log goes with it."), body.x + 32, body.y + 24, 19,
-                      Secondary, false, body.w - 64);
-    // The note: Y or a tap opens the keyboard.
-    const float fy = body.y + 24 + 26 + 16;
-    hit(body.x + 32, fy, body.w - 64, 96, [this] { action(Action::Queue); });
-    paint_.rect(body.x + 32, fy, body.w - 64, 96, Ground, 12);
-    if (bugMessage_.empty())
-      paint_.fonts.text(tr("Tap to write (optional)"), body.x + 52, fy + 16, 19, Secondary);
-    else
-      paint_.fonts.wrapped(bugMessage_, body.x + 52, fy + 14, 19, Ink, body.w - 104, 3);
+    bugReportDialog();
   } else if (unqueueAsk_ >= 0 && unqueueAsk_ < int(installQueue_.size())) {
     // As the running download's: the same question, then which one it is
     // (its cover, name and what it is) and where it goes.
