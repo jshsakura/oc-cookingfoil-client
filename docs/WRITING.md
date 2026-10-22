@@ -17,7 +17,7 @@ break; "by convention" means nothing does, so review must.
 2. **Never put Korean, Japanese or Chinese text in a string literal outside the tables.** Why: it
    cannot be translated and shows that language to everyone. (note)
    Enforced: `tests/test_i18n.cpp:112-142`, unless the line carries a legitimate marker.
-3. **Never ship a string without all four languages, or with different `{0}` placeholders.**
+3. **Never ship a string without a row in every language file, or with different `{0}` placeholders.**
    Enforced: `tests/test_i18n.cpp:82-95`.
 4. **Never use an em dash or an en dash, or join sentences with any dash**, in UI copy, messages,
    comments, commits or docs, in any language. Why: the maintainer's writing rule; it reads as two
@@ -38,8 +38,8 @@ break; "by convention" means nothing does, so review must.
 two keys read the same in English, add `|context` (`"Resume|download"`); English shows the part
 before the bar. (note) Where: `include/core/I18n.hpp:7-31`.
 
-**Rows are `{key, ko, ja, zh}` in `source/i18n/Texts*.cpp`; English comes from the key.**
-Where: `I18n.hpp:33-39`.
+**Each language is one file, `source/i18n/lang_<code>.cpp`, of `{key, text}` rows; English comes from
+the key.** A new key goes into every language's file. Where: `I18n.hpp`.
 
 **Pass untranslated keys around and translate where you draw.** A label that code also compares
 stays a key until the draw call. Why: logic must not depend on the chosen language.
@@ -74,8 +74,8 @@ Do not use either marker to silence a string that the user reads.
 ## Adding a string
 
 1. Write the English key in `tr()`/`trf()` at the call site.
-2. Add one row with Korean, Japanese and Chinese to the table for that area.
-3. Read the row in all four languages. Each must read as a native speaker would write it. (note)
+2. Add its row to every file in `source/i18n/`, in the same place in each.
+3. Read the row in every language. Each must read as a native speaker would write it. (note)
 4. Run `make test`.
 5. Look at it in the browser preview in Korean and in the longest language for that string.
 
@@ -89,13 +89,19 @@ Examples from the tables: "새로고침합니다.", "이 게임을 설치하시�
 **Natural Korean, not translated Korean**: "이 게임을 설치하시겠습니까?", not
 "설치 대기열에 추가합니까?". (note)
 
-## English, Japanese, Chinese
+## The other languages
 
 **Each language uses its own form for an instruction**: English the imperative, Japanese
-「…してください」, Chinese 「请…」. (note)
+「…してください」, Chinese 「请…」, Traditional Chinese 「請…」. (note)
+
+**Address the player as Nintendo does in that language**: Spanish tú, French vous, German du,
+Italian tu, Portuguese (Brazil) você, Dutch je, Russian вы.
+
+**Traditional Chinese uses Taiwan terms**: 伺服器, 主機, 存檔, 設定.
 
 **Quote button and setting names the same way every time**: English `"…"`, Japanese `「…」`,
-Chinese `“…”`. (note)
+Chinese `“…”`, Traditional Chinese `「…」`, Spanish and Italian `«…»`, French `« … »`, German
+`„…“`, Portuguese `“…”`, Dutch `‘…’`, Russian `«…»`. (note)
 
 ## In every language
 

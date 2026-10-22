@@ -65,14 +65,7 @@ std::vector<ShopSave> parse(const std::string &json, const std::string &base) {
     if (auto *game = field(object, "game"); json_object_is_type(game, json_type_object)) {
       s.gameName = stringField(game, "name");
       s.gameIcon = url(game, "icon", base);
-      if (auto *names = field(game, "names"); json_object_is_type(names, json_type_object)) {
-        static const char *codes[] = {"ko", "en", "ja", "zh"};
-        for (int k = 0; k < 4; ++k)
-          if (const auto name = stringField(names, codes[k]); !name.empty()) {
-            s.gameNames.resize(4);
-            s.gameNames[k] = name;
-          }
-      }
+      s.gameNames = languageTexts(game, "names");
     }
     out.push_back(std::move(s));
   }
@@ -122,12 +115,9 @@ Error targetMismatch(const ShopSave &save, bool deviceTarget) {
   return saves::kindMismatch(save.saveType == "device", deviceTarget);
 }
 std::string gameName(const ShopSave &save, const std::string &languageCode) {
-  static const char *codes[] = {"ko", "en", "ja", "zh"};
-  for (size_t k = 0; k < save.gameNames.size(); ++k)
-    if (languageCode == codes[k] && !save.gameNames[k].empty()) return save.gameNames[k];
+  if (const auto *own = displayText(save.gameNames, languageCode)) return *own;
   if (!save.gameName.empty()) return save.gameName;
-  for (const auto &name : save.gameNames)
-    if (!name.empty()) return name;
+  if (!save.gameNames.empty()) return save.gameNames.front().text;
   return save.titleId;
 }
 std::vector<ShopSave> mergeServers(std::vector<std::pair<std::string, std::vector<ShopSave>>> lists) {

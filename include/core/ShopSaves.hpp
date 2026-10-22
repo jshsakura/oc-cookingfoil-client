@@ -12,7 +12,7 @@ struct ShopSave {
   bool verified = false; // an admin checked it
   votes::Votes votes;
   std::string gameName, gameIcon;
-  std::vector<std::string> gameNames; // ko, en, ja, zh; any may be empty
+  LanguageTexts gameNames;
   // An app's save has no Title ID: its files go as files into installRoot
   // (switch/<app>) on the SD card, not into system save data.
   std::string homebrewApp, installRoot;

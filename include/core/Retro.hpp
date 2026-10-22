@@ -10,7 +10,7 @@
 namespace foil::retro {
 struct System {
   std::string id, name, defaultCore, coreName, iconUrl; // iconUrl: the system's colour icon
-  std::vector<std::string> names; // ko, en, ja, zh; any may be empty
+  LanguageTexts names;
   int romCount = 0;
 };
 struct Game {

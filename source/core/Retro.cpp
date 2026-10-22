@@ -71,14 +71,7 @@ System parseSystem(json_object *object, const std::string &base) {
   s.coreName = stringField(object, "coreName");
   s.iconUrl = url(object, "iconUrl", base);
   s.romCount = int(std::min<int64_t>(std::max<int64_t>(integerField(object, "romCount"), 0), 1 << 30));
-  if (auto *names = field(object, "names"); json_object_is_type(names, json_type_object)) {
-    static const char *codes[] = {"ko", "en", "ja", "zh"};
-    for (int k = 0; k < 4; ++k)
-      if (const auto name = stringField(names, codes[k]); !name.empty()) {
-        s.names.resize(4);
-        s.names[k] = name;
-      }
-  }
+  s.names = languageTexts(object, "names");
   return s;
 }
 // Empty id or bundle URL means the entry is skipped.
@@ -318,10 +311,8 @@ std::string corePath(const std::string &core) {
   return "retroarch/cores/" + core + "_libretro_libnx.nro";
 }
 std::string systemName(const System &system, const std::string &languageCode) {
-  static const char *codes[] = {"ko", "en", "ja", "zh"};
-  for (size_t k = 0; k < system.names.size(); ++k)
-    if (languageCode == codes[k] && !system.names[k].empty()) return system.names[k];
-  return system.name;
+  const auto *found = displayText(system.names, languageCode);
+  return found ? *found : system.name;
 }
 
 PackRecord parsePackRecord(const std::string &json) {

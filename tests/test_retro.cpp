@@ -106,6 +106,13 @@ int runRetroTests() {
     CHECK(textIn(book.groups[0].options[1].text, "ja") == "롤플레잉");
     CHECK(textIn(book.groups[0].text, "ja") == "Genre" && book.groups[0].text.size() == 2);
     CHECK(parseFilterBook("{}").empty() && parseFilterBook("nope").empty());
+    // zh-Hant keeps its capital: a group only in Traditional Chinese stays.
+    {
+      const auto traditional = parseFilterBook(R"({"groups":[{"key":"genre","zh-Hant":"類型","options":[
+        {"key":"rpg","zh-Hant":"角色扮演","count":3,"params":{"genre":"rpg"}}]}]})");
+      CHECK(traditional.groups.size() == 1);
+      if (!traditional.groups.empty()) CHECK(textIn(traditional.groups[0].text, "zh-Hant") == "類型");
+    }
     // Many in a group: any of them; single: the newer replaces; groups AND.
     Picks picks;
     picks = togglePick(book, picks, "genre", "beat-em-up");
@@ -143,6 +150,11 @@ int runRetroTests() {
     CHECK(systems[0].romCount == 181 && systems[0].coreName == "mGBA");
     CHECK(systemName(systems[0], "ko") == "게임보이 어드밴스");
     CHECK(systemName(systems[0], "ja") == "Game Boy Advance");
+    // Other languages follow the chain: zh-Hant reads zh, then en.
+    System chained = systems[0];
+    chained.names = {{"zh", "简体"}, {"en", "English"}};
+    CHECK(systemName(chained, "zh-Hant") == "简体" && systemName(chained, "fr") == "English");
+    CHECK(systemName(chained, "ko") == "Game Boy Advance"); // Korean: its own name, else the server's
     // A region the server names is kept, anything else dropped.
     CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"kr"})").region == "kr");
     CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"mars"})").region.empty());

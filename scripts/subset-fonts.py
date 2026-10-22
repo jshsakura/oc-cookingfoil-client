@@ -4,9 +4,10 @@ Usage:
   uvx --from fonttools python scripts/subset-fonts.py ko <Pretendard public/static dir>
   uvx --from fonttools python scripts/subset-fonts.py ja <Pretendard JP public/static dir>
   uvx --from fonttools python scripts/subset-fonts.py zh <NotoSansSC[wght].ttf>
+  uvx --from fonttools python scripts/subset-fonts.py tc <NotoSansTC[wght].ttf>
 
-ko keeps KS X 1001 Hangul, jamo, Latin and punctuation; ja and zh keep the
-level 1 kanji/hanzi plus every character the translations use
+ko keeps KS X 1001 Hangul, jamo, Latin, Cyrillic and punctuation; ja, zh and
+tc keep the level 1 kanji/hanzi plus every character the translations use
 (scripts/font-chars.py). Rarer glyphs fall back to the console's shared fonts
 at runtime. The subsets are renamed: Pretendard is OFL with the reserved name
 "Pretendard", and renaming the Noto subset keeps the naming consistent.
@@ -22,7 +23,7 @@ root = Path(__file__).resolve().parents[1]
 mode, source = sys.argv[1], Path(sys.argv[2])
 unicodes = subprocess.run([sys.executable, "-I", str(root / "scripts/font-chars.py"), mode],
                           capture_output=True, text=True, check=True).stdout.strip()
-suffix = {"ko": "", "ja": "JP", "zh": "SC"}[mode]
+suffix = {"ko": "", "ja": "JP", "zh": "SC", "tc": "TC"}[mode]
 
 
 def load(weight):
@@ -58,4 +59,4 @@ for weight in ("Regular", "Bold"):
         cff.fontNames = [postscript]
         top = cff.topDictIndex[0]
         top.FullName, top.FamilyName = full, family
-    font.save(root / "host/fonts" / f"{postscript}{'.ttf' if mode == 'zh' else '.otf'}")
+    font.save(root / "host/fonts" / f"{postscript}{'.ttf' if mode in ('zh', 'tc') else '.otf'}")

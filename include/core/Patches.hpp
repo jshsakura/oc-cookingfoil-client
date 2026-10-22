@@ -1,4 +1,5 @@
 #pragma once
+#include "core/I18n.hpp"
 #include "core/Sha256.hpp"
 #include "core/Votes.hpp"
 #include "core/ArchiveWriter.hpp"
@@ -31,7 +32,7 @@ struct UserPatch {
   // The game the patch is for, from the server's titledb, for games the
   // shop itself does not list. Names are ko, en, ja, zh; any may be empty.
   std::string gameName, gameIcon;
-  std::vector<std::string> gameNames;
+  LanguageTexts gameNames;
   // The patch's own pictures, full addresses or shop paths (made full when
   // drawn, as gameIcon): an icon (empty: the game's), a wide picture and up
   // to 8 screenshots.

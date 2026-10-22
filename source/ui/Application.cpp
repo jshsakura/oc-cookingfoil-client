@@ -374,7 +374,7 @@ bool Application::open() {
   loading_ = false;
   if (fontsFailed)
     return false;
-  paint_.fonts.preferChinese(language() == Language::Chinese);
+  paint_.fonts.preferLanguage(language());
   // The bar runs on to its end before the app shows, rather than the app
   // popping up from part way: a fill, then a moment full to read the last
   // word.
@@ -513,7 +513,7 @@ void Application::applyStartupLanguage() {
     code = config_.language;
   setLanguage(languageFromCode(code, Language::Korean));
   if (!loading_) // open() applies it to the fonts on its own thread
-    paint_.fonts.preferChinese(language() == Language::Chinese);
+    paint_.fonts.preferLanguage(language());
 }
 void Application::toggleInstallCheck(bool &skip) {
   skip = !skip;
@@ -548,9 +548,11 @@ void Application::writePendingState() {
 }
 void Application::chooseLanguage(Language lang) {
   setLanguage(lang);
-  paint_.fonts.preferChinese(lang == Language::Chinese);
+  paint_.fonts.preferLanguage(lang);
   state_.language = languageCode(lang);
   shopSavesLoaded_ = false; // server saves come in the language picked
+  // A failed check's message was worded in the old language; A asks again.
+  if (appUpdate_ == AppUpdate::Failed) appUpdate_ = AppUpdate::Unknown;
   saveOwnState();
   // Genre names, filter chips and home rows were built from text.
   if (session_) {
@@ -593,23 +595,21 @@ void Application::setSession(std::unique_ptr<net::Session> session) {
   renewTokensWith(session_->server());
 }
 void Application::localizeNames() {
-  const auto slot = size_t(language());
+  // The chosen language first. A Korean interface then keeps the store's own
+  // name and art (this is a Korean shop); the others go through
+  // languageChain (traditional Chinese to simplified, then English) before it.
+  const std::string code = languageCode();
+  const auto pick = [&](const LanguageTexts &texts) { return displayText(texts, code); };
   for (auto &g : groups_) {
     const auto *source = g.base ? &*g.base : &g.representative;
-    // Cover art in the interface language when it differs, else the default.
-    if (!source->icons.empty() || g.base)
-      g.representative.icon = !source->icons.empty() && !source->icons[slot].empty() ? source->icons[slot]
-                                                                                     : source->icon;
+    if (!source->icons.empty() || g.base) {
+      const auto *icon = pick(source->icons);
+      g.representative.icon = icon ? *icon : source->icon;
+    }
     if (source->names.empty())
       continue;
-    const auto &names = source->names;
-    // The chosen language first. A Korean interface then keeps the store's
-    // own name (this is a Korean shop); the others fall back to English
-    // before it.
-    const bool korean = language() == Language::Korean;
-    g.representative.name = !names[slot].empty()             ? names[slot]
-                            : !korean && !names[1].empty()   ? names[1]
-                                                             : source->name;
+    const auto *name = pick(source->names);
+    g.representative.name = name ? *name : source->name;
   }
 }
 namespace {
@@ -620,11 +620,11 @@ std::vector<Group> groupedCatalog(std::vector<Item> items) {
   for (auto &g : groups) {
     for (auto *list : {&g.alternatives, &g.dlc})
       for (auto &f : *list)
-        std::vector<std::string>().swap(f.names), std::vector<std::string>().swap(f.icons);
+        LanguageTexts().swap(f.names), LanguageTexts().swap(f.icons);
     if (g.update)
-      std::vector<std::string>().swap(g.update->names), std::vector<std::string>().swap(g.update->icons);
+      LanguageTexts().swap(g.update->names), LanguageTexts().swap(g.update->icons);
     if (g.base)
-      std::vector<std::string>().swap(g.representative.names), std::vector<std::string>().swap(g.representative.icons);
+      LanguageTexts().swap(g.representative.names), LanguageTexts().swap(g.representative.icons);
   }
   return groups;
 }
@@ -1663,8 +1663,11 @@ void Application::action(Action a) {
   }
 
   if (languagePopup_) {
-    if (a == Action::Up) languageRow_ = std::max(0, languageRow_ - 1);
-    if (a == Action::Down) languageRow_ = std::min(LanguageCount - 1, languageRow_ + 1);
+    // Two columns, filled top to bottom.
+    if (a == Action::Up && languageRow_ % LanguageRows > 0) --languageRow_;
+    if (a == Action::Down && languageRow_ % LanguageRows < LanguageRows - 1 && languageRow_ + 1 < LanguageCount) ++languageRow_;
+    if (a == Action::Left && languageRow_ >= LanguageRows) languageRow_ -= LanguageRows;
+    if (a == Action::Right && languageRow_ + LanguageRows < LanguageCount) languageRow_ += LanguageRows;
     if (a == Action::Accept) {
       languagePopup_ = false;
       if (Language(languageRow_) != language()) chooseLanguage(Language(languageRow_));
@@ -2233,29 +2236,28 @@ void Application::shell() {
       paint_.rect(16, y, 200, height, Ink, 12);
     const SDL_Color ink = active ? Surface : open ? Ink : SDL_Color{184, 182, 176, 255};
     paint_.icon(iconOf(MenuScreens[i]), 32, y + (height - 26) / 2, ink);
-    // Longer languages step the size down to fit the menu instead of
-    // running past it.
-    constexpr float LabelRoom = 136;
-    int labelSize = 21;
-    while (labelSize > 16 && paint_.fonts.measure(labels[i], labelSize, active) > LabelRoom)
-      --labelSize;
-    paint_.fonts.middle(labels[i], 72, y + height / 2.f, labelSize, ink, active, LabelRoom);
     // 내 게임 counts its updates, so they are not missed without a menu row.
     const bool updates = MenuScreens[i] == Screen::Installed, downloads = MenuScreens[i] == Screen::Downloads;
+    const auto count = open && (updates || downloads) ? (updates ? pendingUpdates().size() : downloadsRunning()) : 0;
     // A newer CookingFoil on the server: the same badge on 설정, where it is.
-    if (open && MenuScreens[i] == Screen::Settings && updateNewer_) {
+    const bool newer = open && MenuScreens[i] == Screen::Settings && updateNewer_;
+    // Longer languages step the size down to fit the menu instead of
+    // running past it, or under the badge (at 171) when there is one.
+    const float labelRoom = count || newer ? 93 : 136;
+    int labelSize = 21;
+    while (labelSize > 16 && paint_.fonts.measure(labels[i], labelSize, active) > labelRoom)
+      --labelSize;
+    paint_.fonts.middle(labels[i], 72, y + height / 2.f, labelSize, ink, active, labelRoom);
+    if (newer) {
       paint_.rect(171, y + height / 2 - 14, 28, 28, Butter, 14);
       paint_.fonts.text("1", 185 - paint_.fonts.measure("1", 16, true) / 2, paint_.fonts.centerTop("1", 16, true, y + height / 2),
                         16, Ink, true);
     }
-    if (open && (updates || downloads)) {
-      const auto count = updates ? pendingUpdates().size() : downloadsRunning();
-      if (count) {
-        paint_.rect(171, y + height / 2 - 14, 28, 28, Butter, 14);
-        const auto text = count > 99 ? "99+" : std::to_string(count);
-        paint_.fonts.text(text, 185 - paint_.fonts.measure(text, 16, true) / 2,
-                          paint_.fonts.centerTop(text, 16, true, y + height / 2), 16, Ink, true);
-      }
+    if (count) {
+      paint_.rect(171, y + height / 2 - 14, 28, 28, Butter, 14);
+      const auto text = count > 99 ? "99+" : std::to_string(count);
+      paint_.fonts.text(text, 185 - paint_.fonts.measure(text, 16, true) / 2,
+                        paint_.fonts.centerTop(text, 16, true, y + height / 2), 16, Ink, true);
     }
   }
 }
@@ -3486,11 +3488,14 @@ void Application::offerResume() {
 } // namespace foil::ui
 namespace foil::ui {
 void Application::languageDialog() {
-  constexpr float Row = 64, Gap = 8;
-  const auto body = modal(560, 16 + LanguageCount * (Row + Gap) + 8, "언어 · Language", tr("Close"), "", "", 17); // i18n: as is (both scripts, readable in any language)
-  const float x = body.x + 24, w = body.w - 48;
+  constexpr float Row = 60, Gap = 8;
+  const auto body = modal(820, 16 + LanguageRows * (Row + Gap) + 8,
+                          // " · Language" stays in English, as on 설정's row.
+                          std::string(tr("Language")) + (language() == Language::English ? "" : " · Language"),
+                          tr("Close"), "", "", 17);
+  const float w = (body.w - 48 - Gap * 2) / 2;
   for (int i = 0; i < LanguageCount; ++i) {
-    const float y = body.y + 16 + i * (Row + Gap);
+    const float x = body.x + 24 + (i / LanguageRows) * (w + Gap * 2), y = body.y + 16 + (i % LanguageRows) * (Row + Gap);
     hit(x, y, w, Row, [this, i] {
       languageRow_ = i;
       action(Action::Accept);

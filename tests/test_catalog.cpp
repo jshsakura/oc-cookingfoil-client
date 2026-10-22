@@ -295,6 +295,7 @@ int runCatalogTests() {
   auto second = dlc;
   second.url = "https://host/dlc-second.nsp";
   second.titleId = "0100E5E01C099002";
+  base.names = {{"en", "Hollow Crown"}};
   const std::vector<foil::Item> input{dlc,     old,   alternate, second, update,
                                       unknown, newer, base,      base};
   const auto groups = foil::groupCatalog(input);
@@ -314,6 +315,7 @@ int runCatalogTests() {
           1);
     CHECK(foil::selectCatalog(groups, "", foil::Filter::Korean).size() == 1);
     CHECK(foil::selectCatalog(groups, "absent", foil::Filter::All).empty());
+    CHECK(foil::selectCatalog(groups, "hollow crown", foil::Filter::All).size() == 1); // the English name shown
   }
   CHECK(input.front().url == dlc.url && input.size() == 9);
   CHECK(foil::groupCatalog({}).empty());
