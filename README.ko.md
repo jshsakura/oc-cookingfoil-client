@@ -8,7 +8,7 @@
   <a href="https://github.com/jshsakura/oc-cookingfoil/blob/main/README.ko.md#빠른-시작"><img src="brand/buttons/setup-ko.svg" alt="설치 안내" width="160" height="44" /></a>
   <a href="docs/README.ko.md"><img src="brand/buttons/docs-ko.svg" alt="사용 안내" width="160" height="44" /></a>
   </p>
-  <p><a href="README.md">English</a> · <a href="README.ko.md">한국어</a></p>
+  <p><a href="README.md">English</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.es.md">Español</a></p>
   <a href="https://github.com/jshsakura/oc-cookingfoil-client/actions/workflows/ci.yml"><img src="https://github.com/jshsakura/oc-cookingfoil-client/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/jshsakura/oc-cookingfoil-client/releases"><img src="https://img.shields.io/github/v/release/jshsakura/oc-cookingfoil-client?color=FFC23D" alt="GitHub release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-16161A" alt="GPL-3.0-or-later" /></a>
