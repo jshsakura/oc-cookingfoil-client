@@ -21,6 +21,15 @@ void setHostInstall(std::function<void(const Item &)> run);
 namespace foil::platform {
 void setHostSpace(uint64_t bytes);
 }
+// reload() from the drawing thread reads the card on a worker; frames apply
+// it, as on the console.
+static void settle(foil::ui::Application &app) {
+  for (int frame = 0; frame < 400 && app.reloading(); ++frame) {
+    SDL_Delay(5);
+    app.render();
+  }
+  app.render();
+}
 int runUiTests(SDL_Renderer *renderer) {
   int failures = 0;
   {
@@ -750,6 +759,7 @@ int runUiTests(SDL_Renderer *renderer) {
     reload.setItems(parsed.value);
     CHECK(reload.groupCount() == 13);
     reload.action(foil::ui::Action::Reload);
+    settle(reload);
     CHECK(reload.groupCount() == 0);
     // No server left: it stays put (홈 says how to add one), not 설정.
     CHECK(reload.current() != foil::ui::Screen::Settings);

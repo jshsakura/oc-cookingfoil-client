@@ -304,7 +304,16 @@ bool Application::writeServers(const Config &next, int prefer, const std::string
     message(tr("Saved the server. Press - to refresh once the connection finishes."));
     return true;
   }
-  reload(prefer);
+  // What was just written and the records in memory are what a read of the
+  // card would give: applied now, with no worker to wait for.
+  std::vector<std::string> urls;
+  for (const auto &s : next.servers) urls.push_back(s.url);
+  setKnownServers(std::move(urls));
+  ReloadRead read;
+  read.config.value = next;
+  read.state.value = state_;
+  reloadDrop_ = reloadWorker_.joinable(); // a read still going is older than this file
+  applyReload(prefer, std::move(read));
   message(done);
   return true;
 }

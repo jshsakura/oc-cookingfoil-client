@@ -72,7 +72,7 @@ void Application::home() {
       paint_.skeleton(260, 300, 160, 28, 8);
       paint_.skeletonCards(260, 346, 6);
     };
-    if (stateWaiting_) {
+    if (stateWaiting_ || reloadWorker_.joinable()) {
       shape();
       return;
     }
