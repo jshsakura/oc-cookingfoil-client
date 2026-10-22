@@ -962,17 +962,22 @@ Parsed<PairingInfo> parsePairingInfo(const std::string& json, const Server& serv
     result.value.deviceLimit = stringField(root.get(), "limit") == "device";
     if (result.value.deviceLimit)
         result.value.deviceLimitCount = int(std::clamp<int64_t>(integerField(root.get(), "deviceLimit"), 0, 9999));
-    const auto url = stringField(root.get(), "pairUrl");
-    // Newer servers hand out /pair/ (login first, then back); older ones /admin/pair/.
-    auto prefix = server.url + "/pair/";
-    if (url.rfind(prefix, 0) != 0) prefix = server.url + "/admin/pair/";
     const auto code = stringField(root.get(), "pairCode");
-    if (url.size() != prefix.size() + 32 || url.rfind(prefix, 0) != 0 ||
-        url.substr(prefix.size()).find_first_not_of("0123456789abcdef") != std::string::npos ||
-        code.size() != 8 || code.find_first_not_of("0123456789ABCDEF") != std::string::npos) return result;
-    result.value.url = url;
-    result.value.code = code;
+    if (code.size() == 8 && code.find_first_not_of("0123456789ABCDEF") == std::string::npos) result.value.code = code;
     result.value.expiresAt = std::max<int64_t>(0, integerField(root.get(), "expiresAt"));
+    // Newer servers hand out /pair/ (login first, then back); older ones
+    // /admin/pair/. Only the route and its token are taken: the QR code opens
+    // the address this console connected to, even when the server names
+    // another of its own (its public name while the console uses a local one).
+    const auto url = stringField(root.get(), "pairUrl");
+    if ((url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0) || url.size() < 32) return result;
+    const auto token = url.substr(url.size() - 32), before = url.substr(0, url.size() - 32);
+    if (token.find_first_not_of("0123456789abcdef") != std::string::npos) return result;
+    for (const std::string route : {"/admin/pair/", "/pair/"})
+        if (before.size() >= route.size() && before.compare(before.size() - route.size(), route.size(), route) == 0) {
+            result.value.url = server.url + route + token;
+            break;
+        }
     return result;
 }
 std::string cleanPairMessage(const std::string& text) {
@@ -1239,7 +1244,10 @@ void Session::rebind() {
 }
 namespace {
 std::mutex enrollLock;
-std::map<std::string, std::string> enrollRefused; // url + token -> why, this run
+// url + token, this run: the server answered it but not with a key or a
+// refusal (another account's console, an error of its own). Not sent again
+// until the next start; the console asks for approval meanwhile.
+std::set<std::string> enrollSkipped;
 // url + token -> the key it gave, this run: a token is sent once. A session
 // made from an older copy of the files (or a try again after the key could
 // not be saved) takes that key; sent again, the server says "used".
@@ -1250,7 +1258,7 @@ std::mutex enrollSending;
 }
 void Session::forgetEnrollAttempts() {
     std::lock_guard<std::mutex> held(enrollLock);
-    enrollRefused.clear();
+    enrollSkipped.clear();
     enrollSpent.clear();
 }
 bool Session::enroll(Error& error, bool replacing) {
@@ -1262,9 +1270,8 @@ bool Session::enroll(Error& error, bool replacing) {
     // The key made from the console: the one the server approves.
     const auto device = state_.derivedKey.empty() ? state_.deviceKey : state_.derivedKey;
     {
-        // Refused once: said again, not asked again (the token is spent or gone).
         std::unique_lock<std::mutex> held(enrollLock);
-        if (const auto at = enrollRefused.find(tried); at != enrollRefused.end()) { error.message = tr(at->second.c_str()); return false; }
+        if (enrollSkipped.count(tried)) return true;
         if (const auto at = enrollSpent.find(tried); at != enrollSpent.end()) {
             const auto spent = at->second;
             held.unlock();
@@ -1284,11 +1291,13 @@ bool Session::enroll(Error& error, bool replacing) {
     options.body = json_object_to_json_string_ext(body.get(), JSON_C_TO_STRING_PLAIN);
     options.timeout = 15;
     const auto sent = post(url, headers, options, cancel_);
-    const auto refuse = [&](const char* why) {
+    // Not a key and not a refusal: the QR code all the same, never a stop
+    // here while the server answers.
+    const auto skip = [&](const std::string& why) {
+        logLine("enroll: " + why + "; asking for approval");
         std::lock_guard<std::mutex> held(enrollLock);
-        enrollRefused[tried] = why;
-        error.message = tr(why);
-        return false;
+        enrollSkipped.insert(tried);
+        return true;
     };
     if (!sent.error.empty()) { error.message = sent.error; return false; }
     // A server that does not know enroll (before it, or with pairing off):
@@ -1310,17 +1319,14 @@ bool Session::enroll(Error& error, bool replacing) {
         return true;
     }
     if (sent.status == 409) {
-        logLine("enroll: the console belongs to another account");
-        return refuse("This console is linked to another account.");
+        enrollRefusal_ = "other-account";
+        return skip("the console belongs to another account");
     }
     Error unread;
     const auto reply = sent.status == 200 ? parseJson(sent.body, unread) : Json(nullptr);
     const auto accessKey = reply ? stringField(reply.get(), "accessKey") : std::string();
-    if (!reply || stringField(reply.get(), "status") != "approved" || accessKey.empty()) {
-        logLine("enroll: unexpected reply HTTP " + std::to_string(sent.status));
-        error.message = trf("Check the server connection. HTTP {0}", {std::to_string(sent.status)});
-        return false;
-    }
+    if (!reply || stringField(reply.get(), "status") != "approved" || accessKey.empty())
+        return skip("unexpected reply HTTP " + std::to_string(sent.status));
     {
         std::lock_guard<std::mutex> held(enrollLock);
         enrollSpent[tried] = accessKey;

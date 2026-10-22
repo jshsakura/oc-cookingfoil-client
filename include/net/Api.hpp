@@ -130,7 +130,8 @@ struct PairingInfo {
     int64_t expiresAt = 0;
     // Why the download's token did not connect this console (X-CookingFoil-Enroll:
     // "used", "expired", "revoked", "limit": as many consoles by download this
-    // hour as the account may); empty when there was none or it was unknown.
+    // hour as the account may; "other-account" from its 409); empty when there
+    // was none or it was unknown.
     std::string refusal;
     // The account holds as many consoles as it may (limit: "device"): waiting
     // approves nothing until one is removed.

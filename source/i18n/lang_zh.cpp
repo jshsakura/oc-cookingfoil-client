@@ -1164,7 +1164,7 @@ const Translation rows[] = {
     {"Reading the app's records on the SD card.", "正在读取 SD 卡上的应用记录。"},
     {"If another CookingFoil is open, close it.", "如果其他地方还开着 CookingFoil，请将其关闭。"},
     {"The link key has expired or is not registered. Download the client again from the website.", "连接密钥已过期或未注册。请从网页重新下载客户端。"},
-    {"This console is linked to another account.", "这台主机已连接到其他账户。"},
+    {"This console is linked to another account. Scan the QR code to approve it.", "这台主机已连接到其他账户。请扫描二维码批准。"},
     {"Could not read this console's ID, so the Dropbox link was not saved.", "无法读取本主机的 ID，因此未能保存 Dropbox 关联。"},
     {"Approve this console again", "需要重新认证"},
     {"This card came from another console, so this console is approved again on the server.", "这张卡是从另一台主机移过来的，将在服务器上重新认证这台主机。"},

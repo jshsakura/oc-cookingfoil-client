@@ -1164,7 +1164,7 @@ const Translation rows[] = {
     {"Reading the app's records on the SD card.", "SD 카드에서 앱 기록을 읽고 있습니다."},
     {"If another CookingFoil is open, close it.", "다른 곳에서 CookingFoil이 열려 있다면 닫아 주세요."},
     {"The link key has expired or is not registered. Download the client again from the website.", "연동 키가 만료됐거나 등록되지 않았습니다. 웹에서 클라이언트를 다시 받아 주세요."},
-    {"This console is linked to another account.", "이 기기는 다른 계정에 연결돼 있습니다."},
+    {"This console is linked to another account. Scan the QR code to approve it.", "이 기기는 다른 계정에 연결돼 있습니다. QR 코드로 승인해 주세요."},
     {"Could not read this console's ID, so the Dropbox link was not saved.", "콘솔 ID를 읽지 못해 드롭박스 연결을 저장하지 못했습니다."},
     {"Approve this console again", "다시 인증이 필요합니다"},
     {"This card came from another console, so this console is approved again on the server.", "다른 콘솔에서 옮겨 온 카드라 서버에서 이 콘솔을 다시 인증합니다."},

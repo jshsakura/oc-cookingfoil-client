@@ -1164,7 +1164,7 @@ const Translation rows[] = {
     {"Reading the app's records on the SD card.", "Чтение записей приложения на SD-карте."},
     {"If another CookingFoil is open, close it.", "Если открыт другой CookingFoil, закройте его."},
     {"The link key has expired or is not registered. Download the client again from the website.", "Ключ привязки истёк или не зарегистрирован. Скачайте клиент заново с сайта."},
-    {"This console is linked to another account.", "Эта консоль привязана к другой учётной записи."},
+    {"This console is linked to another account. Scan the QR code to approve it.", "Эта консоль привязана к другой учётной записи. Отсканируйте QR-код, чтобы одобрить её."},
     {"Could not read this console's ID, so the Dropbox link was not saved.", "Не удалось прочитать ID консоли, поэтому привязка Dropbox не сохранена."},
     {"Approve this console again", "Нужно снова одобрить эту консоль"},
     {"This card came from another console, so this console is approved again on the server.", "Эта карта перенесена с другой консоли, поэтому эта консоль снова одобряется на сервере."},

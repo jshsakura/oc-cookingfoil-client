@@ -1164,7 +1164,7 @@ const Translation rows[] = {
     {"Reading the app's records on the SD card.", "正在讀取 SD 卡上的應用程式紀錄。"},
     {"If another CookingFoil is open, close it.", "如果其他地方開著 CookingFoil，請先關閉。"},
     {"The link key has expired or is not registered. Download the client again from the website.", "連結金鑰已過期或未登錄。請從網頁重新下載用戶端。"},
-    {"This console is linked to another account.", "這台主機已連結到其他帳號。"},
+    {"This console is linked to another account. Scan the QR code to approve it.", "這台主機已連結到其他帳號。請掃描 QR 碼核准。"},
     {"Could not read this console's ID, so the Dropbox link was not saved.", "無法讀取主機 ID，因此沒有儲存 Dropbox 連結。"},
     {"Approve this console again", "需要重新核准"},
     {"This card came from another console, so this console is approved again on the server.", "這張卡是從其他主機移過來的，因此伺服器會重新核准這台主機。"},

@@ -281,15 +281,24 @@ int runEnrollTests() {
     pairStatus = "approved";
   }
   {
-    // 409: another account's console.
-    withoutKey();
-    enrollStatus = 409;
-    net::Session session(server(), loadState(db).value, db);
-    session.setConfigPath(configPath);
-    Error refused;
-    CHECK(!session.refresh(refused) && refused.message == tr("This console is linked to another account."));
-    CHECK(server().enrollToken == token);
-    mock.take();
+    // A server that answers but not as expected (another account's console,
+    // an error of its own): the QR code shows all the same, never a dead
+    // end. The token stays for the next start and is not sent again this run.
+    for (const int status : {409, 500, 400}) {
+      withoutKey();
+      enrollStatus = status;
+      pairStatus = "pending";
+      net::Session session(server(), loadState(db).value, db);
+      session.setConfigPath(configPath);
+      Error waiting;
+      CHECK(!session.refresh(waiting) && session.pairingPending());
+      CHECK(session.pairingInfo().refusal == (status == 409 ? "other-account" : ""));
+      CHECK(server().enrollToken == token);
+      CHECK(count(mock.take(), "/api/pair/enroll") == 1);
+      CHECK(!session.refresh(waiting) && session.pairingPending());
+      CHECK(count(mock.take(), "/api/pair/enroll") == 0);
+    }
+    pairStatus = "approved";
   }
   {
     // A server that does not know enroll: the token is ignored and the
