@@ -16,6 +16,8 @@ inline const char *languageCode() { return languageCode(language()); }
 // The language's own name, as a picker shows it (한국어, English, 日本語, 中文).
 const char *languageName(Language language);
 Language languageFromCode(const std::string &code, Language fallback);
+// Every language but English, which needs no table.
+std::vector<Language> translatedLanguages();
 // A content language code ("ko", "en-US", "zh-TW") as the interface names
 // it (한국어, 영어, 중국어); one it does not know comes back as it is.
 std::string languageLabel(const std::string &code);
@@ -30,13 +32,17 @@ std::string trf(const char *key, std::initializer_list<std::string> args);
 // The English a key shows ("Name|sort" -> "Name").
 const char *english(const char *key);
 
+// One row of a language's table: the English key and its text there.
 struct Translation {
-  const char *key, *ko, *ja, *zh;
+  const char *key, *text;
 };
-// Each source/i18n/*.cpp registers one table with a static instance.
+// Each source/i18n/<code>.cpp registers its language's table with a static
+// instance. English has none: its text is the key.
 struct TranslationTable {
-  TranslationTable(const Translation *rows, size_t count);
+  TranslationTable(Language language, const Translation *rows, size_t count);
 };
-const Translation *findTranslation(const std::string &key);
-std::vector<const Translation *> allTranslations();
+// Whether a key is in any table (screen text in the code must be).
+bool hasTranslation(const std::string &key);
+// Every row registered for `language`, in table order (the tests check them).
+std::vector<Translation> translations(Language language);
 } // namespace foil

@@ -1,4 +1,5 @@
 #include "core/I18n.hpp"
+#include <array>
 #include <atomic>
 #include <cstring>
 #include <mutex>
@@ -6,16 +7,26 @@
 namespace foil {
 namespace {
 std::atomic<Language> current{Language::Korean};
+struct Table {
+  Language language;
+  const Translation *rows;
+  size_t count;
+};
+// Keys get an id the first time any table names them; each id holds its
+// text per language (null where that table has none).
 struct Registry {
-  std::vector<std::pair<const Translation *, size_t>> tables;
-  std::unordered_map<std::string, const Translation *> index;
+  std::vector<Table> tables;
+  std::unordered_map<std::string, size_t> ids;
+  std::vector<const char *> keys;                             // by id
+  std::vector<std::array<const char *, LanguageCount>> texts; // by id
   // tr()'s keys by address: most are literals drawn every frame, so this
   // spares copying and hashing the text each time. A hit is checked
   // against the text, since a buffer can hold another key later.
-  std::unordered_map<const char *, const Translation *> byAddress;
-  size_t indexed = 0; // tables already in index
+  std::unordered_map<const char *, size_t> byAddress;
+  size_t indexed = 0; // tables already in ids
   std::mutex lock;
 };
+constexpr size_t None = size_t(-1);
 Registry &registry() {
   static Registry r; // filled during static initialization, read after
   return r;
@@ -24,38 +35,43 @@ Registry &registry() {
 // the index catches up with any table it has not seen yet.
 void catchUp(Registry &r) {
   for (; r.indexed < r.tables.size(); ++r.indexed) {
-    const auto &[rows, count] = r.tables[r.indexed];
-    for (size_t i = 0; i < count; ++i)
-      r.index.emplace(rows[i].key, &rows[i]);
+    const auto &table = r.tables[r.indexed];
+    for (size_t i = 0; i < table.count; ++i) {
+      const auto [found, fresh] = r.ids.emplace(table.rows[i].key, r.texts.size());
+      if (fresh) {
+        r.keys.push_back(table.rows[i].key);
+        r.texts.emplace_back();
+      }
+      auto &text = r.texts[found->second][size_t(table.language)];
+      if (!text) text = table.rows[i].text; // a second row for the key is ignored (the tests refuse it)
+    }
   }
 }
-const Translation *lookup(const std::string &key) {
-  auto &r = registry();
-  std::lock_guard<std::mutex> guard(r.lock);
-  catchUp(r);
-  const auto found = r.index.find(key);
-  return found == r.index.end() ? nullptr : found->second;
-}
-const Translation *lookupKey(const char *key) {
+size_t lookupKey(const char *key) {
   auto &r = registry();
   std::lock_guard<std::mutex> guard(r.lock);
   const auto seen = r.byAddress.find(key);
-  if (seen != r.byAddress.end() && std::strcmp(seen->second->key, key) == 0)
+  if (seen != r.byAddress.end() && std::strcmp(r.keys[seen->second], key) == 0)
     return seen->second;
   catchUp(r);
-  const auto found = r.index.find(key);
-  if (found == r.index.end()) {
+  const auto found = r.ids.find(key);
+  if (found == r.ids.end()) {
     if (seen != r.byAddress.end()) r.byAddress.erase(seen);
-    return nullptr;
+    return None;
   }
   r.byAddress[key] = found->second;
   return found->second;
 }
-} // namespace
-TranslationTable::TranslationTable(const Translation *rows, size_t count) {
+const char *textOf(size_t id, Language language) {
   auto &r = registry();
   std::lock_guard<std::mutex> guard(r.lock);
-  r.tables.emplace_back(rows, count);
+  return r.texts[id][size_t(language)];
+}
+} // namespace
+TranslationTable::TranslationTable(Language language, const Translation *rows, size_t count) {
+  auto &r = registry();
+  std::lock_guard<std::mutex> guard(r.lock);
+  r.tables.push_back({language, rows, count});
 }
 void setLanguage(Language language) { current = language; }
 Language language() { return current; }
@@ -94,15 +110,24 @@ Language languageFromCode(const std::string &code, Language fallback) {
       return Language(i);
   return fallback;
 }
-const Translation *findTranslation(const std::string &key) { return lookup(key); }
-std::vector<const Translation *> allTranslations() {
-  lookup("");
+std::vector<Language> translatedLanguages() {
+  std::vector<Language> out;
+  for (int i = 0; i < LanguageCount; ++i)
+    if (Language(i) != Language::English) out.push_back(Language(i));
+  return out;
+}
+bool hasTranslation(const std::string &key) {
   auto &r = registry();
   std::lock_guard<std::mutex> guard(r.lock);
-  std::vector<const Translation *> out;
-  for (const auto &[rows, count] : r.tables)
-    for (size_t i = 0; i < count; ++i)
-      out.push_back(&rows[i]);
+  catchUp(r);
+  return r.ids.count(key) > 0;
+}
+std::vector<Translation> translations(Language language) {
+  auto &r = registry();
+  std::lock_guard<std::mutex> guard(r.lock);
+  std::vector<Translation> out;
+  for (const auto &table : r.tables)
+    if (table.language == language) out.insert(out.end(), table.rows, table.rows + table.count);
   return out;
 }
 const char *english(const char *key) {
@@ -120,12 +145,8 @@ const char *tr(const char *key) {
   const auto lang = language();
   if (!key || lang == Language::English)
     return english(key);
-  const auto *row = lookupKey(key);
-  if (!row)
-    return english(key);
-  const char *text = lang == Language::Korean     ? row->ko
-                     : lang == Language::Japanese ? row->ja
-                                                  : row->zh;
+  const auto id = lookupKey(key);
+  const char *text = id == None ? nullptr : textOf(id, lang);
   return text && *text ? text : english(key);
 }
 std::string trf(const char *key, std::initializer_list<std::string> args) {

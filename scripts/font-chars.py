@@ -21,23 +21,22 @@ def table(codec, leads):
                 pass
 
 
-def translations(column):
-    # Rows in source/i18n/*.cpp: {"ko", "en", "ja", "zh"}
+def translations(code):
+    # Rows in source/i18n/<code>.cpp: {"English key", "text"}
     root = Path(__file__).resolve().parents[1]
-    row = re.compile(r'\{\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*\}')
-    for path in sorted((root / "source/i18n").glob("*.cpp")):
-        for match in row.finditer(path.read_text()):
-            cps.update(ord(c) for c in match.group(column) if ord(c) > 0x2E7F)
+    row = re.compile(r'\{\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*\}')
+    for match in row.finditer((root / f"source/i18n/{code}.cpp").read_text()):
+        cps.update(ord(c) for c in match.group(2) if ord(c) > 0x2E7F)
 
 
 punctuation = [(0x3000, 0x303F), (0xFF01, 0xFF5E), (0xFF61, 0xFF9F), (0x30FB, 0x30FC)]
 if mode == "ja":
     table("euc_jp", range(0xB0, 0xD0))
-    translations(3)
+    translations("ja")
     ranges = punctuation + [(0x3040, 0x30FF), (0x31F0, 0x31FF)]
 elif mode == "zh":
     table("gb2312", range(0xB0, 0xD8))
-    translations(4)
+    translations("zh")
     ranges = punctuation
 else:
     table("euc-kr", range(0xB0, 0xC9))

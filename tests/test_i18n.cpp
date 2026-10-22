@@ -79,33 +79,38 @@ bool wrapped(std::string before) {
 int runI18nTests() {
   int failures = 0;
   namespace fs = std::filesystem;
-  // Every table row is complete and keeps the same placeholders.
-  size_t rows = 0;
-  for (const auto *row : foil::allTranslations()) {
-    ++rows;
-    const bool complete = row->key && *row->key && row->ko && *row->ko && row->ja && *row->ja && row->zh && *row->zh;
-    if (!complete)
-      std::cerr << "incomplete translation: " << (row->key ? row->key : "?") << '\n';
-    CHECK(complete);
-    const auto keys = placeholders(foil::english(row->key));
-    const bool same = placeholders(row->ko) == keys && placeholders(row->ja) == keys && placeholders(row->zh) == keys;
-    if (!same)
-      std::cerr << "placeholder mismatch: " << row->key << '\n';
-    CHECK(same);
-  }
-  // One row per key across every table; a second row would be ignored.
+  // Every language's table has the same keys as every other, once each,
+  // with text that keeps the English placeholders.
   std::set<std::string> keys;
-  for (const auto *row : foil::allTranslations())
-    if (!keys.insert(row->key).second)
-      std::cerr << "duplicate translation key: " << row->key << '\n';
-  CHECK(keys.size() == rows);
+  for (const auto language : foil::translatedLanguages())
+    for (const auto &row : foil::translations(language))
+      keys.insert(row.key);
+  for (const auto language : foil::translatedLanguages()) {
+    std::set<std::string> seen;
+    for (const auto &row : foil::translations(language)) {
+      if (!seen.insert(row.key).second)
+        std::cerr << foil::languageCode(language) << ": duplicate translation key: " << row.key << '\n';
+      if (!row.text || !*row.text)
+        std::cerr << foil::languageCode(language) << ": empty translation: " << row.key << '\n';
+      CHECK(row.text && *row.text);
+      const bool same = placeholders(row.text) == placeholders(foil::english(row.key));
+      if (!same)
+        std::cerr << foil::languageCode(language) << ": placeholder mismatch: " << row.key << '\n';
+      CHECK(same);
+    }
+    CHECK(seen.size() == foil::translations(language).size());
+    for (const auto &key : keys)
+      if (!seen.count(key))
+        std::cerr << foil::languageCode(language) << ": no translation: " << key << '\n';
+    CHECK(seen == keys);
+  }
   CHECK(cjk("설정") && cjk("ダウンロード") && cjk("下载") && cjk("「設定」") && cjk("ＡＢ"));
   CHECK(!cjk("Settings · 3 files → v2 “quoted” …"));
   // Keys are the English text: no Korean, Japanese or Chinese in them.
   int foreignKeys = 0;
-  for (const auto *row : foil::allTranslations())
-    if (row->key && cjk(row->key)) {
-      std::cerr << "translation key not in English: " << row->key << '\n';
+  for (const auto &key : keys)
+    if (cjk(key)) {
+      std::cerr << "translation key not in English: " << key << '\n';
       ++foreignKeys;
     }
   CHECK(foreignKeys == 0);
@@ -134,7 +139,7 @@ int runI18nTests() {
               std::cerr << path << ':' << number << ": Korean, Japanese or Chinese text outside the tables: " << literal.text << '\n';
               ++unwrapped;
             }
-          } else if (!literal.text.empty() && !foil::findTranslation(literal.text)) {
+          } else if (!literal.text.empty() && !foil::hasTranslation(literal.text)) {
             std::cerr << path << ':' << number << ": no translation: " << literal.text << '\n';
             ++missing;
           }
@@ -145,9 +150,10 @@ int runI18nTests() {
   CHECK(unwrapped == 0);
   CHECK(missing == 0);
   // Lookups follow the chosen language and fill placeholders after it.
-  const foil::Translation sample[] = {{"Sample {0}|test", "테스트 {0}개", "テスト {0}", "测试 {0}"}};
-  static const foil::TranslationTable table(sample, 1);
-  (void)rows;
+  const foil::Translation korean[] = {{"Sample {0}|test", "테스트 {0}개"}};
+  const foil::Translation japanese[] = {{"Sample {0}|test", "テスト {0}"}};
+  static const foil::TranslationTable koreanTable(foil::Language::Korean, korean, 1);
+  static const foil::TranslationTable japaneseTable(foil::Language::Japanese, japanese, 1);
   foil::setLanguage(foil::Language::Japanese);
   CHECK(foil::trf("Sample {0}|test", {"3"}) == "テスト 3");
   CHECK(std::string(foil::tr("Not in any table|test")) == "Not in any table");
@@ -155,6 +161,9 @@ int runI18nTests() {
   CHECK(foil::trf("Sample {0}|test", {"3"}) == "Sample 3");
   foil::setLanguage(foil::Language::Korean);
   CHECK(foil::trf("Sample {0}|test", {"3"}) == "테스트 3개");
+  foil::setLanguage(foil::Language::Chinese); // a language whose table lacks the key shows the English
+  CHECK(foil::trf("Sample {0}|test", {"3"}) == "Sample 3");
+  foil::setLanguage(foil::Language::Korean);
   CHECK(foil::languageFromCode("zh", foil::Language::Korean) == foil::Language::Chinese);
   CHECK(foil::languageFromCode("xx", foil::Language::English) == foil::Language::English);
   return failures;
