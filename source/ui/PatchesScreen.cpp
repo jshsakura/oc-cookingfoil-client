@@ -41,7 +41,7 @@ const char *filterLabel(Application::PatchFilter filter) {
   default: return tr("All");
   }
 }
-// Busy labels stay Korean keys in patchBusyLabel_ and are translated only
+// Busy labels stay untranslated keys in patchBusyLabel_ and are translated only
 // when drawn, so the progress check compares keys, never screen text.
 constexpr const char *Removing = "Deleting";     // i18n: keep
 constexpr const char *Updating = "Updating";   // i18n: keep
@@ -524,7 +524,6 @@ void Application::runPatchOp(int opIndex) {
   }
   if (op == PatchOp::Remove) {
     confirmPatchRemove_ = true;
-    dialogFocus_ = 1; // a stray A keeps the patch
     return;
   }
   managingPatch_ = false;

@@ -839,14 +839,14 @@ void Application::homebrewScreen() {
   // The row at the top follows the cursor, or the finger while it glides.
   const int rowCount = int((rows.size() + 5) / 6);
   const float top = glide("homebrew", 232, 104 - 8, 1048, 660 - 104 + 8, float(std::max(0, selected_ / 6 - 1)),
-                          float(rowCount - 2), 240);
+                          float(rowCount - 2), CardRowStep);
   const int first = int(top) * 6;
   paint_.scrollbar(1266, 104, 500, top, 2.1f, float(rowCount));
   clipTo(232, 104 - 8, 1048, 660 - 104 + 8);
   for (int n = 0; n < 24 && first + n < int(rows.size()); ++n) {
     const int i = first + n;
     const auto &app = homebrewAt(rows[i]);
-    const float x = 260 + n % 6 * 170, y = 104 + (n / 6 + int(top) - top) * 240;
+    const float x = 260 + n % 6 * 170, y = 104 + (n / 6 + int(top) - top) * CardRowStep;
     hit(x, y, 150, 220, [this, i] {
       if (inContent() && selected_ == i) action(Action::Accept);
       sidebar_ = false;
@@ -861,12 +861,12 @@ void Application::homebrewScreen() {
     else paint_.fonts.text(app.name, x, y + 158, 18, Ink, false, 150);
     // Size first; the version beside it only when both fit under the icon.
     float px = x;
-    if (app.verified) px += paint_.verifiedPill(px, y + 194) + 6;
+    if (app.verified) px += paint_.verifiedPill(px, y + CardLabelTop) + 6;
     if (app.size && px + paint_.fonts.measure(formatBytes(app.size), 15, true) + 18 <= x + 150)
-      px += paint_.pill(formatBytes(app.size), px, y + 194) + 6;
+      px += paint_.pill(formatBytes(app.size), px, y + CardLabelTop) + 6;
     const auto version = "v" + app.version;
     if (!app.version.empty() && px + paint_.fonts.measure(version, 15, true) + 18 <= x + 150)
-      paint_.pill(version, px, y + 194);
+      paint_.pill(version, px, y + CardLabelTop);
   }
   unclip();
 }

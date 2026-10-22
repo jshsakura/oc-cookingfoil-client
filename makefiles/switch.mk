@@ -21,9 +21,9 @@ APP_TITLE := CookingFoil
 APP_AUTHOR := OpenCourse
 # The one place the version lives: the NACP, the HTTP Version header and the
 # user agent all come from it, and a release tag must match it (vX.Y.Z).
-# scripts/ship.sh raises the last number and commits it for every build it
-# ships, so each one reads newer than the last (설정 > 앱 업데이트).
-APP_VERSION := 0.4.3
+# Raise it for every build that ships, so each one reads newer than the last
+# (설정 > 앱 업데이트).
+APP_VERSION := 0.4.19
 ARCH := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 CFLAGS := -g -Wall -Wextra -O2 -ffunction-sections $(ARCH) $(INCLUDE) -D__SWITCH__ -DCOOKINGFOIL_VERSION=\"$(APP_VERSION)\" -I$(PORTLIBS)/include/SDL2 -I$(PORTLIBS)/include/freetype2
 CXXFLAGS := $(CFLAGS) -std=c++17 -fno-rtti

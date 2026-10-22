@@ -16,24 +16,6 @@ namespace {
 constexpr float RowHeight = 84, RowStep = 96;
 const std::string PackRecordPath = "/switch/cookingfoil/retro-pack.json";
 // The retro list's filters; several combine (the strictest of each kind wins).
-struct RetroCondition {
-  const char *title;
-  int minRating;
-  bool bezel;
-  uint64_t minSize, maxSize;
-};
-constexpr uint64_t MB = 1024 * 1024;
-// Titles go through tr() where the popup lists them.
-const RetroCondition RetroConditions[] = {
-    {"All", 0, false, 0, 0},             // i18n: keep
-    {"Rated 80+", 80, false, 0, 0},     // i18n: keep
-    {"Rated 90+", 90, false, 0, 0},     // i18n: keep
-    {"Own bezel", 0, true, 0, 0},          // i18n: keep
-    {"Under 1 MB", 0, false, 0, MB},         // i18n: keep
-    {"Under 10 MB", 0, false, 0, 10 * MB},   // i18n: keep
-    {"100 MB and up", 0, false, 100 * MB, 0}, // i18n: keep
-};
-constexpr SortMode RetroSorts[] = {SortMode::Score, SortMode::Name, SortMode::Largest, SortMode::Recent};
 bool fileExists(const std::string &path) {
   struct stat st {};
   return stat(path.c_str(), &st) == 0;
@@ -49,10 +31,11 @@ bool Application::retroInstalled(const retro::Game &game) const {
   const auto found = retroOnCard_.find(game.romPath);
   return found != retroOnCard_.end() && found->second;
 }
-// The game's core is not on the card while RetroArch is.
+// The game's core is not on the card while RetroArch is (read, not merely
+// not known yet).
 bool Application::retroCoreMissing(const retro::Game &game) const {
   const auto core = retro::corePath(game.core);
-  return !core.empty() && retroArchPresent() && !cardHas(core);
+  return !core.empty() && retroArchPresent() && cardKnows(core) == false;
 }
 // RetroArch and the game's core both on the card: it can start.
 bool Application::retroReady(const retro::Game &game) const {
@@ -135,9 +118,12 @@ void Application::loadRetroHome() {
     // The one in use says how the home went; the others' shelves join it.
     std::vector<std::pair<std::string, std::vector<retro::Shelf>>> parts{
         {server.url, net::retroHome(server, state, reply, &stop_).value}};
+    // The servers' label dictionaries, the one in use first.
+    labels::Book book = reply.labels;
     for (size_t i = 1; i < servers.size() && !reply.missing && !reply.error; ++i) {
       net::RetroReply theirs;
       auto shelves = net::retroHome(servers[i], state, theirs, &stop_).value;
+      labels::merge(book, theirs.labels);
       if (theirs.error) logLine("retro: " + servers[i].url + " not read: " + theirs.error.message);
       else if (!theirs.missing) parts.push_back({servers[i].url, std::move(shelves)});
     }
@@ -152,14 +138,30 @@ void Application::loadRetroHome() {
                     systems.end());
     } else
       for (const auto &shelf : shelves) systems.push_back(shelf.system);
+    // Up to six picked rows above the systems', drawn afresh on every visit
+    // (the server picks anew each time); a server without them adds none,
+    // and none failing leaves the home as it was.
+    if (!noHome && !reply.error) {
+      std::vector<std::pair<std::string, std::vector<retro::Theme>>> themes;
+      for (const auto &one : servers) {
+        net::RetroReply theirs;
+        auto rows = net::retroThemes(one, state, theirs, &stop_).value;
+        labels::merge(book, theirs.labels);
+        if (!theirs.error && !theirs.missing) themes.push_back({one.url, std::move(rows)});
+      }
+      auto rows = retro::themeShelves(retro::mergeThemes(std::move(themes)));
+      shelves.insert(shelves.begin(), std::make_move_iterator(rows.begin()), std::make_move_iterator(rows.end()));
+    }
     std::map<std::string, bool> onCard;
     for (const auto &shelf : shelves)
       for (const auto &g : shelf.games)
         for (const auto *path : {&g.romPath, &g.bezelPath})
           if (!path->empty()) onCard[*path] = fileExists(sd + "/" + *path);
     return [this, shelves = std::move(shelves), systems = std::move(systems), reply, noHome,
-            onCard = std::move(onCard)]() mutable {
+            onCard = std::move(onCard), book = std::move(book)]() mutable {
       retroLoaded_ = true;
+      labels::merge(book, retroLabelBook_); // this reply's words win
+      retroLabelBook_ = std::move(book);
       retroMissing_ = reply.missing;
       retroError_ = reply.error;
       // A busy server's "ask again later", three times at most.
@@ -188,10 +190,18 @@ void Application::loadRetroHome() {
     };
   });
 }
+// The system a home row stands for, in retroSystems_; a theme row's is the first.
+int Application::retroSystemAt(int row) const {
+  if (row < 0 || row >= int(retroShelves_.size())) return 0;
+  const auto &id = retroShelves_[size_t(row)].system.id;
+  const auto at = std::find_if(retroSystems_.begin(), retroSystems_.end(), [&](const auto &s) { return s.id == id; });
+  return at == retroSystems_.end() ? 0 : int(at - retroSystems_.begin());
+}
 void Application::openRetroList(int system) {
   if (system < 0 || system >= int(retroSystems_.size())) return;
   raLinkClose(); // from 업적: its QR goes
   retroView_ = RetroView::List;
+  if (system != retroSystem_) clearRetroFilters();
   retroSystem_ = system;
   retroQuery_.clear();
   retroGames_.clear();
@@ -276,16 +286,31 @@ void Application::loadRetroPage(bool next) {
   const int page = next ? retroPage_ + 1 : 1;
   const auto sd = sdRoot_;
   const auto filter = retroFilter();
-  runRetroJob("list", [this, servers, state, system, page, sd, filter]() -> std::function<void()> {
+  const bool wantBook = system != retroBookSystem_;
+  runRetroJob("list", [this, servers, state, system, page, sd, filter, wantBook]() -> std::function<void()> {
+    // A system's filters come with its first page, asked at the same time.
+    std::vector<retro::FilterBook> books(wantBook ? servers.size() : 0);
+    std::vector<std::thread> asking;
+    for (size_t i = 0; i < books.size(); ++i)
+      asking.emplace_back([&, i] {
+        net::RetroReply theirs;
+        books[i] = net::retroFilters(servers[i], state, system, theirs, &stop_).value;
+      });
     net::RetroReply reply;
     auto result = retroPages(servers, state, system, page, filter, reply);
+    for (auto &t : asking) t.join();
+    auto book = retro::mergeFilterBooks(books);
     // Which of these are already on the card, looked up here, off the UI thread.
     std::map<std::string, bool> onCard;
     for (const auto &g : result.value.games)
       for (const auto *path : {&g.romPath, &g.bezelPath})
         if (!path->empty()) onCard[*path] = fileExists(sd + "/" + *path);
-    return [this, result = std::move(result.value), reply, system, page, filter, servers,
-            onCard = std::move(onCard)]() mutable {
+    return [this, result = std::move(result.value), reply, system, page, filter, servers, wantBook,
+            book = std::move(book), onCard = std::move(onCard)]() mutable {
+      if (wantBook && !retroSystems_.empty() && retroSystems_[retroSystem_].id == system) {
+        retroBook_ = std::move(book);
+        retroBookSystem_ = system;
+      }
       // Switched system, search or filter meanwhile: pollRetro asks for the right one.
       if (retroSystems_.empty() || retroSystems_[retroSystem_].id != system || retroFilter() != filter) {
         retroListSystem_.clear();
@@ -307,32 +332,16 @@ void Application::loadRetroPage(bool next) {
 retro::Filter Application::retroFilter() const {
   retro::Filter f;
   f.query = retroQuery_;
-  f.sort = retroSort_ == SortMode::Name      ? "name"
-           : retroSort_ == SortMode::Largest ? "size"
-           : retroSort_ == SortMode::Recent  ? "added"
-                                             : "rating";
-  for (const int n : retroFilters_) {
-    if (n <= 0 || n >= int(std::size(RetroConditions))) continue;
-    const auto &c = RetroConditions[n];
-    f.minRating = std::max(f.minRating, c.minRating);
-    f.bezel = f.bezel || c.bezel;
-    f.minSize = std::max(f.minSize, c.minSize);
-    if (c.maxSize) f.maxSize = f.maxSize ? std::min(f.maxSize, c.maxSize) : c.maxSize;
-  }
+  f.sort = retroSortKey_;
+  f.params = retro::pickParams(retroFilterBook(), retroPicks_);
   return f;
 }
 std::vector<std::string> Application::popupFilterLabels() const {
   std::vector<std::string> out;
-  if (screen_ == Screen::Retro)
-    for (const auto &c : RetroConditions) out.push_back(tr(c.title));
-  else
-    for (const auto &chip : chips_) out.push_back(chip.title);
+  for (const auto &chip : chips_) out.push_back(chip.title);
   return out;
 }
-std::vector<SortMode> Application::popupSorts() const {
-  if (screen_ == Screen::Retro) return {std::begin(RetroSorts), std::end(RetroSorts)};
-  return {std::begin(SortOrders), std::end(SortOrders)};
-}
+std::vector<SortMode> Application::popupSorts() const { return {std::begin(SortOrders), std::end(SortOrders)}; }
 const retro::Game *Application::retroFocused() const {
   if (!inContent()) return nullptr;
   if (retroView_ == RetroView::Home) {
@@ -650,8 +659,10 @@ bool Application::runRetroArch(bool full, const Server &server) {
         const int total = int(plan.fetch.size());
         const bool cancelled = retroCancel_;
         const uint64_t received = retroReceived_;
-        return [this, error, done, total, cancelled, received] {
+        const bool app = fileExists(sd + "/" + retro::RetroArchApp);
+        return [this, error, done, total, cancelled, received, app] {
           cardChanged();
+          cardSeen_[retro::RetroArchApp] = app; // read here, so 레트로 does not wait for the storage worker
           if (finishRetroEntry("retroarch",
                                cancelled ? history::Outcome::Cancelled : error ? history::Outcome::Failed : history::Outcome::Done,
                                cancelled ? "" : error.message, received))
@@ -691,7 +702,7 @@ void Application::retroAction(Action a) {
     return;
   }
   if (retroView_ == RetroView::Achievements && (a == Action::Previous || a == Action::Next)) {
-    if (!retroShelves_.empty()) openRetroList(retroRow_);
+    if (!retroShelves_.empty()) openRetroList(retroSystemAt(retroRow_));
     return;
   }
   if (retroView_ == RetroView::Achievements && a != Action::Queue) {
@@ -740,6 +751,7 @@ void Application::retroAction(Action a) {
   if ((a == Action::Previous || a == Action::Next) && !retroSystems_.empty()) {
     const int count = int(retroSystems_.size());
     retroSystem_ = (retroSystem_ + (a == Action::Next ? 1 : count - 1)) % count;
+    clearRetroFilters();
     retroGames_.clear();
     retroListSystem_.clear();
     retroTotal_ = 0;
@@ -761,6 +773,29 @@ void Application::retroAction(Action a) {
 }
 // What a game is: its file format, a bezel, its score; for the list's
 // labels and the info popup.
+float Application::labelChip(const labels::Ref &ref, const labels::Book &book, float x, float top, float right,
+                             float height, int size) {
+  const auto found = book.find(ref.key.str());
+  if (found == book.end()) return 0;
+  const auto text = labels::text(book, ref, languageCode());
+  if (text.empty()) return 0;
+  const int icon = found->second.icon.empty() ? -1 : Painter::iconNamed(found->second.icon);
+  const float mark = icon >= 0 ? float(size) : 0;
+  const float w = 8 + (mark ? mark + 4 : 0) + paint_.fonts.measure(text, size, true) + 8;
+  if (x + w > right) return 0;
+  using labels::Tone;
+  const auto tone = found->second.tone;
+  const SDL_Color fill = tone == Tone::Accent ? Butter
+                         : tone == Tone::Good ? Good
+                         : tone == Tone::Warn ? Pending
+                         : tone == Tone::Bad  ? Bad
+                                              : Line;
+  const SDL_Color ink = tone == Tone::Neutral || tone == Tone::Accent ? Ink : Surface;
+  paint_.rect(x, top, w, height, fill, int(height / 3));
+  if (mark) paint_.icon(icon, x + 8, top + (height - mark) / 2, ink, int(mark));
+  paint_.fonts.middle(text, x + 8 + (mark ? mark + 4 : 0), top + height / 2, size, ink, true);
+  return w;
+}
 float Application::achievementLabel(const achievements::Summary &a, float x, float top, float height, int size) {
   if (a.count <= 0) return 0;
   const auto text = trf("Achievements {0}", {std::to_string(a.count)});
@@ -846,9 +881,7 @@ void Application::retroList() {
   const auto *system = retroSystems_.empty() ? nullptr : &retroSystems_[retroSystem_];
   // Right: the same filter button and search box as 모든 게임.
   searchBar(retroQuery_);
-  std::string summary = retroFilters_.empty() ? std::string(tr("All")) : popupFilterLabels()[retroFilters_.front()];
-  if (retroFilters_.size() > 1) summary = trf("{0} +{1}", {summary, std::to_string(retroFilters_.size() - 1)});
-  summary += " · " + std::string(sortLabel(retroSort_));
+  std::string summary = retroFilterSummary();
   const float viewW = std::min(300.f, paint_.keyLabelWidth("Y", summary, 18, true) + 66), viewX = SearchX - 16 - viewW;
   headerItem("filter", viewX, 24, viewW, 48, [this] { openViewPopup(); });
   paint_.rect(viewX, 24, viewW, 48, Surface, 12);

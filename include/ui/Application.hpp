@@ -110,6 +110,8 @@ public:
   bool imagesReady() const { return images_->ready(); }
   Screen current() const { return screen_; }
   size_t groupCount() const { return groups_.size(); }
+  // A reload still reading the card (reload() from the drawing thread).
+  bool reloading() const { return reloadWorker_.joinable(); }
   std::string selectedName() const;
   void setDetail(net::Detail detail);
   bool confirmingInstall() const { return confirmInstall_; }
@@ -358,6 +360,7 @@ public:
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).
+  void setLabelBook(labels::Book book) { labelBook_ = std::move(book); } // fixtures only
   void setGenreTable(net::NameTable table) { genreTable_ = std::move(table); genreNames_ = net::namesIn(genreTable_, languageCode()); }
   // Where the PC preview keeps its fake SD card for user patches.
   void usePatchFolder(const std::string &sd);
@@ -410,7 +413,7 @@ private:
   // read), the menu and the buttons are placeholders.
   bool refreshSkeleton() const;
   void screenSkeleton();
-  bool menuPending() const { return !menuKnown_ && (network_.joinable() || stateWaiting_); }
+  bool menuPending() const { return !menuKnown_ && (network_.joinable() || stateWaiting_ || reloadWorker_.joinable()); }
   void onTheWayButton(float x, float w, bool downloading, double percent, double skipped = 0);
   // False when there was nothing new to write.
   bool keepResumeChanges();
@@ -428,6 +431,12 @@ private:
   // A trophy and 업적 40, butter when the ROM itself earns them, grey when
   // only its title matched; nothing (0) for a game without any.
   float achievementLabel(const achievements::Summary &a, float x, float top, float height, int size);
+  // One of the server's labels as a chip at x (its tone's colours, its
+  // icon), when it fits before `right`: its width, 0 when left out.
+  float labelChip(const labels::Ref &ref, const labels::Book &book, float x, float top, float right, float height = 26,
+                  int size = 15);
+  labels::Book serverLabels() const; // every connected server's, merged
+  labels::Book labelBook_, retroLabelBook_;
   void shell();
   float statusBar();
   // Before the shop approves this device only 홈 (the approval page) and
@@ -720,6 +729,7 @@ private:
   void loadRetroHome();
   void loadRetroPage(bool next);
   void openRetroList(int system);
+  int retroSystemAt(int row) const;
   // A shelf near its end takes the system's next page (best rated first),
   // the games it already shows left out; it stops once all have come.
   void loadShelfMore(int row);
@@ -1189,7 +1199,7 @@ private:
   void offlineNotice(const std::string &body);
   // 홈 with nothing to show and a button on its notice: 설정 when no server
   // is set up, 다시 시도 when the one set up did not answer.
-  bool homeOffersSettings() const { return groups_.empty() && !session_ && !stateWaiting_; }
+  bool homeOffersSettings() const { return groups_.empty() && !session_ && !stateWaiting_ && !reloadWorker_.joinable(); }
 public:
   // The banner's tags, as the website's (#218): score, sale (else the
   // regular price), Korean, size,
@@ -1212,7 +1222,23 @@ private:
   void connect(size_t server);
   void clearCatalog();
   // `prefer`: the server to connect to when it is on, else the first one on.
+  // At start (on the loading thread) it reads and applies at once; from the
+  // drawing thread the card is read on reloadWorker_ and applied in poll().
   void reload(int prefer = -1);
+  struct ReloadRead {
+    Parsed<Config> config;
+    Parsed<State> state;
+    bool busy = false; // the records held by a write still going
+  };
+  // `waitOut`: at start, wait for a write still holding the records.
+  ReloadRead readForReload(bool waitOut);
+  void applyReload(int prefer, ReloadRead read);
+  std::thread reloadWorker_;
+  std::atomic<bool> reloadDone_{false};
+  ReloadRead reloadRead_;
+  int reloadPrefer_ = -1;
+  bool reloadAgain_ = false; // asked again while reading: what was read may be old
+  bool reloadDrop_ = false;  // the servers were saved and applied while it read
   // 설정's server form (ServerForm.cpp): + 서버 추가 opens it empty, A on a
   // server opens that one. Rows: the four fields, then 저장 and 삭제.
   struct ServerForm {
@@ -1480,13 +1506,16 @@ private:
   std::atomic<bool> storageDone_{false};
   StorageFound storageFound_;
   void pollStorage();
-  // Whether a file (relative to the card's root) is there, as last read; a
-  // path never asked about is read once on the spot.
-  bool cardHas(const std::string &path) const;
+  // Whether a file (relative to the card's root) is there, as the storage
+  // worker last read it. A path never read yet is "not known" (nullopt) and
+  // goes to the worker's next run: the drawing thread never waits on the card.
+  std::optional<bool> cardKnows(const std::string &path) const;
+  bool cardHas(const std::string &path) const { return cardKnows(path).value_or(false); }
   mutable std::map<std::string, bool> cardSeen_;
+  mutable std::set<std::string> cardAsked_;
   uint64_t cardGeneration_ = 0;
-  // Something was written to or removed from the card: what was read goes,
-  // and free space is asked again.
+  // Something was written to or removed from the card: free space and every
+  // file are read again; until then the last answers stand.
   void cardChanged();
   void followTakeBack();
   bool takenBack_ = false; // heard while a refresh ran: the next poll refreshes
@@ -1495,7 +1524,6 @@ private:
   bool confirmCancel_ = false, confirmExit_ = false, exitAfterCancel_ = false,
        exitRequested_ = false;
   bool searchRequested_ = false, confirmInstall_ = false;
-  int dialogFocus_ = 0;
   void dialogHints(float right, float y, const std::string &close,
                    const std::string &apply = "", const std::string &accept = "", const std::string &remove = "");
   static inline const std::string NoAccept = "\x1f"; // `accept` for a popup A does nothing in
@@ -1581,8 +1609,30 @@ private:
   bool retroHomeMissing_ = false; // an older server: straight to the list
   int retroRow_ = 0, retroCol_ = 0; // home focus: shelf and card
   std::string retroQuery_;          // the list's search, kept across L R
-  std::vector<int> retroFilters_;   // the filter popup's choices (indices, never 0 "전체")
-  SortMode retroSort_ = SortMode::Score;
+  // The list's filters as the server words them for the open system (the
+  // client's own few when it words none), what is picked, and the popup's draft.
+  retro::FilterBook retroBook_;
+  std::string retroBookSystem_;
+  retro::Picks retroPicks_, draftPicks_;
+  std::string retroSortKey_ = "rating", draftSortKey_;
+  int filterFocus_ = 0;     // the popup's chip under the cursor (0: 전체)
+  float filterScroll_ = 0;
+  retro::FilterBook retroFilterBook() const;
+  void clearRetroFilters(); // another system: its own filters, none picked
+  std::string retroFilterSummary() const;
+  struct FilterChip {
+    std::string group, option, label, count;
+    float x, y, w;
+    int line;
+  };
+  struct FilterLayout {
+    std::vector<FilterChip> chips;
+    std::vector<std::pair<float, std::string>> headings;
+    float height = 0;
+  };
+  FilterLayout retroFilterLayout(float width);
+  void retroFilterPopup();
+  void retroFilterAction(Action a);
   retro::Filter retroFilter() const;
   // The filter popup serves 모든 게임 and 레트로 게임: what it lists depends on the screen.
   std::vector<std::string> popupFilterLabels() const;
@@ -1652,9 +1702,10 @@ private:
     return backupsOf(id) > 0 || !savedGames_ || savedGames_->count(id) || dropboxHas(id);
   }
   bool dropboxHas(uint64_t id) const;
-  // The console's saves are being read for the first time: the list waits
-  // (placeholders) rather than show every game and then drop most.
-  bool savesUnread() const { return !savedGames_ && backupSummaryWorker_.joinable(); }
+  // The read 세이브 asks for on each visit is not back: the list waits
+  // (placeholders) rather than show the last visit's and then change.
+  bool savesFresh_ = false;
+  bool savesUnread() const { return !savesFresh_ && (backupSummaryWorker_.joinable() || backupSummaryAgain_); }
   std::optional<int> saveOpen_;          // index into saves_
   std::vector<saves::LocalBackup> backups_;
   int saveRow_ = 0;                      // 0 back up, 1..n backups, n+1 delete

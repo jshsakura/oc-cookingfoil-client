@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include "core/Tags.hpp"
+#include "core/Labels.hpp"
 namespace foil {
 struct Item {
     std::string url, name, titleId, baseId, icon;
@@ -27,10 +28,15 @@ struct Item {
     Word scoreLabel, scoreSource;
     int patches = 0; // user patches the server holds for this game (feature user-patches)
     int requiredPatches = 0; // of those, the ones the game does not run without
+    int koreanPatches = 0;   // of those, the ones that put the game in Korean
     // The server's check of the file (feature item-integrity): 0 fine or not
     // checked yet, 1 modified (signature off: a mod or a repack), 2 maybe
     // damaged. Said only; installs go ahead either way.
     uint8_t integrity = 0;
+    // The server's labels for its card, in order (core/Labels.hpp);
+    // hasLabels false: an older server, the client words them itself.
+    bool hasLabels = false;
+    std::vector<labels::Ref> labels;
     // Store names per language (feature item-names): ko, en, ja, zh in that
     // order, empty when the server sends none. Left empty (no allocation)
     // for the many items without names.

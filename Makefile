@@ -18,7 +18,7 @@ ZSTD_C := $(addprefix third_party/zstd/lib/common/,entropy_common.c error_privat
           $(addprefix third_party/zstd/lib/decompress/,huf_decompress.c zstd_ddict.c zstd_decompress.c zstd_decompress_block.c) \
           source/zstd/ZstdSnapshot.c
 ZSTD_FLAGS := -DZSTD_DISABLE_ASM -DZSTD_LEGACY_SUPPORT=0 -DDEBUGLEVEL=0 -DZSTD_TRACE=0 -Ithird_party/zstd/lib -Ithird_party/zstd/lib/common
-# The version as makefiles/switch.mk writes it (scripts/ship.sh raises it):
+# The version as makefiles/switch.mk writes it (raised by hand for a release):
 # not the commit count, which a fresh clone, a shallow CI checkout or the
 # public repository's history would each read differently.
 APP_VERSION := $(shell sed -n 's/^APP_VERSION := //p' makefiles/switch.mk)
@@ -29,6 +29,8 @@ SHARED := $(wildcard source/core/*.cpp source/net/*.cpp source/ui/*.cpp source/i
 ifeq ($(shell pkg-config --exists minizip && echo yes),yes)
 HOST_FLAGS += $(shell pkg-config --cflags minizip)
 HOST_LIBS += $(shell pkg-config --libs minizip)
+else ifneq ($(and $(CI),$(filter test host,$(MAKECMDGOALS))),)
+$(error minizip not found: CI must run the zip tests (install libminizip-dev))
 else
 $(warning minizip not found: host build skips source/core/Zip.cpp (install libminizip-dev))
 SHARED := $(filter-out source/core/Zip.cpp,$(SHARED))

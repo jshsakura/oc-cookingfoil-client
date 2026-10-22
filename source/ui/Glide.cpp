@@ -32,6 +32,10 @@ float Application::glide(const std::string &id, float x, float y, float w, float
 
   }
   glideAreas_.push_back({id, {x, y, w, h}, shown, max, unit, horizontal, snap});
+  // On whole screen pixels: text is drawn on them (Fonts), so a list that
+  // stopped between two would move its cards and its words by different
+  // amounts and the words would ripple as it scrolls.
+  if (const float pixels = unit * paint_.fonts.scale(); pixels > 0) shown = std::round(shown * pixels) / pixels;
   return shown;
 }
 void Application::fingerDown() {

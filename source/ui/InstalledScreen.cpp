@@ -221,13 +221,13 @@ void Application::installedScreen() {
   // The row at the top follows the cursor, or the finger while it glides.
   const int rowCount = int((rows.size() + 5) / 6);
   const float top = glide("installed", 232, 104 - 8, 1048, 660 - 104 + 8, float(std::max(0, selected_ / 6 - 1)),
-                          float(rowCount - 2), 240);
+                          float(rowCount - 2), CardRowStep);
   const int first = int(top) * 6;
   paint_.scrollbar(1266, 104, 500, top, 2.1f, float(rowCount));
   clipTo(232, 104 - 8, 1048, 660 - 104 + 8);
   for (int n = 0; n < 24 && first + n < int(rows.size()); ++n) {
     const auto &g = installed_.games[rows[first + n]];
-    const float x = 260 + n % 6 * 170, y = 104 + (n / 6 + int(top) - top) * 240;
+    const float x = 260 + n % 6 * 170, y = 104 + (n / 6 + int(top) - top) * CardRowStep;
     const auto icon = installedIcon(g);
     hit(x, y, 150, 220, [this, index = first + n] {
       sidebar_ = false;
@@ -238,9 +238,9 @@ void Application::installedScreen() {
     if (inContent() && selected_ == first + n && !managedGame_) marquee(g.name, x, y + 158, 18, 150, false);
     else paint_.fonts.text(g.name, x, y + 158, 18, Ink, false, 150);
     if (updatable(g.titleId)) paint_.pill(tr("Update|item"), x + 8, y + 8);
-    const float pill = paint_.pill(g.storage.size() > 1 ? tr("SD · Console") : g.storage.empty() ? tr("Installed") : g.storage.front(), x, y + 194);
+    const float pill = paint_.pill(g.storage.size() > 1 ? tr("SD · Console") : g.storage.empty() ? tr("Installed") : g.storage.front(), x, y + CardLabelTop);
     if (g.bytes)
-      paint_.fonts.text(formatBytes(g.bytes), x + pill + 8, y + 196, 15, Secondary, false, 142 - pill);
+      paint_.fonts.text(formatBytes(g.bytes), x + pill + 8, y + CardLabelTop + 2, 15, Secondary, false, 142 - pill);
   }
   unclip();
   if (managedGame_) management();

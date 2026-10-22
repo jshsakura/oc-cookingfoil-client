@@ -82,6 +82,7 @@ std::string fileTitle(const std::string& url);
 // Admin-picked shelf: base title ids in the admin's order (feature: featured).
 struct Featured {
     std::string id, title, bannerUrl;
+    std::string icon; // a name from the client's icon set; empty for the default
     std::vector<std::string> titleIds;
 };
 std::vector<Featured> parseFeatured(const std::string& json);
@@ -97,6 +98,7 @@ struct Catalog {
     std::vector<Item> items;
     std::vector<Featured> featured;
     NameTable genres, scoreLabels;
+    labels::Book labels; // the cards' label dictionary
 };
 Parsed<Catalog> parseCatalog(const std::string& json);
 NameTable parseNameTable(const std::string& json, const char* table);
@@ -175,6 +177,7 @@ public:
     // Names in the current interface language.
     std::map<std::string, std::string> genres() const { return namesIn(genres_, languageCode()); }
     std::map<std::string, std::string> scoreLabels() const { return namesIn(scoreLabels_, languageCode()); }
+    const labels::Book &labels() const { return labels_; }
     const State& state() const { return state_; }
     const Server& server() const { return server_; }
     // The server's own id (/api/shop/info server_id): two addresses of one
@@ -215,6 +218,7 @@ private:
     std::set<std::string> features_;
     std::vector<Featured> featured_;
     NameTable genres_, scoreLabels_;
+    labels::Book labels_;
     bool pairingPending_ = false;
     PairingInfo pairingInfo_;
     std::string enrollRefusal_; // PairingInfo::refusal, kept across polls

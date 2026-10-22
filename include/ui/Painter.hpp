@@ -66,6 +66,9 @@ public:
   // Draws right-aligned to `right`; returns its width.
   float keyChip(const std::string &name, const std::string &label, float right, float centerY);
   float keyChipWidth(const std::string &name, const std::string &label);
+  // The icon set by name, for icons the server names (labels, rows); -1
+  // for a name the client does not know.
+  static int iconNamed(const std::string &name);
   float pill(const std::string &text, float x, float y, bool dark = false,
              int size = 15);
   // The green 검수됨 capsule (a shield check and the word), as the web shop

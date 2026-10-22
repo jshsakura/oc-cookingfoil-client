@@ -112,6 +112,8 @@ bool ZipWriter::fail(const std::string &message) {
   if (file_) {
     std::fclose(file_);
     file_ = nullptr;
+    std::error_code ec;
+    std::filesystem::remove_all(writingPart(root_ + "/" + jobs_[next_].path), ec); // the file it would replace stays
   }
   return false;
 }
@@ -130,14 +132,15 @@ void ZipWriter::abandon() {
   }
   if (writing && next_ < jobs_.size()) {
     std::error_code ec;
-    std::filesystem::remove(root_ + "/" + jobs_[next_].path, ec);
+    std::filesystem::remove_all(writingPart(root_ + "/" + jobs_[next_].path), ec);
   }
 }
 bool ZipWriter::open() {
   const auto &job = jobs_[next_];
   if (job.entry.encrypted || (job.entry.method != 0 && job.entry.method != 8))
     return fail(trf("This archive cannot be unpacked: {0}", {job.entry.name}));
-  const std::filesystem::path full = root_ + "/" + job.path;
+  // Written beside its place, which it takes once whole and checked.
+  const std::filesystem::path full = writingPart(root_ + "/" + job.path);
   makeDirectories(full.parent_path().string());
   // 4 GiB or more: made as a split file first, or FAT32 would cut it short.
   if (std::string reason; platform::needsBigFile(job.entry.size) && !platform::createBigFile(full.string(), reason))
@@ -201,14 +204,22 @@ bool ZipWriter::write(const char *data, size_t size) {
 }
 bool ZipWriter::close() {
   const auto &job = jobs_[next_];
+  const auto part = writingPart(root_ + "/" + job.path);
   const bool closed = std::fclose(file_) == 0;
   file_ = nullptr;
-  if (!closed)
+  std::error_code ec;
+  if (!closed) {
+    std::filesystem::remove_all(part, ec);
     return fail(tr("Could not write to the SD card. Check the free space."));
+  }
   if ((inflater_ && !inflater_->ended) || produced_ != job.entry.size || crc_ != job.entry.crc) {
-    std::error_code ec;
-    std::filesystem::remove(root_ + "/" + job.path, ec);
+    std::filesystem::remove_all(part, ec);
     return fail(trf("The archive does not match the server's list: {0}", {job.path}));
+  }
+  if (std::string reason; !replaceFile(part, root_ + "/" + job.path, reason)) {
+    std::filesystem::remove_all(part, ec);
+    logLine("zip: cannot put " + job.path + " in place: " + reason);
+    return fail(trf("Could not write the file: {0}", {job.path}) + " (" + reason + ")");
   }
   inflater_.reset();
   boundary_ = fed_;

@@ -80,7 +80,7 @@ float Application::voteChips(float right) {
     voteFocus_ = 0;
     return right;
   }
-  constexpr float Height = 34, Top = BackLine - Height / 2, Gap = 8;
+  constexpr float Height = 34, Top = ChipLine - Height / 2, Gap = 8;
   float x = right + Gap;
   // Drawn right to left: 안 돼요, then 잘 돼요 before it.
   for (int which = 2; which >= 1; --which) {
@@ -90,7 +90,7 @@ float Application::voteChips(float right) {
     const float w = 12 + 18 + 8 + paint_.fonts.measure(label, 16, true) + 14;
     x -= w + Gap;
     const bool focused = voteFocus_ == which, mine = target->votes.mine == (up ? "up" : "down");
-    hit(x, Top, w, Height, [this, which, up] {
+    hit(x - Gap / 2, 0, w + Gap, Top + Height + 8, [this, which, up] {
       voteFocus_ = which;
       castVote(up ? "up" : "down");
     });

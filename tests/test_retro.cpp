@@ -10,6 +10,131 @@ uint64_t sizeOf(const std::string &path) { return path == shortFile ? 4 : 10; }
 } // namespace
 int runRetroTests() {
   int failures = 0;
+  {
+    // Theme rows across systems: one card per title, a row without a name or
+    // games left out, an id with odd characters dropped.
+    const auto themes = parseThemes(R"({"themes":[
+      {"id":"fighting","name":"대전 격투","games":[
+        {"id":"a","name":"A","original":"Street Fighter II","system":"snes","bundleUrl":"/b/a","rating":90,
+         "genres":["fighting","board-game","Board Game"],"players":2,"year":1992},
+        {"id":"b","name":"B","original":"Street Fighter II","system":"md","bundleUrl":"/b/b","rating":80}]},
+      {"id":"puzzle","name":"","games":[{"id":"c","bundleUrl":"/b/c"}]},
+      {"id":"empty","name":"Empty","games":[]},
+      {"id":"genre:Simulation","name":"X","games":[{"id":"d","bundleUrl":"/b/d"}]},
+      {"id":"decade:1990:genre:rpg","name":"90년대 RPG","games":[{"id":"e","bundleUrl":"/b/e"}]}]})",
+                                    "https://shop.example.com");
+    CHECK(themes.size() == 2 && themes[0].id == "fighting" && themes[0].name == "대전 격투");
+    CHECK(themes.size() == 2 && themes[1].id == "decade:1990:genre:rpg");
+    CHECK(themes.size() == 2 && themes[0].games.size() == 1 && themes[0].games[0].id == "a");
+    CHECK(themes.size() == 2 && themes[0].games[0].genres == std::vector<std::string>({"fighting", "board-game"}));
+    CHECK(themes.size() == 2 && themes[0].games[0].players == 2 && themes[0].games[0].year == 1992);
+    CHECK(themes.size() == 2 && themes[0].games[0].bundleUrl == "https://shop.example.com/b/a");
+    CHECK(parseThemes("not json").empty());
+    // Two servers: a theme joins by id, its games best rated first, each
+    // id once naming both servers.
+    const std::vector<Theme> one{themes[0]};
+    auto other = one;
+    other[0].games[0].rating = 90;
+    Game better;
+    better.id = "e", better.name = "E", better.original = "Garou", better.rating = 95, better.bundleUrl = "https://b/e";
+    other[0].games.push_back(better);
+    Theme shooting{"shooter", "슈팅", {better}};
+    other.push_back(shooting);
+    const auto merged = mergeThemes({{"https://one.example.com", one}, {"https://two.example.com", other}});
+    CHECK(merged.size() == 2 && merged[0].id == "fighting" && merged[1].id == "shooter");
+    CHECK(merged.size() == 2 && merged[0].games.size() == 2 && merged[0].games[0].id == "e");
+    CHECK(merged.size() == 2 && merged[0].games[1].id == "a" && merged[0].games[1].alsoOn.size() == 1);
+  }
+  {
+    // The home's theme rows: no game twice, a thin row dropped, few rows.
+    const auto row = [](const std::string &id, std::vector<std::string> games) {
+      Theme t{id, id, {}};
+      for (const auto &name : games) {
+        Game g;
+        g.id = name, g.original = name, g.bundleUrl = "https://b/" + name;
+        t.games.push_back(g);
+      }
+      return t;
+    };
+    const auto spread = spreadThemes({row("action", {"a", "b", "c", "d"}), row("fighting", {"a", "b", "e"}),
+                                      row("rpg", {"c", "f", "g", "h"}), row("puzzle", {"i", "j", "k"}),
+                                      row("racing", {"l", "m", "n"})},
+                                     3, 3, 2);
+    CHECK(spread.size() == 3 && spread[0].id == "action" && spread[0].games.size() == 3);
+    CHECK(spread.size() == 3 && spread[1].id == "rpg" && spread[1].games.size() == 3 && spread[1].games[0].id == "f");
+    CHECK(spread.size() == 3 && spread[2].id == "puzzle");
+    std::set<std::string> seen;
+    bool twice = false;
+    for (const auto &theme : spread)
+      for (const auto &game : theme.games) twice |= !seen.insert(game.id).second;
+    CHECK(!twice);
+    // Up to six drawn, in the server's order; fewer when it sends fewer.
+    std::vector<Theme> six;
+    for (int r = 0; r < 7; ++r) {
+      std::vector<std::string> names;
+      for (int g = 0; g < 8; ++g) names.push_back(std::to_string(r) + "-" + std::to_string(g));
+      six.push_back(row("r" + std::to_string(r), names));
+    }
+    const auto drawn = themeShelves(six);
+    CHECK(drawn.size() == 6 && drawn[0].theme == "r0" && drawn[5].theme == "r5" && drawn[0].system.id.empty());
+    six.resize(2);
+    CHECK(themeShelves(six).size() == 2);
+    CHECK(themeShelves({}).empty());
+  }
+  {
+    // The server's filters: groups and options in its order; anything odd dropped.
+    const auto book = parseFilterBook(R"({
+      "groups":[
+        {"key":"genre","ko":"장르","en":"Genre","pick":"many","options":[
+          {"key":"beat-em-up","ko":"벨트스크롤 액션","en":"Beat 'em up","count":12,"params":{"genre":"beat-em-up"}},
+          {"key":"rpg","ko":"롤플레잉","count":40,"params":{"genre":"rpg"}},
+          {"key":"bad","ko":"나쁨","params":{"genre":"a&b"}},
+          {"key":"Odd","ko":"x","params":{"genre":"x"}},
+          {"key":"none","ko":"없음"}]},
+        {"key":"players","ko":"인원","pick":"one","options":[
+          {"key":"2","ko":"2인 이상","params":{"players":2}},{"key":"4","ko":"4인 이상","params":{"players":"4"}}]},
+        {"key":"rating","ko":"평점","pick":"one","options":[{"key":"80","ko":"80점 이상","params":{"minRating":"80","x y":"1"}}]},
+        {"key":"empty","ko":"빈","options":[]},
+        {"key":"nameless","options":[{"key":"a","ko":"a","params":{"a":"1"}}]}],
+      "sorts":[{"key":"rating","ko":"평점순","en":"Rating"},{"key":"Bad","ko":"x"},{"key":"added","en":"Newest"}]})");
+    CHECK(book.groups.size() == 3 && book.sorts.size() == 2);
+    CHECK(book.groups[0].options.size() == 2 && book.groups[0].options[0].count == 12 && !book.groups[0].single);
+    CHECK(book.groups[1].single && book.groups[1].options[0].params[0].second == "2");
+    CHECK(book.groups[2].options[0].params.size() == 1);
+    CHECK(textIn(book.groups[0].options[0].text, "ko") == "벨트스크롤 액션");
+    CHECK(textIn(book.groups[0].options[0].text, "ja") == "Beat 'em up");
+    CHECK(textIn(book.groups[0].options[1].text, "ja") == "롤플레잉");
+    CHECK(textIn(book.groups[0].text, "ja") == "Genre" && book.groups[0].text.size() == 2);
+    CHECK(parseFilterBook("{}").empty() && parseFilterBook("nope").empty());
+    // Many in a group: any of them; single: the newer replaces; groups AND.
+    Picks picks;
+    picks = togglePick(book, picks, "genre", "beat-em-up");
+    picks = togglePick(book, picks, "genre", "rpg");
+    picks = togglePick(book, picks, "players", "2");
+    picks = togglePick(book, picks, "players", "4");
+    picks = togglePick(book, picks, "genre", "gone");
+    CHECK(picks.size() == 3);
+    Filter f;
+    f.params = pickParams(book, picks);
+    CHECK(filterQuery(f) == "&sort=rating&genre=beat-em-up,rpg&players=4");
+    picks = togglePick(book, picks, "genre", "rpg");
+    CHECK((pickParams(book, picks) == Params{{"genre", "beat-em-up"}, {"players", "4"}}));
+    // Another system's book keeps only what it offers.
+    FilterBook other;
+    other.groups = {book.groups[1]};
+    CHECK((keptPicks(other, picks) == Picks{{"players", "4"}}));
+    // Several servers: options join by key, counts summed.
+    FilterBook more;
+    more.groups = {{"genre", {{"en", "Genre"}}, false, {{"rpg", {{"en", "RPG"}}, 5, {{"genre", "rpg"}}}, {"puzzle", {{"en", "Puzzle"}}, 3, {{"genre", "puzzle"}}}}}};
+    const auto all = mergeFilterBooks({book, more});
+    CHECK(all.groups.size() == 3 && all.groups[0].options.size() == 3 && all.groups[0].options[1].count == 45);
+    CHECK(all.sorts.size() == 2);
+    Filter g = f;
+    g.params.pop_back();
+    CHECK(g != f);
+    CHECK(keyText("board-game") && !keyText("Board") && !keyText("-x") && !keyText(""));
+    CHECK(themeIdText("decade:1990:genre:rpg") && themeIdText("coop") && !themeIdText("genre:") && !themeIdText("genre::x"));
+  }
   const auto systems = parseSystems(R"({"systems":[
     {"id":"gba","name":"Game Boy Advance","names":{"ko":"게임보이 어드밴스"},"defaultCore":"mgba","coreName":"mGBA","romCount":181},
     {"id":"../x","name":"bad"},{"id":""}]})");
@@ -38,6 +163,19 @@ int runRetroTests() {
       }
       CHECK(d.meta.description.empty() && d.meta.screenshots.empty() && !d.meta.releaseDate);
       CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","variants":3})").variants == 3);
+      // A shortcut takes the server's name; from an older server, the name
+      // with its version or region, only when there are several versions.
+      auto one = parseGameJson(R"({"id":"a","name":"World","variant":"J-K v2","region":"jp","shortcutName":"World · 한글 v2"})");
+      CHECK(shortcutName(one) == "World · 한글 v2");
+      CHECK(parseGameJson(serializeGame(one)).shortcutName == "World · 한글 v2");
+      one.shortcutName.clear();
+      CHECK(shortcutName(one) == "World");
+      one.variants = 2;
+      CHECK(shortcutName(one) == "World · J-K v2" && parseGameJson(serializeGame(one)).variants == 2);
+      one.variant.clear();
+      CHECK(shortcutName(one) == "World · " + regionName("jp"));
+      one.region.clear();
+      CHECK(shortcutName(one) == "World");
       CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b"})").variants == 1);
     }
     // What the server knows of a game besides its files: pictures resolved
@@ -124,10 +262,10 @@ int runRetroTests() {
     CHECK(filterQuery(f) == "&sort=rating");
     f.query = "젤 다";
     f.sort = "size";
-    f.minRating = 120;
-    f.bezel = true;
-    f.maxSize = 1048576;
-    CHECK(filterQuery(f) == "&sort=size&q=%EC%A0%A4%20%EB%8B%A4&minRating=100&bezel=1&maxSize=1048576");
+    f.params = {{"minRating", "90"}, {"bezel", "1"}};
+    CHECK(filterQuery(f) == "&sort=size&q=%EC%A0%A4%20%EB%8B%A4&minRating=90&bezel=1");
+    f.sort = "../x";
+    CHECK(filterQuery(f).rfind("&sort=rating", 0) == 0);
   }
 
   CHECK(packPathAllowed("switch/retroarch_switch.nro"));

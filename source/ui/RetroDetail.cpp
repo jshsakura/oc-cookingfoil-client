@@ -5,16 +5,6 @@
 #include <cmath>
 namespace foil::ui {
 namespace {
-std::string regionName(const std::string &code) {
-  if (code == "kr") return tr("Korea|region");
-  if (code == "jp") return tr("Japan|region");
-  if (code == "us") return tr("North America|region");
-  if (code == "eu") return tr("Europe|region");
-  if (code == "asia") return tr("Asia|region");
-  if (code == "br") return tr("Brazil|region");
-  if (code == "world") return tr("World|region");
-  return code;
-}
 // The cursor on the button, however many versions come.
 constexpr int ButtonPart = 1 << 20;
 std::string countText(int count) {
@@ -99,7 +89,6 @@ void Application::getRetroPick() {
   const int onTheWay = retroPageOnTheWay(percent, queueAt);
   if (onTheWay) {
     // Already on its way: whether to cancel it, as 다운로드 asks.
-    dialogFocus_ = 0;
     if (onTheWay == 2) {
       cancelRetro_ = true;
       confirmCancel_ = true;
@@ -142,9 +131,13 @@ void Application::getRetroChecked() {
     if (!retroLoaded_games_.count(id)) missing.push_back(id);
   const auto queueAll = [this] {
     int queued = 0;
+    const int versions = int(retroVersionList().size());
     for (const auto &id : retroChecked_)
-      if (const auto found = retroLoaded_games_.find(id); found != retroLoaded_games_.end())
-        queued += getRetroGame(found->second, true);
+      if (const auto found = retroLoaded_games_.find(id); found != retroLoaded_games_.end()) {
+        auto game = found->second;
+        game.variants = std::max(game.variants, versions); // its shortcut tells the versions apart
+        queued += getRetroGame(game, true);
+      }
     if (queued > 1) message(trf("Added {0} versions to the download queue.", {std::to_string(queued)}));
   };
   if (missing.empty() || !session_) {
@@ -255,7 +248,7 @@ float Application::retroInfoCard(float y) {
     std::transform(format.begin(), format.end(), format.begin(), ::toupper);
     if (format.size() <= 4) facts.push_back({16, tr("File type"), format});
   }
-  if (!game.region.empty()) facts.push_back({17, tr("Region"), regionName(game.region)});
+  if (!game.region.empty()) facts.push_back({17, tr("Region"), retro::regionName(game.region)});
   facts.push_back({41, tr("Bezel"), game.bezel == retro::Game::Bezel::Game     ? std::string(tr("Game bezel"))
                                     : game.bezel == retro::Game::Bezel::System ? std::string(tr("Default bezel"))
                                                                                : std::string(tr("None|bezel"))});

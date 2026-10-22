@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <map>
 #include <string>
 namespace foil::ui {
 // A white top-left quarter circle of radius r whose edge pixels carry
@@ -394,6 +395,18 @@ static const char *IconPaths[] = {
 };
 // Glyph-like marks read better a touch heavier than the menu icons.
 // Marks read a touch heavier than outline icons.
+int Painter::iconNamed(const std::string &name) {
+  static const std::map<std::string, int> Names = {
+      {"home", 0},     {"search", 1},    {"grid", 2},      {"refresh", 3},   {"download", 4},  {"gear", 5},
+      {"installed", 6}, {"back", 7},     {"check", 8},     {"forward", 9},   {"filter", 10},   {"calendar", 11},
+      {"building", 12}, {"users", 13},   {"inbox", 14},    {"tag", 15},      {"file", 16},     {"globe", 17},
+      {"hash", 18},     {"branch", 19},  {"package", 22},  {"check-circle", 24}, {"alert", 25}, {"sd", 26},
+      {"gamepad", 27},  {"trophy", 28},  {"sparkle", 29},  {"clock", 30},    {"star", 31},     {"wrench", 32},
+      {"info", 33},     {"shield", 34},  {"joystick", 35}, {"save", 36},     {"upload", 40},   {"image", 41},
+      {"layers", 42},   {"user", 43},    {"volume", 44},   {"shield-check", 45}, {"thumbs-up", 47}, {"thumbs-down", 48}};
+  const auto found = Names.find(name);
+  return found == Names.end() ? -1 : found->second;
+}
 const char *iconStroke(int kind) {
   return kind == 8 ? "3.2" : kind == 7 || kind == 9 ? "2.6" : "2.2";
 }

@@ -60,7 +60,19 @@ Application::~Application() {
   // place is written down, so the next start goes on from it.
   installer_.stop();
   installer_.wait();
+  // Finished in its last step as the app closed, or in the frame it closed
+  // in, before the screen heard: kept as done, or the next start would take
+  // it from the queue and fetch it all again.
+  if (observedInstall_ == install::Status::Running && installer_.progress().status == install::Status::Succeeded) {
+    logLine("install done as the app closed: " + installer_.progress().name);
+    history::finish(history_, history::Outcome::Done, "", int64_t(std::time(nullptr)));
+    saveHistory();
+    forgetInstall();
+  }
   keepResumeChanges();
+  // How the downloads stand goes to the card now, before the workers below
+  // are waited on: a close the system cuts short must not lose it.
+  flushHistory();
   if (network_.joinable())
     network_.join();
   if (deviceWorker_.joinable())
@@ -96,6 +108,8 @@ Application::~Application() {
     shopSavesWorker_.join();
   if (stateWorker_.joinable())
     stateWorker_.join();
+  if (reloadWorker_.joinable())
+    reloadWorker_.join();
   if (backupSummaryWorker_.joinable())
     backupSummaryWorker_.join();
   if (dropboxWorker_.joinable())
@@ -566,6 +580,7 @@ void Application::setSession(std::unique_ptr<net::Session> session) {
   features_ = session_->features();
   genreNames_ = session_->genres();
   scoreLabels_ = session_->scoreLabels();
+  labelBook_ = serverLabels();
   qr_.encode(pairingInfo_.url);
   pairPollAt_ = pairingPending_ ? SDL_GetTicks() : 0;
   if (!pairingPending_) pairSince_ = 0;
@@ -730,6 +745,7 @@ void Application::screen(Screen screen) {
   raOpen_ = raListOpen_ = false; // RetroAchievements' too
   raLinkClose();
   if (screen == Screen::Saves) {
+    savesFresh_ = false;
     readBackupSummary();
     refreshInstalled();
   }
@@ -782,37 +798,65 @@ void Application::reload(int prefer) {
     message(tr("Connecting to the server."));
     return;
   }
-  poll();
-  auto parsed = loadConfig(configPath_);
+  if (loading_) {
+    applyReload(prefer, readForReload(true));
+    return;
+  }
+  reloadPrefer_ = prefer;
+  if (reloadWorker_.joinable()) {
+    reloadAgain_ = true;
+    return;
+  }
+  reloadWorker_ = std::thread([this] {
+    guarded("reload", [&] { reloadRead_ = readForReload(false); });
+    reloadDone_ = true;
+  });
+}
+Application::ReloadRead Application::readForReload(bool waitOut) {
+  ReloadRead read;
+  read.config = loadConfig(configPath_);
   // Read with no servers at start: read again a few times before 설정 takes
   // over (a console was seen reading none at start and its servers a moment
   // later). Only the first time: a refresh with none answers at once. A file made just now (a first start) has none to wait for.
   const bool first = std::exchange(configReadOnce_, true) == false;
-  for (int again = 0; first && !parsed.created && again < 3 && !parsed.error && parsed.value.servers.empty(); ++again) {
+  for (int again = 0; first && !read.config.created && again < 3 && !read.config.error && read.config.value.servers.empty(); ++again) {
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
-    parsed = loadConfig(configPath_);
+    read.config = loadConfig(configPath_);
   }
+  if (read.config.error) return read;
+  {
+    // The stored device key gives way to the console's own once all of these
+    // took it (core/State), as the state is read below.
+    std::vector<std::string> urls;
+    for (const auto &s : read.config.value.servers) urls.push_back(s.url);
+    setKnownServers(std::move(urls));
+  }
+  writePendingState(); // what was just set, before it is read back
+  read.state = loadState(statePath_, &read.busy);
+  // At start the loading screen waits for a write still going, so the app
+  // opens once, read, rather than showing its menu and then reading again.
+  for (const auto until = SDL_GetTicks() + 15000; waitOut && read.state.error && read.busy && SDL_GetTicks() < until;) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    read.state = loadState(statePath_, &read.busy);
+  }
+  return read;
+}
+void Application::applyReload(int prefer, ReloadRead read) {
+  if (network_.joinable() && !done_) {
+    message(tr("Connecting to the server."));
+    return;
+  }
+  // Work that finished while the files were read is taken with the session
+  // it ran on, before that session is replaced.
+  poll();
+  auto &parsed = read.config;
   if (parsed.error) {
     error_ = parsed.error;
     screen(Screen::Settings);
     return;
   }
-  {
-    // The stored device key gives way to the console's own once all of these
-    // took it (core/State).
-    std::vector<std::string> urls;
-    for (const auto &s : parsed.value.servers) urls.push_back(s.url);
-    setKnownServers(std::move(urls));
-  }
-  writePendingState(); // what was just set, before it is read back
-  bool busy = false;
-  auto state = loadState(statePath_, &busy);
-  // At start the loading screen waits for a write still going, so the app
-  // opens once, read, rather than showing its menu and then reading again.
-  for (const auto until = SDL_GetTicks() + 15000; loading_ && state.error && busy && SDL_GetTicks() < until;) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    state = loadState(statePath_, &busy);
-  }
+  auto &state = read.state;
+  const bool busy = read.busy;
   if (state.error && busy && !session_) {
     // Held by a write still going, not broken: the servers show now (not an
     // empty 설정) and the records are read again until they can be.
@@ -901,6 +945,12 @@ void Application::connect(size_t index) {
 void Application::renewTokensWith(const Server &server) {
   net::setTokenRenewer(server.url, [server, state = state_] { return net::renewDownloadToken(server, state); });
 }
+labels::Book Application::serverLabels() const {
+  labels::Book book;
+  if (session_) labels::merge(book, session_->labels());
+  for (const auto &other : others_) labels::merge(book, other->labels());
+  return book;
+}
 void Application::refresh() {
   if (!session_ || network_.joinable())
     return;
@@ -960,6 +1010,16 @@ void Application::waitForState(int prefer) {
   });
 }
 void Application::poll() {
+  // Applied once a connection still running is done, as reload() itself
+  // would wait for it.
+  if (reloadDone_ && !(network_.joinable() && !done_) && reloadDone_.exchange(false)) {
+    reloadWorker_.join();
+    const bool dropped = std::exchange(reloadDrop_, false);
+    if (std::exchange(reloadAgain_, false))
+      reload(reloadPrefer_);
+    else if (!dropped)
+      applyReload(reloadPrefer_, std::move(reloadRead_));
+  }
   if (stateReady_.exchange(false)) {
     stateWorker_.join();
     stateWaiting_ = false;
@@ -1265,6 +1325,7 @@ void Application::takeNetwork() {
   featured_ = session_->featured();
   genreNames_ = session_->genres();
   scoreLabels_ = session_->scoreLabels();
+  labelBook_ = serverLabels();
   setGroups(std::move(incomingGroups_));
   incomingGroups_ = {};
   error_ = {};
@@ -1304,7 +1365,7 @@ void Application::rebuildHome() {
   std::vector<HomeTheme> pinned;
   heroBanner_.clear();
   for (const auto &shelf : featured_) {
-    HomeTheme row{{shelf.title, SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}, {}};
+    HomeTheme row{{shelf.title, SortMode::Default, Filter::All, "", 0, 0, 0, 0, false, false, "", 0}, {}, shelf.icon};
     for (const auto &id : shelf.titleIds) {
       const auto found = groupIndex_.find(id);
       if (found == groupIndex_.end()) continue;
@@ -1353,8 +1414,17 @@ void Application::openViewPopup() {
   viewPopup_ = true;
   popupColumn_ = 0;
   popupRow_ = 0;
-  draftChips_ = retro ? retroFilters_ : activeChips_;
-  draftSort_ = retro ? retroSort_ : librarySort_;
+  draftChips_ = activeChips_;
+  draftSort_ = librarySort_;
+  if (retro) {
+    draftPicks_ = retro::keptPicks(retroFilterBook(), retroPicks_);
+    draftSortKey_ = retroSortKey_;
+    filterFocus_ = 0;
+    filterScroll_ = 0;
+    const auto sorts = retroFilterBook().sorts;
+    const auto at = std::find_if(sorts.begin(), sorts.end(), [&](const auto &s) { return s.key == retroSortKey_; });
+    popupRow_ = at == sorts.end() ? 0 : int(at - sorts.begin());
+  }
 }
 bool Application::draftOn(int index) const {
   return index == 0 ? draftChips_.empty()
@@ -1407,7 +1477,7 @@ void Application::search(std::string query) {
     retroQuery_ = std::move(query);
     if (retroView_ != RetroView::List) {
       retroView_ = RetroView::List;
-      retroSystem_ = std::clamp(retroRow_, 0, std::max(0, int(retroSystems_.size()) - 1));
+      retroSystem_ = retroSystemAt(retroRow_);
     }
     retroGames_.clear();
     retroListSystem_.clear();
@@ -1501,6 +1571,10 @@ void Application::action(Action a) {
     askPairMessage();
     return;
   }
+  if (viewPopup_ && screen_ == Screen::Retro) {
+    retroFilterAction(a);
+    return;
+  }
   if (viewPopup_) {
     // Filters sit in a two-column grid, sorts in one column to its right.
     constexpr int Cols = PopupFilterColumns;
@@ -1542,14 +1616,7 @@ void Application::action(Action a) {
     if (a == Action::Queue) {
       viewPopup_ = false;
       selected_ = 0;
-      if (screen_ == Screen::Retro) {
-        retroFilters_ = draftChips_;
-        retroSort_ = draftSort_;
-        retroGames_.clear();
-        retroListSystem_.clear();
-        retroTotal_ = 0;
-        if (!retroListWorker_.joinable()) loadRetroPage(false);
-      } else {
+      {
         activeChips_ = draftChips_;
         librarySort_ = draftSort_;
       }
@@ -1936,7 +2003,6 @@ void Application::action(Action a) {
       case 8:
         bugAsk_ = true;
         bugMessage_.clear();
-        dialogFocus_ = 0;
         break;
       default:
         // A server opens its form; "+ 서버 추가" an empty one.
@@ -2035,23 +2101,31 @@ void Application::card(const Group &g, float x, float y, bool selected,
   if (badges) {
     if (selected) marquee(g.representative.name, x, y + 158, 18, 150, false);
     else paint_.fonts.text(g.representative.name, x, y + 158, 18, Ink, false, 150);
-    // Badges in priority order; one that would spill past the card is left out.
-    std::vector<std::string> labels;
-    if (g.representative.requiredPatches || (g.base && g.base->requiredPatches))
-      labels.push_back(tr("Required patch")); // it does not run without one
-    if (const int integrity = groupIntegrity(g)) // said, never blocking
-      labels.push_back(integrity == 2 ? tr("May be damaged") : tr("Modified|file"));
-    if (g.base && !g.base->priceDiscount.empty())
-      labels.push_back(tr("eShop sale"));
-    if (g.update)
-      labels.push_back(tr("Update|item"));
-    if (!g.dlc.empty())
-      labels.push_back("DLC " + std::to_string(g.dlc.size()));
+    // Most wanted first; one that would spill past the card is skipped and
+    // the next, maybe shorter, still gets its chance. The server's own
+    // labels when it words them, else the client's.
     float at = x;
-    for (const auto &label : labels) {
-      if (at + paint_.fonts.measure(label, 15, true) + 18 > x + 150)
-        break;
-      at += paint_.pill(label, at, y + 194) + 6;
+    const Item &labelled = g.base ? *g.base : g.representative;
+    // A server that words labels leaves the field out of a game without any.
+    if (labelled.hasLabels || !labelBook_.empty()) {
+      for (const auto &ref : labelled.labels) {
+        const float w = labelChip(ref, labelBook_, at, y + CardLabelTop, x + 150);
+        if (w > 0) at += w + 6;
+      }
+      return;
+    }
+    for (const auto kind : cardLabels(g)) {
+      using L = CardLabel;
+      const std::string label = kind == L::KoreanPatch     ? tr("Korean patch|badge")
+                                : kind == L::RequiredPatch ? tr("Required patch")
+                                : kind == L::Damaged       ? tr("May be damaged")
+                                : kind == L::Modified      ? tr("Modified|file")
+                                : kind == L::Latest        ? tr("Latest version")
+                                : kind == L::Update        ? tr("Update|item")
+                                : kind == L::Sale          ? tr("eShop sale")
+                                                           : "DLC " + std::to_string(g.dlc.size());
+      if (at + paint_.fonts.measure(label, 15, true) + 18 > x + 150) continue;
+      at += paint_.pill(label, at, y + CardLabelTop) + 6;
     }
   } else if (selected)
     marquee(g.representative.name, x, y + 158, 18, 150, false);
@@ -2586,7 +2660,6 @@ void Application::requestInstall() {
     return;
   }
   confirmInstall_ = true;
-  dialogFocus_ = 0;
   // From several servers it comes from the game's own unless picked.
   const auto servers = selection_->servers();
   if (std::find(servers.begin(), servers.end(), selection_->server) == servers.end())
@@ -2613,8 +2686,8 @@ void Application::refreshAll() {
   retroGames_.clear();
   retroListSystem_.clear();
   retroQuery_.clear();
-  retroFilters_.clear();
-  retroSort_ = SortMode::Score;
+  clearRetroFilters();
+  retroSortKey_ = "rating";
   retroOnCard_.clear();
   retroRow_ = retroCol_ = 0;
   retroTotal_ = 0;
@@ -2645,7 +2718,6 @@ bool Application::requestQuit() {
   cancelRetro_ = false;
   confirmCancel_ = true;
   confirmExit_ = true;
-  dialogFocus_ = 0;
   return false;
 }
 int Application::pickedOnTheWay(double &percent) const {
@@ -2892,7 +2964,6 @@ void Application::runningAction(Action a) {
     const int row = downloadsRow_ - 1;
     if (a == Action::Queue) {
       unqueueAsk_ = int(shown[size_t(row)]);
-      dialogFocus_ = 0;
     }
     if (a == Action::Accept) moveShown(row, true);
     if (a == Action::Search) moveShown(row, false);
@@ -2911,7 +2982,6 @@ void Application::runningAction(Action a) {
   if (a == Action::Queue && queueHeld_ && !installer_.running() && !retroDownloading() && !installQueue_.empty()) {
     unqueueAsk_ = 0;
     unqueuePick_ = false;
-    dialogFocus_ = 0;
     return;
   }
   if (a == Action::Queue && retroDownloading() && retroCancel_) return; // already stopping
@@ -2919,7 +2989,6 @@ void Application::runningAction(Action a) {
     cancelRetro_ = !installer_.running();
     confirmCancel_ = true;
     confirmExit_ = false;
-    dialogFocus_ = 0;
   }
 }
 // One place sooner. The rows trade turns (ids), which keep the order on the card.
@@ -2935,7 +3004,6 @@ void Application::moveUp(size_t index) {
 // The running one asks as its card on 진행 중 does; a waiting one asks for
 // its first file in the queue, and takes the rest of its pick along.
 void Application::askCancelPick(bool running) {
-  dialogFocus_ = 0;
   if (running) {
     cancelRetro_ = false;
     confirmCancel_ = true;
@@ -3290,10 +3358,13 @@ void Application::pollStorage() {
     // missing number means unknown, not "still loading".
     storageChecked_ = true;
   }
-  if (storageWorker_.joinable() || (storageAt_ && SDL_GetTicks() - storageAt_ <= 5000)) return;
+  if (storageWorker_.joinable() || (cardAsked_.empty() && storageAt_ && SDL_GetTicks() - storageAt_ <= 5000)) return;
   storageAt_ = std::max<uint32_t>(1, SDL_GetTicks());
-  std::vector<std::string> paths;
-  for (const auto &[path, there] : cardSeen_) paths.push_back(path);
+  // RetroArch from the first run on, so the retro screens open knowing it.
+  std::set<std::string> asked = std::exchange(cardAsked_, {});
+  asked.insert(retro::RetroArchApp);
+  for (const auto &[path, there] : cardSeen_) asked.insert(path);
+  std::vector<std::string> paths(asked.begin(), asked.end());
   const bool totals = !sdTotal_ || !nandTotal_;
   storageWorker_ = std::thread([this, paths = std::move(paths), totals, sd = sdRoot_, generation = cardGeneration_] {
     StorageFound found;
@@ -3317,15 +3388,14 @@ void Application::pollStorage() {
   });
 }
 void Application::cardChanged() {
-  cardSeen_.clear();
   ++cardGeneration_;
   storageAt_ = 0;
 }
-bool Application::cardHas(const std::string &path) const {
+std::optional<bool> Application::cardKnows(const std::string &path) const {
   const auto seen = cardSeen_.find(path);
   if (seen != cardSeen_.end()) return seen->second;
-  std::error_code ec;
-  return cardSeen_[path] = std::filesystem::exists(sdRoot_ + "/" + path, ec);
+  cardAsked_.insert(path);
+  return std::nullopt;
 }
 void Application::saveHistory() {
   if (!store_.isOpen())

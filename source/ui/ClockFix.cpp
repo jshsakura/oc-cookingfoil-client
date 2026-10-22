@@ -42,7 +42,6 @@ void Application::pollClock() {
       clockAskedAt_ = SDL_GetTicks();
       clockAsked_ = true;
       clockFix_ = ClockFix::Ask;
-      dialogFocus_ = 0;
     };
     clockDone_ = true;
   });
@@ -64,7 +63,6 @@ void Application::clockAction(Action a) {
         logLine(std::string(set.ok ? "clock set: " : "clock not set: ") + set.detail);
         if (!set.ok) {
           clockFix_ = ClockFix::Failed;
-          dialogFocus_ = 0;
           return;
         }
         clockFix_ = ClockFix::None;
@@ -83,7 +81,6 @@ void Application::clockAction(Action a) {
       clockFix_ = ClockFix::None;
       bugAsk_ = true;
       bugMessage_ = tr("The console clock could not be set.");
-      dialogFocus_ = 0;
     }
   }
 }

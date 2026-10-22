@@ -72,7 +72,7 @@ void Application::home() {
       paint_.skeleton(260, 300, 160, 28, 8);
       paint_.skeletonCards(260, 346, 6);
     };
-    if (stateWaiting_) {
+    if (stateWaiting_ || reloadWorker_.joinable()) {
       shape();
       return;
     }
@@ -106,7 +106,7 @@ void Application::home() {
     shape();
     return;
   }
-  constexpr int RowTop = 300, RowHeight = 283, Columns = 6;
+  constexpr int RowTop = 300, RowHeight = 268, Columns = 6;
   constexpr uint32_t HeroMs = 6000, HeroWaitMs = 6000;
   // What a slide draws: its backdrop (the admin banner or the blurred cover)
   // and the cover itself.
@@ -205,10 +205,11 @@ void Application::home() {
     const bool focused = !sidebar_ && row_ == int(n) + 1;
     // Icon and title share the row header's center line with "R 모두 보기".
     constexpr float HeaderMid = 17;
-    paint_.icon(themeIcon(row.theme), 260, y + HeaderMid - 13, Ink, 26);
+    const int named = Painter::iconNamed(row.icon); // the server's, for its own shelves
+    paint_.icon(named >= 0 ? named : themeIcon(row.theme), 260, y + HeaderMid - 13, Ink, 26);
     paint_.fonts.middle(row.theme.title, 296, y + HeaderMid, 26, Ink, true);
-    if (focused)
-      paint_.keyChip("R", tr("See all"), 1252, y + HeaderMid);
+    // Always shown: a finger may open any row's list, not only the focused one's.
+    paint_.keyChip("R", tr("See all"), 1252, y + HeaderMid);
     {
       // A finger gets the chip's size and a little more; pressed, the chip darkens.
       const float chipW = paint_.keyChipWidth("R", tr("See all"));
@@ -227,7 +228,7 @@ void Application::home() {
     for (int col = 0; col <= Columns && first + col <= count; ++col) {
       const float cx = 260 + 170 * (first + col - left), cy = y + 46;
       if (first + col < count) {
-        card(groups_[row.items[first + col]], cx, cy, focused && selected_ == first + col, false);
+        card(groups_[row.items[first + col]], cx, cy, focused && selected_ == first + col, true);
         continue;
       }
       // The shelf's last card: the whole list, which scrolls on and on.

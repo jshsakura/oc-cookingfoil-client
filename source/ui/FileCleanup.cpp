@@ -15,7 +15,7 @@ bool endsWith(const std::string &text, const std::string &end) {
   return text.size() >= end.size() && text.compare(text.size() - end.size(), end.size(), end) == 0;
 }
 // Files a download stopped part way leaves beside where it was going: an
-// app's or a retro game's .part (and its .resume note), and the record of
+// app's or a retro game's .part (and its .resume or .plan note), and the record of
 // an app's folder install. A patch keeps its own and settles them itself.
 std::vector<std::pair<std::string, uint64_t>> downloadPieces(const std::string &sd) {
   namespace fs = std::filesystem;
@@ -31,7 +31,8 @@ std::vector<std::pair<std::string, uint64_t>> downloadPieces(const std::string &
       }
       const bool record = it->path().parent_path().filename() == "resume" && name.rfind("homebrew-", 0) == 0 &&
                           endsWith(name, ".json");
-      if (!endsWith(name, ".part") && !endsWith(name, std::string(".part") + ResumeFile) && !record) continue;
+      if (!endsWith(name, ".part") && !endsWith(name, std::string(".part") + ResumeFile) &&
+          !endsWith(name, std::string(".part") + PlanFile) && !record) continue;
       std::error_code size;
       const auto bytes = it->file_size(size);
       out.push_back({it->path().string(), size ? 0 : uint64_t(bytes)});
@@ -64,7 +65,6 @@ bool Application::tidyPicked(int row) const {
 void Application::openFileCleanup() {
   tidyOpen_ = true;
   tidyRow_ = 0;
-  dialogFocus_ = 0;
   if (tidyBusy_) return; // a look still going: it shows when it ends
   tidyKnown_ = false;
   tidyOn_ = {true, true, false};

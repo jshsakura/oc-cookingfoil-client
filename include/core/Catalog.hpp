@@ -18,6 +18,11 @@ struct Group {
 };
 // The worst file check among a game's files (Item::integrity): 0, 1 or 2.
 int groupIntegrity(const Group &g);
+// A card's labels, most wanted first. The file's state is one label:
+// 손상 의심 or 수정됨 over 최신 버전 (its update is the newest the server
+// knows) or 업데이트.
+enum class CardLabel { KoreanPatch, RequiredPatch, Damaged, Modified, Latest, Update, Sale, Dlc };
+std::vector<CardLabel> cardLabels(const Group &g);
 // Genre key (the server's English name) -> name shown on screen.
 using GenreNames = std::map<std::string, std::string>;
 std::string genreLabel(const GenreNames &names, const std::string &key);
@@ -57,6 +62,7 @@ struct Theme {
 struct HomeTheme {
   Theme theme;
   std::vector<size_t> items;
+  std::string icon; // a server shelf's icon name; empty: picked from the theme
 };
 // A shelf holds this many, then a 모두 보기 card opens the full list.
 constexpr size_t HomeRowLimit = 30, HomeRowVisible = 6;

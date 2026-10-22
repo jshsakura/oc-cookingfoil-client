@@ -55,7 +55,13 @@ Parsed<retro::Page> retroGames(const Server &server, const State &state, const s
                     retro::filterQuery(filter);
   const auto response = fetch(server, state, path, reply, cancel);
   if (reply.error) return {{}, reply.error};
-  return {retro::parseGames(response.body, server.url), {}};
+  return {retro::parseGames(response.body, server.url, &reply.labels), {}};
+}
+Parsed<retro::FilterBook> retroFilters(const Server &server, const State &state, const std::string &system,
+                                       RetroReply &reply, const std::atomic<bool> *cancel) {
+  const auto response = fetch(server, state, "/api/retro/systems/" + query(system) + "/filters", reply, cancel);
+  if (reply.error) return {{}, reply.error};
+  return {retro::parseFilterBook(response.body), {}};
 }
 Parsed<retro::Detail> retroDetail(const Server &server, const State &state, const std::string &id, RetroReply &reply,
                                   const std::atomic<bool> *cancel) {
@@ -67,7 +73,13 @@ Parsed<std::vector<retro::Shelf>> retroHome(const Server &server, const State &s
                                              const std::atomic<bool> *cancel) {
   const auto response = fetch(server, state, "/api/retro/home?limit=20", reply, cancel);
   if (reply.error) return {{}, reply.error};
-  return {retro::parseHome(response.body, server.url), {}};
+  return {retro::parseHome(response.body, server.url, &reply.labels), {}};
+}
+Parsed<std::vector<retro::Theme>> retroThemes(const Server &server, const State &state, RetroReply &reply,
+                                              const std::atomic<bool> *cancel) {
+  const auto response = fetch(server, state, "/api/retro/themes?limit=12&rows=" + std::to_string(retro::ThemesShown), reply, cancel);
+  if (reply.error) return {{}, reply.error};
+  return {retro::parseThemes(response.body, server.url, &reply.labels), {}};
 }
 Parsed<retro::Pack> retroPack(const Server &server, const State &state, RetroReply &reply,
                               const std::atomic<bool> *cancel) {
@@ -136,9 +148,9 @@ bool retroFile(const Server &server, const State &state, const retro::PackFile &
   if (!rangedOk(got.response))
     return fail(trf("Could not get the file. HTTP {0}", {std::to_string(got.response.status)}));
   if (file.size && got.size != file.size) return fail(trf("The downloaded file has the wrong size: {0}", {file.path}));
-  std::filesystem::remove(target, ec);
-  std::filesystem::rename(part, target, ec);
-  if (ec) return fail(trf("Could not write the file: {0}", {file.path}));
+  // The old file goes only once the new one can take its place.
+  if (std::string reason; !replaceFile(part, target, reason))
+    return fail(trf("Could not write the file: {0}", {file.path}));
   std::filesystem::remove(partInfoPath(part), ec);
   return true;
 }

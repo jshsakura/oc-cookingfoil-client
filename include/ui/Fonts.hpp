@@ -9,6 +9,7 @@
 namespace foil::ui {
 class Fonts {
 public:
+  float scale() const { return scale_; } // screen pixels per layout pixel
   explicit Fonts(SDL_Renderer *renderer);
   ~Fonts();
   bool open();

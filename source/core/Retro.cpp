@@ -35,6 +35,32 @@ bool plainPath(const std::string &path) {
 } // namespace
 
 namespace {
+// A genre key: lower case letters, digits, - and _ (empty for anything else).
+std::string plainKey(json_object *value, bool theme = false) {
+  if (!json_object_is_type(value, json_type_string)) return {};
+  const std::string key = json_object_get_string(value);
+  return theme ? (themeIdText(key) ? key : "") : (keyText(key) ? key : "");
+}
+std::string encoded(const std::string &text) {
+  static const char *hex = "0123456789ABCDEF";
+  std::string out;
+  for (const unsigned char c : text) {
+    if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') out += char(c);
+    else {
+      out += '%';
+      out += hex[c >> 4];
+      out += hex[c & 15];
+    }
+  }
+  return out;
+}
+// One card per original title, the first (best rated) kept.
+void oneCardPerTitle(std::vector<Game> &games) {
+  std::set<std::string> seen;
+  games.erase(std::remove_if(games.begin(), games.end(),
+                             [&](const Game &g) { return !g.original.empty() && !seen.insert(g.original).second; }),
+              games.end());
+}
 // Empty id (or one with odd characters) means the entry is skipped.
 System parseSystem(json_object *object, const std::string &base) {
   System s;
@@ -82,6 +108,7 @@ Game parseGame(json_object *object, const std::string &base) {
   g.core = stringField(object, "core");
   g.original = stringField(object, "original");
   g.variant = stringField(object, "variant");
+  g.shortcutName = stringField(object, "shortcutName");
   g.region = region(object, "region");
   g.edition = edition(object);
   g.size = positive(object, "size");
@@ -114,6 +141,12 @@ Game parseGame(json_object *object, const std::string &base) {
       g.bezel = json_object_get_boolean(field(bezel, "generic")) ? Game::Bezel::System : Game::Bezel::Game;
   }
   g.achievements = achievements::parseSummary(field(object, "achievements"));
+  if (auto *genres = field(object, "genres"); json_object_is_type(genres, json_type_array))
+    for (size_t i = 0; i < json_object_array_length(genres) && g.genres.size() < 8; ++i)
+      if (const auto key = plainKey(json_object_array_get_idx(genres, i)); !key.empty()) g.genres.push_back(key);
+  g.players = int(std::clamp<int64_t>(integerField(object, "players"), 0, 99));
+  g.year = int(std::clamp<int64_t>(integerField(object, "year"), 0, 9999));
+  g.labels = labels::parseRefs(object, g.hasLabels);
   if (g.bundleUrl.empty()) g.id.clear();
   if (g.name.empty()) g.name = g.file;
   return g;
@@ -128,22 +161,11 @@ std::vector<Game> parseGameList(json_object *list, const std::string &base) {
 } // namespace
 
 std::string filterQuery(const Filter &f) {
-  static const char *hex = "0123456789ABCDEF";
-  std::string q;
-  for (const unsigned char c : f.query) {
-    if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') q += char(c);
-    else {
-      q += '%';
-      q += hex[c >> 4];
-      q += hex[c & 15];
-    }
-  }
-  std::string out = "&sort=" + (f.sort.empty() ? std::string("rating") : f.sort);
+  const auto q = encoded(f.query);
+  std::string out = "&sort=" + (keyText(f.sort) ? f.sort : std::string("rating"));
   if (!q.empty()) out += "&q=" + q;
-  if (f.minRating > 0) out += "&minRating=" + std::to_string(std::min(f.minRating, 100));
-  if (f.bezel) out += "&bezel=1";
-  if (f.minSize) out += "&minSize=" + std::to_string(f.minSize);
-  if (f.maxSize) out += "&maxSize=" + std::to_string(f.maxSize);
+  // Names and values were checked when the server's filters were read.
+  for (const auto &[name, value] : f.params) out += "&" + name + "=" + value;
   return out;
 }
 std::vector<System> parseSystems(const std::string &json, const std::string &base) {
@@ -156,11 +178,12 @@ std::vector<System> parseSystems(const std::string &json, const std::string &bas
     if (auto s = parseSystem(json_object_array_get_idx(list, i), base); !s.id.empty()) out.push_back(std::move(s));
   return out;
 }
-Page parseGames(const std::string &json, const std::string &base) {
+Page parseGames(const std::string &json, const std::string &base, labels::Book *book) {
   Page page;
   Error error;
   auto root = parseJson(json, error);
   if (!root) return page;
+  if (book) *book = labels::parseBook(root.get());
   page.total = int(std::max<int64_t>(integerField(root.get(), "total"), 0));
   page.page = int(std::max<int64_t>(integerField(root.get(), "page", 1), 1));
   page.pageSize = int(std::clamp<int64_t>(integerField(root.get(), "pageSize", 50), 1, 200));
@@ -217,21 +240,36 @@ std::string releaseLabel(int date) {
   if (text.compare(6, 2, "00") == 0) return text.substr(0, 4) + "." + text.substr(4, 2);
   return text.substr(0, 4) + "." + text.substr(4, 2) + "." + text.substr(6, 2);
 }
-std::vector<Shelf> parseHome(const std::string &json, const std::string &base) {
+std::vector<Shelf> parseHome(const std::string &json, const std::string &base, labels::Book *book) {
   std::vector<Shelf> out;
   Error error;
   auto root = parseJson(json, error);
+  if (root && book) *book = labels::parseBook(root.get());
   auto *list = root ? field(root.get(), "systems") : nullptr;
   if (!json_object_is_type(list, json_type_array)) return out;
   for (size_t i = 0; i < json_object_array_length(list) && out.size() < 200; ++i) {
     auto *object = json_object_array_get_idx(list, i);
     Shelf shelf{parseSystem(object, base), parseGameList(field(object, "games"), base)};
-    std::set<std::string> seen;
-    shelf.games.erase(std::remove_if(shelf.games.begin(), shelf.games.end(),
-                                     [&](const Game &g) { return !g.original.empty() && !seen.insert(g.original).second; }),
-                      shelf.games.end());
+    oneCardPerTitle(shelf.games);
     if (shelf.system.id.empty() || shelf.games.empty()) continue;
     out.push_back(std::move(shelf));
+  }
+  return out;
+}
+std::vector<Theme> parseThemes(const std::string &json, const std::string &base, labels::Book *book) {
+  std::vector<Theme> out;
+  Error error;
+  auto root = parseJson(json, error);
+  if (root && book) *book = labels::parseBook(root.get());
+  auto *list = root ? field(root.get(), "themes") : nullptr;
+  if (!json_object_is_type(list, json_type_array)) return out;
+  for (size_t i = 0; i < json_object_array_length(list) && out.size() < 64; ++i) {
+    auto *object = json_object_array_get_idx(list, i);
+    Theme theme{plainKey(field(object, "id"), true), stringField(object, "name"), parseGameList(field(object, "games"), base)};
+    oneCardPerTitle(theme.games);
+    if (const auto icon = stringField(object, "icon"); keyText(icon)) theme.icon = icon;
+    if (theme.id.empty() || theme.name.empty() || theme.games.empty()) continue;
+    out.push_back(std::move(theme));
   }
   return out;
 }
@@ -327,6 +365,21 @@ bool planByBundle(const PackPlan &plan, uint64_t bundleSize) {
   constexpr size_t BundleFrom = 50; // fewer files come one by one whatever their size
   return bundleSize && plan.fetch.size() >= BundleFrom && plan.bytes >= bundleSize / 2;
 }
+std::string regionName(const std::string &code) {
+  if (code == "kr") return tr("Korea|region");
+  if (code == "jp") return tr("Japan|region");
+  if (code == "us") return tr("North America|region");
+  if (code == "eu") return tr("Europe|region");
+  if (code == "asia") return tr("Asia|region");
+  if (code == "br") return tr("Brazil|region");
+  if (code == "world") return tr("World|region");
+  return code;
+}
+std::string shortcutName(const Game &game) {
+  if (!game.shortcutName.empty()) return game.shortcutName;
+  const auto tag = game.variants < 2 ? std::string() : !game.variant.empty() ? game.variant : regionName(game.region);
+  return tag.empty() ? game.name : game.name + " · " + tag;
+}
 std::string serializeGame(const Game &game) {
   Json root(json_object_new_object());
   const auto text = [&](const char *key, const std::string &value) {
@@ -339,6 +392,7 @@ std::string serializeGame(const Game &game) {
   text("core", game.core);
   text("original", game.original);
   text("variant", game.variant);
+  text("shortcutName", game.shortcutName);
   text("region", game.region);
   auto *edition = json_object_new_object();
   json_object_object_add(edition, "korean", json_object_new_boolean(game.edition.korean));
@@ -353,6 +407,7 @@ std::string serializeGame(const Game &game) {
   json_object_object_add(root.get(), "size", json_object_new_int64(int64_t(game.size)));
   json_object_object_add(root.get(), "forwarderSize", json_object_new_int64(int64_t(game.forwarderSize)));
   json_object_object_add(root.get(), "rating", json_object_new_int(game.rating));
+  json_object_object_add(root.get(), "variants", json_object_new_int(game.variants));
   auto *install = json_object_new_object();
   json_object_object_add(install, "rom", json_object_new_string(game.romPath.c_str()));
   json_object_object_add(install, "bezelPng", json_object_new_string(game.bezelPath.c_str()));
@@ -437,6 +492,60 @@ void orderGames(std::vector<Game> &games, const std::string &sort) {
   games = std::move(kept);
   sortGames(games, sort);
 }
+std::vector<Theme> mergeThemes(std::vector<std::pair<std::string, std::vector<Theme>>> lists) {
+  std::vector<Theme> themes;
+  std::map<std::string, size_t> at;
+  std::map<std::string, std::vector<std::pair<std::string, std::vector<Game>>>> parts;
+  for (auto &[server, list] : lists)
+    for (auto &theme : list) {
+      if (at.emplace(theme.id, themes.size()).second) themes.push_back({theme.id, theme.name, {}, theme.icon});
+      parts[theme.id].push_back({server, std::move(theme.games)});
+    }
+  for (auto &theme : themes) {
+    auto &part = parts[theme.id];
+    const bool one = part.size() == 1;
+    theme.games = tagged(std::move(part));
+    if (one) continue;
+    sortGames(theme.games, "rating");
+    oneCardPerTitle(theme.games);
+  }
+  return themes;
+}
+bool keyText(const std::string &key) {
+  return !key.empty() && key.size() <= 32 && key.front() != '-' && key.back() != '-' &&
+         key.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-") == std::string::npos;
+}
+bool themeIdText(const std::string &id) {
+  if (id.size() > 96) return false;
+  size_t from = 0;
+  for (size_t colon; (colon = id.find(':', from)) != std::string::npos; from = colon + 1)
+    if (!keyText(id.substr(from, colon - from))) return false;
+  return keyText(id.substr(from));
+}
+std::vector<Shelf> themeShelves(std::vector<Theme> themes, int shown) {
+  std::vector<Shelf> out;
+  for (auto &theme : spreadThemes(std::move(themes), shown))
+    out.push_back({{}, std::move(theme.games), std::move(theme.name), theme.id, theme.icon});
+  return out;
+}
+std::vector<Theme> spreadThemes(std::vector<Theme> themes, int rows, int perRow, int fewest) {
+  std::vector<Theme> out;
+  std::set<std::string> shown;
+  const auto key = [](const Game &g) { return g.original.empty() ? "id:" + g.id : "title:" + g.original; };
+  for (auto &theme : themes) {
+    if (int(out.size()) >= rows) break;
+    std::vector<Game> fresh;
+    for (auto &game : theme.games)
+      if (int(fresh.size()) < perRow && !shown.count("id:" + game.id) && !shown.count(key(game))) fresh.push_back(std::move(game));
+    if (int(fresh.size()) < fewest) continue;
+    for (const auto &game : fresh) {
+      shown.insert("id:" + game.id);
+      shown.insert(key(game));
+    }
+    out.push_back({theme.id, theme.name, std::move(fresh)});
+  }
+  return out;
+}
 std::vector<Shelf> mergeShelves(std::vector<std::pair<std::string, std::vector<Shelf>>> lists) {
   std::vector<Shelf> shelves;
   std::map<std::string, size_t> at;
@@ -454,10 +563,7 @@ std::vector<Shelf> mergeShelves(std::vector<std::pair<std::string, std::vector<S
     shelf.games = tagged(std::move(part));
     if (one) continue;
     sortGames(shelf.games, "rating");
-    std::set<std::string> originals;
-    shelf.games.erase(std::remove_if(shelf.games.begin(), shelf.games.end(),
-                                     [&](const Game &g) { return !g.original.empty() && !originals.insert(g.original).second; }),
-                      shelf.games.end());
+    oneCardPerTitle(shelf.games);
   }
   return shelves;
 }

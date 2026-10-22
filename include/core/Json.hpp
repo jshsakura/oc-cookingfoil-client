@@ -22,6 +22,10 @@ std::string readFile(const std::string& path);
 // an app, a patch or a ROM; scans of the card pass over them.
 bool systemJunk(const std::string& name);
 bool atomicWrite(const std::string& path, const std::string& contents, std::string& error);
+// `from` (a finished file) takes the place of `to`, never leaving neither:
+// the console's card refuses to rename over a file, so the old one is moved
+// aside first and dropped after.
+bool replaceFile(const std::string& from, const std::string& to, std::string& error);
 // mkdir -p that stops at a device root ("sdmc:"): std::filesystem::create_directories
 // takes "sdmc:" for a folder on the console and fails before making any.
 bool makeDirectories(const std::string& path);

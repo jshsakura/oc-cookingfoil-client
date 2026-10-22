@@ -135,6 +135,7 @@ int main(int argc, char **argv) {
   foil::openLog("out/host.log");
   std::vector<foil::Item> items;
   foil::net::NameTable genres;
+  foil::labels::Book labelBook;
   foil::Server server;
   std::unique_ptr<foil::net::Session> liveSession;
   if (!configPath.empty()) {
@@ -185,6 +186,7 @@ int main(int argc, char **argv) {
     }
     items = std::move(parsed.value);
     genres = foil::net::parseNameTable(foil::readFile(fixture + "/sections.json"), "genres");
+    labelBook = foil::net::parseCatalog(foil::readFile(fixture + "/sections.json")).value.labels;
     std::cout << "Fixture items: " << items.size() << '\n';
   }
   const bool offscreen = !shot.empty() || servePort;
@@ -217,6 +219,8 @@ int main(int argc, char **argv) {
     ui.setSession(std::move(liveSession));
   if (!genres.empty())
     ui.setGenreTable(std::move(genres));
+  if (!labelBook.empty())
+    ui.setLabelBook(std::move(labelBook));
   if (!pending && appConfig.empty()) // with --app-config the app reads its own list
     ui.setItems(std::move(items));
   if (!language.empty())

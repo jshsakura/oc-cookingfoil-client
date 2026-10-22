@@ -22,4 +22,8 @@ public:
   // Closes and removes the file an unfinished entry was writing.
   virtual void abandon() = 0;
 };
+// Where a file is written before it takes the place of `target`: beside it,
+// under a short plain name (a long or non-ASCII name with ".part" added
+// could not be created on the console), ending in .part for 파일 정리.
+std::string writingPart(const std::string &target);
 } // namespace foil

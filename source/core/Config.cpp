@@ -6,6 +6,7 @@
 #include <curl/curl.h>
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <filesystem>
 #include "core/Log.hpp"
 #include <fstream>
@@ -55,6 +56,36 @@ std::string originOf(const std::string& url) {
     if (!port.empty()) result += ":" + port;
     curl_url_cleanup(h);
     return result;
+}
+namespace {
+bool privateIpv4(const std::string& host) {
+    unsigned a = 0, b = 0, c = 0, d = 0;
+    char tail = 0;
+    if (std::sscanf(host.c_str(), "%u.%u.%u.%u%c", &a, &b, &c, &d, &tail) != 4 || a > 255 || b > 255 || c > 255 || d > 255)
+        return false;
+    return a == 10 || a == 127 || (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168) ||
+           (a == 169 && b == 254) || (a == 100 && b >= 64 && b <= 127);
+}
+bool endsWith(const std::string& text, const std::string& tail) {
+    return text.size() >= tail.size() && text.compare(text.size() - tail.size(), tail.size(), tail) == 0;
+}
+}
+bool plainHttpOverInternet(const std::string& url) {
+    auto* h = curl_url();
+    if (!h || curl_url_set(h, CURLUPART_URL, url.c_str(), 0) != CURLUE_OK) { if (h) curl_url_cleanup(h); return false; }
+    const auto scheme = lower(urlPart(h, CURLUPART_SCHEME));
+    auto host = lower(urlPart(h, CURLUPART_HOST));
+    curl_url_cleanup(h);
+    if (scheme != "http" || host.empty()) return false;
+    if (host.front() == '[') { // IPv6: loopback, unique local (fc00::/7), link-local (fe80::/10)
+        const auto inner = host.substr(1, host.find(']') - 1);
+        return !(inner == "::1" || inner.rfind("fc", 0) == 0 || inner.rfind("fd", 0) == 0 || inner.rfind("fe8", 0) == 0 ||
+                 inner.rfind("fe9", 0) == 0 || inner.rfind("fea", 0) == 0 || inner.rfind("feb", 0) == 0);
+    }
+    if (privateIpv4(host) || host == "localhost" || host.find('.') == std::string::npos) return false;
+    for (const char* home : {".local", ".lan", ".home", ".home.arpa", ".internal", ".localhost"})
+        if (endsWith(host, home)) return false;
+    return true;
 }
 Parsed<Config> parseConfig(const std::string& json) {
     Parsed<Config> result;

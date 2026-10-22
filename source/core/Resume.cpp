@@ -75,7 +75,8 @@ std::string serializePartInfo(const PartInfo &info) {
     return value.find_first_of("\r\n") == std::string::npos ? std::string(key) + "=" + value + "\n" : "";
   };
   return line("url", info.url) + line("tag", info.tag) + line("etag", info.etag) +
-         line("size", std::to_string(info.size)) + line("offset", std::to_string(info.offset));
+         line("size", std::to_string(info.size)) + line("offset", std::to_string(info.offset)) +
+         (info.plan.empty() ? "" : line("plan", info.plan));
 }
 PartInfo parsePartInfo(const std::string &text) {
   PartInfo info;
@@ -96,6 +97,8 @@ PartInfo parsePartInfo(const std::string &text) {
       info.tag = value;
     else if (key == "etag")
       info.etag = value;
+    else if (key == "plan")
+      info.plan = value;
     else if (key == "size" || key == "offset") {
       const auto parsed = number(value);
       if (!parsed)
@@ -106,6 +109,7 @@ PartInfo parsePartInfo(const std::string &text) {
   return info;
 }
 std::string partInfoPath(const std::string &part) { return part + ResumeFile; }
+std::string partPlanPath(const std::string &part) { return part + PlanFile; }
 bool samePart(const PartInfo &kept, const PartInfo &wanted) {
   if (kept.url.empty() || kept.url != wanted.url || kept.size != wanted.size || kept.tag != wanted.tag)
     return false;

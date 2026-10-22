@@ -4,6 +4,8 @@
 #include "core/Achievements.hpp"
 #include "core/Types.hpp"
 #include "core/Votes.hpp"
+#include "core/Labels.hpp"
+#include "core/RetroFilters.hpp"
 #include <map>
 namespace foil::retro {
 struct System {
@@ -24,6 +26,9 @@ struct Game {
   } edition;
   // Its HOME Menu shortcut: a small NSP that starts the game's core and ROM.
   std::string forwarderUrl, forwarderTitleId;
+  // Its name on the HOME Menu, as the server names its shortcut (with what
+  // tells its versions apart); empty from an older server.
+  std::string shortcutName;
   uint64_t forwarderSize = 0;
   std::string romPath;   // where the bundle puts the ROM, SD-root relative
   std::string bezelPath; // and the bezel picture, when it has one
@@ -38,6 +43,14 @@ struct Game {
   enum class Bezel { None, System, Game } bezel = Bezel::None;
   // Its RetroAchievements match; count 0 when it has none.
   achievements::Summary achievements;
+  // What the server knows of it, for its tile: genre keys (named by the
+  // facets or themes that carry them), most players at once, release year.
+  std::vector<std::string> genres;
+  int players = 0, year = 0;
+  // The server's labels for its card, in order (core/Labels.hpp); hasLabels
+  // false: an older server, the client words them itself.
+  bool hasLabels = false;
+  std::vector<labels::Ref> labels;
   // The configured server it came from (its url), and the others holding
   // the same game (same id): never serialized, the queue keeps its own.
   std::string server;
@@ -68,14 +81,9 @@ struct Detail {
 // What the system list asks the server for: search words, order, and the
 // filter popup's conditions (0 / false: not set).
 struct Filter {
-  std::string query, sort = "rating"; // rating, name, size (largest first), added
-  int minRating = 0;
-  bool bezel = false; // a bezel made for the game, not the system's default
-  uint64_t minSize = 0, maxSize = 0;
-  bool operator==(const Filter &o) const {
-    return query == o.query && sort == o.sort && minRating == o.minRating && bezel == o.bezel &&
-           minSize == o.minSize && maxSize == o.maxSize;
-  }
+  std::string query, sort = "rating"; // sort: a key from the server's sorts
+  Params params;                      // the picked filters' (pickParams)
+  bool operator==(const Filter &o) const { return query == o.query && sort == o.sort && params == o.params; }
   bool operator!=(const Filter &o) const { return !(*this == o); }
 };
 // The query string for /api/retro/games after system and page.
@@ -86,8 +94,23 @@ struct Page {
 };
 // One row of the retro home: a system and its best rated games.
 struct Shelf {
-  System system;
+  System system; // empty on a theme row
   std::vector<Game> games;
+  std::string theme;   // a theme row's name (/api/retro/themes), above the systems'
+  std::string themeId; // its id: genre:action, decade:1990, coop…
+  std::string icon;    // the icon the server names for a theme row; empty: the client's pick
+};
+// The keys agreed with the server: lower-case letters, digits and inner
+// hyphens (action, board-game, kr); a theme id is keys joined by colons
+// (decade:1990:genre:rpg). Anything else is not a key and is dropped.
+bool keyText(const std::string &key);
+bool themeIdText(const std::string &id);
+// A row across systems (/api/retro/themes): a genre or another theme the
+// server picked, named in the asked language.
+struct Theme {
+  std::string id, name;
+  std::vector<Game> games;
+  std::string icon; // a name from the client's icon set, when the server gives one
 };
 // Several servers' replies as one; each list in the servers' order, as
 // {server url, its part}. A game on several (same id) is listed once from
@@ -101,6 +124,20 @@ void orderGames(std::vector<Game> &games, const std::string &sort);
 // games best rated first with one card per original title, and its count
 // the sum of the servers' (an upper bound when they share games).
 std::vector<Shelf> mergeShelves(std::vector<std::pair<std::string, std::vector<Shelf>>> lists);
+// Theme rows join by id in the order they first appear, their games best
+// rated first with one card per original title.
+std::vector<Theme> mergeThemes(std::vector<std::pair<std::string, std::vector<Theme>>> lists);
+// The theme rows the home shows: a game (by id or original title) only in
+// the first row that has it, a row left with fewer than `fewest` games
+// dropped, at most `rows` rows of `perRow` games. Few, varied, never long.
+constexpr int ThemeRows = 6, ThemeGames = 12, ThemeFewest = 6;
+// The first `shown` rows spreadThemes keeps, in the server's order, as
+// shelves above the systems'. Which rows and when they change is the
+// server's (it picks and rotates them); the client only draws.
+constexpr int ThemesShown = 6; // as many as the server makes, up to six
+std::vector<Shelf> themeShelves(std::vector<Theme> themes, int shown = ThemesShown);
+std::vector<Theme> spreadThemes(std::vector<Theme> themes, int rows = ThemeRows, int perRow = ThemeGames,
+                                int fewest = ThemeFewest);
 struct PackFile {
   std::string path, sha256, url;
   uint64_t size = 0;
@@ -115,10 +152,13 @@ struct Pack {
 // URLs come as shop paths ("/api/...") or full http(s) addresses; `base`
 // is the shop address used for the former. Anything else is dropped.
 std::vector<System> parseSystems(const std::string &json, const std::string &base = "");
-Page parseGames(const std::string &json, const std::string &base);
+// `book`, when given, takes the reply's label dictionary.
+Page parseGames(const std::string &json, const std::string &base, labels::Book *book = nullptr);
 // /api/retro/home: systems without games are left out, and versions of one
 // game (the same `original`) take one card, the best rated first.
-std::vector<Shelf> parseHome(const std::string &json, const std::string &base = "");
+std::vector<Shelf> parseHome(const std::string &json, const std::string &base = "", labels::Book *book = nullptr);
+// /api/retro/themes: themes without a name or games are left out.
+std::vector<Theme> parseThemes(const std::string &json, const std::string &base = "", labels::Book *book = nullptr);
 // One game in the server's own shape, for 다운로드's history (다시 시도).
 std::string serializeGame(const Game &game);
 Game parseGameJson(const std::string &json);
@@ -136,6 +176,11 @@ bool bundlePathAllowed(const std::string &path);
 std::string bundleFailure(long status, bool game);
 // 19900227 -> "1990.02.27"; a month or day the server does not know (00) is left off.
 std::string releaseLabel(int date);
+// A region code ("jp") in the interface language; an unknown code as it is.
+std::string regionName(const std::string &code);
+// The name a shortcut made on the console takes: the server's, else the
+// game's with its version or region when the server has more than one.
+std::string shortcutName(const Game &game);
 // The name shown for a system in the interface language.
 std::string systemName(const System &system, const std::string &languageCode);
 // Where the RetroArch app is expected (the forwarder chainloads it).

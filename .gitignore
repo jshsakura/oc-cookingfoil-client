@@ -34,3 +34,6 @@ __pycache__/
 /deps/
 /cookingfoil.nro.sig.json
 /scripts/ship.env
+# The maintainer's own build and server copy; releases are tags (docs/CONTRIBUTING-GUIDE.md).
+/scripts/ship.sh
+/scripts/ship.env.example

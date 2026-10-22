@@ -499,11 +499,12 @@ void Application::dropboxTab() {
     paint_.rect(1230 - bw, y + 22, bw, 40, focused ? Butter : Ground, 12);
     paint_.fonts.middle(unlink, 1230 - bw + 18, y + 42, 17, Ink, true);
   }
-  // Nothing at all to list yet: the console may still be reading its games.
+  // Nothing to list yet: while Dropbox's list or the console's games are
+  // still coming, that is loading, not "none".
   if (rows.empty()) {
     const float y = ListTop + RowStep - top * RowStep;
     const bool withConsole = DropboxView(savesSort_[2]) == DropboxView::WithConsole;
-    if (installed_.games.empty() && dropboxRemote_.empty() && deviceBusy_)
+    if (!dropboxListed_ || dropboxBusy_ == "list" || deviceBusy_)
       for (int n = 0; n + 1 < Visible; ++n) paint_.skeleton(260, y + n * RowStep, 992, RowHeight, 16);
     else if (!savesQuery_.empty())
       paint_.fonts.text(trf("No games match '{0}'.", {savesQuery_}), 290, y + 20, 19, Secondary);

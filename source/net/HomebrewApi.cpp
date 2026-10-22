@@ -4,6 +4,7 @@
 #include "net/Api.hpp"
 #include "net/Ranged.hpp"
 #include "platform/Storage.hpp"
+#include <map>
 #include <set>
 #include <algorithm>
 #include "core/Log.hpp"
@@ -81,10 +82,9 @@ bool fetchFile(const Server &server, const State &state, const std::string &url,
   // and name are at the end, which a broken write would lose).
   if (sha256.empty() && path.size() > 4 && path.compare(path.size() - 4, 4, ".nro") == 0 && !platform::wholeNro(part))
     return fail(tr("The downloaded file does not match the server's. Try again."));
-  std::filesystem::remove(target, ec);
-  ec.clear();
-  std::filesystem::rename(part, target, ec);
-  if (ec) return fail(trf("Could not write the file: {0}", {path}) + " (" + ec.message() + ")");
+  // The old file goes only once the new one can take its place.
+  if (std::string reason; !replaceFile(part, target, reason))
+    return fail(trf("Could not write the file: {0}", {path}) + " (" + reason + ")");
   std::filesystem::remove(partInfoPath(part), ec);
   return true;
 }
@@ -103,11 +103,13 @@ bool fetchBundle(const Server &server, const State &state, const homebrew::App &
                  const std::atomic<bool> *cancel, bool &unusable) {
   unusable = false;
   std::set<std::string> listed;
+  std::map<std::string, const homebrew::File *> byPath;
   PartInfo wanted;
   wanted.url = app.bundleUrl;
   Sha256 list;
   for (const auto &file : app.files) {
     listed.insert(file.path);
+    byPath[file.path] = &file;
     wanted.size += file.size;
     list.update(file.path.data(), file.path.size());
     list.update(file.sha256.data(), file.sha256.size());
@@ -117,11 +119,22 @@ bool fetchBundle(const Server &server, const State &state, const homebrew::App &
   const auto kept = parsePartInfo(readFile(record));
   const uint64_t from = samePart(kept, wanted) ? kept.offset : 0;
   if (from) logLine("homebrew " + app.id + " resumes at " + std::to_string(from >> 20) + " MB");
+  // Each file the stream writes is held against the list as it ends.
+  std::set<std::string> arrived;
   const auto fetch = rangedTar(app.bundleUrl, downloadHeaders(server, state, app.bundleUrl), from, from ? kept.etag : "",
       [&](uint64_t) {
         auto writer = std::make_unique<TarWriter>(sd, [&listed](const std::string &path) { return listed.count(path) > 0; });
         // Files already on the card as listed are read past, not written again.
         writer->skip([&onCard](const std::string &path) { return onCard.count(path) > 0; });
+        writer->check([&byPath, &arrived](const std::string &path, uint64_t size, const std::string &sha256) {
+          const auto *file = byPath.at(path);
+          if ((file->size && size != file->size) || (!file->sha256.empty() && sha256 != file->sha256)) {
+            logLine("homebrew bundle: " + path + " is not the listed file");
+            return false;
+          }
+          arrived.insert(path);
+          return true;
+        });
         return writer;
       },
       [&](uint64_t boundary, const std::string &etag) {
@@ -152,6 +165,15 @@ bool fetchBundle(const Server &server, const State &state, const homebrew::App &
     return fail(trf("Could not get the file. HTTP {0}", {std::to_string(fetch.response.status)}), false);
   }
   if (!fetch.complete) return fail(tr("The download was interrupted. Download it again."), true);
+  // Every listed file is on the card as listed: kept, written now, or (on a
+  // resume) written before the cut and read back here.
+  for (const auto &file : app.files)
+    if (!onCard.count(file.path) && !arrived.count(file.path) &&
+        !(from && alreadyThere(sd + "/" + file.path, file.size, file.sha256, cancel, nullptr))) {
+      logLine("homebrew bundle: " + file.path + " missing");
+      unusable = true;
+      return fail(tr("The downloaded file does not match the server's. Try again."), false);
+    }
   std::filesystem::remove(record, ec);
   return true;
 }

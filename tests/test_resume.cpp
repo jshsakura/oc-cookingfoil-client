@@ -1,4 +1,5 @@
 #include "Test.hpp"
+#include "core/ClientUpdate.hpp"
 #include "core/Json.hpp"
 #include "core/Patches.hpp"
 #include "core/Resume.hpp"
@@ -244,6 +245,48 @@ int runResumeTests() {
   int failures = 0;
   using foil::RangeReply;
   {
+    // An update over files already on the card: a file is replaced only once
+    // it is whole and checked. Cut short, or refused, the old one stays and
+    // nothing is left beside it.
+    const auto root = fs::temp_directory_path() / ("cf-replace-" + std::to_string(getpid()));
+    fs::remove_all(root);
+    fs::create_directories(root / "switch/app");
+    const std::string path = "switch/app/app.nro", fresh = body(5000, 'n');
+    const auto onCard = (root / path).string();
+    const auto leftovers = [&] {
+      int n = 0;
+      for (const auto &entry : fs::directory_iterator(root / "switch/app"))
+        n += entry.path().filename() != "app.nro";
+      return n;
+    };
+    const auto allow = [](const std::string &) { return true; };
+    const std::string data = archive({{path, fresh}});
+    std::string ignored;
+    CHECK(foil::atomicWrite(onCard, "old build", ignored));
+    {
+      foil::TarWriter cut(root.string(), allow);
+      CHECK(feedAll(cut, data, 0, 512 + 2000));
+      cut.abandon();
+    }
+    CHECK(foil::readFile(onCard) == "old build" && leftovers() == 0);
+    {
+      foil::TarWriter refused(root.string(), allow);
+      refused.check([](const std::string &, uint64_t, const std::string &) { return false; });
+      CHECK(!feedAll(refused, data, 0, data.size()));
+    }
+    CHECK(foil::readFile(onCard) == "old build" && leftovers() == 0);
+    {
+      foil::TarWriter whole(root.string(), allow);
+      CHECK(feedAll(whole, data, 0, data.size()) && whole.finish());
+    }
+    CHECK(foil::readFile(onCard) == fresh && leftovers() == 0);
+    // replaceFile: the new file in the old one's place, nothing beside it.
+    CHECK(foil::atomicWrite(onCard + ".new", "next", ignored));
+    CHECK(foil::replaceFile(onCard + ".new", onCard, ignored));
+    CHECK(foil::readFile(onCard) == "next" && leftovers() == 0);
+    fs::remove_all(root);
+  }
+  {
     // What a resumed request asks for, past 4 GiB too.
     CHECK(foil::rangeHeaders(0, "\"h\"").empty());
     const auto headers = foil::rangeHeaders(FiveGiB, "\"abc123\"");
@@ -270,7 +313,7 @@ int runResumeTests() {
   }
   {
     // The sidecar: a round trip with 64-bit numbers, and when a part resumes.
-    foil::PartInfo wanted{"https://h/a.nro", "sha", "", 6ull << 30, 0};
+    foil::PartInfo wanted{"https://h/a.nro", "sha", "", 6ull << 30, 0, ""};
     auto kept = wanted;
     kept.etag = "\"sha\"";
     kept.offset = FiveGiB;
@@ -285,7 +328,7 @@ int runResumeTests() {
     CHECK(foil::partResumeAt(kept, wanted, (6ull << 30) + 1) == 0);
     CHECK(foil::partResumeAt(foil::PartInfo{}, wanted, 10) == 0);
     // Nothing to tell a changed file by: never resumed.
-    foil::PartInfo bare{"https://h/a.nro", "", "", 0, 0};
+    foil::PartInfo bare{"https://h/a.nro", "", "", 0, 0, ""};
     CHECK(foil::partResumeAt(bare, bare, 10) == 0);
     auto validated = bare;
     validated.etag = "\"e\"";
@@ -377,7 +420,7 @@ int runResumeTests() {
     });
     const auto part = (root / "token.part").string();
     std::atomic<uint64_t> received{0};
-    foil::PartInfo wanted{server.url + "/f", "", "", server.body.size(), 0};
+    foil::PartInfo wanted{server.url + "/f", "", "", server.body.size(), 0, ""};
     const auto got = foil::net::fetchPart(server.url + "/f", {"Authorization: Bearer stale"}, part, wanted, true,
                                           received, nullptr);
     server.thread.join();
@@ -417,7 +460,7 @@ int runResumeTests() {
     server.start(64);
     const auto part = (root / "parallel.part").string();
     std::atomic<uint64_t> received{0};
-    foil::PartInfo wanted{server.url + "/f", "", "", server.body.size(), 0};
+    foil::PartInfo wanted{server.url + "/f", "", "", server.body.size(), 0, ""};
     const auto got = foil::net::fetchPart(server.url + "/f", {}, part, wanted, true, received, nullptr);
     server.thread.join();
     CHECK(foil::net::rangedOk(got.response) && got.size == server.body.size());
@@ -430,6 +473,67 @@ int runResumeTests() {
     foil::net::dropPart(part);
   }
   {
+    // A big file stopped part way (here cancelled after its first 2 MB) keeps
+    // its parts: the next try asks only for the rest and lands it whole.
+    Mock server;
+    server.body = body(6u << 20, 'q');
+    const uint64_t cut = 2u << 20;
+    std::atomic<bool> cancel{false};
+    server.answer = [&](int index) -> std::string {
+      if (index == 0)
+        return "HTTP/1.1 206 Partial Content\r\nConnection: close\r\nETag: " + server.etag +
+               "\r\nContent-Range: bytes 0-" + std::to_string(server.body.size() - 1) + "/" +
+               std::to_string(server.body.size()) + "\r\nContent-Length: " + std::to_string(server.body.size()) +
+               "\r\n\r\n" + server.body.substr(0, cut);
+      if (index == 1) {
+        cancel = true; // asked for the rest: stopped there
+        return "HTTP/1.1 503 Busy\r\nConnection: close\r\nRetry-After: 1\r\nContent-Length: 0\r\n\r\n";
+      }
+      return "";
+    };
+    server.idleMs = 20000;
+    server.start(3);
+    const auto part = (root / "parts.part").string();
+    foil::PartInfo wanted{server.url + "/f", "", "", server.body.size(), 0, ""};
+    std::atomic<uint64_t> received{0};
+    const auto stopped = foil::net::fetchPart(server.url + "/f", {}, part, wanted, true, received, &cancel);
+    CHECK(foil::net::keepPart(stopped) && stopped.keptPlan && received == 0);
+    CHECK(fs::exists(foil::partPlanPath(part)) && !fs::exists(foil::partInfoPath(part)));
+    cancel = false;
+    const auto got = foil::net::fetchPart(server.url + "/f", {}, part, wanted, true, received, &cancel);
+    server.thread.join();
+    CHECK(foil::net::rangedOk(got.response) && foil::readFile(part) == server.body && received == server.body.size());
+    foil::Sha256 sha;
+    sha.update(server.body.data(), server.body.size());
+    CHECK(got.sha256 == sha.hex() && !fs::exists(foil::partPlanPath(part)));
+    CHECK(server.requests.size() == 3 && rangeOf(server.requests[2]) == std::to_string(cut) + "-" + std::to_string(server.body.size() - 1));
+    CHECK(server.requests.size() == 3 && server.requests[2].find("If-Range: " + server.etag) != std::string::npos);
+      foil::net::dropPart(part);
+    }
+    {
+    // Big enough to come in two parts at once: the second lands out of
+    // order, so the hash takes the first as it comes and reads back the rest.
+    Mock server;
+    server.body = body(80u << 20, 'r');
+    for (size_t i = 0; i < server.body.size(); i += 4096)
+      server.body[i] = char(i / 4096); // a part in the wrong place would show
+    server.idleMs = 3000;
+    server.start(64);
+    const auto part = (root / "split.part").string();
+    std::atomic<uint64_t> received{0};
+    foil::PartInfo wanted{server.url + "/f", "", "", server.body.size(), 0};
+    const auto got = foil::net::fetchPart(server.url + "/f", {}, part, wanted, true, received, nullptr);
+    server.thread.join();
+    foil::Sha256 sha;
+    sha.update(server.body.data(), server.body.size());
+    CHECK(foil::net::rangedOk(got.response) && got.sha256 == sha.hex());
+    size_t asked = 0;
+    for (const auto &request : server.requests)
+      asked += rangeOf(request).rfind("0-", 0) != 0;
+    CHECK(asked > 0); // a part that starts past 0 was asked for: it did come split
+    foil::net::dropPart(part);
+  }
+  {
     // End to end: a file cut off mid-transfer continues with a Range ask.
     Mock server;
     server.body = body(300000, 'f');
@@ -437,7 +541,7 @@ int runResumeTests() {
     server.start(2);
     const auto part = (root / "file.part").string();
     std::atomic<uint64_t> received{0};
-    foil::PartInfo wanted{server.url + "/f", "", "", server.body.size(), 0};
+    foil::PartInfo wanted{server.url + "/f", "", "", server.body.size(), 0, ""};
     const auto got = foil::net::fetchPart(server.url + "/f", {}, part, wanted, true, received, nullptr);
     server.thread.join();
     CHECK(foil::net::rangedOk(got.response) && got.size == server.body.size());
@@ -455,7 +559,7 @@ int runResumeTests() {
     const auto part = (root / "kept.part").string();
     std::string ignored;
     foil::atomicWrite(part, server.body.substr(0, 20000), ignored);
-    foil::PartInfo wanted{server.url + "/g", "", "", server.body.size(), 0};
+    foil::PartInfo wanted{server.url + "/g", "", "", server.body.size(), 0, ""};
     auto kept = wanted;
     kept.etag = server.etag;
     foil::atomicWrite(foil::partInfoPath(part), foil::serializePartInfo(kept), ignored);
@@ -489,7 +593,7 @@ int runResumeTests() {
     server.start(2);
     const auto part = (root / "norange.part").string();
     std::atomic<uint64_t> received{0};
-    foil::PartInfo wanted{server.url + "/i", "", "", server.body.size(), 0};
+    foil::PartInfo wanted{server.url + "/i", "", "", server.body.size(), 0, ""};
     const auto got = foil::net::fetchPart(server.url + "/i", {}, part, wanted, true, received, nullptr);
     server.thread.join();
     CHECK(foil::net::rangedOk(got.response) && foil::readFile(part) == server.body);
@@ -535,7 +639,7 @@ int runResumeTests() {
     std::string ignored;
     foil::atomicWrite(second + "/" + files[0].path, files[0].body, ignored);
     foil::atomicWrite(second + "/" + files[1].path, "half written", ignored);
-    foil::PartInfo saved{later.url + "/api/patches/p1/download", "abc123", later.etag, data.size(), firstEnd};
+    foil::PartInfo saved{later.url + "/api/patches/p1/download", "abc123", later.etag, data.size(), firstEnd, ""};
     foil::atomicWrite(second + "/" + foil::ResumeFile, foil::serializePartInfo(saved), ignored);
     received = 0;
     CHECK(next.downloadPatch(patch, second, received, error));
@@ -569,7 +673,7 @@ int runResumeTests() {
       foil::homebrew::File file;
       file.path = f.path;
       file.size = f.body.size();
-      file.sha256 = std::string(64, 'a');
+      file.sha256 = foil::update::sha256Hex(f.body);
       app.files.push_back(file);
     }
     foil::Server server;
@@ -586,6 +690,33 @@ int runResumeTests() {
     // (which parent folders a server lists is its own choice).
     const auto estimate = foil::homebrew::bundleSize(app);
     CHECK(estimate + 4096 >= mock.body.size() && estimate <= mock.body.size() + 4096);
+    fs::remove_all(sd);
+  }
+  for (const bool missing : {false, true}) {
+    // A bundle whose file is not the one the list names, or lacks it: the
+    // file is taken by itself instead, and the card ends as the list says.
+    const auto sd = fs::temp_directory_path() / ("cf-bundle-check-" + std::to_string(getpid()));
+    fs::remove_all(sd);
+    fs::create_directories(sd);
+    const std::string good = body(3000, 'g');
+    const auto path = std::string("switch/pk/data.bin");
+    const std::vector<File> other{{path, body(3000, 'e')}};
+    Mock mock;
+    mock.paths["/api/homebrew/pk/bundle"] = missing ? std::string(1024, '\0') : archive(other);
+    mock.paths["/api/homebrew/pk/data"] = good;
+    mock.start(2);
+    foil::homebrew::App app;
+    app.id = "pk";
+    app.bundleUrl = mock.url + "/api/homebrew/pk/bundle";
+    app.files.push_back({path, foil::update::sha256Hex(good), mock.url + "/api/homebrew/pk/data", good.size()});
+    foil::Server server;
+    server.url = mock.url;
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(foil::net::homebrewDownload(server, foil::State{}, app, sd.string(), received, error, nullptr));
+    mock.thread.join();
+    CHECK(mock.requests.size() == 2);
+    CHECK(foil::readFile((sd / path).string()) == good);
     fs::remove_all(sd);
   }
   {

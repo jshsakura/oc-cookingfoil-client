@@ -21,6 +21,15 @@ void setHostInstall(std::function<void(const Item &)> run);
 namespace foil::platform {
 void setHostSpace(uint64_t bytes);
 }
+// reload() from the drawing thread reads the card on a worker; frames apply
+// it, as on the console.
+static void settle(foil::ui::Application &app) {
+  for (int frame = 0; frame < 400 && app.reloading(); ++frame) {
+    SDL_Delay(5);
+    app.render();
+  }
+  app.render();
+}
 int runUiTests(SDL_Renderer *renderer) {
   int failures = 0;
   {
@@ -160,11 +169,11 @@ int runUiTests(SDL_Renderer *renderer) {
     app.drag(0, -120);
     app.render();
     CHECK(app.gliding());
-    CHECK(app.glidePos() > 0.4f && app.glidePos() < 0.6f); // 120px of a 240px row
+    CHECK(app.glidePos() > 0.4f && app.glidePos() < 0.6f); // 120px of a row (CardRowStep)
     CHECK(app.selectedName() == before);
     // Pulled far past the top it stretches at most 90px, then springs back.
     app.drag(0, 2000);
-    CHECK(app.glidePos() < 0 && app.glidePos() * 240 >= -90.5f);
+    CHECK(app.glidePos() < 0 && app.glidePos() * foil::ui::CardRowStep >= -90.5f);
     app.dragEnd(0, 0);
     for (int i = 0; i < 60; ++i) { SDL_Delay(5); app.render(); }
     CHECK(app.glidePos() == 0);
@@ -188,7 +197,7 @@ int runUiTests(SDL_Renderer *renderer) {
     // Pushed past the top it stretches a little, as under a finger, and
     // springs back once the stick is let go.
     app.stick(-1, 3.0f);
-    CHECK(app.glidePos() < 0 && app.glidePos() * 240 >= -90.5f);
+    CHECK(app.glidePos() < 0 && app.glidePos() * foil::ui::CardRowStep >= -90.5f);
     for (int i = 0; i < 80; ++i) { SDL_Delay(5); app.render(); }
     CHECK(app.glidePos() == 0);
     app.action(foil::ui::Action::Left);
@@ -750,6 +759,7 @@ int runUiTests(SDL_Renderer *renderer) {
     reload.setItems(parsed.value);
     CHECK(reload.groupCount() == 13);
     reload.action(foil::ui::Action::Reload);
+    settle(reload);
     CHECK(reload.groupCount() == 0);
     // No server left: it stays put (홈 says how to add one), not 설정.
     CHECK(reload.current() != foil::ui::Screen::Settings);
