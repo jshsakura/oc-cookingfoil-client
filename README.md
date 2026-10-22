@@ -136,7 +136,7 @@ Ubuntu (as in [CI](.github/workflows/ci.yml)):
 
 ```sh
 sudo apt-get install libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev libjson-c-dev \
-  libcurl4-openssl-dev libssl-dev fonts-noto-cjk ripgrep
+  libcurl4-openssl-dev libssl-dev libminizip-dev fonts-noto-cjk ripgrep
 make test     # unit tests
 make host     # build-host/cookingfoil-host
 ```
