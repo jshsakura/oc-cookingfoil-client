@@ -114,6 +114,9 @@ const std::string *nearestText(const LanguageTexts &texts, const std::string &co
     if (const auto *found = textIn(texts, want)) return found;
   return nullptr;
 }
+const std::string *displayText(const LanguageTexts &texts, const std::string &code) {
+  return code == "ko" ? textIn(texts, code) : nearestText(texts, code);
+}
 Language languageFromCode(const std::string &code, Language fallback) {
   for (int i = 0; i < LanguageCount; ++i)
     if (code == languageCode(Language(i)))

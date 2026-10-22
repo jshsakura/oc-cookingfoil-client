@@ -497,7 +497,7 @@ void Application::patchGame(const UserPatch &given, std::string &name, std::stri
         break;
       }
   if (name.empty()) {
-    if (const auto *own = textIn(patch.gameNames, languageCode())) name = *own;
+    if (const auto *own = displayText(patch.gameNames, languageCode())) name = *own;
     if (name.empty()) name = patch.gameName;
     if (name.empty() && !patch.gameNames.empty()) name = patch.gameNames.front().text;
   }

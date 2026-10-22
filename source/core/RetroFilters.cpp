@@ -22,7 +22,7 @@ Texts texts(json_object *entry) {
     const std::string lang = name;
     if (lang == "key" || lang == "pick" || lang == "icon") continue;
     if (lang.size() >= 2 && lang.size() <= 8 && json_object_is_type(value, json_type_string) && *json_object_get_string(value) &&
-        std::all_of(lang.begin(), lang.end(), [](unsigned char c) { return std::islower(c) || c == '-'; }))
+        std::all_of(lang.begin(), lang.end(), [](unsigned char c) { return std::isalpha(c) || c == '-'; })) // zh-Hant keeps its capital
       out[lang] = json_object_get_string(value);
   }
   return out;

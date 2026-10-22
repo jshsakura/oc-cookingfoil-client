@@ -115,7 +115,7 @@ Error targetMismatch(const ShopSave &save, bool deviceTarget) {
   return saves::kindMismatch(save.saveType == "device", deviceTarget);
 }
 std::string gameName(const ShopSave &save, const std::string &languageCode) {
-  if (const auto *own = textIn(save.gameNames, languageCode)) return *own;
+  if (const auto *own = displayText(save.gameNames, languageCode)) return *own;
   if (!save.gameName.empty()) return save.gameName;
   if (!save.gameNames.empty()) return save.gameNames.front().text;
   return save.titleId;

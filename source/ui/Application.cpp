@@ -597,8 +597,7 @@ void Application::localizeNames() {
   // name and art (this is a Korean shop); the others go through
   // languageChain (traditional Chinese to simplified, then English) before it.
   const std::string code = languageCode();
-  const bool korean = language() == Language::Korean;
-  const auto pick = [&](const LanguageTexts &texts) { return korean ? textIn(texts, code) : nearestText(texts, code); };
+  const auto pick = [&](const LanguageTexts &texts) { return displayText(texts, code); };
   for (auto &g : groups_) {
     const auto *source = g.base ? &*g.base : &g.representative;
     if (!source->icons.empty() || g.base) {

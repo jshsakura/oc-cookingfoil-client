@@ -311,7 +311,7 @@ std::string corePath(const std::string &core) {
   return "retroarch/cores/" + core + "_libretro_libnx.nro";
 }
 std::string systemName(const System &system, const std::string &languageCode) {
-  const auto *found = textIn(system.names, languageCode);
+  const auto *found = displayText(system.names, languageCode);
   return found ? *found : system.name;
 }
 

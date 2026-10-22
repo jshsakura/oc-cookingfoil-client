@@ -282,6 +282,9 @@ int runSaveBackupTests() {
       CHECK(list[0].url == "https://shop.example/api/saves/0100152000022000-a1b2c3d4e5f6/download");
       CHECK(foil::shopsaves::gameName(list[0], "ko") == "마리오 카트 8 디럭스");
       CHECK(foil::shopsaves::gameName(list[0], "en") == "Mario Kart 8 Deluxe");
+      auto chained = list[0];
+      chained.gameNames = {{"zh", "马力欧卡丁车8 豪华版"}};
+      CHECK(foil::shopsaves::gameName(chained, "zh-Hant") == "马力欧卡丁车8 豪华版");
     }
     CHECK(foil::shopsaves::pathAllowed("save/slot1.bin"));
     CHECK(!foil::shopsaves::pathAllowed("../x"));
