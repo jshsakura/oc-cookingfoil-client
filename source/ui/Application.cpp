@@ -799,7 +799,6 @@ void Application::reload(int prefer) {
     return;
   }
   if (loading_) {
-    poll();
     applyReload(prefer, readForReload(true));
     return;
   }
@@ -847,6 +846,9 @@ void Application::applyReload(int prefer, ReloadRead read) {
     message(tr("Connecting to the server."));
     return;
   }
+  // Work that finished while the files were read is taken with the session
+  // it ran on, before that session is replaced.
+  poll();
   auto &parsed = read.config;
   if (parsed.error) {
     error_ = parsed.error;
