@@ -62,7 +62,6 @@ void Application::homebrewButton(const homebrew::App &app) {
   }
   double percent = 0;
   if (const int onTheWay = homebrewOnTheWay(app, percent)) {
-    dialogFocus_ = 0;
     if (onTheWay == 2) {
       cancelRetro_ = !app.title; // a title installs as a game does
       confirmCancel_ = true;

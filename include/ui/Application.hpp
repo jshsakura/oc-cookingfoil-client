@@ -1524,7 +1524,6 @@ private:
   bool confirmCancel_ = false, confirmExit_ = false, exitAfterCancel_ = false,
        exitRequested_ = false;
   bool searchRequested_ = false, confirmInstall_ = false;
-  int dialogFocus_ = 0;
   void dialogHints(float right, float y, const std::string &close,
                    const std::string &apply = "", const std::string &accept = "", const std::string &remove = "");
   static inline const std::string NoAccept = "\x1f"; // `accept` for a popup A does nothing in
