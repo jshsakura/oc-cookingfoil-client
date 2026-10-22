@@ -1,4 +1,5 @@
 #pragma once
+#include "core/I18n.hpp"
 #include "core/Types.hpp"
 #include <json-c/json.h>
 #include <cstdio>
@@ -16,6 +17,10 @@ std::string urlField(json_object* obj, const char* key, const std::string& base)
 // An array of addresses (shop paths made full with `base`), at most `most`;
 // anything else in it is left out.
 std::vector<std::string> urlList(json_object* obj, const char* key, const std::string& base, size_t most);
+// An object of language code to text ({"ko": "...", "zh-Hant": "..."}),
+// keeping the interface's languages; `keep` may drop a text (a bad URL).
+LanguageTexts languageTexts(json_object* obj, const char* key, bool (*keep)(const std::string&) = nullptr);
+json_object* languageTextsJson(const LanguageTexts& texts);
 std::string readFile(const std::string& path);
 // What a Mac (or Windows) leaves on a card it touched: "._name" AppleDouble
 // files, .DS_Store, .Spotlight-V100, .Trashes, .fseventsd, Thumbs.db. Never

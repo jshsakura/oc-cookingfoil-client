@@ -110,9 +110,19 @@ std::string systemLanguage() {
     case SetLanguage_ENUS:
     case SetLanguage_ENGB: code = "en"; break;
     case SetLanguage_ZHCN:
+    case SetLanguage_ZHHANS: code = "zh"; break;
     case SetLanguage_ZHTW:
-    case SetLanguage_ZHHANS:
-    case SetLanguage_ZHHANT: code = "zh"; break;
+    case SetLanguage_ZHHANT: code = "zh-Hant"; break;
+    case SetLanguage_ES:
+    case SetLanguage_ES419: code = "es"; break;
+    case SetLanguage_FR:
+    case SetLanguage_FRCA: code = "fr"; break;
+    case SetLanguage_DE: code = "de"; break;
+    case SetLanguage_IT: code = "it"; break;
+    case SetLanguage_PT:
+    case SetLanguage_PTBR: code = "pt"; break;
+    case SetLanguage_NL: code = "nl"; break;
+    case SetLanguage_RU: code = "ru"; break;
     default: break;
     }
   }

@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <array>
+#include "core/I18n.hpp"
 namespace foil::ui {
 class Fonts {
 public:
@@ -34,8 +35,9 @@ public:
   float middle(const std::string &text, float x, float centerY, int size,
                SDL_Color color, bool bold = false, float maxWidth = 0);
   // Kanji and hanzi share code points; the interface language decides which
-  // subset draws them first (Chinese glyph shapes for Chinese, else Japanese).
-  void preferChinese(bool chinese);
+  // subset draws them first (simplified or traditional Chinese shapes for
+  // those languages, else Japanese).
+  void preferLanguage(Language language);
 
 private:
   struct Run {
@@ -68,10 +70,12 @@ private:
   SDL_Renderer *renderer_;
   float scale_ = 1;
   bool shared_ = false;
-  // Bundled subsets, family * 2 + bold: Korean/Latin, Japanese, Chinese.
-  std::array<std::vector<char>, 6> embedded_;
-  std::array<bool, 6> unpacked_{};
-  bool chinese_ = false;
+  // Bundled subsets, family * 2 + bold: Korean/Latin/Cyrillic, Japanese,
+  // simplified Chinese, traditional Chinese.
+  std::array<std::vector<char>, 8> embedded_;
+  std::array<bool, 8> unpacked_{};
+  std::array<int, 3> han_{1, 2, 3}; // the families sources 1 to 3 open
+
   void clear();
   std::vector<TTF_Font *> faces_; // source * 2 + bold
   std::vector<bool> tried_;

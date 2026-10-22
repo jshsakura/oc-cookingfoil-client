@@ -39,13 +39,13 @@ Fonts::~Fonts() {
     plExit();
 #endif
 }
-// Font sources in lookup order: the bundled subsets (Korean/Latin, then
-// Japanese and Chinese, Chinese first for a Chinese interface), then the
+// Font sources in lookup order: the bundled subsets (Korean/Latin/Cyrillic,
+// then Japanese and the two Chinese, the interface's own first), then the
 // console's shared fonts for anything rarer. Nothing is opened or unpacked
 // until a glyph actually needs it, so a Korean screen never pays for the
 // CJK subsets and each text size holds only the faces it draws with.
 namespace {
-constexpr int Bundled = 3;
+constexpr int Bundled = 4;
 #ifdef __SWITCH__
 const PlSharedFontType SharedTypes[] = {PlSharedFontType_Standard, PlSharedFontType_KO,
                                         PlSharedFontType_ChineseSimplified,
@@ -56,16 +56,12 @@ const char *const HostFallbacks[] = {"/usr/share/fonts/opentype/noto/NotoSansCJK
                                      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"};
 constexpr int Sources = Bundled + 2;
 #endif
-const char *const FamilyFiles[] = {"CookingFoilSans", "CookingFoilSansJP", "CookingFoilSansSC"};
+const char *const FamilyFiles[] = {"CookingFoilSans", "CookingFoilSansJP", "CookingFoilSansSC", "CookingFoilSansTC"};
 std::string familyFile(int family, bool bold) {
-  return std::string(FamilyFiles[family]) + (bold ? "-Bold." : "-Regular.") + (family == 2 ? "ttf" : "otf");
+  return std::string(FamilyFiles[family]) + (bold ? "-Bold." : "-Regular.") + (family >= 2 ? "ttf" : "otf");
 }
 } // namespace
-int Fonts::family(int source) const {
-  if (source == 0)
-    return 0;
-  return (source == 1) != chinese_ ? 1 : 2;
-}
+int Fonts::family(int source) const { return source == 0 ? 0 : han_[source - 1]; }
 #ifdef __SWITCH__
 // The bundled font data, unpacked from RomFS the first time it is used.
 const std::vector<char> *Fonts::bundled(int family, bool bold) {
@@ -162,11 +158,14 @@ void Fonts::clear() {
   inks_.clear();
   memoBytes_ = {};
 }
-void Fonts::preferChinese(bool chinese) {
-  if (chinese == chinese_)
+void Fonts::preferLanguage(Language language) {
+  const std::array<int, 3> han = language == Language::Chinese              ? std::array<int, 3>{2, 3, 1}
+                                 : language == Language::ChineseTraditional ? std::array<int, 3>{3, 2, 1}
+                                                                            : std::array<int, 3>{1, 2, 3};
+  if (han == han_)
     return;
-  chinese_ = chinese;
-  clear(); // sources 1 and 2 swap families
+  han_ = han;
+  clear(); // sources 1 to 3 change families
 }
 // Layout coordinates were tuned with IBM Plex Sans KR, whose ascent is 1.085em.
 // Every run sits on that baseline, whatever font draws it.

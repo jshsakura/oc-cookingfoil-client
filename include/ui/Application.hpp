@@ -1178,6 +1178,7 @@ private:
   // 설정 > 언어: every language at once, with its flag.
   void languageDialog();
   bool languagePopup_ = false;
+  static constexpr int LanguageRows = (LanguageCount + 1) / 2; // the picker's two columns
   int languageRow_ = 0;
   void patchMenu(const PatchRow &row);
   void runPatchOp(int op);

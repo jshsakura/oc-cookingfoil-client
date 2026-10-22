@@ -572,7 +572,8 @@ int runPatchTests() {
     CHECK(list.size() == 3);
     if (list.size() == 3) {
       CHECK(list[0].gameName == "Base");
-      CHECK(list[0].gameNames.size() == 4 && list[0].gameNames[0] == "한국어 이름" && list[0].gameNames[1].empty());
+      CHECK(list[0].gameNames.size() == 2 && *foil::textIn(list[0].gameNames, "ko") == "한국어 이름" &&
+            *foil::textIn(list[0].gameNames, "ja") == "日本語");
       CHECK(list[0].gameIcon == "/api/icon/01001730144DA000");
       CHECK(list[1].gameIcon.empty()); // neither http(s) nor a shop path
       CHECK(list[2].gameName.empty() && list[2].gameNames.empty());
@@ -631,7 +632,7 @@ int runPatchTests() {
     game.updateVersion = 65536;
     game.kinds = {"romfs", "cheats"};
     game.gameName = "Base";
-    game.gameNames = {"한국어", "", "日本語", ""};
+    game.gameNames = {{"ko", "한국어"}, {"ja", "日本語"}, {"zh-Hant", "繁體"}};
     game.gameIcon = "/api/icon/01001730144DA000";
     const auto back = foil::net::parsePatches(foil::net::serializePatch(game));
     CHECK(back.size() == 1);
@@ -641,7 +642,8 @@ int runPatchTests() {
       CHECK(back[0].size == 12345 && back[0].files == 3 && back[0].updatedAt == 1700000000 && back[0].required);
       CHECK(back[0].updateVersion == 65536);
       CHECK(back[0].kinds == game.kinds && back[0].gameName == "Base" && back[0].gameIcon == game.gameIcon);
-      CHECK(back[0].gameNames.size() == 4 && back[0].gameNames[0] == "한국어" && back[0].gameNames[2] == "日本語");
+      CHECK(back[0].gameNames.size() == 3 && *foil::textIn(back[0].gameNames, "ja") == "日本語" &&
+            *foil::textIn(back[0].gameNames, "zh-Hant") == "繁體");
     }
     foil::UserPatch app;
     app.id = "hb-1";

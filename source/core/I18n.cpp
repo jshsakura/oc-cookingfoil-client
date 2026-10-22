@@ -75,14 +75,23 @@ TranslationTable::TranslationTable(Language language, const Translation *rows, s
 }
 void setLanguage(Language language) { current = language; }
 Language language() { return current; }
-const char *languageCode(Language language) {
-  switch (language) {
-  case Language::English: return "en";
-  case Language::Japanese: return "ja";
-  case Language::Chinese: return "zh";
-  case Language::Korean: break;
-  }
-  return "ko";
+namespace {
+struct LanguageInfo {
+  const char *code, *name;
+};
+// By Language.
+constexpr LanguageInfo Languages[LanguageCount] = {
+    {"ko", "한국어"},   {"en", "English"},  {"ja", "日本語"},   {"zh", "简体中文"},
+    {"zh-Hant", "繁體中文"}, {"es", "Español"}, {"fr", "Français"}, {"de", "Deutsch"},
+    {"it", "Italiano"}, {"pt", "Português (Brasil)"}, {"nl", "Nederlands"}, {"ru", "Русский"}};
+} // namespace
+const char *languageCode(Language language) { return Languages[int(language)].code; }
+const char *languageName(Language language) { return Languages[int(language)].name; }
+std::vector<std::string> languageChain(const std::string &code) {
+  std::vector<std::string> chain{code};
+  if (code == "zh-Hant") chain.push_back("zh");
+  if (code != "en") chain.push_back("en");
+  return chain;
 }
 std::string languageLabel(const std::string &code) {
   // Built per call so the names follow the interface language.
@@ -95,14 +104,15 @@ std::string languageLabel(const std::string &code) {
       return name;
   return code;
 }
-const char *languageName(Language language) {
-  switch (language) {
-  case Language::English: return "English";
-  case Language::Japanese: return "日本語";
-  case Language::Chinese: return "中文";
-  case Language::Korean: break;
-  }
-  return "한국어";
+const std::string *textIn(const LanguageTexts &texts, const std::string &code) {
+  for (const auto &t : texts)
+    if (t.code == code && !t.text.empty()) return &t.text;
+  return nullptr;
+}
+const std::string *nearestText(const LanguageTexts &texts, const std::string &code) {
+  for (const auto &want : languageChain(code))
+    if (const auto *found = textIn(texts, want)) return found;
+  return nullptr;
 }
 Language languageFromCode(const std::string &code, Language fallback) {
   for (int i = 0; i < LanguageCount; ++i)

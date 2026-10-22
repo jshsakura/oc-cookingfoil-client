@@ -53,11 +53,15 @@ std::string bare(const std::string &version) {
 } // namespace
 std::vector<int> nacpLanguages(const std::string &code) {
   // Entry indexes: 0 American English, 1 British English, 2 Japanese,
-  // 12 Korean, 13 Traditional Chinese, 14 Simplified Chinese.
+  // 3 French, 4 German, 5 Latin American Spanish, 6 Spanish, 7 Italian,
+  // 8 Dutch, 9 Canadian French, 10 Portuguese, 11 Russian, 12 Korean,
+  // 13 Traditional Chinese, 14 Simplified Chinese, 15 Brazilian Portuguese.
+  static const std::pair<const char *, std::vector<int>> Orders[] = {
+      {"ko", {12}}, {"ja", {2}},     {"zh", {14, 13}}, {"zh-Hant", {13, 14}}, {"es", {6, 5}}, {"fr", {3, 9}},
+      {"de", {4}},  {"it", {7}},     {"pt", {15, 10}}, {"nl", {8}},           {"ru", {11}}};
   std::vector<int> order;
-  if (code == "ko") order = {12};
-  else if (code == "ja") order = {2};
-  else if (code == "zh") order = {14, 13};
+  for (const auto &[language, entries] : Orders)
+    if (code == language) order = entries;
   order.push_back(0);
   order.push_back(1);
   return order;

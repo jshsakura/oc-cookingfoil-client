@@ -567,14 +567,7 @@ std::vector<UserPatch> parsePatches(json_object* array) {
             p.updateVersion = std::max<int64_t>(-1, json_object_get_int64(number));
         if (auto* game = field(object, "game"); json_object_is_type(game, json_type_object)) {
             p.gameName = stringField(game, "name");
-            if (auto* names = field(game, "names"); json_object_is_type(names, json_type_object)) {
-                static const char* codes[] = {"ko", "en", "ja", "zh"};
-                for (int k = 0; k < 4; ++k)
-                    if (const auto name = stringField(names, codes[k]); !name.empty()) {
-                        p.gameNames.resize(4);
-                        p.gameNames[k] = name;
-                    }
-            }
+            p.gameNames = languageTexts(game, "names");
             // A full URL, or a path on the shop (resolved against it when drawn).
             p.gameIcon = stringField(game, "icon");
             if (!isHttp(p.gameIcon) && p.gameIcon.rfind("/", 0) != 0) p.gameIcon.clear();
@@ -628,11 +621,7 @@ std::string serializePatch(const UserPatch& p) {
     auto* game = json_object_new_object();
     text(game, "name", p.gameName);
     text(game, "icon", p.gameIcon);
-    auto* names = json_object_new_object();
-    static const char* codes[] = {"ko", "en", "ja", "zh"};
-    for (size_t k = 0; k < p.gameNames.size() && k < 4; ++k)
-        if (!p.gameNames[k].empty()) text(names, codes[k], p.gameNames[k]);
-    json_object_object_add(game, "names", names);
+    json_object_object_add(game, "names", languageTextsJson(p.gameNames));
     json_object_object_add(object, "game", game);
     auto* kinds = json_object_new_array();
     for (const auto& kind : p.kinds) json_object_array_add(kinds, json_object_new_string(kind.c_str()));
@@ -698,22 +687,8 @@ bool parseItem(json_object* object, Item& item) {
     item.labels = labels::parseRefs(object, item.hasLabels);
     if (const auto integrity = stringField(object, "integrity"); integrity == "damaged") item.integrity = 2;
     else if (integrity == "modified") item.integrity = 1;
-    if (auto* icons = field(object, "icons"); json_object_is_type(icons, json_type_object)) {
-        static const char* codes[] = {"ko", "en", "ja", "zh"};
-        for (int k = 0; k < 4; ++k)
-            if (const auto url = stringField(icons, codes[k]); isHttp(url)) {
-                item.icons.resize(4);
-                item.icons[k] = url;
-            }
-    }
-    if (auto* names = field(object, "names"); json_object_is_type(names, json_type_object)) {
-        static const char* codes[] = {"ko", "en", "ja", "zh"};
-        for (int k = 0; k < 4; ++k)
-            if (const auto name = stringField(names, codes[k]); !name.empty()) {
-                item.names.resize(4);
-                item.names[k] = name;
-            }
-    }
+    item.icons = languageTexts(object, "icons", isHttp);
+    item.names = languageTexts(object, "names");
     item.icon = stringField(object, "icon_url"); if (!isHttp(item.icon)) item.icon.clear();
     item.publisher = stringField(object, "publisher"); item.region = stringField(object, "region"); item.versionName = stringField(object, "version_name", stringField(object, "display_version"));
     const auto words = [&](const char* key) {
@@ -906,9 +881,11 @@ NameTable parseNameTable(json_object* root, const char* table) {
 std::map<std::string, std::string> namesIn(const NameTable& table, const std::string& lang) {
     std::map<std::string, std::string> result;
     for (const auto& [key, names] : table) {
-        auto found = names.find(lang);
-        if (found == names.end()) found = names.find("en");
-        if (found != names.end()) result[key] = found->second;
+        for (const auto& want : languageChain(lang))
+            if (const auto found = names.find(want); found != names.end()) {
+                result[key] = found->second;
+                break;
+            }
     }
     return result;
 }

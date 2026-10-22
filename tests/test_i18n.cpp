@@ -1,6 +1,7 @@
 #include "Test.hpp"
 #include "core/I18n.hpp"
 #include "core/Json.hpp"
+#include <SDL2/SDL_ttf.h>
 #include <cstdint>
 #include <filesystem>
 #include <set>
@@ -149,6 +150,46 @@ int runI18nTests() {
   }
   CHECK(unwrapped == 0);
   CHECK(missing == 0);
+  // Every character of every language's text, and of the picker's names, is
+  // in a bundled font: the console's own fonts lack weights and some scripts.
+  {
+    std::vector<TTF_Font *> fonts;
+    for (const auto *file : {"CookingFoilSans-%s.otf", "CookingFoilSansJP-%s.otf", "CookingFoilSansSC-%s.ttf", "CookingFoilSansTC-%s.ttf"})
+      for (const auto *weight : {"Regular", "Bold"}) {
+        char name[64];
+        std::snprintf(name, sizeof name, file, weight);
+        auto *font = TTF_OpenFont((std::string("host/fonts/") + name).c_str(), 18);
+        CHECK(font != nullptr);
+        if (font) fonts.push_back(font);
+      }
+    auto covered = [&](uint32_t point) {
+      if (point < 0x20 || point == 0xFE0F) return true; // control and variation selectors draw nothing
+      for (auto *font : fonts)
+        if (TTF_GlyphIsProvided32(font, point)) return true;
+      return false;
+    };
+    std::set<uint32_t> missing;
+    auto check = [&](const std::string &text) {
+      for (size_t i = 0; i < text.size();) {
+        const unsigned char c = text[i];
+        const int length = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+        uint32_t point = length == 1 ? c : c & (0xFF >> (length + 1));
+        for (int k = 1; k < length && i + k < text.size(); ++k)
+          point = point << 6 | (static_cast<unsigned char>(text[i + k]) & 0x3F);
+        i += length;
+        if (!covered(point)) missing.insert(point);
+      }
+    };
+    for (int i = 0; i < foil::LanguageCount; ++i) {
+      check(foil::languageName(foil::Language(i)));
+      for (const auto &row : foil::translations(foil::Language(i))) check(row.text);
+    }
+    for (const auto &key : keys) check(foil::english(key.c_str()));
+    for (const auto point : missing)
+      std::cerr << "no bundled glyph for U+" << std::hex << point << std::dec << '\n';
+    CHECK(missing.empty());
+    for (auto *font : fonts) TTF_CloseFont(font);
+  }
   // Lookups follow the chosen language and fill placeholders after it.
   const foil::Translation korean[] = {{"Sample {0}|test", "테스트 {0}개"}};
   const foil::Translation japanese[] = {{"Sample {0}|test", "テスト {0}"}};

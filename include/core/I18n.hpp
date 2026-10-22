@@ -4,16 +4,41 @@
 #include <string>
 #include <vector>
 namespace foil {
-// Interface languages. The English text in the source is the key; tables in
-// source/i18n/ give the other languages.
-enum class Language { Korean, English, Japanese, Chinese };
-constexpr int LanguageCount = 4;
+// Interface languages, in the picker's order. The English text in the source
+// is the key; tables in source/i18n/ give the other languages.
+enum class Language {
+  Korean,
+  English,
+  Japanese,
+  Chinese, // simplified
+  ChineseTraditional,
+  Spanish,
+  French,
+  German,
+  Italian,
+  Portuguese, // Brazilian
+  Dutch,
+  Russian,
+};
+constexpr int LanguageCount = 12;
 void setLanguage(Language language);
 Language language();
-// "ko", "en", "ja", "zh": what the server's ?lang= and name tables use.
+// "ko", "en", "zh-Hant", ...: what the server's ?lang= and name tables use.
 const char *languageCode(Language language);
 inline const char *languageCode() { return languageCode(language()); }
-// The language's own name, as a picker shows it (한국어, English, 日本語, 中文).
+// The codes to try, in order, for text the server gives in several
+// languages: the asked one, simplified Chinese for traditional, then English.
+std::vector<std::string> languageChain(const std::string &code);
+// Text the server sends in several languages, only the ones it sent.
+struct LanguageText {
+  std::string code, text;
+};
+using LanguageTexts = std::vector<LanguageText>;
+// The text in `code`, or null.
+const std::string *textIn(const LanguageTexts &texts, const std::string &code);
+// The first of languageChain(code) the texts hold, or null.
+const std::string *nearestText(const LanguageTexts &texts, const std::string &code);
+// The language's own name, as a picker shows it (한국어, English, 日本語, ...).
 const char *languageName(Language language);
 Language languageFromCode(const std::string &code, Language fallback);
 // Every language but English, which needs no table.

@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include "core/Tags.hpp"
+#include "core/I18n.hpp"
 #include "core/Labels.hpp"
 namespace foil {
 struct Item {
@@ -37,13 +38,12 @@ struct Item {
     // hasLabels false: an older server, the client words them itself.
     bool hasLabels = false;
     std::vector<labels::Ref> labels;
-    // Store names per language (feature item-names): ko, en, ja, zh in that
-    // order, empty when the server sends none. Left empty (no allocation)
-    // for the many items without names.
-    std::vector<std::string> names;
-    // Cover art per language (feature item-icons), same slots as names;
-    // only languages whose art differs from icon are sent.
-    std::vector<std::string> icons;
+    // Store names per language (feature item-names), only those the server
+    // sends; the many items without names allocate nothing.
+    LanguageTexts names;
+    // Cover art per language (feature item-icons); only languages whose art
+    // differs from icon are sent.
+    LanguageTexts icons;
     Tags languages, categories;
     // The configured server it came from (its url); empty: the one in use.
     std::string server;

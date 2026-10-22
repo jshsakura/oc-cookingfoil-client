@@ -78,9 +78,14 @@ std::string text(const Book &book, const Ref &ref, const std::string &lang) {
   const auto found = book.find(ref.key.str());
   if (found == book.end()) return {};
   const auto &def = found->second;
-  // One language for both forms: the asked one, else English. Korean has
-  // no singular and must not take English's.
-  const std::string language = def.text.count(lang) ? lang : std::string("en");
+  // One language for both forms, the first of languageChain the label has.
+  // Korean has no singular and must not take English's.
+  std::string language = "en";
+  for (const auto &want : languageChain(lang))
+    if (def.text.count(want)) {
+      language = want;
+      break;
+    }
   const auto single = ref.value == "1" ? def.one.find(language) : def.one.end();
   const std::string *pattern = single != def.one.end() ? &single->second : inLanguage(def.text, language);
   if (!pattern) return {};

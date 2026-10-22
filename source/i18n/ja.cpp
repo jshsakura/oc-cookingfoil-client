@@ -1060,7 +1060,7 @@ const Translation rows[] = {
     {"Check the HTTP/HTTPS address of server {0}.", "サーバー {0} のHTTP/HTTPSアドレスを確認してください。"},
     {"enabled must be true or false.", "enabledはtrueまたはfalseで記述してください。"},
     {"{0} must be a string.", "{0}は文字列で記述してください。"},
-    {"language must be one of ko, en, ja, zh.", "languageはko、en、ja、zhのいずれかで記述してください。"},
+    {"language must be one of {0}.", "languageは{0}のいずれかで記述してください。"},
     {"installTarget must be sd or nand.", "installTargetはsdまたはnandで記述してください。"},
     {"Could not create the config file.", "設定ファイルを作成できませんでした。"},
     {"Could not write the config file.", "設定ファイルを書き込めませんでした。"},

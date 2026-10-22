@@ -13,7 +13,7 @@ library.ZSTD_isError.argtypes = [ctypes.c_size_t]
 library.ZSTD_isError.restype = ctypes.c_uint
 destination = root / "romfs/fonts"
 destination.mkdir(exist_ok=True)
-names = [f"CookingFoilSans{suffix}-{weight}.{ext}" for suffix, ext in (("", "otf"), ("JP", "otf"), ("SC", "ttf"))
+names = [f"CookingFoilSans{suffix}-{weight}.{ext}" for suffix, ext in (("", "otf"), ("JP", "otf"), ("SC", "ttf"), ("TC", "ttf"))
          for weight in ("Regular", "Bold")]
 for name in names:
     data = (root / "host/fonts" / name).read_bytes()
@@ -24,6 +24,6 @@ for name in names:
     (destination / (name + ".zst")).write_bytes(output.raw[:count])
 # The wordmark face is tiny (Latin subset) and ships as is.
 (destination / "Baloo2-ExtraBold.ttf").write_bytes((root / "host/fonts/Baloo2-ExtraBold.ttf").read_bytes())
-for notice in ("OFL.txt", "OFL-JP.txt", "OFL-SC.txt", "OFL-Baloo2.txt"):
+for notice in ("OFL.txt", "OFL-JP.txt", "OFL-SC.txt", "OFL-TC.txt", "OFL-Baloo2.txt"):
     license_text = (root / "host/fonts" / notice).read_text()
     (destination / notice).write_text("\n".join(line.rstrip() for line in license_text.splitlines()) + "\n")

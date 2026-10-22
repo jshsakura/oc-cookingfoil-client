@@ -497,13 +497,9 @@ void Application::patchGame(const UserPatch &given, std::string &name, std::stri
         break;
       }
   if (name.empty()) {
-    static const char *codes[] = {"ko", "en", "ja", "zh"};
-    const std::string code = languageCode();
-    for (size_t k = 0; k < patch.gameNames.size() && name.empty(); ++k)
-      if (code == codes[k]) name = patch.gameNames[k];
+    if (const auto *own = textIn(patch.gameNames, languageCode())) name = *own;
     if (name.empty()) name = patch.gameName;
-    for (size_t k = 0; k < patch.gameNames.size() && name.empty(); ++k)
-      name = patch.gameNames[k];
+    if (name.empty() && !patch.gameNames.empty()) name = patch.gameNames.front().text;
   }
   if (icon.empty() && !patch.gameIcon.empty())
     icon = shopAddress(patch.gameIcon, patch.server);

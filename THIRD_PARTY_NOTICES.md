@@ -91,6 +91,7 @@ All fonts are licensed under the SIL Open Font License 1.1. The license texts ar
 | CookingFoil Sans | Pretendard 1.3.9, subset | Copyright (c) 2021, Kil Hyung-jin, with Reserved Font Name Pretendard | `OFL.txt` |
 | CookingFoil Sans JP | Pretendard JP 1.3.9, subset | Copyright (c) 2021, Kil Hyung-jin, with Reserved Font Name Pretendard JP | `OFL-JP.txt` |
 | CookingFoil Sans SC | Noto Sans SC, subset (instanced at 400 and 700) | Copyright 2014-2021 Adobe, with Reserved Font Name 'Source' | `OFL-SC.txt` |
+| CookingFoil Sans TC | Noto Sans TC, subset (instanced at 400 and 700) | Copyright 2014-2021 Adobe, with Reserved Font Name 'Source' | `OFL-TC.txt` |
 | Baloo 2 ExtraBold (wordmark) | Baloo 2, unmodified | Copyright 2019 The Baloo 2 Project Authors | `OFL-Baloo2.txt` |
 
 The subsets are renamed as the OFL requires for modified versions. They are produced by

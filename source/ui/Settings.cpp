@@ -86,6 +86,16 @@ void Application::settings() {
     });
   // The options share one card, one row each, focused like the server rows.
   paint_.rect(Left, optionsTop + oy, Width, optionsHeight, Surface, 18);
+  // Text on a row's right keeps clear of its label: longer languages step
+  // it down, then cut it, instead of drawing over the label.
+  std::array<float, SettingsOptions> labelEnds{};
+  const auto rightText = [&](int index, const std::string &text, float right, int size, SDL_Color color, bool bold) {
+    const float room = right - labelEnds[index] - 24;
+    while (size > 14 && paint_.fonts.measure(text, size, bold) > room) --size;
+    const float width = std::min(paint_.fonts.measure(text, size, bold), room);
+    paint_.fonts.middle(text, right - width, optionsTop + 8 + index * Row + (Row - 2) / 2 + oy,
+                        size, color, bold, room);
+  };
   // `toggle`: -1 draws `value`, 0 or 1 an off or on switch instead.
   const auto option = [&](int index, int icon, const std::string &label, const std::string &value,
                           SDL_Color valueColor, bool bold, int toggle = -1) {
@@ -94,11 +104,11 @@ void Application::settings() {
       paint_.focusRow(Left + 14, y, Width - 28, Row - 2, Ground, 10);
     paint_.icon(icon, Inner, y + (Row - 2) / 2 - 12, Ink, 24);
     paint_.fonts.middle(label, Inner + 36, y + (Row - 2) / 2, 21, Ink, true);
+    labelEnds[index] = Inner + 36 + paint_.fonts.measure(label, 21, true);
     if (toggle >= 0)
       paint_.toggle(Right - 52, y + (Row - 2) / 2 - 15, toggle == 1);
     else
-      paint_.fonts.middle(value, Right - paint_.fonts.measure(value, bold ? 20 : 18, bold), y + (Row - 2) / 2,
-                          bold ? 20 : 18, valueColor, bold);
+      rightText(index, value, Right, bold ? 20 : 18, valueColor, bold);
     // Rules run edge to edge, between rows only.
     if (index < SettingsOptions - 1)
       paint_.rect(Left, y + Row - 1, Width, 1, Line);
@@ -110,10 +120,7 @@ void Application::settings() {
       });
   };
   // A switch's note, left of it.
-  const auto note = [&](int index, const std::string &text) {
-    const float y = optionsTop + 8 + index * Row + oy;
-    paint_.fonts.middle(text, Right - 68 - paint_.fonts.measure(text, 17), y + (Row - 2) / 2, 17, Secondary);
-  };
+  const auto note = [&](int index, const std::string &text) { rightText(index, text, Right - 68, 17, Secondary, false); };
   // Interface language, kept in state.json (never in the user's
   // config.json). " · Language" stays in English so someone who cannot
   // read the current language still finds it.

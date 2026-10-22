@@ -172,6 +172,23 @@ std::vector<std::string> urlList(json_object* obj, const char* key, const std::s
     }
     return out;
 }
+LanguageTexts languageTexts(json_object* obj, const char* key, bool (*keep)(const std::string&)) {
+    LanguageTexts out;
+    auto* texts = field(obj, key);
+    if (!json_object_is_type(texts, json_type_object)) return out;
+    for (int i = 0; i < LanguageCount; ++i) {
+        const char* code = languageCode(Language(i));
+        if (auto text = stringField(texts, code); !text.empty() && (!keep || keep(text)))
+            out.push_back({code, std::move(text)});
+    }
+    return out;
+}
+json_object* languageTextsJson(const LanguageTexts& texts) {
+    auto* object = json_object_new_object();
+    for (const auto& t : texts)
+        if (!t.text.empty()) json_object_object_add(object, t.code.c_str(), json_object_new_string(t.text.c_str()));
+    return object;
+}
 void writeBuffer(std::FILE* file) {
     if (file) std::setvbuf(file, nullptr, _IOFBF, 1 << 20);
 }

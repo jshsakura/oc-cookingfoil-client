@@ -97,7 +97,7 @@ FilterBook mergeFilterBooks(const std::vector<FilterBook> &books) {
   return out;
 }
 std::string textIn(const Texts &texts, const std::string &lang) {
-  for (const auto &want : {lang, std::string("en")})
+  for (const auto &want : languageChain(lang))
     if (const auto found = texts.find(want); found != texts.end()) return found->second;
   return texts.empty() ? std::string() : texts.begin()->second;
 }

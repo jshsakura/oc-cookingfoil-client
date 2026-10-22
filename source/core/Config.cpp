@@ -132,7 +132,14 @@ Parsed<Config> parseConfig(const std::string& json) {
     }
     result.value.language = stringField(root.get(), "language", "ko");
     result.value.installTarget = stringField(root.get(), "installTarget", "sd");
-    if (result.value.language != "ko" && result.value.language != "en" && result.value.language != "ja" && result.value.language != "zh") fail(tr("language must be one of ko, en, ja, zh."));
+    std::string codes;
+    bool known = false;
+    for (int i = 0; i < LanguageCount; ++i) {
+        const std::string code = languageCode(Language(i));
+        known = known || code == result.value.language;
+        codes += (codes.empty() ? "" : ", ") + code;
+    }
+    if (!known) fail(trf("language must be one of {0}.", {codes}));
     if (result.value.installTarget != "sd" && result.value.installTarget != "nand") fail(tr("installTarget must be sd or nand."));
     return result;
 }

@@ -42,7 +42,9 @@ int runConfigTests() {
     CHECK(foil::parseConfig(R"({"servers":[{}]})").error);
     CHECK(foil::parseConfig(R"({"servers":[{"url":42}]})").error);
     CHECK(!foil::parseConfig(R"({"language":"ja"})").error);
-    CHECK(foil::parseConfig(R"({"language":"fr"})").error);
+    CHECK(!foil::parseConfig(R"({"language":"fr"})").error);
+    CHECK(!foil::parseConfig(R"({"language":"zh-Hant"})").error);
+    CHECK(foil::parseConfig(R"({"language":"xx"})").error);
     CHECK(foil::parseConfig(R"({"installTarget":"system"})").error);
     CHECK(foil::parseConfig(R"({"servers":[{"url":"host","enabled":"false"}]})").error);
     CHECK(foil::parseConfig("{\n  \"servers\": [\n  invalid\n]} ").error.line == 3);

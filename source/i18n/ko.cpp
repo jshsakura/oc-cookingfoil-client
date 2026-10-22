@@ -1060,7 +1060,7 @@ const Translation rows[] = {
     {"Check the HTTP/HTTPS address of server {0}.", "서버 {0}의 HTTP/HTTPS 주소를 확인해 주세요."},
     {"enabled must be true or false.", "enabled는 true 또는 false로 작성해 주세요."},
     {"{0} must be a string.", "{0}는 문자열로 작성해 주세요."},
-    {"language must be one of ko, en, ja, zh.", "language는 ko, en, ja, zh 중 하나로 작성해 주세요."},
+    {"language must be one of {0}.", "language는 {0} 중 하나로 작성해 주세요."},
     {"installTarget must be sd or nand.", "installTarget은 sd 또는 nand로 작성해 주세요."},
     {"Could not create the config file.", "설정 파일을 만들지 못했습니다."},
     {"Could not write the config file.", "설정 파일을 쓰지 못했습니다."},
