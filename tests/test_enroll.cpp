@@ -180,103 +180,48 @@ int runEnrollTests() {
     mock.take();
   }
   {
-    // One server under two addresses (its LAN one and a tunnel): the second,
-    // with no key, sends the first's session token once; answered with the
-    // first's server id it takes the first's key and asks for no approval
-    // of its own. Another id, or none, and nothing is lent. A key the
-    // server calls wrong goes, and approval is asked again.
+    // A list refused because the key is no good (X-CookingFoil-Auth): the
+    // key goes and approval is asked again (the QR code), not "try again".
+    // A refusal without that reason keeps the key: it may be something in
+    // front of the server.
     const auto kept = mock.answer;
-    const std::string other = "http://localhost:" + std::to_string(mock.port);
-    std::string probeId = "server-one", wrong;
+    std::string reason = "access-key-wrong";
     mock.answer = [&](const std::string &request) -> Reply {
-      if (request.rfind("GET /api/session", 0) == 0)
-        return has(request, "X-Access-Key: shared-key") ? Reply{200, "", R"({"token":"cfs_lent","expiresAt":0})"}
-                                                        : Reply{401, "", "{}"};
-      if (request.rfind("GET /api/shop/info", 0) == 0 && has(request, "Authorization: Bearer cfs_lent"))
-        return probeId.empty() ? Reply{401, "X-CookingFoil-Auth: session-invalid\r\n", "{}"}
-                               : Reply{200, "X-CookingFoil-Server-Id: " + probeId + "\r\n", "{}"};
       if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
-      if (request.rfind("GET /api/shop/sections", 0) == 0) {
-        if (!wrong.empty() && has(request, "X-Access-Key: " + wrong))
-          return {401, "X-CookingFoil-Server-Id: server-one\r\nX-CookingFoil-Auth: access-key-wrong\r\n", "no"};
-        if (has(request, "X-Access-Key: shared-key")) return {200, "", R"({"sections":[]})"};
-        return {401, "", "no access key"};
-      }
+      if (request.rfind("GET /api/shop/sections", 0) == 0)
+        return {401, reason.empty() ? "" : "X-CookingFoil-Auth: " + reason + "\r\n", "no"};
       return {200, "", "{}"};
     };
-    const auto lender = [&](const std::string &id) {
+    auto plain = server();
+    plain.enrollToken.clear();
+    for (const std::string why : {"access-key-wrong", "device-not-approved"}) {
       auto state = loadState(db).value;
-      state.accessKeys = {{url, "shared-key"}};
-      state.serverIds = {{url, id}};
-      state.pairSecrets.clear();
+      state.accessKeys = {{url, "stale-key"}};
       CHECK(saveState(db, state, error));
-      net::Session::forgetKeyProbes();
-    };
-    auto second = server();
-    second.url = other;
-    second.enrollToken.clear();
-    {
-      lender("server-one");
-      net::Session session(second, loadState(db).value, db);
-      CHECK(session.refresh(error) && !session.pairingPending());
-      const auto sent = mock.take();
-      CHECK(count(sent, "Authorization: Bearer cfs_lent") == 1);
-      CHECK(count(sent, "/api/shop/sections") == 1 && count(sent, "/api/pair/request") == 0);
-      const auto saved = loadState(db).value;
-      CHECK(saved.accessKeys.count(other) && saved.accessKeys.at(other) == "shared-key");
-      CHECK(saved.serverIds.count(other) && saved.serverIds.at(other) == "server-one");
-      CHECK(!saved.pairSecrets.count(other));
-    }
-    {
-      // A 200 alone proves nothing (anything can answer 200): the id must match.
-      lender("server-two");
-      net::Session session(second, loadState(db).value, db);
-      CHECK(!session.refresh(error) && error.message.find("401") != std::string::npos);
-      const auto sent = mock.take();
-      CHECK(count(sent, "Authorization: Bearer cfs_lent") == 1);
-      CHECK(!loadState(db).value.accessKeys.count(other));
-      // Tried once a run: the next refresh sends the token nowhere.
-      net::Session again(second, loadState(db).value, db);
-      CHECK(!again.refresh(error));
-      CHECK(count(mock.take(), "Authorization: Bearer cfs_lent") == 0);
-    }
-    {
-      // Another server (its own 401, no id): nothing is lent.
-      lender("server-one");
-      probeId.clear();
-      net::Session session(second, loadState(db).value, db);
-      CHECK(!session.refresh(error));
-      CHECK(!loadState(db).value.accessKeys.count(other));
-      mock.take();
-      probeId = "server-one";
-    }
-    {
-      // access-key-wrong: the key goes and approval is asked again (the
-      // QR code), not "try again"; the same key held by the other address
-      // is never borrowed back.
-      auto again = loadState(db).value;
-      again.accessKeys = {{url, "stale-key"}, {other, "stale-key"}};
-      again.serverIds = {{url, "server-one"}, {other, "server-one"}};
-      CHECK(saveState(db, again, error));
-      net::Session::forgetKeyProbes();
-      wrong = "stale-key";
+      reason = why;
       pairStatus = "pending";
-      net::Session session(second, loadState(db).value, db);
+      net::Session session(plain, loadState(db).value, db);
       Error waiting;
       CHECK(!session.refresh(waiting) && session.pairingPending());
-      const auto saved = loadState(db).value;
-      CHECK(!saved.accessKeys.count(other) && saved.accessKeys.size() == 1);
-      const auto sent = mock.take();
-      CHECK(count(sent, "POST /api/pair/request") == 1 && count(sent, "Authorization: Bearer") == 0);
-      pairStatus = "approved";
-      wrong.clear();
+      CHECK(loadState(db).value.accessKeys.empty());
+      CHECK(count(mock.take(), "POST /api/pair/request") == 1);
     }
+    {
+      auto state = loadState(db).value;
+      state.accessKeys = {{url, "stale-key"}};
+      CHECK(saveState(db, state, error));
+      reason.clear();
+      pairStatus = "approved";
+      net::Session session(plain, loadState(db).value, db);
+      CHECK(!session.refresh(error) && !session.pairingPending());
+      CHECK(loadState(db).value.accessKeys.at(url) == "stale-key");
+      mock.take();
+    }
+    pairStatus = "approved";
     auto restored = loadState(db).value;
     restored.accessKeys = {{url, "enrolled-key"}};
-    restored.serverIds.clear();
     restored.pairSecrets.clear();
     CHECK(saveState(db, restored, error));
-    net::Session::forgetKeyProbes();
     mock.answer = kept;
   }
   {

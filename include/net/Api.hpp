@@ -19,7 +19,6 @@ struct Response {
     std::string session; // X-CookingFoil-Session: why the session token was refused
     std::string enroll;  // X-CookingFoil-Enroll: "invalid" when an enroll token was refused
     std::string auth;    // X-CookingFoil-Auth: why a 401 refused (no-access-key, access-key-wrong, ...)
-    std::string serverId; // X-CookingFoil-Server-Id: the same on every address of one server
     int curl = 0;        // curl's result; 7 (CURLE_COULDNT_CONNECT): nothing was sent
     int64_t date = 0;    // the Date header, Unix seconds; 0 when absent
     bool directNamed = false; // X-CookingFoil-Download-Origin came with it
@@ -194,8 +193,6 @@ public:
     void setConfigPath(std::string path) { configPath_ = std::move(path); }
     // Tests: enroll tokens refused earlier this run may be tried again.
     static void forgetEnrollAttempts();
-    // Tests: addresses tried for another address's key may be tried again.
-    static void forgetKeyProbes();
 private:
     // The enroll token from the website's download, spent for this server's
     // access key before anything else; false (with the reason) when refused.
@@ -208,22 +205,10 @@ private:
     // was taken back), and its session token with them.
     void forgetAccessKey();
     void forgetPasswordOnceKeyed();
-    // The server's id from a reply, kept with this address (State::serverIds).
-    void learnServerId(const std::string& id);
-    // No key for this address, but one for another address of the same
-    // server (the LAN one and a tunnel): that key, as the server takes it
-    // from any address. Same is proven first (sameServer); each pair of
-    // addresses is tried once a run. False when there is none.
-    bool borrowKey();
-    // Whether this address is `other`'s server: other's session token (short
-    // lived, so little is lost should this be another server) sent here
-    // once, answered 200 with other's server id (`id`).
-    bool sameServer(const std::string& other, const std::string& id);
-    // A list refused with 401: what its reason asks for (a key from another
-    // address, or approval again). True when the list should be asked once
-    // more; error set when approval is pending or failed.
+    // A list refused with 401: approval again when its reason says the key
+    // is no good. True when the list should be asked once more (a key came);
+    // error set when approval is pending or failed.
     bool answerRefusal(const Response& reply, Error& error);
-    std::string refusedKey_; // a key the server called wrong: never borrowed back
     bool pairPasswordOnly_ = false; // a /api/pair/* reply said passwordOnly
     // This server's pair secret, made and saved first when the console has no
     // key from it yet; empty when it has one or the secret could not be saved.
