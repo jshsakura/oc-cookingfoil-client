@@ -336,7 +336,7 @@ void Application::dialogs() {
     // round it, that it takes signature patches and may stop while playing.
     const auto console = platform::firmwareVersion();
     // Wider than the plain confirm, so each sentence keeps to a line or two
-    // and none leaves a word alone; in ink, as the rest of the popup.
+    // and none leaves a word alone; in red, as a warning.
     const std::string past = forceInstall_ ? forceInstallNote(console, install::missingFirmware(pickedNeeds(), console)) : std::string();
     const float width = forceInstall_ ? ForceNoteWidth + 64 : 700;
     const float pastH = past.empty() ? 0 : paint_.fonts.lineCount(past, 18, ForceNoteWidth, ForceNoteLines) * 18 * 1.4f + 20;
@@ -345,7 +345,7 @@ void Application::dialogs() {
                             tr("Install"), 4);
     const float x = body.x + 32, y = body.y + 24;
     if (!past.empty())
-      paint_.fonts.wrapped(past, x, y + 96 + 20 + (pick ? PickRow : 0), 18, Ink, ForceNoteWidth, ForceNoteLines, false, 1.4f);
+      paint_.fonts.wrapped(past, x, y + 96 + 20 + (pick ? PickRow : 0), 18, Bad, ForceNoteWidth, ForceNoteLines, false, 1.4f);
     cover(g.representative.icon, x, y, 96, false, g.representative.name);
     paint_.fonts.text(g.representative.name, x + 116, y + 4, 22, Ink, true, body.w - 180);
     paint_.fonts.text(trf("{0} items · {1}", {std::to_string(selection_->count()),
