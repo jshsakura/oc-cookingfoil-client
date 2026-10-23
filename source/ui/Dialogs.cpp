@@ -353,9 +353,13 @@ void Application::dialogs() {
       paint_.fonts.middle(chosen.title, left + 70, mid, 19, Ink, true, Width - 70 - 44);
     }
   } else if (!alert_.empty()) {
-    const auto body = modal(700, 24 + 84 + 16, alertTitle_.empty() ? std::string(tr("Cannot install")) : alertTitle_,
+    // As tall as the reason: a long one (a path, a server's words) is read
+    // whole instead of cut at three lines.
+    constexpr int MostLines = 8;
+    const float lines = float(std::max(2, paint_.fonts.lineCount(alert_, 20, 700 - 64, MostLines)));
+    const auto body = modal(700, 24 + lines * 20 * 1.3f + 20, alertTitle_.empty() ? std::string(tr("Cannot install")) : alertTitle_,
                             tr("Close"), "", tr("OK"), 25);
-    paint_.fonts.wrapped(alert_, body.x + 32, body.y + 24, 20, Ink, body.w - 64, 3);
+    paint_.fonts.wrapped(alert_, body.x + 32, body.y + 24, 20, Ink, body.w - 64, MostLines);
   } else if (bugAsk_) {
     bugReportDialog();
   } else if (serverInfo_) {

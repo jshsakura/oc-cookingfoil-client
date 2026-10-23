@@ -12,6 +12,7 @@ struct System {
   std::string id, name, defaultCore, coreName, iconUrl; // iconUrl: the system's colour icon
   LanguageTexts names;
   int romCount = 0;
+  bool coreOff = false; // the server turned off every core it has for this system
 };
 struct Game {
   std::string id, name, file, system, core, iconUrl, bundleUrl;
@@ -38,6 +39,7 @@ struct Game {
   int ratingCount = 0; // how many people rated it
   int variants = 1;    // versions of it the server has (a list shows one, its pick)
   bool verified = false; // an admin checked that it runs
+  bool coreOff = false;  // the server turned off its core: listed, but not to be downloaded
   votes::Votes votes;
   // Its bezel: one made for this game, the system's default, or none.
   enum class Bezel { None, System, Game } bezel = Bezel::None;

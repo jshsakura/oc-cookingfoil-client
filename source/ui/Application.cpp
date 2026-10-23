@@ -2081,8 +2081,9 @@ void Application::card(const Group &g, float x, float y, bool selected,
   if (index < groups_.size())
     hit(x, y, 150, 220, [this, index] { openDetail(index); });
   cover(g.representative.icon, x, y, 150, selected, g.representative.name);
-  // Download size on the top left, in the same small badge as the score.
-  if (const auto bytes = g.base ? g.base->size : g.representative.size; bytes > 0) {
+  // Download size on the top left, in the same small badge as the score:
+  // the base with its update, as a player installs them.
+  if (const auto bytes = groupBytes(g); bytes > 0) {
     const auto label = formatBytes(bytes);
     const float w = paint_.fonts.measure(label, 13, true) + 10, h = 19;
     paint_.rect(x + 6, y + 6, w, h, {22, 22, 26, 190}, 5);

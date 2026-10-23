@@ -603,6 +603,7 @@ void Application::settleHomebrewRemoval() {
   const auto done = std::exchange(homebrewRemoved_, {});
   cardChanged();
   if (!done.file) {
+    alertTitle_ = tr("Could not delete");
     alert_ = trf("Could not delete the file: {0}", {homebrewFile(app)});
     return;
   }
@@ -621,8 +622,10 @@ void Application::settleHomebrewRemoval() {
   if (!done.shortcutError.empty()) {
     alertTitle_ = tr("Could not delete the shortcut");
     alert_ = done.shortcutError;
-  } else if (!done.folderError.empty())
+  } else if (!done.folderError.empty()) {
+    alertTitle_ = tr("Could not delete");
     alert_ = trf("Could not delete the folder: {0}", {done.folderError});
+  }
   else
     message(trf("Removed {0}.", {app.name}));
 }

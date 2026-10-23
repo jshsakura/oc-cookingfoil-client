@@ -1,5 +1,6 @@
 #include "Test.hpp"
 #include "core/Retro.hpp"
+#include "core/I18n.hpp"
 #include <set>
 using namespace foil::retro;
 namespace {
@@ -156,6 +157,17 @@ int runRetroTests() {
     CHECK(systemName(chained, "zh-Hant") == "简体" && systemName(chained, "fr") == "English");
     CHECK(systemName(chained, "ko") == "Game Boy Advance"); // Korean: its own name, else the server's
     // A region the server names is kept, anything else dropped.
+    // A game whose core the server turned off: listed, flagged; its system
+    // says so when every core it has is off.
+    CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","coreOff":true})").coreOff);
+    CHECK(!parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","coreOff":"yes"})").coreOff);
+    CHECK(!parseGameJson(R"({"id":"a","bundleUrl":"https://h/b"})").coreOff);
+    {
+      const auto off = parseSystems(R"({"systems":[{"id":"nes","core":{"state":"core-off"}},{"id":"snes","core":{"state":"ready"}},{"id":"gb"}]})");
+      CHECK(off.size() == 3 && off[0].coreOff && !off[1].coreOff && !off[2].coreOff);
+      // Its files refused (409): the reason names the core, not an HTTP code.
+      CHECK(bundleFailure(409, true) == foil::tr("The server has no core registered for this game.") && bundleFailure(409, false) == bundleFailure(409, true));
+    }
     CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"kr"})").region == "kr");
     CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"mars"})").region.empty());
     CHECK(parseGameJson(serializeGame(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b","region":"eu"})"))).region == "eu");

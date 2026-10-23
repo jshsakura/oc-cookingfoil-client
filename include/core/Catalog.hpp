@@ -18,6 +18,9 @@ struct Group {
 };
 // The worst file check among a game's files (Item::integrity): 0, 1 or 2.
 int groupIntegrity(const Group &g);
+// What a game takes to play as the server has it: the base and its update
+// (a small base with a large update reads as the large one it is).
+uint64_t groupBytes(const Group &g);
 // A card's labels, most wanted first. The file's state is one label:
 // 손상 의심 or 수정됨 over 최신 버전 (its update is the newest the server
 // knows) or 업데이트.

@@ -805,6 +805,7 @@ float Application::achievementLabel(const achievements::Summary &a, float x, flo
 }
 std::vector<std::string> Application::retroLabels(const retro::Game &game, bool detail) const {
   std::vector<std::string> out;
+  if (detail && game.coreOff) out.push_back(tr("No core")); // the server has it off: told first
   if (const auto dot = game.file.rfind('.'); dot != std::string::npos) {
     auto format = game.file.substr(dot + 1);
     std::transform(format.begin(), format.end(), format.begin(), ::toupper);
@@ -965,7 +966,8 @@ void Application::retroList() {
     const float right = 1230;
     const bool busy = retroBusy_ == game.id;
     const bool bezel = retroBezelMissing(game), there = retroInstalled(game) && !bezel;
-    const std::string state = busy ? tr("Downloading") : bezel ? tr("Get bezel") : there ? tr("Installed") : tr("Not installed");
+    const bool off = game.coreOff && !busy && !there; // listed, but the server has its core off
+    const std::string state = busy ? tr("Downloading") : off ? tr("No core") : bezel ? tr("Get bezel") : there ? tr("Installed") : tr("Not installed");
     const float w = paint_.fonts.measure(state, 16, true) + 20;
     paint_.rect(right - w, y + 12, w, 28, busy || bezel ? Butter : there ? Good : Line, 8);
     paint_.fonts.middle(state, right - w + 10, y + 26, 16, there && !busy ? Surface : Ink, true);

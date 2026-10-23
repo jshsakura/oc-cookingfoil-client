@@ -25,6 +25,18 @@ int runCatalogTests() {
   {
     // A game warns of its worst file: a damaged DLC outranks a modified base.
     foil::Group g;
+    {
+      // A small base with a large update counts as both.
+      foil::Group sized;
+      foil::Item base, update;
+      base.size = 100;
+      update.size = 900;
+      sized.base = base;
+      sized.representative = base;
+      CHECK(foil::groupBytes(sized) == 100);
+      sized.update = update;
+      CHECK(foil::groupBytes(sized) == 1000);
+    }
     CHECK(foil::groupIntegrity(g) == 0);
     g.base = foil::Item{};
     g.base->integrity = 1;
