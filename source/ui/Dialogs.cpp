@@ -335,17 +335,25 @@ void Application::dialogs() {
     // Past the firmware: why it cannot install as is, how the server gets
     // round it, that it takes signature patches and may stop while playing.
     const auto console = platform::firmwareVersion();
-    // Wider than the plain confirm, so each sentence keeps to a line or two
-    // and none leaves a word alone; in red, as a warning.
+    // A warning card as 레트로 게임's (light red, the warning icon), as tall
+    // as its sentences; the popup is wider than the plain confirm so each
+    // keeps to a line or two and none leaves a word alone.
+    constexpr float CardPad = 18, CardIcon = 56;
     const std::string past = forceInstall_ ? forceInstallNote(console, install::missingFirmware(pickedNeeds(), console)) : std::string();
-    const float width = forceInstall_ ? ForceNoteWidth + 64 : 700;
-    const float pastH = past.empty() ? 0 : paint_.fonts.lineCount(past, 18, ForceNoteWidth, ForceNoteLines) * 18 * 1.4f + 20;
+    const float cardW = CardIcon + ForceNoteWidth + CardPad;
+    const float width = forceInstall_ ? cardW + 64 : 700;
+    const float noteH = past.empty() ? 0 : paint_.fonts.lineCount(past, 18, ForceNoteWidth, ForceNoteLines) * 18 * 1.4f;
+    const float pastH = past.empty() ? 0 : noteH + 2 * CardPad + 20;
     const auto body = modal(width, 24 + 96 + 24 + (pick ? PickRow : 0) + pastH,
                             forceInstall_ ? tr("Install ignoring firmware version") : tr("Install this game?"), tr("Cancel"), "",
                             tr("Install"), 4);
     const float x = body.x + 32, y = body.y + 24;
-    if (!past.empty())
-      paint_.fonts.wrapped(past, x, y + 96 + 20 + (pick ? PickRow : 0), 18, Bad, ForceNoteWidth, ForceNoteLines, false, 1.4f);
+    if (!past.empty()) {
+      const float top = y + 96 + 20 + (pick ? PickRow : 0);
+      paint_.rect(x, top, cardW, noteH + 2 * CardPad, SDL_Color{253, 226, 226, 255}, 14);
+      paint_.icon(33, x + 18, top + CardPad, Bad, 24);
+      paint_.fonts.wrapped(past, x + CardIcon, top + CardPad, 18, Bad, ForceNoteWidth, ForceNoteLines, false, 1.4f);
+    }
     cover(g.representative.icon, x, y, 96, false, g.representative.name);
     paint_.fonts.text(g.representative.name, x + 116, y + 4, 22, Ink, true, body.w - 180);
     paint_.fonts.text(trf("{0} items · {1}", {std::to_string(selection_->count()),
