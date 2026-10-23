@@ -130,7 +130,10 @@ public:
   void setDetail(net::Detail detail);
   bool confirmingInstall() const { return confirmInstall_; }
   bool forcingInstall() const { return confirmInstall_ && forceInstall_; }
-  void offerFeature(const std::string &server, const std::string &feature) { serverFeatures_[server].insert(feature); }
+  void offerFeature(const std::string &server, const std::string &feature, const std::string &rewrapMax = "") {
+    serverFeatures_[server].insert(feature);
+    serverRewrapMax_[server] = rewrapMax;
+  }
   std::string detailId() const { return detailGroup_ < groups_.size() ? groups_[detailGroup_].id : ""; }
   // Patches picked with a game install that have not started yet.
   size_t queuedPatches() const { return patchQueue_.size(); }
@@ -1335,6 +1338,9 @@ private:
   // Of the servers with every picked file, the ones that re-encrypt content
   // for this console's older master key (feature nca-rewrap).
   std::vector<std::string> rewrapServers() const;
+  // The picked content's key is past every rewrap server's prod.keys: what
+  // to say instead of offering it (empty: not so).
+  std::string rewrapKeysTooOld() const;
   // A row: pressed, it darkens as itself (its own corners), only the part on screen.
   void rowHit(float x, float y, float w, float h, int radius, std::function<void()> run) {
     hit(x, y, w, h, std::move(run), {}, -radius);
@@ -1493,6 +1499,8 @@ private:
   bool incomingCatalog_ = false; // the network thread brought a list (incomingGroups_)
   // What each server read now offers (/api/shop/info features), by url.
   std::map<std::string, std::set<std::string>> serverFeatures_;
+  // Each server's rewrapMaxFirmware: past it its prod.keys cannot re-encrypt.
+  std::map<std::string, std::string> serverRewrapMax_;
   // The servers read now that offer `feature` (empty: all of them): the one
   // in use first, then the others in config.json's order.
   std::vector<Server> serversWith(const std::string &feature) const;

@@ -1114,6 +1114,8 @@ const Translation rows[] = {
     {"Can't install|button", "インストール不可"},
     {"Force install|button", "強制インストール"},
     {"Install ignoring firmware version", "ファームウェアのバージョンを無視してインストール"},
+    {"The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.", "サーバーの prod.keys のバージョンが古いため続行できません。{0} 以降の prod.keys に入れ替えてください。"},
+    {"The server could not re-encrypt this game for the console.", "サーバーがこのゲームを本体向けに暗号化し直せませんでした。"},
     {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "このゲームにはファームウェア {1} 以降が必要で、本体は {0} です。サーバーが本体の鍵に合わせて暗号化し直して送るため、署名パッチがないとインストールできず、新しいファームウェアの機能を使うゲームはプレイ中に止まることがあります。"},
     {"See why", "理由を見る"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "ファームウェアの要件を満たしていません。\n{1} 以上のファームウェアが必要です。\n現在の本体は {0} です。"},

@@ -678,6 +678,7 @@ bool parseItem(json_object* object, Item& item) {
     item.priceDiscountEnds = stringField(object, "price_discount_ends");
     item.priceCountry = stringField(object, "price_country");
     item.requiredFirmware = textField(object, "required_firmware");
+    item.keyFirmware = textField(object, "key_firmware");
     item.installSize = positive(object, "install_size");
     item.latestVersion = static_cast<uint32_t>(std::min<uint64_t>(positive(object, "latest_version"), UINT32_MAX));
     item.dlcTotal = int(std::min<uint64_t>(positive(object, "dlc_total"), 9999));
@@ -927,6 +928,7 @@ Parsed<Detail> parseDetail(const std::string& json) {
     d.category = stringField(root.get(), "category"); d.banner = stringField(root.get(), "bannerUrl"); if (!isHttp(d.banner)) d.banner.clear();
     d.releaseDate = integerField(root.get(), "releaseDate"); d.players = integerField(root.get(), "numberOfPlayers");
     d.requiredFirmware = textField(root.get(), "requiredFirmware");
+    d.keyFirmware = textField(root.get(), "keyFirmware");
     d.dlcTotal = int(std::min<uint64_t>(positive(root.get(), "dlcTotal"), 9999));
     d.score = int(std::min<uint64_t>(positive(root.get(), "score"), 100));
     d.scoreCount = int(std::min<uint64_t>(positive(root.get(), "scoreCount"), INT32_MAX));
@@ -1443,6 +1445,7 @@ bool Session::refresh(Error& error) {
             Error ignored;
             const auto body = parseJson(response.body, ignored);
             serverId_ = body ? stringField(body.get(), "server_id") : std::string();
+            rewrapMaxFirmware_ = body ? stringField(body.get(), "rewrapMaxFirmware") : std::string();
         }
         // Only a server that says so is asked for a session token.
         if (response.status == 200 || response.status == 404) {

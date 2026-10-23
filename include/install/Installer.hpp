@@ -44,6 +44,11 @@ std::string unreachableFirmware(const std::vector<Item> &files, const std::strin
 // firmware's master key, so content for a newer key still installs.
 std::string rewrapUrl(const std::string &url, const std::string &console);
 bool rewrapped(const std::string &url);
+// What a server that cannot re-encrypt a file (409, rewrap.*) says, in the
+// console's language ({"code","message"}, or under "error").
+std::string rewrapRefusal(const std::string &body);
+// The newest keyFirmware among the files ("" when none says).
+std::string keyFirmwareOf(const std::vector<Item> &files);
 // The speed shown, calm enough to read: everything received since this
 // download started over the time it has run, refreshed every three
 // seconds. Nothing is shown for the first five seconds and the first 4 MB
@@ -112,7 +117,8 @@ public:
   void setPaused(bool paused);
   bool paused() const { return pause_; }
   bool cancellationRequested() const { return cancel_; }
-  // Set from 설정 when the install starts; the engine reads it per file.
+  // Set from 설정 when the install starts, and on for a file the server
+  // re-encrypted (its headers are no longer signed); the engine reads it per file.
   bool skipSignatureCheck() const { return skipSignature_; }
   // Where cut-off files stand (EngineHooks), held here so the install
   // thread never waits on the card: the UI thread loads them from

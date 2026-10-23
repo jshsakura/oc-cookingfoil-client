@@ -1114,6 +1114,8 @@ const Translation rows[] = {
     {"Can't install|button", "No se puede instalar"},
     {"Force install|button", "Forzar instalación"},
     {"Install ignoring firmware version", "Instalar ignorando la versión del firmware"},
+    {"The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.", "Las prod.keys del servidor son demasiado antiguas para continuar. Reemplázalas por prod.keys de {0} o posterior."},
+    {"The server could not re-encrypt this game for the console.", "El servidor no pudo volver a cifrar este juego para la consola."},
     {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "Este juego necesita el firmware {1} o posterior y la consola tiene el {0}. El servidor lo vuelve a cifrar para las claves de esta consola, así que solo se instala con parches de firma, y un juego que use funciones del firmware nuevo puede detenerse mientras juegas."},
     {"See why", "Ver motivo"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "No se cumple el requisito de firmware.\nSe necesita el firmware {1} o posterior.\nLa consola tiene {0}."},

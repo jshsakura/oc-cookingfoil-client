@@ -1114,6 +1114,8 @@ const Translation rows[] = {
     {"Can't install|button", "Niet te installeren"},
     {"Force install|button", "Toch installeren"},
     {"Install ignoring firmware version", "Installeren zonder firmwareversie te controleren"},
+    {"The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.", "De prod.keys van de server zijn te oud om door te gaan. Vervang ze door prod.keys voor {0} of nieuwer."},
+    {"The server could not re-encrypt this game for the console.", "De server kon deze game niet opnieuw versleutelen voor de console."},
     {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "Deze game vraagt firmware {1} of nieuwer en de console heeft {0}. De server versleutelt hem opnieuw voor de sleutels van deze console, dus hij installeert alleen met handtekeningpatches, en een game die nieuwe firmwarefuncties gebruikt kan tijdens het spelen vastlopen."},
     {"See why", "Bekijk waarom"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "Niet voldaan aan de firmwarevereiste.\nFirmware {1} of nieuwer is nodig.\nDe console heeft {0}."},

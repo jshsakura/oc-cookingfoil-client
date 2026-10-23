@@ -70,6 +70,16 @@ int runInstallerTests() {
   CHECK(foil::install::rewrapped(forced.url) && !foil::install::rewrapped("http://192.0.2.1/rewrap=1"));
   CHECK(foil::install::unreachableFirmware({forced}, "18.1.0").empty());
   CHECK(foil::install::unreachableFirmware({forced, newer}, "18.1.0") == "19.0.0");
+  // The key its NCAs use counts even when its own firmware field is lower.
+  auto keyed = item;
+  keyed.requiredFirmware = "18.0.0";
+  keyed.keyFirmware = "20.0.0";
+  CHECK(foil::install::unreachableFirmware({keyed}, "18.1.0") == "20.0.0");
+  CHECK(foil::install::keyFirmwareOf({item, keyed, newer}) == "20.0.0" && foil::install::keyFirmwareOf({item}).empty());
+  // A server that cannot re-encrypt says why, at the top or under "error".
+  CHECK(foil::install::rewrapRefusal(R"({"code":"rewrap.keysTooOld","message":"keys too old"})") == "keys too old");
+  CHECK(foil::install::rewrapRefusal(R"({"error":{"code":"rewrap.noKeys","message":"no keys"}})") == "no keys");
+  CHECK(!foil::install::rewrapRefusal("<html>").empty());
   foil::install::Installer installer;
   auto error = installer.start({item}, "Title", "", "sd", {}, {});
   CHECK(error);

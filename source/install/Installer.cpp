@@ -1,3 +1,4 @@
+#include "core/Json.hpp"
 #include "core/Log.hpp"
 #include "install/Installer.hpp"
 #include <utility>
@@ -15,7 +16,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
-#include <iterator>
 #include <limits>
 #include <stdexcept>
 namespace foil::install {
@@ -57,10 +57,32 @@ std::string firmwareShortfall(const std::string &need, const std::string &consol
              {console, need});
 }
 std::string unreachableFirmware(const std::vector<Item> &files, const std::string &console) {
+  // The key its NCAs use counts as a requirement too: content can need a
+  // newer key than its own firmware field says.
   std::vector<Item> own;
-  std::copy_if(files.begin(), files.end(), std::back_inserter(own), [](const Item &f) { return !rewrapped(f.url); });
+  for (const auto &f : files) {
+    if (rewrapped(f.url)) continue;
+    own.push_back(f);
+    if (!f.keyFirmware.empty() && (f.requiredFirmware.empty() || compareVersions(f.requiredFirmware, f.keyFirmware) < 0))
+      own.back().requiredFirmware = f.keyFirmware;
+  }
   const auto need = missingFirmware(own, console);
   return !need.empty() && masterKeyOf(need) > masterKeyOf(console) ? need : "";
+}
+std::string rewrapRefusal(const std::string &body) {
+  Error ignored;
+  const auto root = parseJson(body, ignored);
+  auto *error = root ? field(root.get(), "error") : nullptr;
+  auto message = root ? stringField(root.get(), "message") : std::string();
+  if (message.empty() && json_object_is_type(error, json_type_object)) message = stringField(error, "message");
+  if (message.empty() && json_object_is_type(error, json_type_string)) message = json_object_get_string(error);
+  return message.empty() ? std::string(tr("The server could not re-encrypt this game for the console.")) : message;
+}
+std::string keyFirmwareOf(const std::vector<Item> &files) {
+  std::string most;
+  for (const auto &f : files)
+    if (!f.keyFirmware.empty() && (most.empty() || compareVersions(most, f.keyFirmware) < 0)) most = f.keyFirmware;
+  return most;
 }
 bool rewrapped(const std::string &url) {
   const auto query = url.find('?');
@@ -170,7 +192,8 @@ Error Installer::start(std::vector<Item> files, std::string name,
   cancel_ = false;
   stop_ = false;
   pause_ = false;
-  skipSignature_ = state.skipSignatureCheck;
+  skipSignature_ = state.skipSignatureCheck ||
+                   std::any_of(files.begin(), files.end(), [](const Item &f) { return rewrapped(f.url); });
   {
     std::lock_guard<std::mutex> lock(mutex_);
     progress_ = {};
@@ -377,6 +400,15 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
       }
       // A failed item is tried again from the start: the engine skips the
       // content files it already finished, so this picks up where it broke.
+      // Re-encrypted on the server: its first byte asked before the engine
+      // starts, so a server that cannot (409) says why in its own words
+      // instead of three failed tries.
+      if (rewrapped(files[i].url)) {
+        auto headers = net::downloadHeaders(server, state, files[i].url);
+        headers.push_back("Range: bytes=0-0");
+        if (const auto first = net::get(files[i].url, headers, "", &cancel_); first.status == 409)
+          throw std::runtime_error(rewrapRefusal(first.body));
+      }
       constexpr int Attempts = 3;
       int renewed = 0;
       for (int attempt = 1;; ++attempt) {

@@ -119,6 +119,7 @@ void nativeInstall(const Item &item, const std::string &target,
   // it off (설정), the engine installs it as is and sigpatches let it run.
   auto *sink = foil::install::engineSink();
   inst::config::validateNCAs = !(sink && sink->skipSignatureCheck());
+  inst::config::rewrapped = rewrapped(item.url);
   // The download ring between curl and the placeholder writer, in 8MB
   // segments. CyberFoil sets this from its own menu, which is not built here;
   // left at 0 no data could ever be buffered and every download stalled.

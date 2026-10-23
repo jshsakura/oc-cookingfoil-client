@@ -117,7 +117,7 @@ struct Detail {
     std::vector<std::string> screenshots;
     // eShop price as the store formats it ("64,800원"); empty when unknown.
     std::string priceRegular, priceDiscount, priceCountry;
-    std::string requiredFirmware, ratingContent;
+    std::string requiredFirmware, keyFirmware, ratingContent;
     int dlcTotal = 0;
     int score = 0, scoreCount = 0; // review score 0-100 and its vote count
     std::string scoreLabel;
@@ -190,6 +190,8 @@ public:
     // The server's own id (/api/shop/info server_id): two addresses of one
     // server give the same. Empty until it answers, or from a server without one.
     const std::string& serverId() const { return serverId_; }
+    // The newest firmware whose content the server can re-encrypt (nca-rewrap); empty: not said.
+    const std::string& rewrapMaxFirmware() const { return rewrapMaxFirmware_; }
     bool pairingPending() const { return pairingPending_; }
     const PairingInfo& pairingInfo() const { return pairingInfo_; }
     // The note for this server's approval request, from the app; a changed
@@ -233,7 +235,7 @@ private:
     std::string pairSecret();
     Server server_;
     State state_;
-    std::string path_, etag_, patchesEtag_, configPath_, serverId_;
+    std::string path_, etag_, patchesEtag_, configPath_, serverId_, rewrapMaxFirmware_;
     int patchesRetryAfter_ = 0;
     std::vector<UserPatch> patches_;
     std::vector<Item> items_;

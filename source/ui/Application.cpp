@@ -1304,9 +1304,13 @@ void Application::takeNetwork() {
   features_ = session_->features();
   serverFeatures_.clear();
   serverFeatures_[session_->server().url] = features_;
+  serverRewrapMax_.clear();
+  serverRewrapMax_[session_->server().url] = session_->rewrapMaxFirmware();
   for (const auto &other : others_)
-    if (const auto status = serverStatus_.find(other->server().url); status != serverStatus_.end() && status->second.empty())
+    if (const auto status = serverStatus_.find(other->server().url); status != serverStatus_.end() && status->second.empty()) {
       serverFeatures_[other->server().url] = other->features();
+      serverRewrapMax_[other->server().url] = other->rewrapMaxFirmware();
+    }
   // Same server: keep decoded covers; only the access keys may have changed.
   images_->updateState(state_);
   if (screen_ == Screen::Detail)
@@ -2671,6 +2675,7 @@ std::vector<Item> Application::pickedNeeds() const {
   if (!detail_.requiredFirmware.empty() && !needs.empty()) {
     Item title;
     title.requiredFirmware = detail_.requiredFirmware;
+    title.keyFirmware = detail_.keyFirmware;
     needs.push_back(std::move(title));
   }
   return needs;
@@ -2681,11 +2686,29 @@ std::string Application::pickedUnreachable() const {
 std::vector<std::string> Application::rewrapServers() const {
   std::vector<std::string> servers;
   if (!selection_) return servers;
-  for (const auto &url : selection_->servers())
-    if (const auto f = serverFeatures_.find(url.empty() ? serverInUse() : url);
-        f != serverFeatures_.end() && f->second.count("nca-rewrap"))
+  // The key the content needs, against the newest each server's keys reach.
+  const auto need = install::keyFirmwareOf(pickedNeeds());
+  for (const auto &url : selection_->servers()) {
+    const auto at = url.empty() ? serverInUse() : url;
+    const auto f = serverFeatures_.find(at);
+    if (f == serverFeatures_.end() || !f->second.count("nca-rewrap")) continue;
+    const auto most = serverRewrapMax_.find(at);
+    if (most == serverRewrapMax_.end() || most->second.empty() || need.empty() ||
+        install::masterKeyOf(need) <= install::masterKeyOf(most->second))
       servers.push_back(url);
+  }
   return servers;
+}
+std::string Application::rewrapKeysTooOld() const {
+  if (!selection_ || pickedUnreachable().empty() || !rewrapServers().empty()) return "";
+  const auto servers = selection_->servers();
+  const bool offered = std::any_of(servers.begin(), servers.end(), [&](const std::string &url) {
+    const auto f = serverFeatures_.find(url.empty() ? serverInUse() : url);
+    return f != serverFeatures_.end() && f->second.count("nca-rewrap");
+  });
+  return offered ? trf("The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.",
+                       {install::keyFirmwareOf(pickedNeeds())})
+                 : "";
 }
 void Application::requestInstall() {
   if (!selection_ || detailGroup_ >= groups_.size())
@@ -2704,7 +2727,8 @@ void Application::requestInstall() {
   const auto need = pickedUnreachable();
   forceInstall_ = !need.empty() && !rewrapServers().empty();
   if (!need.empty() && !forceInstall_) {
-    alert_ = install::firmwareShortfall(need, platform::firmwareVersion());
+    const auto keys = rewrapKeysTooOld();
+    alert_ = keys.empty() ? install::firmwareShortfall(need, platform::firmwareVersion()) : keys;
     return;
   }
   confirmInstall_ = true;

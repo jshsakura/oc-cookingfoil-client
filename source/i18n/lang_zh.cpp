@@ -1114,6 +1114,8 @@ const Translation rows[] = {
     {"Can't install|button", "无法安装"},
     {"Force install|button", "忽略固件版本安装"},
     {"Install ignoring firmware version", "忽略固件版本安装"},
+    {"The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.", "服务器的 prod.keys 版本过低，无法继续。请换成 {0} 或更高版本的 prod.keys。"},
+    {"The server could not re-encrypt this game for the console.", "服务器无法为本主机重新加密此游戏。"},
     {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "此游戏需要固件 {1} 或更高版本，主机为 {0}。服务器会按主机的密钥重新加密后发送，因此需要签名补丁才能安装，使用新固件功能的游戏可能在游玩时卡住。"},
     {"See why", "查看原因"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "不符合固件要求。\n需要 {1} 或更高版本的固件。\n当前主机为 {0}。"},

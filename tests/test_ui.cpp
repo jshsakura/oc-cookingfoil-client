@@ -332,7 +332,15 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(!app.confirmingInstall() && !app.alert().empty());
     app.action(foil::ui::Action::Back);
     CHECK(app.alert().empty());
-    app.offerFeature("", "nca-rewrap");
+    // The server's keys stop short of the game's: it says to replace them.
+    newer.keyFirmware = "20.0.0";
+    app.setDetail(newer);
+    app.offerFeature("", "nca-rewrap", "19.0.0");
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(!app.confirmingInstall() && app.alert().find("prod.keys") != std::string::npos);
+    app.action(foil::ui::Action::Back);
+    app.offerFeature("", "nca-rewrap", "22.0.0");
     app.render();
     app.action(foil::ui::Action::Accept);
     CHECK(app.forcingInstall() && app.alert().empty());
