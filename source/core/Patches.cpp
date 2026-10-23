@@ -8,11 +8,13 @@
 #include "platform/Storage.hpp"
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <sys/stat.h>
+#include <thread>
 #include <utility>
 namespace foil {
 namespace fs = std::filesystem;
@@ -525,10 +527,20 @@ bool PatchStore::save(Error &error) {
 bool PatchStore::move(const std::string &from, const std::string &to, Error &error) {
   std::error_code ec;
   makeDirectories(std::filesystem::path(fs::path(to).parent_path()).string());
-  fs::rename(from, to, ec);
-  if (ec)
-    error.message = tr("Could not move the patch files. Check the SD card.");
-  return !ec;
+  // The card can refuse a rename for a moment under load (its directory
+  // entries catch up late, the same as the saves' dance); a refusal goes a
+  // few rounds, each said, before the move is called failed.
+  for (int again = 0;; ++again) {
+    ec.clear();
+    fs::rename(from, to, ec);
+    if (!ec) return true;
+    logLine("patch move " + fs::path(from).filename().string() + " -> " + fs::path(to).filename().string() +
+            ": " + ec.message());
+    if (again >= 19 || ec == std::errc::no_such_file_or_directory) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+  }
+  error.message = tr("Could not move the patch files. Check the SD card.");
+  return false;
 }
 void PatchStore::prune(const std::string &path) const {
   std::error_code ec;

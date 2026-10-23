@@ -135,8 +135,8 @@ bool replaceHeld(const std::string& from, const std::string& to, std::string& er
     // holds the file open (the card deletes an open file's name late, and
     // will not rename it either), so the remove and the rename go a few
     // rounds, a breath apart, before the save is said failed.
-    constexpr int rounds = 10;
-    constexpr auto breath = std::chrono::milliseconds(100);
+    constexpr int rounds = 20;
+    constexpr auto breath = std::chrono::milliseconds(250);
     for (int round = 0;; ++round) {
         if (::rename(from.c_str(), to.c_str()) == 0) return true;
         const int reason = errno;
