@@ -1,6 +1,7 @@
 #include <sys/stat.h>
 #include "core/Json.hpp"
 #include "core/I18n.hpp"
+#include "core/Log.hpp"
 #include "platform/FileSystem.hpp"
 #include <algorithm>
 #include <cerrno>
@@ -181,6 +182,7 @@ bool atomicWrite(const std::string& path, const std::string& contents, std::stri
     const bool closed = ::close(fd) == 0;
     if (!flushed || !closed) { error = std::strerror(errno); ::unlink(temp.c_str()); return false; }
     if (!replaceHeld(temp, path, error)) {
+        logLine("save: " + std::filesystem::path(path).filename().string() + ": " + error);
         ::unlink(temp.c_str());
         return false;
     }
