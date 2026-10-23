@@ -15,7 +15,9 @@
 #include "core/ZipStream.hpp"
 #include <zlib.h>
 #include <arpa/inet.h>
+#include <atomic>
 #include <cstring>
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -23,6 +25,7 @@
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
+#include <vector>
 namespace fs = std::filesystem;
 namespace {
 constexpr const char *Tid = "0100F2C0115B6000";
@@ -294,6 +297,45 @@ int runResumeTests() {
     CHECK(foil::replaceFile(incoming.string(), split.string(), ignored));
     CHECK(foil::readFile((split / "00").string()) == "new");
     CHECK(!fs::exists(root / "split.old") && !fs::exists(incoming));
+    fs::remove_all(root);
+  }
+  {
+    // Writers of one file line up: several threads saving the same card
+    // file whole (a ledger, the records database) must never trample the
+    // temp they share, so the file is always absent or one writer's whole
+    // contents, and no temp is left behind.
+    const auto root = fs::temp_directory_path() / ("cf-lineup-" + std::to_string(getpid()));
+    fs::remove_all(root);
+    fs::create_directories(root);
+    const auto file = (root / "ledger.json").string();
+    constexpr int writers = 4, rounds = 60, size = 8 * 1024 * 1024;
+    std::atomic<bool> bad{false}, torn{false}, stop{false};
+    std::vector<std::thread> threads;
+    for (int w = 0; w < writers; ++w)
+      threads.emplace_back([&, w] {
+        for (int r = 0; r < rounds; ++r) {
+          std::string error;
+          if (!foil::atomicWrite(file, std::string(size, char('a' + (w * rounds + r) % 26)), error)) bad = true;
+        }
+      });
+    std::thread reader([&] {
+      while (!stop.load()) {
+        const auto have = foil::readFile(file);
+        if (have.size() != 0 && have.size() != size) torn = true;  // a shared temp, trampled
+        else if (have.size() == size && have.find_first_not_of(have[0]) != std::string::npos) torn = true;
+        std::this_thread::yield();
+      }
+    });
+    for (auto &t : threads) t.join();
+    stop = true;
+    reader.join();
+    CHECK(!bad);
+    CHECK(!torn);
+    const auto last = foil::readFile(file);
+    bool whole = false;
+    for (int i = 0; i < writers * rounds && !whole; ++i) whole = last == std::string(size, char('a' + i % 26));
+    CHECK(whole);
+    CHECK(!fs::exists(root / "ledger.json.tmp"));
     fs::remove_all(root);
   }
   {

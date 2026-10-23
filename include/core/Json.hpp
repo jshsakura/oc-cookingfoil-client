@@ -27,7 +27,8 @@ std::string readFile(const std::string& path);
 // an app, a patch or a ROM; scans of the card pass over them.
 bool systemJunk(const std::string& name);
 bool atomicWrite(const std::string& path, const std::string& contents, std::string& error);
-// The console refuses rename over an existing file, which must be removed first.
+// The console refuses rename over an existing file, which must be removed
+// first. Writers of the same file line up, in atomicWrite and here.
 bool replaceFile(const std::string& from, const std::string& to, std::string& error);
 // mkdir -p that stops at a device root ("sdmc:"): std::filesystem::create_directories
 // takes "sdmc:" for a folder on the console and fails before making any.

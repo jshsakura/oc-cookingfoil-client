@@ -6,6 +6,8 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <mutex>
 #include <fcntl.h>
 #include <unistd.h>
 namespace foil {
@@ -113,8 +115,46 @@ bool holds(const std::string& path, const std::string& contents) {
     input.read(have.data(), std::streamsize(have.size()));
     return input.gcount() == std::streamsize(have.size()) && have == contents;
 }
+// Saves of one file line up here. Every whole-file writer makes its temp
+// beside the target and renames it over; on a card that refuses a rename
+// over an existing file, two writers of the same file race between the
+// remove and the rename (one says "File exists" right after removing) and
+// the temp they share gets trampled. Striped by path: unrelated files do
+// not wait on each other.
+std::mutex &saveStripe(const std::string& path) {
+    static std::mutex stripes[32];
+    return stripes[std::hash<std::string>{}(path) & 31];
+}
+// rename() under the card's rule (nothing over an existing file), for a
+// caller that already holds the file's stripe.
+bool replaceHeld(const std::string& from, const std::string& to, std::string& error) {
+    for (int again = 0;; ++again) {
+        if (::rename(from.c_str(), to.c_str()) == 0) return true;
+        if (errno != EEXIST && errno != ENOTEMPTY) {
+            error = std::strerror(errno);
+            return false;
+        }
+        // The console refuses rename over an existing file; split files are folders.
+        std::error_code ec;
+        std::filesystem::remove_all(to, ec);
+        if (ec) {
+            error = "removing " + std::filesystem::path(to).filename().string() + ": " + ec.message();
+            return false;
+        }
+        if (::rename(from.c_str(), to.c_str()) == 0) return true;
+        // The file came back between the remove and the rename (a writer
+        // that does not pass through here): one more round, then it is said.
+        if (again) {
+            error = "putting " + std::filesystem::path(to).filename().string() + " in place: " + std::strerror(errno);
+            return false;
+        }
+    }
+}
 }
 bool atomicWrite(const std::string& path, const std::string& contents, std::string& error) {
+    // One writer at a time: the temp keeps its plain name beside the target
+    // (a save cut short is finished from it), so the writers queue here.
+    const std::lock_guard<std::mutex> held(saveStripe(path));
     // Unchanged: nothing to write. Every caller (ledgers, records, settings,
     // the database) saves whole files, often with nothing new in them.
     if (holds(path, contents)) return true;
@@ -132,27 +172,12 @@ bool atomicWrite(const std::string& path, const std::string& contents, std::stri
     const bool flushed = ::fsync(fd) == 0;
     const bool closed = ::close(fd) == 0;
     if (!flushed || !closed) { error = std::strerror(errno); ::unlink(temp.c_str()); return false; }
-    if (!replaceFile(temp, path, error)) { ::unlink(temp.c_str()); return false; }
+    if (!replaceHeld(temp, path, error)) { ::unlink(temp.c_str()); return false; }
     return true;
 }
 bool replaceFile(const std::string& from, const std::string& to, std::string& error) {
-    if (::rename(from.c_str(), to.c_str()) == 0) return true;
-    if (errno != EEXIST && errno != ENOTEMPTY) {
-        error = std::strerror(errno);
-        return false;
-    }
-    // The console refuses rename over an existing file; split files are folders.
-    std::error_code ec;
-    std::filesystem::remove_all(to, ec);
-    if (ec) {
-        error = "removing " + std::filesystem::path(to).filename().string() + ": " + ec.message();
-        return false;
-    }
-    if (::rename(from.c_str(), to.c_str()) != 0) {
-        error = "putting " + std::filesystem::path(to).filename().string() + " in place: " + std::strerror(errno);
-        return false;
-    }
-    return true;
+    const std::lock_guard<std::mutex> held(saveStripe(to));
+    return replaceHeld(from, to, error);
 }
 static std::string absoluteUrl(const std::string& value, const std::string& base) {
     if (value.rfind("https://", 0) == 0 || value.rfind("http://", 0) == 0) return value;
