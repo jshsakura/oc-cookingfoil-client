@@ -68,6 +68,11 @@ int runInstallerTests() {
   CHECK(foil::install::rewrapUrl("http://192.0.2.1/f?t=1", "12.1.0") == "http://192.0.2.1/f?t=1&rewrap=12.1.0");
   CHECK(foil::install::rewrapUrl(forced.url, "12.1.0") == forced.url); // asked once
   CHECK(foil::install::rewrapped(forced.url) && !foil::install::rewrapped("http://192.0.2.1/rewrap=1"));
+  // The pick's rows find a file whether it was asked re-encrypted or not.
+  CHECK(foil::install::sameFile(forced.url, "http://192.0.2.1/api/files/a.nsp"));
+  CHECK(foil::install::sameFile("http://192.0.2.1/f?t=1&rewrap=12.1.0&u=2", "http://192.0.2.1/f?t=1&u=2"));
+  CHECK(foil::install::sameFile("http://192.0.2.1/f?rewrap=12.1.0&t=1", "http://192.0.2.1/f?t=1"));
+  CHECK(!foil::install::sameFile(forced.url, "http://192.0.2.1/api/files/b.nsp"));
   CHECK(foil::install::unreachableFirmware({forced}, "18.1.0").empty());
   CHECK(foil::install::unreachableFirmware({forced, newer}, "18.1.0") == "19.0.0");
   // The key its NCAs use counts even when its own firmware field is lower.

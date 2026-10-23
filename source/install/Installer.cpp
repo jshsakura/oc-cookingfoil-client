@@ -88,6 +88,19 @@ bool rewrapped(const std::string &url) {
   const auto query = url.find('?');
   return query != std::string::npos && (url.find("?rewrap=", query) == query || url.find("&rewrap=", query) != std::string::npos);
 }
+namespace {
+std::string withoutRewrap(const std::string &url) {
+  const auto query = url.find('?');
+  if (query == std::string::npos) return url;
+  auto at = url.find("?rewrap=", query) == query ? query : url.find("&rewrap=", query);
+  if (at == std::string::npos) return url;
+  const auto end = url.find('&', at + 1);
+  if (end == std::string::npos) return url.substr(0, at);
+  // "?rewrap=x&t=1" keeps "?t=1"; "?t=1&rewrap=x&u=2" keeps "?t=1&u=2".
+  return url.substr(0, at + 1) + url.substr(end + 1);
+}
+} // namespace
+bool sameFile(const std::string &a, const std::string &b) { return a == b || withoutRewrap(a) == withoutRewrap(b); }
 std::string rewrapUrl(const std::string &url, const std::string &console) {
   if (rewrapped(url)) return url;
   return url + (url.find('?') == std::string::npos ? "?" : "&") + "rewrap=" + console;
@@ -404,10 +417,15 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
       // starts, so a server that cannot (409) says why in its own words
       // instead of three failed tries.
       if (rewrapped(files[i].url)) {
+        phase(tr("The server is re-encrypting it for this console."));
         auto headers = net::downloadHeaders(server, state, files[i].url);
         headers.push_back("Range: bytes=0-0");
-        if (const auto first = net::get(files[i].url, headers, "", &cancel_); first.status == 409)
-          throw std::runtime_error(rewrapRefusal(first.body));
+        const auto asked = std::chrono::steady_clock::now();
+        const auto first = net::get(files[i].url, headers, "", &cancel_);
+        logLine("rewrap: first byte HTTP " + std::to_string(first.status) + " after " +
+                std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - asked).count()) +
+                "ms");
+        if (first.status == 409) throw std::runtime_error(rewrapRefusal(first.body));
       }
       constexpr int Attempts = 3;
       int renewed = 0;

@@ -2801,7 +2801,7 @@ int Application::pickedOnTheWay(double &percent) const {
     return 0;
   const auto row = [&](const Item &f, history::Outcome outcome) {
     return std::any_of(history_.begin(), history_.end(), [&](const history::Entry &e) {
-      return e.outcome == outcome && e.kind.empty() && e.install.files.size() == 1 && e.install.files[0].url == f.url;
+      return e.outcome == outcome && e.kind.empty() && e.install.files.size() == 1 && install::sameFile(e.install.files[0].url, f.url);
     });
   };
   // Every picked file waits, runs or came in already (the base before its
@@ -2809,7 +2809,7 @@ int Application::pickedOnTheWay(double &percent) const {
   bool running = false, waiting = false;
   for (const auto &f : files) {
     const bool queued = std::any_of(installQueue_.begin(), installQueue_.end(),
-                                    [&](const QueuedInstall &q) { return q.file.url == f.url; });
+                                    [&](const QueuedInstall &q) { return install::sameFile(q.file.url, f.url); });
     const bool now = installer_.running() && row(f, history::Outcome::Running);
     if (!queued && !now && !row(f, history::Outcome::Done))
       return 0;
@@ -2903,10 +2903,10 @@ Error Application::enqueueInstall(const std::vector<Item> &files, const std::str
   std::vector<Item> fresh;
   for (const auto &f : files) {
     const bool waiting = std::any_of(installQueue_.begin(), installQueue_.end(),
-                                     [&](const QueuedInstall &q) { return q.file.url == f.url; }) ||
+                                     [&](const QueuedInstall &q) { return install::sameFile(q.file.url, f.url); }) ||
                          (installer_.running() && std::any_of(history_.begin(), history_.end(), [&](const history::Entry &e) {
                             return e.outcome == history::Outcome::Running && e.kind.empty() && e.install.files.size() == 1 &&
-                                   e.install.files[0].url == f.url;
+                                   install::sameFile(e.install.files[0].url, f.url);
                           }));
     if (!waiting)
       fresh.push_back(f);
@@ -2919,7 +2919,7 @@ Error Application::enqueueInstall(const std::vector<Item> &files, const std::str
                                          (e.outcome == history::Outcome::Failed || e.outcome == history::Outcome::Cancelled) &&
                                          std::any_of(e.install.files.begin(), e.install.files.end(), [&](const Item &old) {
                                            return std::any_of(fresh.begin(), fresh.end(),
-                                                              [&](const Item &f) { return f.url == old.url; });
+                                                              [&](const Item &f) { return install::sameFile(f.url, old.url); });
                                          });
                                 }),
                  history_.end());
@@ -3094,7 +3094,7 @@ void Application::askCancelPick(bool running) {
   }
   const auto files = selection_ ? selection_->files() : std::vector<Item>{};
   for (size_t i = 0; i < installQueue_.size(); ++i)
-    if (std::any_of(files.begin(), files.end(), [&](const Item &f) { return f.url == installQueue_[i].file.url; })) {
+    if (std::any_of(files.begin(), files.end(), [&](const Item &f) { return install::sameFile(f.url, installQueue_[i].file.url); })) {
       unqueueAsk_ = int(i);
       unqueuePick_ = true;
       return;

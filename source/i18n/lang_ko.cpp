@@ -1114,6 +1114,7 @@ const Translation rows[] = {
     {"Can't install|button", "설치 불가"},
     {"Force install|button", "펌웨어 버전 무시 설치"},
     {"Install ignoring firmware version", "펌웨어 버전 무시 설치"},
+    {"The server is re-encrypting it for this console.", "서버가 본체에 맞게 다시 암호화하고 있습니다."},
     {"The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.", "서버 prod.keys 의 버전이 낮아 진행할 수 없습니다. {0} 이상 버전의 prod.keys 로 교체해 주세요."},
     {"The server could not re-encrypt this game for the console.", "서버가 이 게임을 본체에 맞게 다시 암호화하지 못했습니다."},
     {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "이 게임은 펌웨어 {1} 이상이 필요하고 본체는 {0}입니다. 서버가 본체의 키에 맞게 다시 암호화해 보내므로 서명 패치가 있어야 설치되고, 새 펌웨어 기능을 쓰는 게임은 실행 중에 멈출 수 있습니다."},

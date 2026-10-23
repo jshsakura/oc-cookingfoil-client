@@ -1114,6 +1114,7 @@ const Translation rows[] = {
     {"Can't install|button", "Установка невозможна"},
     {"Force install|button", "Установить принудительно"},
     {"Install ignoring firmware version", "Установить без учёта версии прошивки"},
+    {"The server is re-encrypting it for this console.", "Сервер перешифровывает игру для этой консоли."},
     {"The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.", "Версия prod.keys на сервере слишком старая, продолжить нельзя. Замените их на prod.keys для {0} или новее."},
     {"The server could not re-encrypt this game for the console.", "Серверу не удалось перешифровать эту игру для консоли."},
     {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "Игре нужна прошивка {1} или новее, а на консоли {0}. Сервер перешифрует её под ключи этой консоли, поэтому она установится только с патчами подписи, а игра, использующая функции новой прошивки, может зависнуть во время игры."},
