@@ -356,11 +356,11 @@ void Application::detail() {
     // Content the console cannot open: gray, and A says why; one a server
     // re-encrypts for this console offers to install it anyway.
     const bool past = !pickedUnreachable().empty(), blocked = past && rewrapServers().empty();
-    // Past the firmware it turns orange: it installs, but not as usual.
-    paint_.rect(840, 568, 386, 60, blocked ? Line : past ? Pending : Butter, 14);
+    // Past the firmware it turns apricot: it installs, but not as usual.
+    paint_.rect(840, 568, 386, 60, blocked ? Line : past ? Apricot : Butter, 14);
     const auto install = blocked ? tr("Can't install|button") : past ? tr("Force install|button") : tr("Install|action");
     paint_.keyLabel("A", install, 840 + (386 - paint_.keyLabelWidth("A", install, 22, true)) / 2, 598, 22,
-                    blocked ? Secondary : past ? Surface : Ink, true);
+                    blocked ? Secondary : Ink, true);
   }
   if (galleryOpen_) gallery();
 }
