@@ -2324,7 +2324,11 @@ float Application::statusBar() {
   paint_.icon(cut ? 20 : 39, x, Mid - 10, cut ? Bad : signal_ >= 0 && signal_ <= 1 ? Pending : Ink, 20);
   x += 30;
   x = paint_.fonts.middle(tr(status), x, Mid, 17, statusColor(status), true) + 30;
-  hit(linkLeft - 10, Mid - 22, x - 20 - linkLeft, 44, [this] { pressLinkState(); });
+  // The finger gets the band's height; the pressed look hugs the icon and
+  // the word, as a chip.
+  const float linkRight = x - 30;
+  hit(linkLeft - 10, Mid - 22, linkRight - linkLeft + 20, 44, [this] { pressLinkState(); },
+      {linkLeft - 8, Mid - 16, linkRight - linkLeft + 16, 32}, 16);
   const struct {
     int icon;
     std::optional<uint64_t> free, total;

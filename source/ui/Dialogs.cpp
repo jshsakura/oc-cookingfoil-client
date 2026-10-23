@@ -4,6 +4,10 @@
 #include <algorithm>
 namespace foil::ui {
 // Key hints ending at `right`, like the screen footer; each one is tappable.
+std::string Application::forceInstallNote(const std::string &console, const std::string &need) {
+  return trf("This game needs firmware {1} or later, but the console has {0}, so it cannot be installed as is.\nThe server has newer prod.keys and can re-encrypt it into a version this console can install.\nThe console must have signature patches: the install relies on them to go ahead.\nIf the game needs features of the newer firmware, it may stop while playing.",
+             {console, need});
+}
 void Application::dialogHints(float right, float y, const std::string &close,
                               const std::string &apply, const std::string &accept, const std::string &remove) {
   // `accept` names what A does when the popup is one decision (다운로드);
@@ -328,20 +332,20 @@ void Application::dialogs() {
     const auto servers = forceInstall_ ? rewrapServers() : selection_->servers();
     const bool pick = servers.size() > 1;
     constexpr float PickRow = 64;
-    // Past the firmware: what the game needs, that it takes signature patches,
-    // and that it may stop while playing.
+    // Past the firmware: why it cannot install as is, how the server gets
+    // round it, that it takes signature patches and may stop while playing.
     const auto console = platform::firmwareVersion();
-    const std::string past =
-        forceInstall_
-            ? trf("This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.",
-                  {console, install::missingFirmware(pickedNeeds(), console)})
-            : std::string();
-    const float pastH = past.empty() ? 0 : paint_.fonts.lineCount(past, 18, 700 - 64, 5) * 18 * 1.3f + 20;
-    const auto body = modal(700, 24 + 96 + 24 + (pick ? PickRow : 0) + pastH,
+    // Wider than the plain confirm, so each sentence keeps to a line or two
+    // and none leaves a word alone; in ink, as the rest of the popup.
+    const std::string past = forceInstall_ ? forceInstallNote(console, install::missingFirmware(pickedNeeds(), console)) : std::string();
+    const float width = forceInstall_ ? ForceNoteWidth + 64 : 700;
+    const float pastH = past.empty() ? 0 : paint_.fonts.lineCount(past, 18, ForceNoteWidth, ForceNoteLines) * 18 * 1.4f + 20;
+    const auto body = modal(width, 24 + 96 + 24 + (pick ? PickRow : 0) + pastH,
                             forceInstall_ ? tr("Install ignoring firmware version") : tr("Install this game?"), tr("Cancel"), "",
-                            forceInstall_ ? tr("Force install|button") : tr("Install"), 4);
+                            tr("Install"), 4);
     const float x = body.x + 32, y = body.y + 24;
-    if (!past.empty()) paint_.fonts.wrapped(past, x, y + 96 + 20 + (pick ? PickRow : 0), 18, Bad, body.w - 64, 5);
+    if (!past.empty())
+      paint_.fonts.wrapped(past, x, y + 96 + 20 + (pick ? PickRow : 0), 18, Ink, ForceNoteWidth, ForceNoteLines, false, 1.4f);
     cover(g.representative.icon, x, y, 96, false, g.representative.name);
     paint_.fonts.text(g.representative.name, x + 116, y + 4, 22, Ink, true, body.w - 180);
     paint_.fonts.text(trf("{0} items · {1}", {std::to_string(selection_->count()),

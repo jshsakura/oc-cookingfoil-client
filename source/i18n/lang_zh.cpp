@@ -1117,7 +1117,7 @@ const Translation rows[] = {
     {"The server is re-encrypting it for this console.", "服务器正在为本主机重新加密。"},
     {"The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.", "服务器的 prod.keys 版本过低，无法继续。请换成 {0} 或更高版本的 prod.keys。"},
     {"The server could not re-encrypt this game for the console.", "服务器无法为本主机重新加密此游戏。"},
-    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "此游戏需要固件 {1} 或更高版本，主机为 {0}。服务器会按主机的密钥重新加密后发送，因此需要签名补丁才能安装，使用新固件功能的游戏可能在游玩时卡住。"},
+    {"This game needs firmware {1} or later, but the console has {0}, so it cannot be installed as is.\nThe server has newer prod.keys and can re-encrypt it into a version this console can install.\nThe console must have signature patches: the install relies on them to go ahead.\nIf the game needs features of the newer firmware, it may stop while playing.", "此游戏需要固件 {1} 或更高版本，但主机为 {0}，因此无法直接安装。\n服务器上有更高版本的 prod.keys，可以重新加密为本主机能安装的版本。\n安装必须依靠主机上的签名补丁，借此强制完成安装。\n如果游戏需要新版固件的功能，可能会在游玩时卡住。"},
     {"See why", "查看原因"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "不符合固件要求。\n需要 {1} 或更高版本的固件。\n当前主机为 {0}。"},
     {"The running game cannot be deleted. Close it or launch the app through another game.", "无法删除正在运行的游戏。请关闭该游戏或通过其他游戏启动本应用。"},

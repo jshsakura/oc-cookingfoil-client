@@ -130,6 +130,11 @@ public:
   void setDetail(net::Detail detail);
   bool confirmingInstall() const { return confirmInstall_; }
   bool forcingInstall() const { return confirmInstall_ && forceInstall_; }
+  // The confirm past the firmware: its note, the width it wraps to and the
+  // most lines it may take (a test holds every language to them).
+  static std::string forceInstallNote(const std::string &console, const std::string &need);
+  static constexpr float ForceNoteWidth = 780;
+  static constexpr int ForceNoteLines = 12;
   void offerFeature(const std::string &server, const std::string &feature, const std::string &rewrapMax = "") {
     serverFeatures_[server].insert(feature);
     serverRewrapMax_[server] = rewrapMax;

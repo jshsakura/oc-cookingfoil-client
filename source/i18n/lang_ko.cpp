@@ -1117,7 +1117,7 @@ const Translation rows[] = {
     {"The server is re-encrypting it for this console.", "서버가 본체에 맞게 다시 암호화하고 있습니다."},
     {"The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.", "서버 prod.keys 의 버전이 낮아 진행할 수 없습니다. {0} 이상 버전의 prod.keys 로 교체해 주세요."},
     {"The server could not re-encrypt this game for the console.", "서버가 이 게임을 본체에 맞게 다시 암호화하지 못했습니다."},
-    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "이 게임은 펌웨어 {1} 이상이 필요하고 본체는 {0}입니다. 서버가 본체의 키에 맞게 다시 암호화해 보내므로 서명 패치가 있어야 설치되고, 새 펌웨어 기능을 쓰는 게임은 실행 중에 멈출 수 있습니다."},
+    {"This game needs firmware {1} or later, but the console has {0}, so it cannot be installed as is.\nThe server has newer prod.keys and can re-encrypt it into a version this console can install.\nThe console must have signature patches: the install relies on them to go ahead.\nIf the game needs features of the newer firmware, it may stop while playing.", "이 게임은 펌웨어 {1} 이상이 필요하지만 현재 본체는 {0}이라 설치하실 수 없습니다.\n그러나 서버에는 상위 버전의 prod.keys가 있어 설치 가능한 버전으로 재암호화가 가능합니다.\n단 설치를 위해 반드시 본체에 서명 패치가 필요하며 이를 이용해 강제로 설치를 진행합니다.\n만약 상위 버전의 펌웨어의 새로운 기능이 필요한 경우 게임이 실행 중에 멈출 수 있습니다."},
     {"See why", "이유 보기"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "펌웨어 요구 사항에 맞지 않습니다.\n{1} 이상의 펌웨어가 필요합니다.\n현재 본체는 {0}입니다."},
     {"The running game cannot be deleted. Close it or launch the app through another game.", "실행 중인 게임은 삭제할 수 없습니다. 게임을 종료하거나 다른 게임으로 앱을 실행합니다."},

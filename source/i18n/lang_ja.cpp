@@ -1117,7 +1117,7 @@ const Translation rows[] = {
     {"The server is re-encrypting it for this console.", "サーバーが本体向けに暗号化し直しています。"},
     {"The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.", "サーバーの prod.keys のバージョンが古いため続行できません。{0} 以降の prod.keys に入れ替えてください。"},
     {"The server could not re-encrypt this game for the console.", "サーバーがこのゲームを本体向けに暗号化し直せませんでした。"},
-    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "このゲームにはファームウェア {1} 以降が必要で、本体は {0} です。サーバーが本体の鍵に合わせて暗号化し直して送るため、署名パッチがないとインストールできず、新しいファームウェアの機能を使うゲームはプレイ中に止まることがあります。"},
+    {"This game needs firmware {1} or later, but the console has {0}, so it cannot be installed as is.\nThe server has newer prod.keys and can re-encrypt it into a version this console can install.\nThe console must have signature patches: the install relies on them to go ahead.\nIf the game needs features of the newer firmware, it may stop while playing.", "このゲームにはファームウェア {1} 以降が必要ですが、本体は {0} のためそのままではインストールできません。\nサーバーには新しい prod.keys があるため、インストールできる形に暗号化し直せます。\nインストールには本体の署名パッチが必ず必要で、それを使って強制的にインストールします。\n新しいファームウェアの機能が必要なゲームは、プレイ中に止まることがあります。"},
     {"See why", "理由を見る"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "ファームウェアの要件を満たしていません。\n{1} 以上のファームウェアが必要です。\n現在の本体は {0} です。"},
     {"The running game cannot be deleted. Close it or launch the app through another game.", "実行中のゲームは削除できません。ゲームを終了するか、別のゲームからアプリを起動してください。"},

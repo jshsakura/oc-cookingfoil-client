@@ -1117,7 +1117,7 @@ const Translation rows[] = {
     {"The server is re-encrypting it for this console.", "伺服器正在為本主機重新加密。"},
     {"The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.", "伺服器的 prod.keys 版本過舊，無法繼續。請換成 {0} 或更新版本的 prod.keys。"},
     {"The server could not re-encrypt this game for the console.", "伺服器無法為本主機重新加密此遊戲。"},
-    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "此遊戲需要韌體 {1} 或更新版本，主機為 {0}。伺服器會依主機的金鑰重新加密後傳送，因此需要簽章修補才能安裝，使用新韌體功能的遊戲可能在遊玩時當住。"},
+    {"This game needs firmware {1} or later, but the console has {0}, so it cannot be installed as is.\nThe server has newer prod.keys and can re-encrypt it into a version this console can install.\nThe console must have signature patches: the install relies on them to go ahead.\nIf the game needs features of the newer firmware, it may stop while playing.", "此遊戲需要韌體 {1} 或更新版本，但主機為 {0}，因此無法直接安裝。\n伺服器上有更新版本的 prod.keys，可以重新加密為本主機能安裝的版本。\n安裝必須依靠主機上的簽章修補，藉此強制完成安裝。\n如果遊戲需要新版韌體的功能，可能會在遊玩時當住。"},
     {"See why", "查看原因"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "不符合韌體需求。\n需要 {1} 或更新版本的韌體。\n目前主機為 {0}。"},
     {"The running game cannot be deleted. Close it or launch the app through another game.", "無法刪除執行中的遊戲。請結束遊戲，或透過其他遊戲啟動本應用程式。"},

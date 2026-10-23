@@ -44,6 +44,9 @@ int runUiTests(SDL_Renderer *renderer) {
       foil::setLanguage(foil::Language(n));
       CHECK(painter.fonts.measure(foil::tr("Install ignoring firmware version"), 22, true) <= 700 - 64 - 34);
       CHECK(painter.keyLabelWidth("A", foil::tr("Force install|button"), 22, true) <= 386 - 32);
+      // Its confirm's note is read whole in every language, never cut.
+      const auto note = foil::ui::Application::forceInstallNote("18.1.0", "20.0.0");
+      CHECK(painter.fonts.lineCount(note, 18, foil::ui::Application::ForceNoteWidth, 99) <= foil::ui::Application::ForceNoteLines);
     }
     foil::setLanguage(before);
   }
