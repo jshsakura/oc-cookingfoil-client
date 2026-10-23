@@ -820,6 +820,65 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(took < 2 * SlowMs - 100);
     std::filesystem::remove_all(togetherRoot);
   }
+  char adminDirectory[] = "/tmp/cookingfoil-adminhb-XXXXXX";
+  if (const auto adminRoot = mkdtemp(adminDirectory)) {
+    // An app's cores changed from its page by an admin console: the server
+    // makes its shortcut again, so closing the editor reads the app list
+    // again (before, only the shop's lists were, and the page kept the old
+    // shortcut until 홈브류 was left).
+    Mock shop;
+    std::atomic<int> lists{0};
+    std::string cores = "3";
+    shop.answer = [&](const std::string &request) -> Reply {
+      if (request.rfind("GET /api/shop/info", 0) == 0) return {200, "", R"({"features":["homebrew","admin-edit"]})"};
+      if (request.rfind("GET /api/shop/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
+      if (request.rfind("GET /api/homebrew?", 0) == 0) {
+        ++lists;
+        return {200, "", R"({"homebrew":[{"id":"gh-1","name":"Demo","version":"1.0.0","file_name":"demo.nro","hash":"sha256:ab",)"
+                         R"("download_url":"/api/homebrew/gh-1/download","source":"github"}]})"};
+      }
+      const bool patch = request.rfind("PATCH /api/admin/items/homebrew/gh-1/fields", 0) == 0;
+      if (patch || request.rfind("GET /api/admin/items/homebrew/gh-1/fields", 0) == 0) {
+        if (patch) cores = "4";
+        return {200, "", R"({"fields":[{"key":"cores","type":"choice","label":{"en":"Cores"},"value":")" + cores +
+                             R"x(","options":[{"value":"3","label":{"en":"3 (default)"}},{"value":"4","label":{"en":"4"}}]}]})x"};
+      }
+      return {404, "", "{}"};
+    };
+    const auto configPath = std::string(adminRoot) + "/config.json";
+    std::string error;
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:)" + std::to_string(shop.port) + R"("}]})", error));
+    foil::ui::Application admin(renderer, configPath, std::string(adminRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(admin.open());
+    for (int frame = 0; frame < 800 && admin.asking(); ++frame) { SDL_Delay(5); admin.render(); }
+    admin.screen(foil::ui::Screen::Homebrew);
+    for (int frame = 0; frame < 400 && (lists == 0 || !admin.homebrewCardScanned()); ++frame) { SDL_Delay(5); admin.render(); }
+    settle(admin);
+    CHECK(lists == 1);
+    if (admin.onMenu()) admin.action(foil::ui::Action::Right);
+    admin.action(foil::ui::Action::Next); // 도구: the app is not on the card
+    for (int frame = 0; frame < 400 && admin.homebrewListed() == 0; ++frame) { SDL_Delay(5); admin.render(); }
+    CHECK(admin.homebrewListed() == 1);
+    settle(admin);
+    admin.action(foil::ui::Action::Down); // off the tabs, onto the app
+    admin.action(foil::ui::Action::Accept);
+    CHECK(admin.appPopupOpen());
+    admin.render();
+    admin.action(foil::ui::Action::Up); // the admin chip, above the panel's first row
+    settle(admin);
+    admin.action(foil::ui::Action::Accept);
+    CHECK(admin.adminEditOpen());
+    for (int frame = 0; frame < 400 && admin.adminEditBusy(); ++frame) { SDL_Delay(5); admin.render(); }
+    for (int frame = 0; frame < 60; ++frame) { SDL_Delay(10); admin.render(); } // the editor settles
+    admin.action(foil::ui::Action::Accept); // cores: 3 → 4
+    for (int frame = 0; frame < 400 && admin.adminEditBusy(); ++frame) { SDL_Delay(5); admin.render(); }
+    CHECK(cores == "4");
+    admin.action(foil::ui::Action::Back);
+    CHECK(!admin.adminEditOpen());
+    for (int frame = 0; frame < 400 && lists < 2; ++frame) { SDL_Delay(5); admin.render(); }
+    CHECK(lists == 2);
+    std::filesystem::remove_all(adminRoot);
+  }
   char bugDirectory[] = "/tmp/cookingfoil-bug-XXXXXX";
   if (const auto bugRoot = mkdtemp(bugDirectory)) {
     // A bug report goes to a server the player picks among the ones on,

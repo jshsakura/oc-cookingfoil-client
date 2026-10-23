@@ -1020,7 +1020,6 @@ const Translation rows[] = {
     {"The server holds another approval request for this device. Ask the server admin to clear it.", "서버에 이 기기의 다른 승인 요청이 남아 있습니다. 서버 관리자에게 그 요청을 지워 달라고 부탁해 주세요."},
     {"Connects once you approve this device on the server website.", "서버 웹페이지에서 이 기기를 승인하면 연결합니다."},
     {"Check the device approval response.", "기기 승인 응답을 확인해 주세요."},
-    {"Could not save the issued key. Check where the state file is stored.", "발급받은 키를 저장하지 못했습니다. 상태 파일의 저장 위치를 확인해 주세요."},
     {"The server refused the login. Check the server's username and password in Settings.", "서버가 로그인을 거부했습니다. 설정에서 서버의 아이디와 비밀번호를 확인해 주세요."},
     {"The console clock is off", "본체 시계가 맞지 않습니다"},
     {"Console {0}  ·  Internet {1}", "본체 {0}  ·  인터넷 {1}"},

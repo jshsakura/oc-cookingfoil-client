@@ -205,6 +205,16 @@ private:
     // replacing: spent even with a key kept, which the server no longer approves.
     bool enroll(Error& error, bool replacing = false);
     bool keepEnrolledKey(const std::string& accessKey, const std::string& device, Error& error);
+    // The file's state (settings chosen since this session began stay), with
+    // the key this run holds but has not written yet. Under stateFile.
+    State stateFromFile();
+    // An issued key, written with a few tries (another write may hold the
+    // file a while). None taking, it is held for this run (keyUnsaved_) and
+    // written at the next refresh: the console connects all the same, since
+    // the server gives the key once. True when written. Under stateFile.
+    bool saveKey(const std::function<void(State&)>& change, int tries);
+    // The held key reached the file: a spent enroll token leaves config.json.
+    void keyWritten();
     bool pair(Error& error);
     void rebind();
     void sendPairMessage();
@@ -239,6 +249,8 @@ private:
     // The server holds another secret for this console's request (409): an
     // admin must clear that request before a QR code means anything.
     bool pairMismatch_ = false;
+    bool keyUnsaved_ = false;
+    bool enrollUnsaved_ = false; // the key came from the enroll token, kept until written
     const std::atomic<bool>* cancel_ = nullptr;
 };
 }

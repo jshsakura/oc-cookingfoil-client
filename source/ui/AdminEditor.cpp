@@ -125,6 +125,9 @@ void Application::adminEditAction(Action a) {
     edit.open = false;
     // What changed shows in the lists and on this page: they are read again.
     if (edit.changed) reload();
+    // An app's own list too: the server makes its shortcut again when the
+    // cores change, and this page shows the new one.
+    if (edit.changed && edit.target.kind == "homebrew") loadHomebrew();
     return;
   }
   if (a == Action::Up) edit.row = std::max(0, edit.row - 1);

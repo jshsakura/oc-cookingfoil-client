@@ -1020,7 +1020,6 @@ const Translation rows[] = {
     {"The server holds another approval request for this device. Ask the server admin to clear it.", "サーバーにこの端末の別の承認リクエストが残っています。サーバー管理者に削除を依頼してください。"},
     {"Connects once you approve this device on the server website.", "サーバーのウェブページでこの端末を承認すると接続します。"},
     {"Check the device approval response.", "デバイス承認の応答を確認してください。"},
-    {"Could not save the issued key. Check where the state file is stored.", "発行されたキーを保存できませんでした。状態ファイルの保存先を確認してください。"},
     {"The server refused the login. Check the server's username and password in Settings.", "サーバーがログインを拒否しました。設定でサーバーのIDとパスワードを確認してください。"},
     {"The console clock is off", "本体の時計がずれています"},
     {"Console {0}  ·  Internet {1}", "本体 {0}  ·  インターネット {1}"},

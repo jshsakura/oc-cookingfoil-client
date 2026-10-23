@@ -1020,7 +1020,6 @@ const Translation rows[] = {
     {"The server holds another approval request for this device. Ask the server admin to clear it.", "服务器上还留有此设备的另一个批准请求。请联系服务器管理员将其清除。"},
     {"Connects once you approve this device on the server website.", "在服务器网页中批准此设备后即可连接。"},
     {"Check the device approval response.", "请检查设备授权响应。"},
-    {"Could not save the issued key. Check where the state file is stored.", "无法保存获取的密钥。请检查状态文件的保存位置。"},
     {"The server refused the login. Check the server's username and password in Settings.", "服务器拒绝了登录。请在设置中检查服务器的用户名和密码。"},
     {"The console clock is off", "主机时间不准确"},
     {"Console {0}  ·  Internet {1}", "主机 {0}  ·  网络 {1}"},

@@ -268,7 +268,7 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
     }
     const bool patches = extras[i] == Patches;
     paint_.icon(patches ? 32 : 36, X + 16, mid - 12, Ink, 24);
-    const float labelEnd = paint_.fonts.middle(patches ? tr("Patches") : tr("Saves"), X + 52, mid, 18, Ink, true);
+    const float labelEnd = paint_.fonts.middle(patches ? tr("Mods") : tr("Saves"), X + 52, mid, 18, Ink, true);
     int count = 0, on = 0;
     if (patches)
       for (const auto &row : homebrewPatchRows(app)) ++count, on += row.record && row.record->on;

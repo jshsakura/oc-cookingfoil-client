@@ -1020,7 +1020,6 @@ const Translation rows[] = {
     {"The server holds another approval request for this device. Ask the server admin to clear it.", "El servidor tiene otra solicitud de aprobación para este dispositivo. Pide al administrador del servidor que la borre."},
     {"Connects once you approve this device on the server website.", "Se conecta cuando apruebes este dispositivo en la web del servidor."},
     {"Check the device approval response.", "Revisa la respuesta de aprobación del dispositivo."},
-    {"Could not save the issued key. Check where the state file is stored.", "No se pudo guardar la clave emitida. Revisa dónde se guarda el archivo de estado."},
     {"The server refused the login. Check the server's username and password in Settings.", "El servidor rechazó el inicio de sesión. Revisa el usuario y la contraseña del servidor en Ajustes."},
     {"The console clock is off", "El reloj de la consola no está en hora"},
     {"Console {0}  ·  Internet {1}", "Consola {0}  ·  Internet {1}"},

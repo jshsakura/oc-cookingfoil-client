@@ -11,6 +11,8 @@
 #include <poll.h>
 #include <unistd.h>
 #include <atomic>
+#include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <functional>
 #include <mutex>
@@ -428,6 +430,109 @@ int runEnrollTests() {
     };
     net::get(url + "/api/shop/sections", {}, "", nullptr);
     CHECK(!net::takeConsoleRevoked(url)); // expired is renewed, not a take-back
+    mock.take();
+  }
+  {
+    // The key the server gives once could not be written (another write
+    // holds cookingfoil.db past every try): the console connects with it
+    // all the same, and the next refresh writes it. Before, the key was
+    // dropped and the server, having given it, left the console stuck.
+    const auto kept = mock.answer;
+    int keysGiven = 0;
+    mock.answer = [&](const std::string &request) -> Reply {
+      if (request.rfind("POST /api/pair/enroll", 0) == 0)
+        return {200, "", R"({"status":"approved","accessKey":"enrolled-key","shopUrl":null})"};
+      if (request.rfind("GET /api/shop/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
+      if (request.rfind("GET /api/pair/status", 0) == 0)
+        return keysGiven++ == 0 ? Reply{200, "", R"({"status":"approved","accessKey":"issued-key"})"}
+                                : Reply{200, "", R"({"status":"approved"})"};
+      if (request.rfind("GET /api/shop/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
+      return {200, "", "{}"};
+    };
+    const auto lockPath = db + ".lock";
+    const auto holdLock = [&] {
+      std::string written;
+      CHECK(atomicWrite(lockPath, std::to_string((long long)std::time(nullptr)) + " 1 1\n", written));
+    };
+    const auto keyless = [&] {
+      auto state = loadState(db).value;
+      state.accessKeys.erase(url);
+      state.pairSecrets[url] = "secret-made-before"; // no secret to write first
+      Error saved;
+      CHECK(saveState(db, state, saved));
+      return state;
+    };
+    const auto noToken = [&] {
+      std::string written;
+      CHECK(atomicWrite(configPath,
+                        R"({"servers":[{"title":"Shop","url":")" + url +
+                            R"(","username":"","password":"","enrollToken":"","cfClientId":"","cfClientSecret":"","enabled":true}],"language":"ko","installTarget":"sd"})",
+                        written));
+    };
+    const auto logged = (root / "log.txt").string();
+    openLog(logged);
+    noToken();
+    {
+      net::Session session(server(), keyless(), db);
+      session.setConfigPath(configPath);
+      mock.take();
+      holdLock();
+      CHECK(session.refresh(error));
+      CHECK(!error);
+      const auto sent = mock.take();
+      CHECK(count(sent, "GET /api/shop/sections") == 1 && count(sent, "X-Access-Key: issued-key") >= 1);
+      CHECK(!loadState(db).value.accessKeys.count(url));
+      flushLog();
+      CHECK(readFile(logged).find("key not saved (try 3/3)") != std::string::npos);
+      CHECK(readFile(logged).find("key held for this run") != std::string::npos);
+      // The lock let go: the next refresh writes the held key.
+      std::filesystem::remove(lockPath);
+      CHECK(session.refresh(error));
+      CHECK(loadState(db).value.accessKeys.count(url) && loadState(db).value.accessKeys.at(url) == "issued-key");
+      CHECK(!loadState(db).value.pairSecrets.count(url));
+      flushLog();
+      CHECK(readFile(logged).find("the held key is written now") != std::string::npos);
+      CHECK(keysGiven == 2);
+    }
+    {
+      // Let go between tries: written by a later try of the same refresh.
+      keysGiven = 0;
+      net::Session session(server(), keyless(), db);
+      session.setConfigPath(configPath);
+      holdLock();
+      std::thread freeing([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+        std::filesystem::remove(lockPath);
+      });
+      CHECK(session.refresh(error));
+      freeing.join();
+      CHECK(loadState(db).value.accessKeys.count(url) && loadState(db).value.accessKeys.at(url) == "issued-key");
+      mock.take();
+    }
+    {
+      // From the enroll token: the token stays in config.json until the key
+      // is written, then leaves; it is not sent twice meanwhile.
+      keysGiven = 1; // approval gives none here: the key comes from the token
+      writeConfig();
+      net::Session::forgetEnrollAttempts();
+      net::Session session(server(), keyless(), db);
+      session.setConfigPath(configPath);
+      mock.take();
+      holdLock();
+      CHECK(session.refresh(error));
+      auto sent = mock.take();
+      CHECK(count(sent, "POST /api/pair/enroll") == 1 && count(sent, "X-Access-Key: enrolled-key") >= 1);
+      CHECK(!loadState(db).value.accessKeys.count(url));
+      CHECK(server().enrollToken == token);
+      std::filesystem::remove(lockPath);
+      CHECK(session.refresh(error));
+      sent = mock.take();
+      CHECK(count(sent, "POST /api/pair/enroll") == 0);
+      CHECK(loadState(db).value.accessKeys.count(url) && loadState(db).value.accessKeys.at(url) == "enrolled-key");
+      CHECK(server().enrollToken.empty());
+    }
+    std::filesystem::remove(lockPath);
+    mock.answer = kept;
     mock.take();
   }
   {

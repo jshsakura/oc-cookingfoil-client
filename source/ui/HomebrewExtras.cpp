@@ -131,7 +131,7 @@ void Application::homebrewExtrasDialog() {
   const int shown = std::min(count, Visible);
   const auto accept = patchList ? patchVerb(patches[homebrewExtraRow_]) : tr("Apply");
   const auto body = modal(Width, 16 + shown * (Row + Gap) + 8,
-                          app->name + " · " + (patchList ? tr("Patches") : tr("Saves")), tr("Close"), "", accept,
+                          app->name + " · " + (patchList ? tr("Mods") : tr("Saves")), tr("Close"), "", accept,
                           patchList ? 32 : 36);
   const float x = body.x + 24, w = body.w - 48, listTop = body.y + 16;
   // The row at the top follows the cursor, or the finger and the right

@@ -1020,7 +1020,6 @@ const Translation rows[] = {
     {"The server holds another approval request for this device. Ask the server admin to clear it.", "伺服器上還有這台裝置的其他核准請求。請伺服器管理員刪除該請求。"},
     {"Connects once you approve this device on the server website.", "在伺服器網頁上核准這台裝置後即可連線。"},
     {"Check the device approval response.", "請確認裝置核准回應。"},
-    {"Could not save the issued key. Check where the state file is stored.", "無法儲存核發的金鑰。請確認狀態檔案的儲存位置。"},
     {"The server refused the login. Check the server's username and password in Settings.", "伺服器拒絕登入。請在設定中確認伺服器的帳號與密碼。"},
     {"The console clock is off", "主機時鐘不正確"},
     {"Console {0}  ·  Internet {1}", "主機 {0}  ·  網路 {1}"},

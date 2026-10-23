@@ -24,6 +24,7 @@
 #include <set>
 #include <chrono>
 #include <thread>
+#include <utility>
 #ifdef __SWITCH__
 #include <switch.h>
 #endif
@@ -1026,6 +1027,10 @@ namespace {
 // Servers are read side by side: each read-change-write of the records file
 // is one at a time, so none writes back a copy without another's key.
 std::mutex stateFile;
+// An issued key that could not be written: tried again shortly (the lock on
+// the file waits 2s each time), then held for the run.
+constexpr int KeySaveTries = 3;
+constexpr auto KeySaveGap = std::chrono::milliseconds(300);
 // And one catalog read at a time: two large lists never in memory at once.
 std::mutex catalogReading;
 }
@@ -1038,8 +1043,7 @@ std::string Session::pairSecret() {
     const auto secret = randomKey();
     if (secret.empty()) return "";
     std::unique_lock<std::mutex> filed(stateFile);
-    auto saved = loadState(path_);
-    auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
+    auto updated = stateFromFile();
     updated.pairSecrets[server_.url] = secret;
     Error error;
     if (!saveState(path_, updated, error)) { logLine("pair secret not saved: " + error.message); return ""; }
@@ -1100,12 +1104,12 @@ bool Session::pair(Error& error) {
         // Start from the file: settings chosen since this session began
         // (language, install checks) must survive the key being added.
         std::unique_lock<std::mutex> filed(stateFile);
-        auto saved = loadState(path_);
-        auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value; updated.accessKeys[server_.url] = key;
-        updated.pairSecrets.erase(server_.url); // done with: the key came
-        if (!saveState(path_, updated, error)) { error.message = tr("Could not save the issued key. Check where the state file is stored."); return false; }
-        state_ = std::move(updated);
-        forgetPasswordOnceKeyed();
+        const bool written = saveKey([&](State& updated) {
+            updated.accessKeys[server_.url] = key;
+            updated.pairSecrets.erase(server_.url); // done with: the key came
+        }, KeySaveTries);
+        filed.unlock();
+        if (written) forgetPasswordOnceKeyed();
     }
     pairingPending_ = false; pairingInfo_ = {}; return true;
 }
@@ -1115,7 +1119,7 @@ bool Session::pair(Error& error) {
 // in again).
 void Session::forgetPasswordOnceKeyed() {
     const auto key = state_.accessKeys.find(server_.url);
-    if (server_.password.empty() || !pairPasswordOnly(originOf(server_.url)) || key == state_.accessKeys.end() ||
+    if (keyUnsaved_ || server_.password.empty() || !pairPasswordOnly(originOf(server_.url)) || key == state_.accessKeys.end() ||
         key->second.empty())
         return;
     std::string failure;
@@ -1127,8 +1131,8 @@ void Session::forgetPasswordOnceKeyed() {
 }
 void Session::forgetAccessKey() {
     std::unique_lock<std::mutex> filed(stateFile);
-    auto saved = loadState(path_);
-    auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
+    keyUnsaved_ = enrollUnsaved_ = false; // the key held goes either way
+    auto updated = stateFromFile();
     updated.accessKeys.erase(server_.url);
     updated.pairSecrets.erase(server_.url); // the server dropped its record of it too
     Error error;
@@ -1233,14 +1237,14 @@ void Session::rebind() {
     }
     // From the file: settings chosen since this session began must survive.
     std::unique_lock<std::mutex> filed(stateFile);
-    auto saved = loadState(path_);
-    auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
+    auto updated = stateFromFile();
     updated.derivedKey = state_.derivedKey;
     updated.rebound.insert(server_.url);
     if (const auto list = knownServers()) settleDeviceKey(updated, *list);
     Error error;
     if (!saveState(path_, updated, error)) { logLine("rebind not saved: " + error.message); return; }
     state_ = std::move(updated);
+    if (keyUnsaved_) keyWritten();
 }
 namespace {
 std::mutex enrollLock;
@@ -1333,29 +1337,59 @@ bool Session::enroll(Error& error, bool replacing) {
     }
     return keepEnrolledKey(accessKey, device, error);
 }
-// Saved as a key from approval is, from the file (settings chosen since this
-// session began stay); the server knows the console by the made key. Not
-// saved, the token stays in config.json and the next try takes the key from
-// enrollSpent, not from the server.
-bool Session::keepEnrolledKey(const std::string& accessKey, const std::string& device, Error& error) {
+// Saved as a key from approval is (saveKey); the server knows the console by
+// the made key. Not written yet, the token stays in config.json and the key
+// is held for this run, written at the next refresh.
+bool Session::keepEnrolledKey(const std::string& accessKey, const std::string& device, Error&) {
     std::unique_lock<std::mutex> filed(stateFile);
+    const bool written = saveKey([&](State& updated) {
+        updated.derivedKey = state_.derivedKey;
+        updated.accessKeys[server_.url] = accessKey;
+        updated.pairSecrets.erase(server_.url);
+        if (device != updated.deviceKey) updated.rebound.insert(server_.url);
+    }, KeySaveTries);
+    enrollUnsaved_ = true; // the token leaves config.json once the key is written
+    if (written) keyWritten();
+    return true;
+}
+State Session::stateFromFile() {
     auto saved = loadState(path_);
     auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
-    updated.derivedKey = state_.derivedKey;
-    updated.accessKeys[server_.url] = accessKey;
-    updated.pairSecrets.erase(server_.url);
-    if (device != updated.deviceKey) updated.rebound.insert(server_.url);
-    if (!saveState(path_, updated, error)) {
-        logLine("enroll: the key not saved: " + error.message);
-        error.message = tr("Could not save the issued key. Check where the state file is stored.");
-        return false;
+    if (keyUnsaved_) {
+        const auto held = state_.accessKeys.find(server_.url);
+        if (held != state_.accessKeys.end()) updated.accessKeys[server_.url] = held->second;
+        updated.pairSecrets.erase(server_.url);
+        updated.derivedKey = state_.derivedKey;
+        if (state_.rebound.count(server_.url)) updated.rebound.insert(server_.url);
+    }
+    return updated;
+}
+bool Session::saveKey(const std::function<void(State&)>& change, int tries) {
+    State updated;
+    Error error;
+    for (int tried = 1; tried <= tries; ++tried) {
+        if (tried > 1) std::this_thread::sleep_for(KeySaveGap);
+        updated = stateFromFile();
+        change(updated);
+        if (saveState(path_, updated, error)) {
+            state_ = std::move(updated);
+            keyUnsaved_ = false;
+            return true;
+        }
+        logLine("key not saved (try " + std::to_string(tried) + "/" + std::to_string(tries) + "): " + error.message);
     }
     state_ = std::move(updated);
+    keyUnsaved_ = true;
+    logLine("key held for this run; written again at the next refresh");
+    return false;
+}
+void Session::keyWritten() {
+    keyUnsaved_ = false;
+    if (!std::exchange(enrollUnsaved_, false)) return;
     // Spent: out of config.json (kept there when refused, to tell why).
     std::string failure;
     if (!dropEnrollToken(configPath_, server_.url, failure)) logLine("enroll: token not taken out of config.json: " + failure);
     server_.enrollToken.clear();
-    return true;
 }
 namespace {
 // A list the server did not give, in the log: how this console signed in
@@ -1382,6 +1416,13 @@ void logRefusal(const std::vector<std::string>& headers, const Response& reply) 
 }
 bool Session::refresh(Error& error) {
     error = {};
+    if (keyUnsaved_) {
+        std::unique_lock<std::mutex> filed(stateFile);
+        if (saveKey([](State&) {}, 1)) {
+            logLine("the held key is written now");
+            keyWritten();
+        }
+    }
     if (!enroll(error)) return false;
     rebind();
     if (!pair(error)) return false;

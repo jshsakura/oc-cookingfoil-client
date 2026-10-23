@@ -270,6 +270,9 @@ public:
   bool askingSelfShortcut() const { return selfShortcutAsk_; }
   bool askingShortcutRemoval() const { return shortcutRemoveAsk_; }
   bool appPopupOpen() const { return homebrewAsk_; }
+  int homebrewListed() const { return int(homebrewRows().size()); } // rows on the tab shown
+  bool adminEditOpen() const { return adminEdit_.open; }
+  bool adminEditBusy() const { return adminEdit_.busy; }
   int appPopupRow() const { return homebrewAskRow_; }
   bool hasShortcut(uint64_t id) const { return shortcuts_.count(id) > 0; }
   // 홈브류 with its card scan finished (the worker joined).
