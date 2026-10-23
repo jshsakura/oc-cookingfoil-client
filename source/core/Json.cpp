@@ -1,6 +1,7 @@
 #include <sys/stat.h>
 #include "core/Json.hpp"
 #include "core/I18n.hpp"
+#include "core/Log.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
@@ -157,6 +158,35 @@ bool replaceHeld(const std::string& from, const std::string& to, std::string& er
         std::this_thread::sleep_for(breath);
     }
 }
+// The card's own words for a name that would not go: what the filesystem
+// says about it right then, so a report tells which of the cases it was.
+std::string probeName(const std::string &to) {
+    struct stat st {};
+    std::string out = ::stat(to.c_str(), &st) == 0 ? (S_ISDIR(st.st_mode) ? "a folder" : "a file") : "gone";
+    if (FILE *f = std::fopen(to.c_str(), "rb")) { std::fclose(f); out += ", opens"; }
+    else out += std::string(", no open: ") + std::strerror(errno);
+    if (::unlink(to.c_str()) == 0) out += ", unlink now works";
+    else out += std::string(", unlink: ") + std::strerror(errno);
+    return out;
+}
+// The bytes straight into the target: the last way in when the card will
+// not give the name up for a rename. Not atomic (a cut leaves the file
+// short); it runs only after the rename dance has failed outright, where
+// the old bytes were not reachable anyway.
+bool writeWhole(const std::string &path, const std::string &contents, std::string &error) {
+    const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) { error = std::strerror(errno); return false; }
+    size_t offset = 0;
+    while (offset < contents.size()) {
+        const auto written = ::write(fd, contents.data() + offset, contents.size() - offset);
+        if (written <= 0) { error = std::strerror(errno); ::close(fd); return false; }
+        offset += written;
+    }
+    const bool flushed = ::fsync(fd) == 0;
+    const bool closed = ::close(fd) == 0;
+    if (!flushed || !closed) { error = std::strerror(errno); return false; }
+    return true;
+}
 }
 bool atomicWrite(const std::string& path, const std::string& contents, std::string& error) {
     // One writer at a time: the temp keeps its plain name beside the target
@@ -179,7 +209,21 @@ bool atomicWrite(const std::string& path, const std::string& contents, std::stri
     const bool flushed = ::fsync(fd) == 0;
     const bool closed = ::close(fd) == 0;
     if (!flushed || !closed) { error = std::strerror(errno); ::unlink(temp.c_str()); return false; }
-    if (!replaceHeld(temp, path, error)) { ::unlink(temp.c_str()); return false; }
+    if (!replaceHeld(temp, path, error)) {
+        // The card would not give the name up for a rename. The bytes go in
+        // anyway, straight through, and the trouble is said for the log.
+        const auto probe = probeName(path);
+        std::string fallen;
+        if (!writeWhole(path, contents, fallen)) {
+            error += "; in place: " + fallen;
+            ::unlink(temp.c_str());
+            return false;
+        }
+        logLine("save: " + std::filesystem::path(path).filename().string() +
+                " written in place; the card kept its name (" + probe + "): " + error);
+        ::unlink(temp.c_str());
+        return true;
+    }
     return true;
 }
 bool replaceFile(const std::string& from, const std::string& to, std::string& error) {
