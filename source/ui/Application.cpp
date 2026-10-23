@@ -1805,6 +1805,8 @@ void Application::action(Action a) {
     sidebar_ = true;
     return;
   }
+  // A page drawn without the menu never leaves the cursor on it.
+  if (sidebar_ && fullPage()) sidebar_ = autoSidebar_ = false;
   if (sidebar_) {
     // While the menu is placeholders there is nothing to move to yet.
     if (menuPending()) return;

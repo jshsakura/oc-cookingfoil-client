@@ -249,6 +249,20 @@ int runUiTests(SDL_Renderer *renderer) {
   CHECK(app.selectedName() == "버터 블록 대작전");
   app.action(foil::ui::Action::Accept);
   CHECK(app.current() == foil::ui::Screen::Detail);
+  {
+    // A card touched while the cursor sat on the menu: A on the page still
+    // acts on the page, it does not go back to 홈.
+    app.action(foil::ui::Action::Back);
+    CHECK(app.current() == foil::ui::Screen::Library);
+    app.action(foil::ui::Action::Left);
+    CHECK(app.onMenu());
+    app.render();
+    app.touch(252 * 3 / 2 / 1.5f + 60, 220 * 3 / 2 / 1.5f + 60);
+    app.render();
+    CHECK(app.current() == foil::ui::Screen::Detail && !app.onMenu());
+    app.action(foil::ui::Action::Down);
+    CHECK(app.current() == foil::ui::Screen::Detail);
+  }
   const auto bytes = app.selectedBytes();
   // L and R no longer change the storage target.
   app.action(foil::ui::Action::Next);
