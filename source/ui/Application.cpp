@@ -2148,7 +2148,7 @@ void Application::footer(
     float x = 1248;
     for (const float w : {96.f, 110.f, 96.f, 110.f}) {
       x -= w;
-      paint_.skeleton(x, 676, w, 30, 15);
+      paint_.skeleton(x, 676, w, 30, 15, false, Surface); // on the footer's white
       x -= 24;
     }
     return;
@@ -2210,7 +2210,7 @@ void Application::shell() {
   // and 홈브류 appear only when it has them, and the rows would jump.
   if (menuPending()) {
     for (int i = 0; i < MenuItems; ++i)
-      paint_.skeleton(16, 92 + i * MenuRowPitch, 200, MenuRowHeight, 12);
+      paint_.skeleton(16, 92 + i * MenuRowPitch, 200, MenuRowHeight, 12, false, Surface); // on the menu's white
     return;
   }
   // A screen left open when approval began reads as 홈 in the menu.
@@ -2302,7 +2302,7 @@ float Application::statusBar() {
   // buttons show (the link, then the two storages).
   if (menuPending()) {
     for (const float w : {120.f, 210.f, 210.f}) {
-      paint_.skeleton(x, Mid - 15, w, 30, 15);
+      paint_.skeleton(x, Mid - 15, w, 30, 15, false, Surface);
       x += w + 24;
     }
     return x;
