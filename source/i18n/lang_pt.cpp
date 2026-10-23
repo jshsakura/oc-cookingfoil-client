@@ -1115,7 +1115,7 @@ const Translation rows[] = {
     {"Force install|button", "Forçar instalação"},
     {"Force install", "Forçar instalação"},
     {"Install past the firmware?", "Instalar mesmo com o firmware?"},
-    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, but the game may still not start.", "Este jogo precisa do firmware {1} ou superior, e o console tem o {0}. O servidor o recriptografa para as chaves deste console, mas o jogo pode não iniciar."},
+    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "Este jogo precisa do firmware {1} ou superior, e o console tem o {0}. O servidor o recriptografa para as chaves deste console, então ele só instala com patches de assinatura, e um jogo que usa recursos do firmware novo pode travar durante o jogo."},
     {"See why", "Ver motivo"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "O requisito de firmware não foi atendido.\nÉ necessário o firmware {1} ou posterior.\nO console tem {0}."},
     {"The running game cannot be deleted. Close it or launch the app through another game.", "O jogo em execução não pode ser apagado. Feche-o ou abra o app por outro jogo."},

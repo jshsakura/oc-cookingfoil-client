@@ -1115,7 +1115,7 @@ const Translation rows[] = {
     {"Force install|button", "Установить принудительно"},
     {"Force install", "Установить принудительно"},
     {"Install past the firmware?", "Установить вопреки прошивке?"},
-    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, but the game may still not start.", "Игре нужна прошивка {1} или новее, а на консоли {0}. Сервер перешифрует её под ключи этой консоли, но игра может всё равно не запуститься."},
+    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "Игре нужна прошивка {1} или новее, а на консоли {0}. Сервер перешифрует её под ключи этой консоли, поэтому она установится только с патчами подписи, а игра, использующая функции новой прошивки, может зависнуть во время игры."},
     {"See why", "Почему"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "Не выполнено требование к прошивке.\nНужна прошивка {1} или новее.\nНа консоли {0}."},
     {"The running game cannot be deleted. Close it or launch the app through another game.", "Запущенную игру удалить нельзя. Закройте её или запустите приложение через другую игру."},

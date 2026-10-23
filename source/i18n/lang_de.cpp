@@ -1115,7 +1115,7 @@ const Translation rows[] = {
     {"Force install|button", "Trotzdem installieren"},
     {"Force install", "Trotzdem installieren"},
     {"Install past the firmware?", "Trotz Firmware installieren?"},
-    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, but the game may still not start.", "Dieses Spiel braucht Firmware {1} oder neuer, die Konsole hat {0}. Der Server verschlüsselt es für die Schlüssel dieser Konsole neu, doch das Spiel startet eventuell trotzdem nicht."},
+    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "Dieses Spiel braucht Firmware {1} oder neuer, die Konsole hat {0}. Der Server verschlüsselt es für die Schlüssel dieser Konsole neu. Daher lässt es sich nur mit Signatur-Patches installieren, und ein Spiel, das neue Firmware-Funktionen nutzt, kann beim Spielen hängen bleiben."},
     {"See why", "Grund ansehen"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "Die Firmware-Anforderung ist nicht erfüllt.\nFirmware {1} oder neuer ist erforderlich.\nDie Konsole hat {0}."},
     {"The running game cannot be deleted. Close it or launch the app through another game.", "Das laufende Spiel kann nicht gelöscht werden. Beende es oder starte die App über ein anderes Spiel."},

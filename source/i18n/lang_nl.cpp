@@ -1115,7 +1115,7 @@ const Translation rows[] = {
     {"Force install|button", "Toch installeren"},
     {"Force install", "Toch installeren"},
     {"Install past the firmware?", "Ondanks de firmware installeren?"},
-    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, but the game may still not start.", "Deze game vraagt firmware {1} of nieuwer en de console heeft {0}. De server versleutelt hem opnieuw voor de sleutels van deze console, maar de game start mogelijk toch niet."},
+    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "Deze game vraagt firmware {1} of nieuwer en de console heeft {0}. De server versleutelt hem opnieuw voor de sleutels van deze console, dus hij installeert alleen met handtekeningpatches, en een game die nieuwe firmwarefuncties gebruikt kan tijdens het spelen vastlopen."},
     {"See why", "Bekijk waarom"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "Niet voldaan aan de firmwarevereiste.\nFirmware {1} of nieuwer is nodig.\nDe console heeft {0}."},
     {"The running game cannot be deleted. Close it or launch the app through another game.", "De game die draait kan niet worden verwijderd. Sluit hem of start de app via een andere game."},

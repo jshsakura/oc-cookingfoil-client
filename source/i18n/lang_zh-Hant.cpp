@@ -1115,7 +1115,7 @@ const Translation rows[] = {
     {"Force install|button", "強制安裝"},
     {"Force install", "強制安裝"},
     {"Install past the firmware?", "忽略韌體版本強制安裝？"},
-    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, but the game may still not start.", "此遊戲需要韌體 {1} 或更新版本，主機為 {0}。伺服器會依主機的金鑰重新加密後傳送，但遊戲仍可能無法啟動。"},
+    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "此遊戲需要韌體 {1} 或更新版本，主機為 {0}。伺服器會依主機的金鑰重新加密後傳送，因此需要簽章修補才能安裝，使用新韌體功能的遊戲可能在遊玩時當住。"},
     {"See why", "查看原因"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "不符合韌體需求。\n需要 {1} 或更新版本的韌體。\n目前主機為 {0}。"},
     {"The running game cannot be deleted. Close it or launch the app through another game.", "無法刪除執行中的遊戲。請結束遊戲，或透過其他遊戲啟動本應用程式。"},

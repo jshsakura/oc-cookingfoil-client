@@ -1115,7 +1115,7 @@ const Translation rows[] = {
     {"Force install|button", "강제 설치"},
     {"Force install", "강제 설치"},
     {"Install past the firmware?", "펌웨어를 무시하고 설치할까요?"},
-    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, but the game may still not start.", "이 게임은 펌웨어 {1} 이상이 필요하고 본체는 {0}입니다. 서버가 본체의 키에 맞게 다시 암호화해 보내지만, 게임이 실행되지 않을 수도 있습니다."},
+    {"This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, so it installs only with signature patches, and a game that uses newer firmware features may stop while playing.", "이 게임은 펌웨어 {1} 이상이 필요하고 본체는 {0}입니다. 서버가 본체의 키에 맞게 다시 암호화해 보내므로 서명 패치가 있어야 설치되고, 새 펌웨어 기능을 쓰는 게임은 실행 중에 멈출 수 있습니다."},
     {"See why", "이유 보기"},
     {"The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.", "펌웨어 요구 사항에 맞지 않습니다.\n{1} 이상의 펌웨어가 필요합니다.\n현재 본체는 {0}입니다."},
     {"The running game cannot be deleted. Close it or launch the app through another game.", "실행 중인 게임은 삭제할 수 없습니다. 게임을 종료하거나 다른 게임으로 앱을 실행합니다."},
