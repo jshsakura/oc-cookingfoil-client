@@ -3,6 +3,8 @@
 namespace foil {
 std::string normalizeUrl(const std::string& input);
 std::string originOf(const std::string& url);
+// The host and port, what parseConfig names a server without a title.
+std::string hostOf(const std::string& url);
 // An http:// address off the home network: what the console sends there (the
 // password, keys) crosses the internet unencrypted. A LAN, loopback or
 // Tailscale address, a .local or one-word host name is not.

@@ -209,14 +209,18 @@ void Application::retroDetailAction(Action a) {
     else getRetroPick();
   }
 }
-// The note before the description: the core this game needs comes along.
+// The note before the description, about the core this game needs: the
+// server has none registered (its files are held back), or this console
+// lacks it (it comes along with the game).
 int Application::retroCoreCard(int y) {
-  if (!retroCoreMissing(retroPick_)) return y;
+  const bool server = retroPick_.coreOff;
+  if (!server && !retroCoreMissing(retroPick_)) return y;
   constexpr float X = 40, W = 750, Height = 52;
-  paint_.rect(X, y, W, Height, SDL_Color{255, 241, 204, 255}, 14);
-  paint_.icon(33, X + 18, y + (Height - 24) / 2, Pending, 24);
-  paint_.fonts.middle(trf("The {0} core is missing, so it comes down right after the game.", {retroPick_.core}), X + 54,
-                      y + Height / 2, 18, Ink, true, W - 72);
+  paint_.rect(X, y, W, Height, server ? SDL_Color{253, 226, 226, 255} : SDL_Color{255, 241, 204, 255}, 14);
+  paint_.icon(33, X + 18, y + (Height - 24) / 2, server ? Bad : Pending, 24);
+  paint_.fonts.middle(server ? std::string(tr("The server has no core registered for this game."))
+                             : trf("The {0} core is missing, so it comes down right after the game.", {retroPick_.core}),
+                      X + 54, y + Height / 2, 18, Ink, true, W - 72);
   return int(y + Height + 16);
 }
 // Facts as a labeled grid, as a shop game's: what the server knows of the
@@ -381,14 +385,14 @@ void Application::retroDetailPanel() {
   const int cursor = std::min(retroPart_, rows - 1);
   const float top = glide("retroVersions", 840, RowTop - 4, W, 4 * RowPitch, float(std::max(0, cursor - 3)),
                           float(rows - 4), RowPitch);
-  const int first = int(top);
+  const int first = std::max(0, int(top));
   clipTo(840, RowTop - 4, W, 4 * RowPitch);
   for (int i = 0; i < 5 && first + i < rows; ++i) {
     const int n = first + i;
     const auto &v = versions[size_t(n)];
     const float ry = RowTop + (n - top) * RowPitch, mid = ry + RowHeight / 2;
     const bool checked = retroChecked_.count(v.id) > 0;
-    hit(840, ry, W, RowHeight, [this, n] {
+    rowHit(840, ry, W, RowHeight, 12, [this, n] {
       descriptionFocus_ = false;
       if (retroPart_ == n) toggleRetroVersion(n);
       retroPart_ = n;

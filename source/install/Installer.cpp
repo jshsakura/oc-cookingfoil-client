@@ -1,7 +1,9 @@
+#include "core/Json.hpp"
 #include "core/Log.hpp"
 #include "install/Installer.hpp"
 #include <utility>
 #include <cstdio>
+#include <cstdlib>
 #include <chrono>
 #include "install/EngineHooks.hpp"
 #include "core/I18n.hpp"
@@ -36,6 +38,72 @@ std::string missingFirmware(const std::vector<Item> &files, const std::string &c
       need = file.requiredFirmware;
   if (need.empty() || console.empty() || compareVersions(console, need) >= 0) return "";
   return need;
+}
+int masterKeyOf(const std::string &firmware) {
+  // The firmware that brought each key; past the last one known, each major
+  // version has brought one (as every one from 13.0.0 to 21.0.0 did).
+  static const char *const Brought[] = {"1.0.0",  "3.0.0",  "3.0.1",  "4.0.0",  "5.0.0",  "6.0.0",  "6.2.0",
+                                         "7.0.0",  "8.1.0",  "9.0.0",  "9.1.0",  "12.1.0", "13.0.0", "14.0.0",
+                                         "15.0.0", "16.0.0", "17.0.0", "18.0.0", "19.0.0", "20.0.0", "21.0.0"};
+  constexpr int Known = int(sizeof(Brought) / sizeof(*Brought)), LastMajor = 21;
+  const int major = std::atoi(firmware.c_str());
+  if (major > LastMajor) return Known - 1 + major - LastMajor;
+  int key = 0;
+  while (key + 1 < Known && compareVersions(firmware, Brought[key + 1]) >= 0) ++key;
+  return key;
+}
+std::string firmwareShortfall(const std::string &need, const std::string &console) {
+  return trf("The firmware requirement is not met.\nFirmware {1} or later is required.\nThe console has {0}.",
+             {console, need});
+}
+std::string unreachableFirmware(const std::vector<Item> &files, const std::string &console) {
+  // The key its NCAs use counts as a requirement too: content can need a
+  // newer key than its own firmware field says.
+  std::vector<Item> own;
+  for (const auto &f : files) {
+    if (rewrapped(f.url)) continue;
+    own.push_back(f);
+    if (!f.keyFirmware.empty() && (f.requiredFirmware.empty() || compareVersions(f.requiredFirmware, f.keyFirmware) < 0))
+      own.back().requiredFirmware = f.keyFirmware;
+  }
+  const auto need = missingFirmware(own, console);
+  return !need.empty() && masterKeyOf(need) > masterKeyOf(console) ? need : "";
+}
+std::string rewrapRefusal(const std::string &body) {
+  Error ignored;
+  const auto root = parseJson(body, ignored);
+  auto *error = root ? field(root.get(), "error") : nullptr;
+  auto message = root ? stringField(root.get(), "message") : std::string();
+  if (message.empty() && json_object_is_type(error, json_type_object)) message = stringField(error, "message");
+  if (message.empty() && json_object_is_type(error, json_type_string)) message = json_object_get_string(error);
+  return message.empty() ? std::string(tr("The server could not re-encrypt this game for the console.")) : message;
+}
+std::string keyFirmwareOf(const std::vector<Item> &files) {
+  std::string most;
+  for (const auto &f : files)
+    if (!f.keyFirmware.empty() && (most.empty() || compareVersions(most, f.keyFirmware) < 0)) most = f.keyFirmware;
+  return most;
+}
+bool rewrapped(const std::string &url) {
+  const auto query = url.find('?');
+  return query != std::string::npos && (url.find("?rewrap=", query) == query || url.find("&rewrap=", query) != std::string::npos);
+}
+namespace {
+std::string withoutRewrap(const std::string &url) {
+  const auto query = url.find('?');
+  if (query == std::string::npos) return url;
+  auto at = url.find("?rewrap=", query) == query ? query : url.find("&rewrap=", query);
+  if (at == std::string::npos) return url;
+  const auto end = url.find('&', at + 1);
+  if (end == std::string::npos) return url.substr(0, at);
+  // "?rewrap=x&t=1" keeps "?t=1"; "?t=1&rewrap=x&u=2" keeps "?t=1&u=2".
+  return url.substr(0, at + 1) + url.substr(end + 1);
+}
+} // namespace
+bool sameFile(const std::string &a, const std::string &b) { return a == b || withoutRewrap(a) == withoutRewrap(b); }
+std::string rewrapUrl(const std::string &url, const std::string &console) {
+  if (rewrapped(url)) return url;
+  return url + (url.find('?') == std::string::npos ? "?" : "&") + "rewrap=" + console;
 }
 Error preflight(const std::vector<Item> &files,
                 std::optional<uint64_t> space) {
@@ -128,22 +196,17 @@ Error Installer::start(std::vector<Item> files, std::string name,
   error = preflight(files, free ? free : platform::freeSpace(target));
   if (error)
     return error;
-  if (!state.skipFirmwareCheck) {
-    const auto console = platform::firmwareVersion();
-    const auto need = missingFirmware(files, console);
-    if (!need.empty()) {
-      error.message = trf("This needs firmware {1} or later; the console has {0}. Turn on Ignore firmware check in Settings to install it anyway.",
-                          {console, need});
-      return error;
-    }
+  if (const auto console = platform::firmwareVersion(); !unreachableFirmware(files, console).empty()) {
+    error.message = firmwareShortfall(unreachableFirmware(files, console), console);
+    return error;
   }
   if (thread_.joinable())
     thread_.join();
   cancel_ = false;
   stop_ = false;
   pause_ = false;
-  skipSignature_ = state.skipSignatureCheck;
-  skipFirmware_ = state.skipFirmwareCheck;
+  skipSignature_ = state.skipSignatureCheck ||
+                   std::any_of(files.begin(), files.end(), [](const Item &f) { return rewrapped(f.url); });
   {
     std::lock_guard<std::mutex> lock(mutex_);
     progress_ = {};
@@ -350,6 +413,20 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
       }
       // A failed item is tried again from the start: the engine skips the
       // content files it already finished, so this picks up where it broke.
+      // Re-encrypted on the server: its first byte asked before the engine
+      // starts, so a server that cannot (409) says why in its own words
+      // instead of three failed tries.
+      if (rewrapped(files[i].url)) {
+        phase(tr("The server is re-encrypting it for this console."));
+        auto headers = net::downloadHeaders(server, state, files[i].url);
+        headers.push_back("Range: bytes=0-0");
+        const auto asked = std::chrono::steady_clock::now();
+        const auto first = net::get(files[i].url, headers, "", &cancel_);
+        logLine("rewrap: first byte HTTP " + std::to_string(first.status) + " after " +
+                std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - asked).count()) +
+                "ms");
+        if (first.status == 409) throw std::runtime_error(rewrapRefusal(first.body));
+      }
       constexpr int Attempts = 3;
       int renewed = 0;
       for (int attempt = 1;; ++attempt) {

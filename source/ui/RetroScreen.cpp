@@ -57,6 +57,7 @@ bool Application::runRetroJob(const std::string &busy, std::function<std::functi
   if (busy == "list") {
     if (retroListWorker_.joinable()) return false;
     retroListWorker_ = std::thread([this, job = std::move(job)] {
+      const platform::OnCore off(platform::NetworkCore);
       std::function<void()> finish;
       if (!guarded("retro list", [&] { finish = job(); }))
         finish = [this] { message(tr("Something went wrong with the retro task. Check log.txt.")); };
@@ -486,8 +487,7 @@ bool Application::finishRetroEntry(const std::string &kind, history::Outcome out
     return e.kind == kind && e.outcome == history::Outcome::Running;
   });
   if (running == history_.end()) return false;
-  logLine(kind + " " + (outcome == history::Outcome::Done ? "done" : outcome == history::Outcome::Cancelled ? "cancelled" : "failed") + ": " +
-          running->install.name + (error.empty() ? "" : " · " + error));
+  if (outcome == history::Outcome::Failed) logLine(kind + " failed: " + running->install.name + (error.empty() ? "" : " · " + error));
   if (outcome == history::Outcome::Done) sounds_.play(kind == "shortcut" ? Cue::Shortcut : Cue::Done);
   else if (outcome == history::Outcome::Failed) sounds_.play(Cue::Error);
   if (pausing && outcome == history::Outcome::Cancelled) {
@@ -571,7 +571,6 @@ bool Application::runRetroArch(bool full, const Server &server) {
         // The server still making its lists (503 with Retry-After): wait as
         // long as it says, a few times, before giving up.
         for (int tries = 0; reply.error && reply.retryAfter > 0 && tries < 4 && !retroCancel_ && !stop_; ++tries) {
-          logLine("retroarch manifest busy, again in " + std::to_string(reply.retryAfter) + " s");
           for (int waited = 0; waited < reply.retryAfter * 10 && !retroCancel_ && !stop_; ++waited) SDL_Delay(100);
           reply = {};
           pack = net::retroPack(server, state, reply, &stop_);
@@ -610,7 +609,6 @@ bool Application::runRetroArch(bool full, const Server &server) {
             cardCheck_.done = before + file.size;
           }
           if (adopted) {
-            logLine("retroarch: " + std::to_string(adopted) + " files already on the card kept");
             std::string kept;
             atomicWrite(sd + PackRecordPath, retro::serializePackRecord(record), kept);
           }
@@ -807,6 +805,7 @@ float Application::achievementLabel(const achievements::Summary &a, float x, flo
 }
 std::vector<std::string> Application::retroLabels(const retro::Game &game, bool detail) const {
   std::vector<std::string> out;
+  if (detail && game.coreOff) out.push_back(tr("No core")); // the server has it off: told first
   if (const auto dot = game.file.rfind('.'); dot != std::string::npos) {
     auto format = game.file.substr(dot + 1);
     std::transform(format.begin(), format.end(), format.begin(), ::toupper);
@@ -868,7 +867,7 @@ void Application::retroBanner(float y) {
     paint_.rect(910, y + 28, std::max(8.f, 316 * ratio), 8, Butter, 4);
     return;
   }
-  hit(260, y, 992, Height, [this] { action(Action::Queue); });
+  rowHit(260, y, 992, Height, 16, [this] { action(Action::Queue); });
   const bool ready = retroArchPresent();
   paint_.icon(ready ? 24 : 25, 282, y + 19, ready ? Good : Pending, 26);
   // What the player needs to know: whether games will run, and where they show up.
@@ -940,14 +939,14 @@ void Application::retroList() {
   // The row at the top follows the cursor, or the finger while it glides.
   const float top = glide("retro", 232, Top, 1048, 660 - (Top), float(std::clamp(selected_ - Visible / 2, 0, std::max(0, count - Visible))),
                           float((count) - (Visible)), RowStep);
-  const int first = int(top);
+  const int first = std::max(0, int(top));
   paint_.scrollbar(1266, Top, RowStep * Visible - 12, top, Visible, float(std::max(retroTotal_, count)));
   // One row past the footer so a long list looks like it goes on.
   clipTo(232, Top - 8, 1048, 660 - Top + 8);
   for (int i = first; i < count && i <= first + Visible + 1; ++i) {
     const auto &game = retroGames_[i];
     const float y = Top + (i - top) * RowStep;
-    hit(260, y, 992, RowHeight, [this, i] {
+    rowHit(260, y, 992, RowHeight, 16, [this, i] {
       if (inContent() && selected_ == i) action(Action::Accept);
       sidebar_ = false;
       selected_ = i;
@@ -967,7 +966,8 @@ void Application::retroList() {
     const float right = 1230;
     const bool busy = retroBusy_ == game.id;
     const bool bezel = retroBezelMissing(game), there = retroInstalled(game) && !bezel;
-    const std::string state = busy ? tr("Downloading") : bezel ? tr("Get bezel") : there ? tr("Installed") : tr("Not installed");
+    const bool off = game.coreOff && !busy && !there; // listed, but the server has its core off
+    const std::string state = busy ? tr("Downloading") : off ? tr("No core") : bezel ? tr("Get bezel") : there ? tr("Installed") : tr("Not installed");
     const float w = paint_.fonts.measure(state, 16, true) + 20;
     paint_.rect(right - w, y + 12, w, 28, busy || bezel ? Butter : there ? Good : Line, 8);
     paint_.fonts.middle(state, right - w + 10, y + 26, 16, there && !busy ? Surface : Ink, true);

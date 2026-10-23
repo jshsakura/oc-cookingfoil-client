@@ -119,6 +119,7 @@ void nativeInstall(const Item &item, const std::string &target,
   // it off (설정), the engine installs it as is and sigpatches let it run.
   auto *sink = foil::install::engineSink();
   inst::config::validateNCAs = !(sink && sink->skipSignatureCheck());
+  inst::config::rewrapped = rewrapped(item.url);
   // The download ring between curl and the placeholder writer, in 8MB
   // segments. CyberFoil sets this from its own menu, which is not built here;
   // left at 0 no data could ever be buffered and every download stalled.
@@ -145,9 +146,9 @@ void nativeInstall(const Item &item, const std::string &target,
   // connection (8 x 2 x 8 MB = 128 MB at most), the album one (16 MB).
   tin::network::SetParallelDownload(current.connections, current.application ? 0x800000 : 0x400000,
                                     current.application ? 2 : 1);
-  // Off in 설정: the required system version is cleared so the console
-  // launches the game anyway (it may still fail on firmware that is too old).
-  const bool ignoreFirmware = sink && sink->skipFirmwareCheck();
+  // The required system version is always cleared so the console launches
+  // the game anyway; on firmware too old the queue warned it may fail.
+  constexpr bool ignoreFirmware = true;
   tin::network::ClearBasicAuth();
   tin::network::SetExtraHeaders(headers, originOf(from));
   struct Headers {
@@ -246,7 +247,6 @@ bool nczPoint(const std::string &nca, uint64_t size, std::string &point, std::ve
     return false;
   window.assign(bytes.begin(), bytes.end());
   point = kept->plan;
-  logLine("download resumes at " + std::to_string((at.zstdStart + at.consumed) >> 20) + " MB (compressed): " + nca);
   return true;
 }
 void keepNczPoint(const std::string &nca, uint64_t size, const std::string &point, const std::vector<uint8_t> &window,
@@ -327,8 +327,6 @@ Placed streamToPlace(const std::string &content, uint64_t from, uint64_t size, c
         foil::net::SegmentPlan::load(point->plan, options.resume)) {
       options.resumeTotal = point->total;
       options.etag = point->etag;
-      logLine("download resumes at " + std::to_string(foil::net::SegmentPlan(options.resume).received() >> 20) +
-              " MB: " + content);
     }
   // Where it stands, every 30 s at most, once the bytes are on the card: each
   // save rewrites the database file whole, so not more often than that (a

@@ -233,7 +233,6 @@ bool Application::startShortcut(const QueuedInstall &next) {
   const bool replace = plan.replaces != 0;
   return runRetroJob("shortcut", [this, plan, server, replace, state = state_, sd = sdRoot_,
                                   languages = homebrew::nacpLanguages(languageCode())]() -> std::function<void()> {
-    logLine("shortcut: making " + plan.display); // a crash after this line is the shortcut's
     Error error;
     uint64_t id = 0;
     homebrew::NroInfo info;
@@ -253,10 +252,7 @@ bool Application::startShortcut(const QueuedInstall &next) {
         from = "HTTP " + std::to_string(got.status);
       }
       if (!picture.empty()) icon = shortcutIconJpeg(picture);
-      if (!icon.empty())
-        logLine("shortcut: " + plan.display + " icon from the server's picture (" + from + ", " +
-                std::to_string(picture.size() >> 10) + "KB -> " + std::to_string(icon.size() >> 10) + "KB)");
-      else
+      if (icon.empty() && plan.iconUrl.rfind("http", 0) == 0)
         logLine("shortcut: " + plan.display + " keeps the app's own icon (" + from + ")");
       platform::ShortcutRequest request;
       request.nroPath = forwarder::loaderPath(plan.launch.empty() ? plan.file : plan.launch);

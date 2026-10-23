@@ -471,6 +471,10 @@ std::string formatSpeed(double bytesPerSecond) {
   std::snprintf(buffer, sizeof(buffer), k > 0 && bits < 10 ? "%.1f %s" : "%.0f %s", bits, bitUnits[k]);
   return text + buffer;
 }
+uint64_t groupBytes(const Group &g) {
+  const auto &base = g.base ? *g.base : g.representative;
+  return base.size + (g.update ? g.update->size : 0);
+}
 int groupIntegrity(const Group &g) {
   int worst = g.representative.integrity;
   if (g.base) worst = std::max<int>(worst, g.base->integrity);

@@ -78,6 +78,7 @@ void Application::openManagement() {
   readingSaves_ = deviceBusy_ = true;
   const auto id = managedGame_->applicationId;
   deviceWorker_ = std::thread([this, id] {
+    const platform::OnCore off(platform::WriterCore);
     if (!guarded("saves", [this, id] {
           auto result = platform::readSaves(id);
           incomingSaves_ = std::move(result.value);
@@ -93,6 +94,7 @@ void Application::performRemoval() {
   const auto request = *removal_;
   deviceBusy_ = removalOperation_ = true;
   deviceWorker_ = std::thread([this, request] {
+    const platform::OnCore off(platform::WriterCore);
     if (!guarded("removal", [this, &request] {
           incomingDeviceError_ = platform::removeInstalled(request);
           if (!incomingDeviceError_) {
@@ -222,12 +224,12 @@ void Application::installedScreen() {
   const int rowCount = int((rows.size() + 5) / 6);
   const float top = glide("installed", 232, 104 - 8, 1048, 660 - 104 + 8, float(std::max(0, selected_ / 6 - 1)),
                           float(rowCount - 2), CardRowStep);
-  const int first = int(top) * 6;
+  const int first = std::max(0, int(top)) * 6;
   paint_.scrollbar(1266, 104, 500, top, 2.1f, float(rowCount));
   clipTo(232, 104 - 8, 1048, 660 - 104 + 8);
   for (int n = 0; n < 24 && first + n < int(rows.size()); ++n) {
     const auto &g = installed_.games[rows[first + n]];
-    const float x = 260 + n % 6 * 170, y = 104 + (n / 6 + int(top) - top) * CardRowStep;
+    const float x = 260 + n % 6 * 170, y = 104 + (n / 6 + first / 6 - top) * CardRowStep;
     const auto icon = installedIcon(g);
     hit(x, y, 150, 220, [this, index = first + n] {
       sidebar_ = false;
@@ -270,7 +272,7 @@ void Application::management() {
   if (!savesOnly) {
     paint_.fonts.text(tr("Delete game"), x, y + 4, 19, Secondary, true);
     y += Label;
-    hit(x, y, w, Row, [this] {
+    rowHit(x, y, w, Row, 12, [this] {
       manageRow_ = 0;
       installedAction(Action::Accept);
     });
@@ -301,7 +303,7 @@ void Application::management() {
     for (int i = first; i < int(saves_.size()) && i < first + shown; ++i, y += Row + Gap) {
       const auto &save = saves_[i];
       const bool device = save.device();
-      hit(x, y, w, Row, [this, i] {
+      rowHit(x, y, w, Row, 12, [this, i] {
         manageRow_ = i + 1;
         installedAction(Action::Accept);
       });

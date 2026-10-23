@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <ctime>
 #include "core/Catalog.hpp"
 #include "core/Selection.hpp"
@@ -84,6 +85,17 @@ enum class Action {
 int themeIcon(const Theme &theme);
 class Application {
 public:
+  // 설정 > 버그 리포트 보내기 (or the clock's failure): the popup, `note`
+  // already written, going to the server the lists come from.
+  void openBugReport(const std::string &note);
+  bool bugReportOpen() const { return bugAsk_; }
+  bool serverInfoOpen() const { return serverInfo_; }
+  void pressLink() { pressLinkState(); } // tests: the footer's link state, pressed
+  // The 설정 index of the server the report goes to; npos with none on.
+  size_t bugReportServer() const {
+    const auto on = reportServers();
+    return on.empty() ? std::string::npos : on[size_t(std::clamp(bugServer_, 0, int(on.size()) - 1))];
+  }
   // The approval message kept for a server address (tests and the form).
   std::string pairMessageFor(const std::string &url) const {
     const auto found = state_.pairMessages.find(url);
@@ -112,9 +124,21 @@ public:
   size_t groupCount() const { return groups_.size(); }
   // A reload still reading the card (reload() from the drawing thread).
   bool reloading() const { return reloadWorker_.joinable(); }
+  // The server still asked (network_ not yet taken by a frame).
+  bool asking() const { return network_.joinable() && !done_; }
   std::string selectedName() const;
   void setDetail(net::Detail detail);
   bool confirmingInstall() const { return confirmInstall_; }
+  bool forcingInstall() const { return confirmInstall_ && forceInstall_; }
+  // The confirm past the firmware: its note, the width it wraps to and the
+  // most lines it may take (a test holds every language to them).
+  static std::string forceInstallNote(const std::string &console, const std::string &need);
+  static constexpr float ForceNoteWidth = 780;
+  static constexpr int ForceNoteLines = 12;
+  void offerFeature(const std::string &server, const std::string &feature, const std::string &rewrapMax = "") {
+    serverFeatures_[server].insert(feature);
+    serverRewrapMax_[server] = rewrapMax;
+  }
   std::string detailId() const { return detailGroup_ < groups_.size() ? groups_[detailGroup_].id : ""; }
   // Patches picked with a game install that have not started yet.
   size_t queuedPatches() const { return patchQueue_.size(); }
@@ -258,6 +282,9 @@ public:
   bool askingSelfShortcut() const { return selfShortcutAsk_; }
   bool askingShortcutRemoval() const { return shortcutRemoveAsk_; }
   bool appPopupOpen() const { return homebrewAsk_; }
+  int homebrewListed() const { return int(homebrewRows().size()); } // rows on the tab shown
+  bool adminEditOpen() const { return adminEdit_.open; }
+  bool adminEditBusy() const { return adminEdit_.busy; }
   int appPopupRow() const { return homebrewAskRow_; }
   bool hasShortcut(uint64_t id) const { return shortcuts_.count(id) > 0; }
   // 홈브류 with its card scan finished (the worker joined).
@@ -356,7 +383,7 @@ public:
   void saveOwnState();
   // 설정's options card: 언어, 기본 저장 위치, 앱 업데이트, 남은 파일 정리,
   // then the switches: 서명 검사, 펌웨어 검사, 홈 메뉴 바로가기, 오류 로그 전송.
-  static constexpr int SettingsOptions = 9;
+  static constexpr int SettingsOptions = 8;
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).
@@ -1163,7 +1190,19 @@ private:
   // 설정 > 버그 리포트 보내기: the log's tail to the server, on request.
   std::string recentCrashReport(size_t room) const;
   void sendBugReport(const std::string &said);
+  void bugReportDialog();
+  // The footer's link state pressed (ServerInfo.cpp): connected, the servers'
+  // popup; not, a try again.
+  const char *serverState(size_t i) const;
+  void pressLinkState();
+  void serverInfoAction(Action a);
+  void serverInfoDialog();
+  bool serverInfo_ = false;
+  int serverInfoRow_ = 0;
+  std::map<std::string, int> serverGames_; // games each server brings, counted as the popup opens
+  std::vector<size_t> reportServers() const; // the servers a report can go to: the ones on, in 설정's order
   bool bugAsk_ = false, bugMessageField_ = false; // the report's popup, and its note being typed
+  int bugServer_ = 0; // the row of reportServers() it goes to
   std::string bugMessage_;
   std::thread bugWorker_;
   std::atomic<bool> bugDone_{false};
@@ -1297,6 +1336,20 @@ private:
   // A small button drawn at `look` (corner `radius`): it answers a little
   // above and below it, and shows pressed as itself, not as a larger card.
   void buttonHit(SDL_FRect look, int radius, std::function<void()> run);
+  // The picked files with the title's own firmware need, and the firmware
+  // among them the console cannot reach (install::unreachableFirmware).
+  std::vector<Item> pickedNeeds() const;
+  std::string pickedUnreachable() const;
+  // Of the servers with every picked file, the ones that re-encrypt content
+  // for this console's older master key (feature nca-rewrap).
+  std::vector<std::string> rewrapServers() const;
+  // The picked content's key is past every rewrap server's prod.keys: what
+  // to say instead of offering it (empty: not so).
+  std::string rewrapKeysTooOld() const;
+  // A row: pressed, it darkens as itself (its own corners), only the part on screen.
+  void rowHit(float x, float y, float w, float h, int radius, std::function<void()> run) {
+    hit(x, y, w, h, std::move(run), {}, -radius);
+  }
   // Under a popup nothing answers: no taps, and no list glides behind it.
   void blockTouch() {
     hit(0, 0, 1280, 720, [] {});
@@ -1309,7 +1362,7 @@ private:
     SDL_FRect area;
     std::function<void()> run;
     SDL_FRect look{}; // shown pressed as this when set; else a card around area
-    int radius = 0;
+    int radius = 0;   // below 0: a row (rowHit), pressed as area itself with these corners
   };
   std::vector<Hit> hits_;
   // The header's buttons (tabs, filter, search, Y buttons), recorded each
@@ -1438,8 +1491,8 @@ private:
 
   size_t serverIndex_ = 0, detailGroup_ = 0;
   std::unique_ptr<net::Session> session_;
-  // The other enabled servers, read after session_'s on the same thread:
-  // their games join its list (mergeServers). In config.json's order.
+  // The other enabled servers, read beside session_'s (askOthers): their
+  // games join its list (mergeServers). In config.json's order.
   std::vector<std::unique_ptr<net::Session>> others_;
   // Each server's last list, by url, while more than one is read: one that
   // answers 304 keeps its part. Only the network thread touches it.
@@ -1451,6 +1504,8 @@ private:
   bool incomingCatalog_ = false; // the network thread brought a list (incomingGroups_)
   // What each server read now offers (/api/shop/info features), by url.
   std::map<std::string, std::set<std::string>> serverFeatures_;
+  // Each server's rewrapMaxFirmware: past it its prod.keys cannot re-encrypt.
+  std::map<std::string, std::string> serverRewrapMax_;
   // The servers read now that offer `feature` (empty: all of them): the one
   // in use first, then the others in config.json's order.
   std::vector<Server> serversWith(const std::string &feature) const;
@@ -1458,8 +1513,19 @@ private:
   // The session for a configured server (by url); session_ for none or one
   // not read now.
   net::Session *sessionFor(const std::string &url) const;
-  // The others, read in turn after session_'s list (the network thread):
-  // true when any part of the list changed.
+  // The others are asked each on its own thread as session_'s list is
+  // (askOthers), so the home waits for the slowest server, not for each in
+  // turn; readOthers waits for them all and takes their lists (the network
+  // thread): true when any part of the list changed.
+  struct OtherRead {
+    bool read = false;
+    Error error;
+  };
+  std::vector<OtherRead> othersRead_;
+  std::vector<std::thread> othersAsking_;
+  bool othersUnshown_ = false; // a change read while session_'s list failed
+  void askOthers();
+  void joinOthers();
   bool readOthers(bool primaryChanged);
   std::thread network_;
   std::atomic<bool> done_{false};
@@ -1525,6 +1591,8 @@ private:
   bool confirmCancel_ = false, confirmExit_ = false, exitAfterCancel_ = false,
        exitRequested_ = false;
   bool searchRequested_ = false, confirmInstall_ = false;
+  // The confirm asks to install past the firmware: the server re-encrypts it.
+  bool forceInstall_ = false;
   void dialogHints(float right, float y, const std::string &close,
                    const std::string &apply = "", const std::string &accept = "", const std::string &remove = "");
   static inline const std::string NoAccept = "\x1f"; // `accept` for a popup A does nothing in
@@ -1573,8 +1641,7 @@ private:
   Qr qr_;
   bool pairingPending_ = false;
   net::PairingInfo pairingInfo_;
-  uint32_t pairPollAt_ = 0, offlineCheckAt_ = 0;
-  int retries_ = 0; // automatic reconnects since the last success or -
+  uint32_t pairPollAt_ = 0;
   // Updates and DLC the console lacks, worked out once per catalog or
   // installed list; the last answer stays while the list is read again, so
   // the menu's count does not blink.

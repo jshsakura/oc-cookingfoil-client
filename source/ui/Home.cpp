@@ -67,13 +67,8 @@ void Application::home() {
       notice(tr("Reading the app's records on the SD card."), tr("If another CookingFoil is open, close it."), 25);
       return;
     }
-    const auto shape = [this] {
-      paint_.skeleton(260, 24, 992, 248, 20);
-      paint_.skeleton(260, 300, 160, 28, 8);
-      paint_.skeletonCards(260, 346, 6);
-    };
     if (stateWaiting_ || reloadWorker_.joinable()) {
-      shape();
+      screenSkeleton();
       return;
     }
     if (!session_) {
@@ -94,7 +89,8 @@ void Application::home() {
         notice(tr("Waiting for device approval."), error_.message, 25);
       else
         notice(offline ? tr("No internet connection.") : tr("Couldn't connect to the server."),
-               offline ? error_.message : error_.message + "\n" + tr("Check the server in Settings and press - to refresh."),
+               offline ? error_.message + "\n" + tr("Try again in a moment.")
+                       : error_.message + "\n" + tr("Check the server in Settings and press - to refresh."),
                offline ? 20 : 25, tr("Try again"), [this] { refreshAll(); }, "", "", {}, 46);
       return;
     }
@@ -103,7 +99,7 @@ void Application::home() {
       return;
     }
     // Connecting: the shape of the home screen, pulsing.
-    shape();
+    screenSkeleton();
     return;
   }
   constexpr int RowTop = 300, RowHeight = 268, Columns = 6;

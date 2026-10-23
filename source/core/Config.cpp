@@ -10,6 +10,7 @@
 #include <filesystem>
 #include "core/Log.hpp"
 #include <fstream>
+#include <mutex>
 #include <fcntl.h>
 #include <unistd.h>
 namespace foil {
@@ -56,6 +57,11 @@ std::string originOf(const std::string& url) {
     if (!port.empty()) result += ":" + port;
     curl_url_cleanup(h);
     return result;
+}
+std::string hostOf(const std::string& url) {
+    const auto origin = originOf(url);
+    const auto scheme = origin.find("://");
+    return scheme == std::string::npos ? "" : origin.substr(scheme + 3);
 }
 namespace {
 bool privateIpv4(const std::string& host) {
@@ -110,7 +116,7 @@ Parsed<Config> parseConfig(const std::string& json) {
         server.url = normalizeUrl(stringField(object, "url"));
         if (server.url.empty()) { fail(trf("Check the HTTP/HTTPS address of server {0}.", {std::to_string(i + 1)})); return result; }
         server.title = stringField(object, "title");
-        if (server.title.empty()) server.title = originOf(server.url).substr(originOf(server.url).find("://") + 3);
+        if (server.title.empty()) server.title = hostOf(server.url);
         server.username = stringField(object, "username"); server.password = stringField(object, "password");
         server.cfClientId = stringField(object, "cfClientId"); server.cfClientSecret = stringField(object, "cfClientSecret");
         // Letters, digits, '_' and '-' only (it goes into a JSON body); any
@@ -195,8 +201,14 @@ bool finishCutSave(const std::string& path) {
 bool saveConfig(const std::string& path, const Config& config, std::string& error) {
     return atomicWrite(path, serializeConfig(config), error);
 }
+namespace {
+// Servers read side by side each take their own field out: one at a time,
+// so none writes back a copy that still holds another's.
+std::mutex dropping;
+}
 bool dropEnrollToken(const std::string& path, const std::string& serverUrl, std::string& error) {
     if (path.empty()) return true;
+    std::lock_guard<std::mutex> one(dropping);
     auto config = parseConfig(readFile(path));
     if (config.error) { error = config.error.message; return false; }
     bool changed = false;
@@ -206,6 +218,7 @@ bool dropEnrollToken(const std::string& path, const std::string& serverUrl, std:
 }
 bool dropPassword(const std::string& path, const std::string& serverUrl, std::string& error) {
     if (path.empty()) return true;
+    std::lock_guard<std::mutex> one(dropping);
     auto config = parseConfig(readFile(path));
     if (config.error) { error = config.error.message; return false; }
     bool changed = false;

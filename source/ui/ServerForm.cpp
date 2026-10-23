@@ -19,12 +19,6 @@ bool startsWith(const std::string &text, const std::string &prefix) {
     if (std::tolower(static_cast<unsigned char>(text[i])) != prefix[i]) return false;
   return true;
 }
-// What parseConfig names a server without a title: its host and port.
-std::string hostOf(const std::string &url) {
-  const auto origin = originOf(url);
-  const auto scheme = origin.find("://");
-  return scheme == std::string::npos ? "" : origin.substr(scheme + 3);
-}
 bool sameServer(const Server &a, const Server &b) {
   return a.title == b.title && a.url == b.url && a.username == b.username && a.password == b.password &&
          a.cfClientId == b.cfClientId && a.cfClientSecret == b.cfClientSecret && a.enabled == b.enabled &&
@@ -320,7 +314,7 @@ bool Application::writeServers(const Config &next, int prefer, const std::string
 // What the server holds: none, its own file, or the upload and its date.
 void Application::keysRow(float x, float y, float w, float h, float valueX, float valueW) {
   const float mid = y + h / 2;
-  hit(x, y, w, h, [this] {
+  rowHit(x, y, w, h, 12, [this] {
     serverForm_->row = KeysRow;
     action(Action::Accept);
   });
@@ -371,7 +365,7 @@ void Application::serverFormDialog() {
   const char *labels[ServerFields] = {tr("Address"), tr("Username"), tr("Password"), tr("Name"), tr("Message")};
   for (int field = 0; field < ServerFields; ++field) {
     const float y = body.y + 20 + field * (Row + Gap), mid = y + Row / 2;
-    hit(x, y, w, Row, [this, field] {
+    rowHit(x, y, w, Row, 12, [this, field] {
       serverForm_->row = field;
       action(Action::Accept);
     });

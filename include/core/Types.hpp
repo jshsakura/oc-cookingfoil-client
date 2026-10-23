@@ -21,6 +21,9 @@ struct Item {
     // Optional server fields (features: item-price and friends); empty or 0
     // when the server does not send them.
     Word priceRegular, priceDiscount, priceDiscountEnds, priceCountry, requiredFirmware;
+    // The firmware that brought the master key its NCAs are encrypted with
+    // (feature item-key-generation).
+    Word keyFirmware;
     uint64_t installSize = 0;
     uint32_t latestVersion = 0;
     int dlcTotal = 0;

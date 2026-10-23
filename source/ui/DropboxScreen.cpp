@@ -2,6 +2,7 @@
 // signs in from a QR code, the console polls and trades the code itself),
 // and backups use its Dropbox layout, so either app sees the other's.
 #include "ui/Application.hpp"
+#include "platform/Cores.hpp"
 #include "core/Log.hpp"
 #include <algorithm>
 namespace foil::ui {
@@ -30,6 +31,7 @@ bool Application::runDropboxJob(const std::string &busy, std::function<std::func
   if (dropboxWorker_.joinable() || !dropbox_) return false;
   dropboxBusy_ = busy;
   dropboxWorker_ = std::thread([this, job = std::move(job)] {
+    const platform::OnCore off(platform::NetworkCore);
     std::function<void()> finish;
     if (!guarded("dropbox", [&] { finish = job(); }))
       finish = [this] { dropboxError_.message = tr("Something went wrong with Dropbox. Check log.txt."); };
@@ -469,12 +471,12 @@ void Application::dropboxTab() {
   // The row at the top follows the cursor, or the finger while it glides.
   const float top = glide("dropbox", 232, ListTop, 1048, 660 - (ListTop), float(std::clamp(at - Visible / 2, 0, std::max(0, count - Visible))),
                           float((count) - (Visible)), RowStep);
-  const int first = int(top);
+  const int first = std::max(0, int(top));
   paint_.scrollbar(1266, ListTop, RowStep * Visible - 12, top, Visible, float(count));
   clipTo(232, ListTop - 8, 1048, 660 - ListTop + 8);
   {
     const float y = ListTop - top * RowStep;
-    hit(260, y, 992, RowHeight, [this] {
+    rowHit(260, y, 992, RowHeight, 16, [this] {
       if (inContent() && dropboxOnAccount_) action(Action::Accept);
       sidebar_ = false;
       dropboxOnAccount_ = true;
@@ -523,7 +525,7 @@ void Application::dropboxTab() {
     const auto &g = rows[n];
     const auto id = g.applicationId;
     const float y = ListTop + (n + 1 - top) * RowStep;
-    hit(260, y, 992, RowHeight, [this, id] {
+    rowHit(260, y, 992, RowHeight, 16, [this, id] {
       if (inContent() && !dropboxOnAccount_ && dropboxCursor_ == id) action(Action::Accept);
       sidebar_ = false;
       dropboxOnAccount_ = false;
@@ -588,11 +590,11 @@ void Application::dropboxDialog() {
   // The row at the top follows the cursor, or the finger while it glides.
   const float topRow = glide("dropboxPick", x, body.y + 24, w, rows * (Row + Gap), float(std::clamp(dropboxPick_ - rows / 2, 0, std::max(0, total - rows))),
                           float((total) - (rows)), (Row + Gap));
-  const int top = int(topRow);
+  const int top = std::max(0, int(topRow));
   clipTo(x, body.y + 24, w, rows * (Row + Gap));
   for (int n = top; n < total && n <= top + rows; ++n) {
     const float y = body.y + 24 + (n - topRow) * (Row + Gap);
-    hit(x, y, w, Row, [this, n] {
+    rowHit(x, y, w, Row, 12, [this, n] {
       dropboxPick_ = n;
       action(Action::Accept);
     });
@@ -660,12 +662,12 @@ void Application::dropboxUploadList() {
   // The row at the top follows the cursor, or the finger while it glides.
   const float topRow = glide("dropboxUpload", x, body.y + 24, w, rows * (Row + Gap), float(std::clamp(dropboxUploadPick_ - rows / 2, 0, std::max(0, total - rows))),
                           float((total) - (rows)), (Row + Gap));
-  const int top = int(topRow);
+  const int top = std::max(0, int(topRow));
   clipTo(x, body.y + 24, w, rows * (Row + Gap));
   for (int n = top; n < total && n <= top + rows; ++n) {
     const auto &b = dropboxLocal_[n];
     const float y = body.y + 24 + (n - topRow) * (Row + Gap);
-    hit(x, y, w, Row, [this, n] {
+    rowHit(x, y, w, Row, 12, [this, n] {
       dropboxUploadPick_ = n;
       action(Action::Accept);
     });

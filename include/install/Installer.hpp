@@ -28,6 +28,30 @@ int compareVersions(const std::string &a, const std::string &b);
 // The highest firmware the files need when the console is older, else "".
 // Unknown versions on either side never block.
 std::string missingFirmware(const std::vector<Item> &files, const std::string &console);
+// The master key a firmware brought (0 for 1.0.0): content made for newer
+// firmware is encrypted with a key older firmware does not have.
+int masterKeyOf(const std::string &firmware);
+// What the console lacks, as a popup says it: the requirement, then what is
+// needed and what the console has.
+std::string firmwareShortfall(const std::string &need, const std::string &console);
+// missingFirmware when that firmware's master key is newer than the
+// console's: the console cannot open what it installs. Else "" (an older
+// firmware with the same key may still install and run).
+// A file the server re-encrypts (feature nca-rewrap) counts as reachable.
+std::string unreachableFirmware(const std::vector<Item> &files, const std::string &console);
+// A file's address asking its server to re-encrypt it for the console's
+// firmware ("rewrap=21.0.1", feature nca-rewrap): the server picks that
+// firmware's master key, so content for a newer key still installs.
+std::string rewrapUrl(const std::string &url, const std::string &console);
+bool rewrapped(const std::string &url);
+// The same file, asked re-encrypted or not: a pick's rows find it either way.
+bool sameFile(const std::string &a, const std::string &b);
+// What a server that cannot re-encrypt a file (409, rewrap.*) says, in the
+// console's language: {"error": text, "code": "rewrap.keysTooOld"}; a
+// "message" at the top or inside an "error" object reads too.
+std::string rewrapRefusal(const std::string &body);
+// The newest keyFirmware among the files ("" when none says).
+std::string keyFirmwareOf(const std::vector<Item> &files);
 // The speed shown, calm enough to read: everything received since this
 // download started over the time it has run, refreshed every three
 // seconds. Nothing is shown for the first five seconds and the first 4 MB
@@ -96,9 +120,9 @@ public:
   void setPaused(bool paused);
   bool paused() const { return pause_; }
   bool cancellationRequested() const { return cancel_; }
-  // Set from 설정 when the install starts; the engine reads it per file.
+  // Set from 설정 when the install starts, and on for a file the server
+  // re-encrypted (its headers are no longer signed); the engine reads it per file.
   bool skipSignatureCheck() const { return skipSignature_; }
-  bool skipFirmwareCheck() const { return skipFirmware_; }
   // Where cut-off files stand (EngineHooks), held here so the install
   // thread never waits on the card: the UI thread loads them from
   // 다운로드's database and writes back what changed (takeResumeChanges).
@@ -126,7 +150,7 @@ private:
   void run(std::vector<Item> files, Server server, State state);
   mutable std::mutex mutex_;
   std::thread thread_;
-  std::atomic<bool> cancel_{false}, stop_{false}, pause_{false}, skipSignature_{false}, skipFirmware_{false};
+  std::atomic<bool> cancel_{false}, stop_{false}, pause_{false}, skipSignature_{false};
   Progress progress_;
   uint64_t completed_ = 0;
   std::map<std::string, uint64_t> contents_;

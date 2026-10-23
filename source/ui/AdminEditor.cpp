@@ -125,6 +125,9 @@ void Application::adminEditAction(Action a) {
     edit.open = false;
     // What changed shows in the lists and on this page: they are read again.
     if (edit.changed) reload();
+    // An app's own list too: the server makes its shortcut again when the
+    // cores change, and this page shows the new one.
+    if (edit.changed && edit.target.kind == "homebrew") loadHomebrew();
     return;
   }
   if (a == Action::Up) edit.row = std::max(0, edit.row - 1);
@@ -172,7 +175,7 @@ void Application::adminEditDialog() {
   }
   for (int i = 0; i < count; ++i, y += Row + Gap) {
     const auto &field = edit.fields[i];
-    hit(x, y, w, Row, [this, i] {
+    rowHit(x, y, w, Row, 14, [this, i] {
       adminEdit_.row = i;
       adminEditAction(Action::Accept);
     });

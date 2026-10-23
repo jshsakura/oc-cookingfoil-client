@@ -201,8 +201,6 @@ void Application::takeHomebrewLedgerCheck() {
       homebrewLedger_[id] = record;
       changed = true;
     }
-  for (const auto &id : check.followed)
-    logLine("homebrew " + id + ": the card's file is not the one installed; the ledger follows the card");
   homebrewLedgerLooked_.clear();
   if (changed) saveHomebrewLedger();
 }
@@ -400,7 +398,6 @@ bool Application::runHomebrew(const homebrew::App &app, const Server &server) {
           if (net::homebrewList(server, state, etag, now, unchanged, listError, &retroCancel_))
             for (const auto &fresh : now)
               if (fresh.id == app.id && fresh.hash != listed.hash) {
-                logLine("homebrew: " + app.name + " changed on the server, fetching the new build");
                 app = fresh;
                 error = {};
                 retroReceived_ = 0;
@@ -606,6 +603,7 @@ void Application::settleHomebrewRemoval() {
   const auto done = std::exchange(homebrewRemoved_, {});
   cardChanged();
   if (!done.file) {
+    alertTitle_ = tr("Could not delete");
     alert_ = trf("Could not delete the file: {0}", {homebrewFile(app)});
     return;
   }
@@ -624,8 +622,10 @@ void Application::settleHomebrewRemoval() {
   if (!done.shortcutError.empty()) {
     alertTitle_ = tr("Could not delete the shortcut");
     alert_ = done.shortcutError;
-  } else if (!done.folderError.empty())
+  } else if (!done.folderError.empty()) {
+    alertTitle_ = tr("Could not delete");
     alert_ = trf("Could not delete the folder: {0}", {done.folderError});
+  }
   else
     message(trf("Removed {0}.", {app.name}));
 }
@@ -762,7 +762,7 @@ void Application::homebrewSortDialog() {
   for (int n = 0; n < Count; ++n) {
     const float y = body.y + 16 + n * (Row + Gap), mid = y + Row / 2;
     const bool on = homebrew::Orders[n] == homebrewSort_;
-    hit(x, y, w, Row, [this, n] {
+    rowHit(x, y, w, Row, 12, [this, n] {
       homebrewSortRow_ = n;
       action(Action::Accept);
     });
@@ -840,13 +840,13 @@ void Application::homebrewScreen() {
   const int rowCount = int((rows.size() + 5) / 6);
   const float top = glide("homebrew", 232, 104 - 8, 1048, 660 - 104 + 8, float(std::max(0, selected_ / 6 - 1)),
                           float(rowCount - 2), CardRowStep);
-  const int first = int(top) * 6;
+  const int first = std::max(0, int(top)) * 6;
   paint_.scrollbar(1266, 104, 500, top, 2.1f, float(rowCount));
   clipTo(232, 104 - 8, 1048, 660 - 104 + 8);
   for (int n = 0; n < 24 && first + n < int(rows.size()); ++n) {
     const int i = first + n;
     const auto &app = homebrewAt(rows[i]);
-    const float x = 260 + n % 6 * 170, y = 104 + (n / 6 + int(top) - top) * CardRowStep;
+    const float x = 260 + n % 6 * 170, y = 104 + (n / 6 + first / 6 - top) * CardRowStep;
     hit(x, y, 150, 220, [this, i] {
       if (inContent() && selected_ == i) action(Action::Accept);
       sidebar_ = false;

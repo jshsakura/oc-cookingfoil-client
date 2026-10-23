@@ -11,7 +11,6 @@ struct State {
     // Install content whose signature does not check out (needs sigpatches).
     bool skipSignatureCheck = true;
     // Install games that need newer firmware than the console has.
-    bool skipFirmwareCheck = true;
     // Send the log to the server on its own when an error shows.
     // Install a HOME Menu shortcut with each retro game and homebrew app.
     bool makeShortcuts = true;

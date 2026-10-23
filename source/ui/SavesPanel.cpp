@@ -1,4 +1,5 @@
 #include "ui/Application.hpp"
+#include "platform/Cores.hpp"
 #include <cmath>
 #include "core/Log.hpp"
 #include "platform/Saves.hpp"
@@ -52,6 +53,7 @@ void Application::runSaveJob(bool restore) {
   saveRestoring_ = restore;
   deviceBusy_ = true;
   saveWorker_ = std::thread([this, job, source] {
+    const platform::OnCore off(platform::WriterCore);
     if (!guarded("saves", [this, &job, &source] {
           saveResult_ = source ? platform::restoreSave(job, *source) : platform::backupSave(job).error;
         }))
@@ -155,7 +157,7 @@ void Application::savePanel() {
   y += 28;
   const bool idle = !removal_ && saveConfirm_ == SaveConfirm::None;
   // Back up now.
-  hit(x, y, w, Row, [this] { saveRow_ = 0; saveAction(Action::Accept); });
+  rowHit(x, y, w, Row, 12, [this] { saveRow_ = 0; saveAction(Action::Accept); });
   if (saveRow_ == 0 && idle) paint_.focusRow(x, y, w, Row, Ground, 12);
   else paint_.rect(x, y, w, Row, Ground, 12);
   paint_.icon(4, x + 20, y + Row / 2 - 13, Ink, 26);
@@ -193,7 +195,7 @@ void Application::savePanel() {
   clipTo(x, listTop, w, visible * (Row + Gap));
   for (int row = firstIndex + 1; row <= last && row <= firstIndex + 1 + VisibleRows; ++row) {
     y = listTop + (row - 1 - top) * (Row + Gap);
-    hit(x, y, w, Row, [this, row] { saveRow_ = row; saveAction(Action::Accept); });
+    rowHit(x, y, w, Row, 12, [this, row] { saveRow_ = row; saveAction(Action::Accept); });
     if (saveRow_ == row && idle) paint_.focusRow(x, y, w, Row, Ground, 12);
     else paint_.rect(x, y, w, Row, Ground, 12);
     if (row == last) {

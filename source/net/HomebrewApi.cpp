@@ -1,4 +1,5 @@
 #include "net/HomebrewApi.hpp"
+#include "net/FileFetch.hpp"
 #include "core/I18n.hpp"
 #include "core/Json.hpp"
 #include "net/Api.hpp"
@@ -38,56 +39,6 @@ bool homebrewList(const Server &server, const State &state, std::string &etag, s
   return true;
 }
 namespace {
-// One file to sd/<path> through a .part file, resumed when an earlier try
-// left one. `sha256` empty takes the download's ETag as the checksum (the
-// single .nro); `size` 0 skips that check.
-bool fetchFile(const Server &server, const State &state, const std::string &url, const std::string &sd,
-               const std::string &path, std::string sha256, uint64_t size, std::atomic<uint64_t> &received,
-               Error &error, const std::atomic<bool> *cancel, int *busy = nullptr) {
-  // The part file has a short plain name beside the target ("설치-스위치.md"
-  // could not be created as "설치-스위치.md.part" on the console); the
-  // finished file takes the listed name.
-  const auto target = sd + "/" + path;
-  const auto folder = std::filesystem::path(target).parent_path().string();
-  Sha256 name;
-  name.update(path.data(), path.size());
-  const auto part = folder + "/.cf-" + name.hex().substr(0, 16) + ".part";
-  std::error_code ec;
-  if (!makeDirectories(folder)) {
-    error.message = trf("Could not create file: {0}", {path}) + " (" + std::strerror(errno) + ")";
-    return false;
-  }
-  PartInfo wanted;
-  wanted.url = url;
-  wanted.tag = sha256;
-  wanted.size = size;
-  const auto got = fetchPart(url, downloadHeaders(server, state, url), part, wanted, true, received, cancel);
-  const auto fail = [&](const std::string &message) {
-    if (!keepPart(got)) dropPart(part);
-    error.message = message;
-    return false;
-  };
-  if (got.tooLong) return fail(tr("The downloaded file does not match the server's. Try again."));
-  if (!got.failure.empty()) return fail(got.failure + " · " + path); // the listed name, not the part's
-  if (!got.response.error.empty()) return fail(got.response.error);
-  if (!rangedOk(got.response)) {
-    // The file changed on the server since the list: it says how long to wait.
-    if (busy && got.response.status == 503) *busy = got.response.retryAfter > 0 ? got.response.retryAfter : 5;
-    return fail(trf("Could not get the file. HTTP {0}", {std::to_string(got.response.status)}));
-  }
-  if (sha256.empty()) sha256 = homebrew::etagSha256(got.response.etag); // without one the file is kept unchecked
-  if ((size && got.size != size) || (!sha256.empty() && got.sha256 != sha256))
-    return fail(tr("The downloaded file does not match the server's. Try again."));
-  // An app with no hash to check it by: at least whole as an NRO (its icon
-  // and name are at the end, which a broken write would lose).
-  if (sha256.empty() && path.size() > 4 && path.compare(path.size() - 4, 4, ".nro") == 0 && !platform::wholeNro(part))
-    return fail(tr("The downloaded file does not match the server's. Try again."));
-  // The old file goes only once the new one can take its place.
-  if (std::string reason; !replaceFile(part, target, reason))
-    return fail(trf("Could not write the file: {0}", {path}) + " (" + reason + ")");
-  std::filesystem::remove(partInfoPath(part), ec);
-  return true;
-}
 // A file already on the card with the listed size and hash: nothing to fetch.
 bool alreadyThere(const std::string &target, uint64_t size, const std::string &sha256, const std::atomic<bool> *cancel,
                   std::atomic<uint64_t> *read) {
@@ -118,7 +69,6 @@ bool fetchBundle(const Server &server, const State &state, const homebrew::App &
   const auto record = sd + "/switch/cookingfoil/resume/homebrew-" + app.id + ".json";
   const auto kept = parsePartInfo(readFile(record));
   const uint64_t from = samePart(kept, wanted) ? kept.offset : 0;
-  if (from) logLine("homebrew " + app.id + " resumes at " + std::to_string(from >> 20) + " MB");
   // Each file the stream writes is held against the list as it ends.
   std::set<std::string> arrived;
   const auto fetch = rangedTar(app.bundleUrl, downloadHeaders(server, state, app.bundleUrl), from, from ? kept.etag : "",
@@ -248,7 +198,6 @@ bool fetchArchive(const Server &server, const State &state, const homebrew::App 
   const auto record = sd + "/switch/cookingfoil/resume/homebrew-" + app.id + ".json";
   const auto kept = parsePartInfo(readFile(record));
   const uint64_t from = samePart(kept, part) ? kept.offset : 0;
-  if (from) logLine("homebrew " + app.id + " resumes the zip at " + std::to_string(from >> 20) + " MB");
   const auto fetch = rangedTar(zip.url, headers, from, from ? kept.etag : "",
       [&](uint64_t) { return std::make_unique<ZipWriter>(sd, wanted); },
       [&](uint64_t boundary, const std::string &etag) {
@@ -292,7 +241,6 @@ bool homebrewArchive(const Server &server, const State &state, homebrew::App app
     if (fetchArchive(server, state, app, sd, received, error, cancel, unusable, retryAfter)) return true;
     if (cancel && *cancel) return false;
     if (retryAfter && round == 0) {
-      logLine("homebrew " + app.id + ": the zip changed on the server, listing again");
       const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(std::min(retryAfter, 30));
       while (std::chrono::steady_clock::now() < until && !(cancel && *cancel))
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -481,7 +429,6 @@ bool homebrewDownload(const Server &server, const State &state, const homebrew::
     int busy = 0;
     if (homebrewFiles(server, state, app, sd, received, error, cancel, keptBytes, busy, check)) return true;
     if ((cancel && *cancel) || !busy || round > 0) return false;
-    logLine("homebrew " + app.id + ": a file changed on the server, listing again");
     const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(std::min(busy, 30));
     while (std::chrono::steady_clock::now() < until && !(cancel && *cancel))
       std::this_thread::sleep_for(std::chrono::milliseconds(100));

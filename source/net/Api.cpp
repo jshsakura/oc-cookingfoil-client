@@ -24,6 +24,7 @@
 #include <set>
 #include <chrono>
 #include <thread>
+#include <utility>
 #ifdef __SWITCH__
 #include <switch.h>
 #endif
@@ -66,6 +67,10 @@ size_t writeHeader(char* data, size_t size, size_t count, void* context) {
         } else if (key == "x-cookingfoil-session") {
             auto value = line.substr(colon + 1); const auto begin = value.find_first_not_of(" \t\r\n");
             static_cast<Response*>(context)->session = begin == std::string::npos ? "refused" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
+        } else if (key == "x-cookingfoil-auth") {
+            auto value = line.substr(colon + 1); const auto begin = value.find_first_not_of(" \t\r\n");
+            value = begin == std::string::npos ? "" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
+            static_cast<Response*>(context)->auth = value.size() > 64 ? "" : value;
         } else if (key == "date") {
             const auto when = curl_getdate(line.substr(colon + 1).c_str(), nullptr);
             static_cast<Response*>(context)->date = when > 0 ? int64_t(when) : 0;
@@ -346,7 +351,6 @@ void followDirectNaming(const std::string& url, const Response& response) {
     if (url.rfind("https://", 0) != 0) return; // plain http is never given one
     if (response.status != 200 && response.status != 304) return;
     if (response.directNamed || downloadTokenOrigin(url).empty()) return;
-    logLine("download: the server no longer names a direct address; its own addresses from now");
     forgetDownloadToken(url);
 }
 long renewDownloadToken(const Server& server, const State& state) {
@@ -674,6 +678,7 @@ bool parseItem(json_object* object, Item& item) {
     item.priceDiscountEnds = stringField(object, "price_discount_ends");
     item.priceCountry = stringField(object, "price_country");
     item.requiredFirmware = textField(object, "required_firmware");
+    item.keyFirmware = textField(object, "key_firmware");
     item.installSize = positive(object, "install_size");
     item.latestVersion = static_cast<uint32_t>(std::min<uint64_t>(positive(object, "latest_version"), UINT32_MAX));
     item.dlcTotal = int(std::min<uint64_t>(positive(object, "dlc_total"), 9999));
@@ -923,6 +928,7 @@ Parsed<Detail> parseDetail(const std::string& json) {
     d.category = stringField(root.get(), "category"); d.banner = stringField(root.get(), "bannerUrl"); if (!isHttp(d.banner)) d.banner.clear();
     d.releaseDate = integerField(root.get(), "releaseDate"); d.players = integerField(root.get(), "numberOfPlayers");
     d.requiredFirmware = textField(root.get(), "requiredFirmware");
+    d.keyFirmware = textField(root.get(), "keyFirmware");
     d.dlcTotal = int(std::min<uint64_t>(positive(root.get(), "dlcTotal"), 9999));
     d.score = int(std::min<uint64_t>(positive(root.get(), "score"), 100));
     d.scoreCount = int(std::min<uint64_t>(positive(root.get(), "scoreCount"), INT32_MAX));
@@ -956,15 +962,25 @@ Parsed<PairingInfo> parsePairingInfo(const std::string& json, const Server& serv
     Parsed<PairingInfo> result;
     auto root = parseJson(json, result.error); if (result.error) return result;
     if (stringField(root.get(), "status") != "pending") return result;
-    const auto url = stringField(root.get(), "pairUrl");
-    // Newer servers hand out /pair/ (login first, then back); older ones /admin/pair/.
-    auto prefix = server.url + "/pair/";
-    if (url.rfind(prefix, 0) != 0) prefix = server.url + "/admin/pair/";
+    result.value.deviceLimit = stringField(root.get(), "limit") == "device";
+    if (result.value.deviceLimit)
+        result.value.deviceLimitCount = int(std::clamp<int64_t>(integerField(root.get(), "deviceLimit"), 0, 9999));
     const auto code = stringField(root.get(), "pairCode");
-    if (url.size() != prefix.size() + 32 || url.rfind(prefix, 0) != 0 ||
-        url.substr(prefix.size()).find_first_not_of("0123456789abcdef") != std::string::npos ||
-        code.size() != 8 || code.find_first_not_of("0123456789ABCDEF") != std::string::npos) return result;
-    result.value = {url, code, std::max<int64_t>(0, integerField(root.get(), "expiresAt"))};
+    if (code.size() == 8 && code.find_first_not_of("0123456789ABCDEF") == std::string::npos) result.value.code = code;
+    result.value.expiresAt = std::max<int64_t>(0, integerField(root.get(), "expiresAt"));
+    // Newer servers hand out /pair/ (login first, then back); older ones
+    // /admin/pair/. Only the route and its token are taken: the QR code opens
+    // the address this console connected to, even when the server names
+    // another of its own (its public name while the console uses a local one).
+    const auto url = stringField(root.get(), "pairUrl");
+    if ((url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0) || url.size() < 32) return result;
+    const auto token = url.substr(url.size() - 32), before = url.substr(0, url.size() - 32);
+    if (token.find_first_not_of("0123456789abcdef") != std::string::npos) return result;
+    for (const std::string route : {"/admin/pair/", "/pair/"})
+        if (before.size() >= route.size() && before.compare(before.size() - route.size(), route.size(), route) == 0) {
+            result.value.url = server.url + route + token;
+            break;
+        }
     return result;
 }
 std::string cleanPairMessage(const std::string& text) {
@@ -1009,6 +1025,17 @@ void Session::setPairMessage(const std::string& message) {
     if (note.empty()) state_.pairMessages.erase(server_.url);
     else state_.pairMessages[server_.url] = note;
 }
+namespace {
+// Servers are read side by side: each read-change-write of the records file
+// is one at a time, so none writes back a copy without another's key.
+std::mutex stateFile;
+// An issued key that could not be written: tried again shortly (the lock on
+// the file waits 2s each time), then held for the run.
+constexpr int KeySaveTries = 3;
+constexpr auto KeySaveGap = std::chrono::milliseconds(300);
+// And one catalog read at a time: two large lists never in memory at once.
+std::mutex catalogReading;
+}
 std::string Session::pairSecret() {
     const auto key = state_.accessKeys.find(server_.url);
     if (key != state_.accessKeys.end() && !key->second.empty()) return "";
@@ -1017,8 +1044,8 @@ std::string Session::pairSecret() {
     // the one the server holds.
     const auto secret = randomKey();
     if (secret.empty()) return "";
-    auto saved = loadState(path_);
-    auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
+    std::unique_lock<std::mutex> filed(stateFile);
+    auto updated = stateFromFile();
     updated.pairSecrets[server_.url] = secret;
     Error error;
     if (!saveState(path_, updated, error)) { logLine("pair secret not saved: " + error.message); return ""; }
@@ -1030,7 +1057,12 @@ bool Session::pair(Error& error) {
     auto headers = authHeaders(server_, state_, url);
     if (const auto secret = pairSecret(); !secret.empty()) headers.push_back("X-Pair-Secret: " + secret);
     const auto response = get(url, headers, "", cancel_);
-    if (response.status == 404) { pairingPending_ = false; pairingInfo_ = {}; return true; }
+    const auto held = state_.accessKeys.find(server_.url);
+    const bool keyless = held == state_.accessKeys.end() || held->second.empty();
+    if (response.status == 404) {
+        if (keyless && server_.username.empty()) logLine("pair: no device approval on this server (404) and no key held");
+        pairingPending_ = false; pairingInfo_ = {}; return true;
+    }
     if (!response.error.empty() || response.status != 200) { error.message = response.error.empty() ? tr("Could not check the device approval status.") : response.error; return false; }
     auto root = parseJson(response.body, error); if (error) return false;
     const auto status = stringField(root.get(), "status");
@@ -1067,15 +1099,19 @@ bool Session::pair(Error& error) {
     }
     if (status != "approved") { error.message = tr("Check the device approval response."); return false; }
     const auto key = stringField(root.get(), "accessKey");
+    // The list is refused next: the server approves this console but gave
+    // it no key (nor did it before).
+    if (key.empty() && keyless && server_.username.empty()) logLine("pair: approved, but no key came and none is held");
     if (!key.empty()) {
         // Start from the file: settings chosen since this session began
         // (language, install checks) must survive the key being added.
-        auto saved = loadState(path_);
-        auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value; updated.accessKeys[server_.url] = key;
-        updated.pairSecrets.erase(server_.url); // done with: the key came
-        if (!saveState(path_, updated, error)) { error.message = tr("Could not save the issued key. Check where the state file is stored."); return false; }
-        state_ = std::move(updated);
-        forgetPasswordOnceKeyed();
+        std::unique_lock<std::mutex> filed(stateFile);
+        const bool written = saveKey([&](State& updated) {
+            updated.accessKeys[server_.url] = key;
+            updated.pairSecrets.erase(server_.url); // done with: the key came
+        }, KeySaveTries);
+        filed.unlock();
+        if (written) forgetPasswordOnceKeyed();
     }
     pairingPending_ = false; pairingInfo_ = {}; return true;
 }
@@ -1085,7 +1121,7 @@ bool Session::pair(Error& error) {
 // in again).
 void Session::forgetPasswordOnceKeyed() {
     const auto key = state_.accessKeys.find(server_.url);
-    if (server_.password.empty() || !pairPasswordOnly(originOf(server_.url)) || key == state_.accessKeys.end() ||
+    if (keyUnsaved_ || server_.password.empty() || !pairPasswordOnly(originOf(server_.url)) || key == state_.accessKeys.end() ||
         key->second.empty())
         return;
     std::string failure;
@@ -1094,11 +1130,11 @@ void Session::forgetPasswordOnceKeyed() {
         return;
     }
     server_.password.clear();
-    logLine("pair: approved; the password is out of config.json");
 }
 void Session::forgetAccessKey() {
-    auto saved = loadState(path_);
-    auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
+    std::unique_lock<std::mutex> filed(stateFile);
+    keyUnsaved_ = enrollUnsaved_ = false; // the key held goes either way
+    auto updated = stateFromFile();
     updated.accessKeys.erase(server_.url);
     updated.pairSecrets.erase(server_.url); // the server dropped its record of it too
     Error error;
@@ -1107,6 +1143,17 @@ void Session::forgetAccessKey() {
     withdrawSession(originOf(server_.url));
     pairMessageSent_.clear();
     logLine("pair: the server took this console back; asking for approval again");
+}
+bool Session::answerRefusal(const Response& reply, Error& error) {
+    // The session token refused, its renewal too: the key signs in once
+    // more, and the server's answer to the key itself decides about it.
+    if (reply.auth.rfind("session-", 0) == 0) return true;
+    if (reply.auth != "access-key-wrong" && reply.auth != "device-not-approved") return false;
+    if (const auto held = state_.accessKeys.find(server_.url); held != state_.accessKeys.end() && !held->second.empty())
+        forgetAccessKey();
+    // Approval again: the QR code shows while it is pending (error set); a
+    // key that comes asks for the list once more.
+    return pair(error);
 }
 void Session::sendPairMessage() {
     // The status poll already knocks; the request goes out to carry the pair
@@ -1191,36 +1238,53 @@ void Session::rebind() {
         return;
     }
     // From the file: settings chosen since this session began must survive.
-    auto saved = loadState(path_);
-    auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
+    std::unique_lock<std::mutex> filed(stateFile);
+    auto updated = stateFromFile();
     updated.derivedKey = state_.derivedKey;
     updated.rebound.insert(server_.url);
     if (const auto list = knownServers()) settleDeviceKey(updated, *list);
     Error error;
     if (!saveState(path_, updated, error)) { logLine("rebind not saved: " + error.message); return; }
     state_ = std::move(updated);
-    logLine("rebind: " + status);
+    if (keyUnsaved_) keyWritten();
 }
 namespace {
 std::mutex enrollLock;
-std::map<std::string, std::string> enrollRefused; // url + token -> why, this run
+// url + token, this run: the server answered it but not with a key or a
+// refusal (another account's console, an error of its own). Not sent again
+// until the next start; the console asks for approval meanwhile.
+std::set<std::string> enrollSkipped;
+// url + token -> the key it gave, this run: a token is sent once. A session
+// made from an older copy of the files (or a try again after the key could
+// not be saved) takes that key; sent again, the server says "used".
+std::map<std::string, std::string> enrollSpent;
+// One enroll at a time, so a second session for the server waits for the
+// first one's key instead of sending the token beside it.
+std::mutex enrollSending;
 }
 void Session::forgetEnrollAttempts() {
     std::lock_guard<std::mutex> held(enrollLock);
-    enrollRefused.clear();
+    enrollSkipped.clear();
+    enrollSpent.clear();
 }
 bool Session::enroll(Error& error, bool replacing) {
-    const auto& token = server_.enrollToken;
+    const auto token = server_.enrollToken;
     const auto key = state_.accessKeys.find(server_.url);
     if (token.empty() || (!replacing && key != state_.accessKeys.end() && !key->second.empty())) return true;
     const auto tried = server_.url + '\n' + token;
-    {
-        // Refused once: said again, not asked again (the token is spent or gone).
-        std::lock_guard<std::mutex> held(enrollLock);
-        if (const auto at = enrollRefused.find(tried); at != enrollRefused.end()) { error.message = tr(at->second.c_str()); return false; }
-    }
+    std::lock_guard<std::mutex> one(enrollSending);
     // The key made from the console: the one the server approves.
     const auto device = state_.derivedKey.empty() ? state_.deviceKey : state_.derivedKey;
+    {
+        std::unique_lock<std::mutex> held(enrollLock);
+        if (enrollSkipped.count(tried)) return true;
+        if (const auto at = enrollSpent.find(tried); at != enrollSpent.end()) {
+            const auto spent = at->second;
+            held.unlock();
+            logLine("enroll: the token was spent earlier this run; its key goes on");
+            return keepEnrolledKey(spent, device, error);
+        }
+    }
     const auto url = server_.url + "/api/pair/enroll";
     auto headers = authHeaders(server_, state_, url);
     for (auto& header : headers)
@@ -1233,59 +1297,134 @@ bool Session::enroll(Error& error, bool replacing) {
     options.body = json_object_to_json_string_ext(body.get(), JSON_C_TO_STRING_PLAIN);
     options.timeout = 15;
     const auto sent = post(url, headers, options, cancel_);
-    const auto refuse = [&](const char* why) {
+    // Not a key and not a refusal: the QR code all the same, never a stop
+    // here while the server answers.
+    const auto skip = [&](const std::string& why) {
+        logLine("enroll: " + why + "; asking for approval");
         std::lock_guard<std::mutex> held(enrollLock);
-        enrollRefused[tried] = why;
-        error.message = tr(why);
-        return false;
+        enrollSkipped.insert(tried);
+        return true;
     };
     if (!sent.error.empty()) { error.message = sent.error; return false; }
     // A server that does not know enroll (before it, or with pairing off):
     // the token is not for it, and the console connects as before.
-    if (sent.status == 404 || sent.status == 405) { logLine("enroll: the server does not offer it; token ignored"); return true; }
-    // Expired or spent: out of config.json, and the console asks for approval
+    if (sent.status == 404 || sent.status == 405) return true;
+    // Expired or spent, or past the account's limits (403: as many consoles
+    // as it may hold): out of config.json, and the console asks for approval
     // as any other does (the QR code), instead of stopping here.
-    if (sent.status == 401) {
+    if (sent.status == 401 || (sent.status == 403 && sent.enroll == "limit")) {
         logLine("enroll: refused (" + (sent.enroll.empty() ? std::string("401") : sent.enroll) + "); asking for approval");
         std::string failure;
         if (!dropEnrollToken(configPath_, server_.url, failure)) logLine("enroll: token not taken out of config.json: " + failure);
         server_.enrollToken.clear();
         // The server put this console in its queue under the download's account;
         // the approval screen says why it waits.
-        enrollRefusal_ = sent.enroll == "used" || sent.enroll == "expired" || sent.enroll == "revoked" ? sent.enroll : "";
+        // A 403's limit is the account's, which the approval check says too.
+        const bool told = sent.enroll == "used" || sent.enroll == "expired" || sent.enroll == "revoked" || sent.enroll == "limit";
+        enrollRefusal_ = sent.status == 401 && told ? sent.enroll : "";
         return true;
     }
     if (sent.status == 409) {
-        logLine("enroll: the console belongs to another account");
-        return refuse("This console is linked to another account.");
+        enrollRefusal_ = "other-account";
+        return skip("the console belongs to another account");
     }
     Error unread;
     const auto reply = sent.status == 200 ? parseJson(sent.body, unread) : Json(nullptr);
     const auto accessKey = reply ? stringField(reply.get(), "accessKey") : std::string();
-    if (!reply || stringField(reply.get(), "status") != "approved" || accessKey.empty()) {
-        logLine("enroll: unexpected reply HTTP " + std::to_string(sent.status));
-        error.message = trf("Check the server connection. HTTP {0}", {std::to_string(sent.status)});
-        return false;
+    if (!reply || stringField(reply.get(), "status") != "approved" || accessKey.empty())
+        return skip("unexpected reply HTTP " + std::to_string(sent.status));
+    {
+        std::lock_guard<std::mutex> held(enrollLock);
+        enrollSpent[tried] = accessKey;
     }
-    // Saved as a key from approval is, from the file (settings chosen since
-    // this session began stay); the server knows the console by the made key.
+    return keepEnrolledKey(accessKey, device, error);
+}
+// Saved as a key from approval is (saveKey); the server knows the console by
+// the made key. Not written yet, the token stays in config.json and the key
+// is held for this run, written at the next refresh.
+bool Session::keepEnrolledKey(const std::string& accessKey, const std::string& device, Error&) {
+    std::unique_lock<std::mutex> filed(stateFile);
+    const bool written = saveKey([&](State& updated) {
+        updated.derivedKey = state_.derivedKey;
+        updated.accessKeys[server_.url] = accessKey;
+        updated.pairSecrets.erase(server_.url);
+        if (device != updated.deviceKey) updated.rebound.insert(server_.url);
+    }, KeySaveTries);
+    enrollUnsaved_ = true; // the token leaves config.json once the key is written
+    if (written) keyWritten();
+    return true;
+}
+State Session::stateFromFile() {
     auto saved = loadState(path_);
     auto updated = saved.error || saved.value.deviceKey != state_.deviceKey ? state_ : saved.value;
-    updated.derivedKey = state_.derivedKey;
-    updated.accessKeys[server_.url] = accessKey;
-    updated.pairSecrets.erase(server_.url);
-    if (device != updated.deviceKey) updated.rebound.insert(server_.url);
-    if (!saveState(path_, updated, error)) { error.message = tr("Could not save the issued key. Check where the state file is stored."); return false; }
+    if (keyUnsaved_) {
+        const auto held = state_.accessKeys.find(server_.url);
+        if (held != state_.accessKeys.end()) updated.accessKeys[server_.url] = held->second;
+        updated.pairSecrets.erase(server_.url);
+        updated.derivedKey = state_.derivedKey;
+        if (state_.rebound.count(server_.url)) updated.rebound.insert(server_.url);
+    }
+    return updated;
+}
+bool Session::saveKey(const std::function<void(State&)>& change, int tries) {
+    State updated;
+    Error error;
+    for (int tried = 1; tried <= tries; ++tried) {
+        if (tried > 1) std::this_thread::sleep_for(KeySaveGap);
+        updated = stateFromFile();
+        change(updated);
+        if (saveState(path_, updated, error)) {
+            state_ = std::move(updated);
+            keyUnsaved_ = false;
+            return true;
+        }
+        logLine("key not saved (try " + std::to_string(tried) + "/" + std::to_string(tries) + "): " + error.message);
+    }
     state_ = std::move(updated);
-    logLine("enroll: approved");
+    keyUnsaved_ = true;
+    logLine("key held for this run; written again at the next refresh");
+    return false;
+}
+void Session::keyWritten() {
+    keyUnsaved_ = false;
+    if (!std::exchange(enrollUnsaved_, false)) return;
     // Spent: out of config.json (kept there when refused, to tell why).
     std::string failure;
     if (!dropEnrollToken(configPath_, server_.url, failure)) logLine("enroll: token not taken out of config.json: " + failure);
     server_.enrollToken.clear();
-    return true;
+}
+namespace {
+// A list the server did not give, in the log: how this console signed in
+// and what came back (the server's own headers and error, or none: a reply
+// from something in front of it). The log keeps no host (withoutAddresses);
+// the screen's message names it.
+void logRefusal(const std::vector<std::string>& headers, const Response& reply) {
+    std::string auth = "none";
+    for (const auto& header : headers) {
+        if (header.rfind("Authorization: Bearer ", 0) == 0) auth = "session token";
+        else if (header.rfind("Authorization: Basic ", 0) == 0 && auth == "none") auth = "password";
+        else if (header.rfind("X-Access-Key: ", 0) == 0) auth = auth == "none" ? "access key" : auth + " + access key";
+    }
+    Error unread;
+    const auto body = reply.body.size() < 4096 ? parseJson(reply.body, unread) : Json(nullptr);
+    auto why = body ? stringField(body.get(), "error") : std::string();
+    if (why.size() > 120) why.resize(120);
+    logLine("list refused: HTTP " + std::to_string(reply.status) + ", signed in by " + auth +
+            ", session header " + (reply.session.empty() ? "none" : reply.session) +
+            ", enroll header " + (reply.enroll.empty() ? "none" : reply.enroll) +
+            ", auth header " + (reply.auth.empty() ? "none" : reply.auth) +
+            (why.empty() ? std::string(", no error in the body") : ", error " + why));
+}
 }
 bool Session::refresh(Error& error) {
     error = {};
+    if (keyUnsaved_) {
+        std::unique_lock<std::mutex> filed(stateFile);
+        if (saveKey([](State&) {}, 1)) {
+            logLine("the held key is written now");
+            keyWritten();
+        }
+    }
     if (!enroll(error)) return false;
     rebind();
     if (!pair(error)) return false;
@@ -1306,6 +1445,7 @@ bool Session::refresh(Error& error) {
             Error ignored;
             const auto body = parseJson(response.body, ignored);
             serverId_ = body ? stringField(body.get(), "server_id") : std::string();
+            rewrapMaxFirmware_ = body ? stringField(body.get(), "rewrapMaxFirmware") : std::string();
         }
         // Only a server that says so is asked for a session token.
         if (response.status == 200 || response.status == 404) {
@@ -1314,14 +1454,32 @@ bool Session::refresh(Error& error) {
         }
     }
     const auto url = server_.url + "/api/shop/sections";
-    auto response = get(url, authHeaders(server_, state_, url), etag_, cancel_);
+    auto signIn = authHeaders(server_, state_, url);
+    auto response = get(url, signIn, etag_, cancel_);
+    // Twice at most: a refused session, then what the key's own try says.
+    for (int answered = 0; answered < 2 && response.status == 401 && response.error.empty(); ++answered) {
+        const bool again = answerRefusal(response, error);
+        if (again || error) logRefusal(signIn, response);
+        if (error) return false; // approval pending: the QR code shows
+        if (!again) break;
+        signIn = authHeaders(server_, state_, url);
+        response = get(url, signIn, etag_, cancel_);
+    }
     followDirectNaming(url, response);
     if (!response.error.empty()) { error.message = response.error; return false; }
     unchanged_ = response.status == 304;
     if (unchanged_) return true;
-    if (response.status != 200) { error.message = trf("Check the server connection. HTTP {0}", {std::to_string(response.status)}); return false; }
+    if (response.status != 200) {
+        logRefusal(signIn, response);
+        // The host too: a photo of the screen says where the console went.
+        error.message = trf("Check the server connection. HTTP {0}", {std::to_string(response.status)}) + " · " + hostOf(url);
+        return false;
+    }
     // Read game by game (parseCatalog), then the text goes.
-    auto parsed = parseCatalog(response.body);
+    auto parsed = [&] {
+        std::lock_guard<std::mutex> one(catalogReading);
+        return parseCatalog(response.body);
+    }();
     std::string().swap(response.body);
     if (parsed.error) { error = parsed.error; return false; }
     items_.clear(); items_.shrink_to_fit();
@@ -1387,7 +1545,6 @@ bool Session::downloadPatch(const UserPatch& patch, const std::string& dir, std:
     const uint64_t from = samePart(kept, wanted) ? kept.offset : 0;
     std::error_code ec;
     if (!from) std::filesystem::remove_all(dir, ec);
-    else logLine("patch " + patch.id + " resumes at " + std::to_string(from));
     const auto fetch = rangedTar(url, downloadHeaders(server_, state_, url), from, from ? kept.etag : "",
         [&](uint64_t at) {
             std::error_code ignored;

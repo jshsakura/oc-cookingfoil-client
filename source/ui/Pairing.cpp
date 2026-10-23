@@ -37,14 +37,22 @@ void Application::pairing() {
   paint_.rect(260, 90, 992, 466, Surface, 20);
   paint_.pill(tr("Awaiting device approval"), 290, 120, false, 17);
   paint_.fonts.text(tr("Scan this QR code from the server website to approve."), 290, 176, 28, Ink, true, 580);
-  // A download that no longer connects says why; the server already lists
-  // this console under that download's account, so approving it is the rest.
+  // A download that no longer connects says why, and is approved by the QR
+  // code as any other. An account full of consoles says so first: waiting
+  // approves nothing until one is removed.
   const auto &refusal = pairingInfo_.refusal;
-  const char *why = refusal == "used"      ? "This download is already connected on another console. Approve this one too in device approval to add it to the same account."
-                    : refusal == "expired" ? "This download is more than a day old and no longer connects by itself. Approve this console in device approval to add it to your account."
-                    : refusal == "revoked" ? "This download was canceled. Approve this console in device approval to add it to your account."
+  const char *why = pairingInfo_.deviceLimit ? "This account has as many consoles as it can register. Remove one you no longer use, then approve this one."
+                    : refusal == "used"    ? "This download was already used on another console. Scan the QR code to approve this one."
+                    : refusal == "expired" ? "This download has expired. Scan the QR code to approve this console."
+                    : refusal == "revoked" ? "This download is no longer valid. Scan the QR code to approve this console."
+                    : refusal == "limit"   ? "This account has connected as many consoles by download as it can this hour. Scan the QR code to approve this one."
+                    : refusal == "other-account" ? "This console is linked to another account. Scan the QR code to approve it."
                                            : "Sign in to the shop on your phone, open device approval and scan the code to approve this device for that account.";
-  paint_.fonts.wrapped(tr(why), 290, 230, 21, Secondary, 570, 3);
+  const auto said = pairingInfo_.deviceLimitCount > 1 // one: the text without a number, whose words are plural
+                        ? trf("This account can register up to {0} consoles. Remove one you no longer use, then approve this one.",
+                              {std::to_string(pairingInfo_.deviceLimitCount)})
+                        : tr(why);
+  paint_.fonts.wrapped(said, 290, 230, 21, Secondary, 570, 3);
   if (!pairingInfo_.code.empty()) {
     paint_.fonts.text(tr("Device code"), 290, 326, 18, Secondary);
     paint_.fonts.text(pairingInfo_.code, 290, 357, 30, Ink, true);
@@ -53,7 +61,7 @@ void Application::pairing() {
                        290, 440, 19, Secondary, 570, 3);
   // The note for the admin, under the card: Y or a touch edits it.
   constexpr float NoteY = 572, NoteH = 60;
-  hit(260, NoteY, 992, NoteH, [this] { askPairMessage(); });
+  rowHit(260, NoteY, 992, NoteH, 16, [this] { askPairMessage(); });
   paint_.rect(260, NoteY, 992, NoteH, Surface, 16);
   const float noteMid = NoteY + NoteH / 2;
   const float labelRight = paint_.keyLabel("Y", tr("Message"), 290, noteMid, 18, Secondary, true);

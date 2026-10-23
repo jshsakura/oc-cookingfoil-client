@@ -16,6 +16,8 @@ constexpr float BandRight = 1248; // the band's chips end here
 constexpr SDL_Color Ground{242, 241, 238, 255}, Surface{255, 255, 255, 255};
 constexpr SDL_Color Ink{22, 22, 26, 255}, Secondary{85, 85, 94, 255};
 constexpr SDL_Color Line{226, 224, 218, 255}, Butter{255, 194, 61, 255};
+// Butter's stripes on a button that warns before it acts.
+constexpr SDL_Color ButterStripe{255, 181, 42, 255};
 // Focus ring uses the brand butter; its white inner band separates it from
 // butter fills.
 constexpr SDL_Color Focus = Butter, Okay{20, 99, 63, 255};

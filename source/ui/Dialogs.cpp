@@ -1,7 +1,13 @@
 #include "ui/Application.hpp"
+#include "install/Installer.hpp"
+#include "platform/Storage.hpp"
 #include <algorithm>
 namespace foil::ui {
 // Key hints ending at `right`, like the screen footer; each one is tappable.
+std::string Application::forceInstallNote(const std::string &console, const std::string &need) {
+  return trf("This game needs firmware {1} or later, but the console has {0}, so it cannot be installed as is.\nThe server has newer prod.keys and can re-encrypt it into a version this console can install.\nThe console must have signature patches: the install relies on them to go ahead.\nIf the game needs features of the newer firmware, it may stop while playing.",
+             {console, need});
+}
 void Application::dialogHints(float right, float y, const std::string &close,
                               const std::string &apply, const std::string &accept, const std::string &remove) {
   // `accept` names what A does when the popup is one decision (다운로드);
@@ -120,7 +126,7 @@ void Application::offlineNotice(const std::string &body) {
     notice(tr("Loading from the server."), tr("This appears once the server answers."), 21);
   // No internet: what to fix is the console's link, as on 홈.
   else if (error_ && error_.message == net::offlineMessage())
-    notice(tr("No internet connection."), error_.message, 20, tr("Try again"), [this] { refreshAll(); }, "", "", {}, 46);
+    notice(tr("No internet connection."), error_.message + "\n" + tr("Try again in a moment."), 20, tr("Try again"), [this] { refreshAll(); }, "", "", {}, 46);
   else
     notice(tr("Not connected to a server."), body, 21);
 }
@@ -210,7 +216,7 @@ void Application::viewPopup() {
                     bool on, bool checkbox) {
     const bool focused = popupColumn_ == column && popupRow_ == index;
     const float h = RowHeight - 6, mid = y + h / 2;
-    hit(x, y, w, h, [this, column, index] {
+    rowHit(x, y, w, h, 10, [this, column, index] {
       popupColumn_ = column;
       popupRow_ = index;
       action(Action::Accept);
@@ -240,7 +246,7 @@ void Application::dialogs() {
       !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !tidyOpen_ && !homebrewSortAsk_ &&
       !languagePopup_ && !retroArchAsking_ && !raModal() && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
-      !homebrewRemoveAsk_ && !(homebrewAsk_ && homebrewExtras_) && !shortcutRemoveAsk_ && !selfShortcutAsk_ && !adminEdit_.open && unqueueAsk_ < 0 && !bugAsk_ && !clockModal() && !resumeAsked())
+      !homebrewRemoveAsk_ && !(homebrewAsk_ && homebrewExtras_) && !shortcutRemoveAsk_ && !selfShortcutAsk_ && !adminEdit_.open && unqueueAsk_ < 0 && !bugAsk_ && !serverInfo_ && !clockModal() && !resumeAsked())
     return;
   SDL_RenderSetClipRect(paint_.renderer, nullptr);
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 150});
@@ -251,7 +257,7 @@ void Application::dialogs() {
                     (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + shopAppSaveAsk_ * 2048 +
                     (serverForm_ && (serverForm_->confirmDelete || serverForm_->confirmKeys)) * 4096 + shortcutRemoveAsk_ * 8192 +
                     selfShortcutAsk_ * 16384 + (unqueueAsk_ >= 0) * 32768 + bugAsk_ * 65536 +
-                    clockModal() * 262144 + resumeAsked() * 524288 + raOpen_ * 1048576 + raListOpen_ * 2097152 + adminEdit_.open * 4194304;
+                    clockModal() * 262144 + resumeAsked() * 524288 + raOpen_ * 1048576 + raListOpen_ * 2097152 + adminEdit_.open * 4194304 + serverInfo_ * 8388608;
   if (which != popupKind_) {
     popupKind_ = which;
     popupAt_ = SDL_GetTicks();
@@ -323,12 +329,31 @@ void Application::dialogs() {
   } else if (confirmInstall_ && selection_ && detailGroup_ < groups_.size()) {
     const auto &g = groups_[detailGroup_];
     // More than one server has every file: a row to pick which sends them.
-    const auto servers = selection_->servers();
+    const auto servers = forceInstall_ ? rewrapServers() : selection_->servers();
     const bool pick = servers.size() > 1;
     constexpr float PickRow = 64;
-    const auto body = modal(700, 24 + 96 + 24 + (pick ? PickRow : 0), tr("Install this game?"), tr("Cancel"), "",
+    // Past the firmware: why it cannot install as is, how the server gets
+    // round it, that it takes signature patches and may stop while playing.
+    const auto console = platform::firmwareVersion();
+    // A warning card as 레트로 게임's (light red, the warning icon), as tall
+    // as its sentences; the popup is wider than the plain confirm so each
+    // keeps to a line or two and none leaves a word alone.
+    constexpr float CardPad = 18, CardIcon = 56;
+    const std::string past = forceInstall_ ? forceInstallNote(console, install::missingFirmware(pickedNeeds(), console)) : std::string();
+    const float cardW = CardIcon + ForceNoteWidth + CardPad;
+    const float width = forceInstall_ ? cardW + 64 : 700;
+    const float noteH = past.empty() ? 0 : paint_.fonts.lineCount(past, 18, ForceNoteWidth, ForceNoteLines) * 18 * 1.4f;
+    const float pastH = past.empty() ? 0 : noteH + 2 * CardPad + 20;
+    const auto body = modal(width, 24 + 96 + 24 + (pick ? PickRow : 0) + pastH,
+                            forceInstall_ ? tr("Install ignoring firmware version") : tr("Install this game?"), tr("Cancel"), "",
                             tr("Install"), 4);
     const float x = body.x + 32, y = body.y + 24;
+    if (!past.empty()) {
+      const float top = y + 96 + 20 + (pick ? PickRow : 0);
+      paint_.rect(x, top, cardW, noteH + 2 * CardPad, SDL_Color{253, 226, 226, 255}, 14);
+      paint_.icon(33, x + 18, top + CardPad, Bad, 24);
+      paint_.fonts.wrapped(past, x + CardIcon, top + CardPad, 18, Bad, ForceNoteWidth, ForceNoteLines, false, 1.4f);
+    }
     cover(g.representative.icon, x, y, 96, false, g.representative.name);
     paint_.fonts.text(g.representative.name, x + 116, y + 4, 22, Ink, true, body.w - 180);
     paint_.fonts.text(trf("{0} items · {1}", {std::to_string(selection_->count()),
@@ -353,21 +378,17 @@ void Application::dialogs() {
       paint_.fonts.middle(chosen.title, left + 70, mid, 19, Ink, true, Width - 70 - 44);
     }
   } else if (!alert_.empty()) {
-    const auto body = modal(700, 24 + 84 + 16, alertTitle_.empty() ? std::string(tr("Cannot install")) : alertTitle_,
+    // As tall as the reason: a long one (a path, a server's words) is read
+    // whole instead of cut at three lines.
+    constexpr int MostLines = 8;
+    const float lines = float(std::max(2, paint_.fonts.lineCount(alert_, 20, 700 - 64, MostLines)));
+    const auto body = modal(700, 24 + lines * 20 * 1.3f + 20, alertTitle_.empty() ? std::string(tr("Cannot install")) : alertTitle_,
                             tr("Close"), "", tr("OK"), 25);
-    paint_.fonts.wrapped(alert_, body.x + 32, body.y + 24, 20, Ink, body.w - 64, 3);
+    paint_.fonts.wrapped(alert_, body.x + 32, body.y + 24, 20, Ink, body.w - 64, MostLines);
   } else if (bugAsk_) {
-    const auto body = modal(760, 24 + 26 + 16 + 96 + 24, tr("Send a bug report"), tr("Close"), tr("Write"), tr("Send"), 33);
-    paint_.fonts.text(tr("Write what went wrong if you like. The app's log goes with it."), body.x + 32, body.y + 24, 19,
-                      Secondary, false, body.w - 64);
-    // The note: Y or a tap opens the keyboard.
-    const float fy = body.y + 24 + 26 + 16;
-    hit(body.x + 32, fy, body.w - 64, 96, [this] { action(Action::Queue); });
-    paint_.rect(body.x + 32, fy, body.w - 64, 96, Ground, 12);
-    if (bugMessage_.empty())
-      paint_.fonts.text(tr("Tap to write (optional)"), body.x + 52, fy + 16, 19, Secondary);
-    else
-      paint_.fonts.wrapped(bugMessage_, body.x + 52, fy + 14, 19, Ink, body.w - 104, 3);
+    bugReportDialog();
+  } else if (serverInfo_) {
+    serverInfoDialog();
   } else if (unqueueAsk_ >= 0 && unqueueAsk_ < int(installQueue_.size())) {
     // As the running download's: the same question, then which one it is
     // (its cover, name and what it is) and where it goes.

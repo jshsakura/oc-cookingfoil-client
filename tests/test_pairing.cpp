@@ -19,15 +19,28 @@ int runPairingTests() {
   const std::string pairPath = "/pair/" + std::string(32, 'b');
   CHECK(foil::net::parsePairingInfo(response(server.url + pairPath), server).value.url == server.url + pairPath);
   CHECK(foil::net::parsePairingInfo(response(server.url + "/pair/" + std::string(31, 'b')), server).value.url.empty());
-  CHECK(foil::net::parsePairingInfo(response("https://other.example.com" + pairPath), server).value.url.empty());
-  CHECK(foil::net::parsePairingInfo(response("https://other.example.com" + path), server).value.url.empty());
-  CHECK(foil::net::parsePairingInfo(response("http://shop.example.com" + path), server).value.url.empty());
+  // Another address of the server (its public name while the console uses
+  // another): the QR code opens the console's address with the same token,
+  // so it never points anywhere the console did not connect to.
+  CHECK(foil::net::parsePairingInfo(response("https://other.example.com" + pairPath), server).value.url == server.url + pairPath);
+  CHECK(foil::net::parsePairingInfo(response("https://other.example.com" + path), server).value.url == server.url + path);
+  CHECK(foil::net::parsePairingInfo(response("http://shop.example.com" + path), server).value.url == server.url + path);
+  // A link it cannot read still leaves the code to type in.
+  CHECK(foil::net::parsePairingInfo(response("https://other.example.com/elsewhere"), server).value.code == "1234ABCD");
   CHECK(foil::net::parsePairingInfo(response(server.url + path + "?accessKey=secret"), server).value.url.empty());
   CHECK(foil::net::parsePairingInfo(response(server.url + "/shop.tfl"), server).value.url.empty());
   CHECK(foil::net::parsePairingInfo(response("javascript:alert(1)"), server).value.url.empty());
   CHECK(foil::net::parsePairingInfo("{\"status\":\"pending\"}", server).value.url.empty());
   CHECK(foil::net::parsePairingInfo("bad-json", server).error);
-  CHECK(foil::net::parsePairingInfo(response("https://user:secret@shop.example.com" + path), server).value.url.empty());
+  // An account full of consoles: still pending, and it says waiting will not do.
+  CHECK(!valid.value.deviceLimit);
+  const auto full = foil::net::parsePairingInfo(
+      "{\"status\":\"pending\",\"limit\":\"device\",\"pairUrl\":\"" + server.url + path + "\",\"pairCode\":\"1234ABCD\"}", server);
+  CHECK(full.value.deviceLimit && full.value.url == server.url + path);
+  CHECK(foil::net::parsePairingInfo("{\"status\":\"pending\",\"limit\":\"device\"}", server).value.deviceLimit);
+  CHECK(full.value.deviceLimitCount == 0);
+  CHECK(foil::net::parsePairingInfo("{\"status\":\"pending\",\"limit\":\"device\",\"deviceLimit\":5}", server).value.deviceLimitCount == 5);
+  CHECK(foil::net::parsePairingInfo(response("https://user:secret@shop.example.com" + path), server).value.url == server.url + path);
   // The note sent with an approval request: no message, no body at all.
   const std::string key(64, 'f');
   CHECK(foil::net::pairRequestBody(key, "").empty());

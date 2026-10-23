@@ -153,8 +153,6 @@ Response rangedStream(const std::string &url, const std::vector<std::string> &he
       now = true;
       continue;
     }
-    logLine("ranged: dropped at " + std::to_string(sink.kept()) + ", try " + std::to_string(tries + 2) + " of " +
-            std::to_string(RangedTries));
   }
   return last;
 }
@@ -279,7 +277,8 @@ bool fetchParallel(const std::string &url, const std::vector<std::string> &heade
   result.tooLong = tooLong;
   if (got.cancelled)
     result.response.error = tr("Cancelled");
-  logLine("parallel " + name + " did not finish: " + (got.cancelled ? std::string("cancelled") : got.error));
+  logLine("parallel " + name + " did not finish after " + std::to_string(counted) + " bytes: " +
+          (got.cancelled ? std::string("cancelled") : got.error));
   return false;
 }
 } // namespace
@@ -311,10 +310,6 @@ PartFetch fetchPart(const std::string &url, const std::vector<std::string> &head
   }
   if (!written && parts.plan.empty())
     dropPart(part);
-  else if (!parts.plan.empty())
-    logLine("resume " + name + " in parts");
-  else
-    logLine("resume " + name + " at " + std::to_string(written));
   PartInfo info = wanted;
   info.etag = written ? kept.etag : "";
   received += written;

@@ -134,8 +134,6 @@ std::optional<State> parseLegacy(const std::string& text) {
     // a choice, so only the newer keys count.
     auto* skip = field(root.get(), "ignoreSignature");
     if (json_object_is_type(skip, json_type_boolean)) state.skipSignatureCheck = json_object_get_boolean(skip);
-    auto* firmware = field(root.get(), "ignoreFirmware");
-    if (json_object_is_type(firmware, json_type_boolean)) state.skipFirmwareCheck = json_object_get_boolean(firmware);
     auto* shortcuts = field(root.get(), "makeShortcuts");
     if (json_object_is_type(shortcuts, json_type_boolean)) state.makeShortcuts = json_object_get_boolean(shortcuts);
     state.installTarget = stringField(root.get(), "installTarget");
@@ -178,7 +176,6 @@ State fromRows(const DownloadStore::StateRows& rows) {
     state.lastServer = setting("lastServer");
     state.lastScreen = setting("lastScreen", "home");
     state.skipSignatureCheck = setting("ignoreSignature", "1") == "1";
-    state.skipFirmwareCheck = setting("ignoreFirmware", "1") == "1";
     state.makeShortcuts = setting("makeShortcuts", "1") == "1";
     state.sounds = setting("sounds", "1") == "1";
     state.queueJson = setting(PendingSetting, "[]");
@@ -198,7 +195,6 @@ DownloadStore::StateRows toRows(const State& given, const DeviceIdentity& id) {
                      {"lastServer", state.lastServer},
                      {"lastScreen", state.lastScreen},
                      {"ignoreSignature", flag(state.skipSignatureCheck)},
-                     {"ignoreFirmware", flag(state.skipFirmwareCheck)},
                      {"makeShortcuts", flag(state.makeShortcuts)},
                      {"sounds", flag(state.sounds)}};
     if (state.queueJson != "[]") rows.settings[PendingSetting] = state.queueJson;
@@ -453,15 +449,13 @@ Parsed<State> loadState(const std::string& dbPath, bool* busy) {
         if (why == Rebound::None && plain && !storageKey(id).empty()) {
             // Written before encryption: encrypted now, once.
             Error saved;
-            if (saveState(dbPath, state, saved)) logLine("state: credentials encrypted with the console's key");
-            else logLine("state: " + saved.message);
+            if (!saveState(dbPath, state, saved)) logLine("state: " + saved.message);
         }
         if (why == Rebound::None) {
             // Every server took the made key: it is the stored one from now.
             if (const auto list = knownServers(); list && settleDeviceKey(state, *list)) {
                 Error saved;
-                if (saveState(dbPath, state, saved)) logLine("state: every server took the console's key; stored");
-                else logLine("state: " + saved.message);
+                if (!saveState(dbPath, state, saved)) logLine("state: " + saved.message);
             }
             result.value = std::move(state);
             return result;
@@ -478,7 +472,6 @@ Parsed<State> loadState(const std::string& dbPath, bool* busy) {
             result.value = std::move(state);
             return result;
         }
-        logLine("state: console identity read; credentials bound");
         // Moved in from a state.json earlier this run: it goes once bound.
         moved = legacy != dbPath && std::filesystem::exists(legacy, ec);
     } else if (legacy != dbPath && (std::filesystem::exists(legacy, ec) || std::filesystem::exists(legacy + ".old", ec))) {
@@ -490,7 +483,6 @@ Parsed<State> loadState(const std::string& dbPath, bool* busy) {
         if (old) {
             state = cleaned(std::move(*old));
             if (!validDeviceKey(state.deviceKey)) why = Rebound::Changed;
-            logLine("state: state.json moved into cookingfoil.db");
         } else {
             // Kept for whoever wants to look; a new key, approved again.
             std::filesystem::rename(legacy, legacy + ".broken", ec);

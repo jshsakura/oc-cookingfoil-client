@@ -1,14 +1,18 @@
 #include "Test.hpp"
 #include "core/Config.hpp"
 #include "core/Json.hpp"
+#include "core/Log.hpp"
 #include "core/State.hpp"
 #include "net/Api.hpp"
 #include "net/Socket.hpp"
+#include "MockServer.hpp"
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <poll.h>
 #include <unistd.h>
 #include <atomic>
+#include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <functional>
 #include <mutex>
@@ -21,73 +25,6 @@
 // why and stays; a console with a key never spends it; a server that does
 // not know enroll ignores it.
 namespace {
-struct Reply {
-  int status = 200;
-  std::string headers, body;
-};
-struct Mock {
-  int listener = -1;
-  int port = 0;
-  std::atomic<bool> stop{false};
-  std::mutex lock;
-  std::vector<std::string> requests;
-  std::function<Reply(const std::string &)> answer;
-  std::thread thread;
-  Mock() {
-    listener = socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in at{};
-    at.sin_family = AF_INET;
-    at.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    bind(listener, reinterpret_cast<sockaddr *>(&at), sizeof(at));
-    listen(listener, 8);
-    socklen_t size = sizeof(at);
-    getsockname(listener, reinterpret_cast<sockaddr *>(&at), &size);
-    port = ntohs(at.sin_port);
-    thread = std::thread([this] { serve(); });
-  }
-  ~Mock() {
-    stop = true;
-    thread.join();
-    close(listener);
-  }
-  void serve() {
-    while (!stop) {
-      pollfd ready{listener, POLLIN, 0};
-      if (poll(&ready, 1, 50) <= 0) continue;
-      const int client = accept(listener, nullptr, nullptr);
-      if (client < 0) continue;
-      std::string request;
-      char buffer[4096];
-      while (request.find("\r\n\r\n") == std::string::npos) {
-        const auto got = recv(client, buffer, sizeof buffer, 0);
-        if (got <= 0) break;
-        request.append(buffer, size_t(got));
-      }
-      const auto end = request.find("\r\n\r\n");
-      const auto length = request.find("Content-Length: ");
-      const size_t want = length != std::string::npos && length < end ? std::stoul(request.substr(length + 16)) : 0;
-      while (end != std::string::npos && request.size() < end + 4 + want) {
-        const auto got = recv(client, buffer, sizeof buffer, 0);
-        if (got <= 0) break;
-        request.append(buffer, size_t(got));
-      }
-      Reply reply;
-      {
-        std::lock_guard<std::mutex> held(lock);
-        requests.push_back(request);
-        reply = answer(request);
-      }
-      const auto text = "HTTP/1.1 " + std::to_string(reply.status) + " X\r\nConnection: close\r\n" + reply.headers +
-                        "Content-Length: " + std::to_string(reply.body.size()) + "\r\n\r\n" + reply.body;
-      send(client, text.data(), text.size(), MSG_NOSIGNAL);
-      close(client);
-    }
-  }
-  std::vector<std::string> take() {
-    std::lock_guard<std::mutex> held(lock);
-    return std::exchange(requests, {});
-  }
-};
 bool has(const std::string &request, const std::string &text) { return request.find(text) != std::string::npos; }
 int count(const std::vector<std::string> &requests, const std::string &text) {
   int n = 0;
@@ -99,17 +36,20 @@ int runEnrollTests() {
   int failures = 0;
   using namespace foil;
   Mock mock;
-  int enrollStatus = 200;
-  std::string pairStatus = "approved";
+  int enrollStatus = 200, sectionsStatus = 200;
+  std::string pairStatus = "approved", enrollReason = "invalid", pairLimit;
   mock.answer = [&](const std::string &request) -> Reply {
     if (request.rfind("POST /api/pair/enroll", 0) == 0) {
-      if (enrollStatus == 401) return {401, "X-CookingFoil-Enroll: invalid\r\n", R"({"error":"x"})"};
+      if (enrollStatus == 401 || enrollStatus == 403)
+        return {enrollStatus, "X-CookingFoil-Enroll: " + enrollReason + "\r\n", R"({"error":"x"})"};
       if (enrollStatus != 200) return {enrollStatus, "", R"({"error":"x"})"};
       return {200, "", R"({"status":"approved","accessKey":"enrolled-key","shopUrl":null})"};
     }
     if (request.rfind("GET /api/shop/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
-    if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
-    if (request.rfind("GET /api/shop/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
+    if (request.rfind("GET /api/pair/status", 0) == 0)
+      return {200, "", R"({"status":")" + pairStatus + R"(")" + (pairLimit.empty() ? "" : R"(,"limit":")" + pairLimit + "\"") + "}"};
+    if (request.rfind("GET /api/shop/sections", 0) == 0)
+      return sectionsStatus == 200 ? Reply{200, "", R"({"sections":[]})"} : Reply{sectionsStatus, "", R"({"error":"denied"})"};
     return {200, "", "{}"};
   };
   char temporary[] = "/tmp/cookingfoil-enroll-XXXXXX";
@@ -141,6 +81,7 @@ int runEnrollTests() {
     CHECK(server().enrollToken == token);
     net::Session::forgetEnrollAttempts();
     const auto state = loadState(db).value;
+    const auto before = server();
     net::Session session(server(), state, db);
     session.setConfigPath(configPath);
     CHECK(session.refresh(error));
@@ -155,12 +96,124 @@ int runEnrollTests() {
     CHECK(server().enrollToken.empty() && readFile(configPath).find(token) == std::string::npos);
     for (size_t i = 1; i < sent.size(); ++i)
       CHECK(!has(sent[i], "Authorization: Basic") && has(sent[i], "X-Access-Key: enrolled-key"));
+    {
+      // A session made from the files as they were before (read while the
+      // first was enrolling): the token is not sent twice, which the server
+      // would refuse as used; the key it gave goes on.
+      net::Session stale(before, state, db);
+      stale.setConfigPath(configPath);
+      CHECK(stale.refresh(error));
+      const auto again = mock.take();
+      CHECK(count(again, "/api/pair/enroll") == 0 && count(again, "X-Access-Key: enrolled-key") >= 1);
+      CHECK(loadState(db).value.accessKeys.at(url) == "enrolled-key");
+    }
     // With the key, never again (even with the token back in the file).
     writeConfig();
     net::Session again(server(), loadState(db).value, db);
     again.setConfigPath(configPath);
     CHECK(again.refresh(error));
     CHECK(count(mock.take(), "/api/pair/enroll") == 0);
+    // A list refused with none of the server's own headers: the screen names
+    // the host it went to, the log how it signed in and what came back.
+    const auto logged = (root / "log.txt").string();
+    openLog(logged);
+    sectionsStatus = 401;
+    net::Session refused(server(), loadState(db).value, db);
+    refused.setConfigPath(configPath);
+    CHECK(!refused.refresh(error));
+    CHECK(error.message.find("401") != std::string::npos && error.message.find("127.0.0.1") != std::string::npos);
+    flushLog();
+    const auto line = readFile(logged);
+    CHECK(line.find("list refused: HTTP 401, signed in by") != std::string::npos);
+    CHECK(line.find("session header none, enroll header none, auth header none, error denied") != std::string::npos);
+    sectionsStatus = 200;
+    mock.take();
+  }
+  {
+    // A list refused because the key is no good (X-CookingFoil-Auth): the
+    // key goes and approval is asked again (the QR code), not "try again".
+    // A refusal without that reason keeps the key: it may be something in
+    // front of the server.
+    const auto kept = mock.answer;
+    std::string reason = "access-key-wrong";
+    mock.answer = [&](const std::string &request) -> Reply {
+      if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
+      if (request.rfind("GET /api/shop/sections", 0) == 0)
+        return {401, reason.empty() ? "" : "X-CookingFoil-Auth: " + reason + "\r\n", "no"};
+      return {200, "", "{}"};
+    };
+    auto plain = server();
+    plain.enrollToken.clear();
+    for (const std::string why : {"access-key-wrong", "device-not-approved"}) {
+      auto state = loadState(db).value;
+      state.accessKeys = {{url, "stale-key"}};
+      CHECK(saveState(db, state, error));
+      reason = why;
+      pairStatus = "pending";
+      net::Session session(plain, loadState(db).value, db);
+      Error waiting;
+      CHECK(!session.refresh(waiting) && session.pairingPending());
+      CHECK(loadState(db).value.accessKeys.empty());
+      CHECK(count(mock.take(), "POST /api/pair/request") == 1);
+    }
+    {
+      // A session refused (its renewal failed too): the key signs in once
+      // more and is kept; only what the key's own refusal says drops it.
+      std::vector<std::string> reasons;
+      mock.answer = [&](const std::string &request) -> Reply {
+        if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
+        if (request.rfind("GET /api/shop/sections", 0) == 0) {
+          if (reasons.empty()) return {200, "", R"({"sections":[]})"};
+          const auto why = reasons.front();
+          reasons.erase(reasons.begin());
+          return {401, "X-CookingFoil-Auth: " + why + "\r\n", "no"};
+        }
+        return {200, "", "{}"};
+      };
+      auto state = loadState(db).value;
+      state.accessKeys = {{url, "stale-key"}};
+      CHECK(saveState(db, state, error));
+      pairStatus = "approved";
+      reasons = {"session-revoked"};
+      {
+        net::Session session(plain, loadState(db).value, db);
+        CHECK(session.refresh(error) && !session.pairingPending());
+        CHECK(loadState(db).value.accessKeys.at(url) == "stale-key");
+        CHECK(count(mock.take(), "GET /api/shop/sections") == 2);
+      }
+      reasons = {"session-revoked", "access-key-wrong"};
+      pairStatus = "pending";
+      {
+        net::Session session(plain, loadState(db).value, db);
+        Error waiting;
+        CHECK(!session.refresh(waiting) && session.pairingPending());
+        CHECK(loadState(db).value.accessKeys.empty());
+        mock.take();
+      }
+      mock.answer = [&](const std::string &request) -> Reply {
+        if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
+        if (request.rfind("GET /api/shop/sections", 0) == 0)
+          return {401, reason.empty() ? "" : "X-CookingFoil-Auth: " + reason + "\r\n", "no"};
+        return {200, "", "{}"};
+      };
+    }
+    {
+      auto state = loadState(db).value;
+      state.accessKeys = {{url, "stale-key"}};
+      CHECK(saveState(db, state, error));
+      reason.clear();
+      pairStatus = "approved";
+      net::Session session(plain, loadState(db).value, db);
+      CHECK(!session.refresh(error) && !session.pairingPending());
+      CHECK(loadState(db).value.accessKeys.at(url) == "stale-key");
+      mock.take();
+    }
+    pairStatus = "approved";
+    auto restored = loadState(db).value;
+    restored.accessKeys = {{url, "enrolled-key"}};
+    restored.pairSecrets.clear();
+    CHECK(saveState(db, restored, error));
+    mock.answer = kept;
   }
   {
     // A key kept from before that the server no longer approves (the console
@@ -207,15 +260,47 @@ int runEnrollTests() {
     pairStatus = "approved";
   }
   {
-    // 409: another account's console.
-    withoutKey();
-    enrollStatus = 409;
-    net::Session session(server(), loadState(db).value, db);
-    session.setConfigPath(configPath);
-    Error refused;
-    CHECK(!session.refresh(refused) && refused.message == tr("This console is linked to another account."));
-    CHECK(server().enrollToken == token);
-    mock.take();
+    // Past the account's limits: by download this hour (401 limit), said on
+    // the approval screen; the account full (403 limit), where the approval
+    // check says waiting will not do. Both ask for approval by QR code.
+    for (const int status : {401, 403}) {
+      withoutKey();
+      enrollStatus = status;
+      enrollReason = "limit";
+      pairStatus = "pending";
+      pairLimit = status == 403 ? "device" : "";
+      net::Session session(server(), loadState(db).value, db);
+      session.setConfigPath(configPath);
+      Error waiting;
+      CHECK(!session.refresh(waiting) && session.pairingPending());
+      CHECK(server().enrollToken.empty());
+      CHECK(session.pairingInfo().refusal == (status == 401 ? "limit" : ""));
+      CHECK(session.pairingInfo().deviceLimit == (status == 403));
+      mock.take();
+    }
+    enrollReason = "invalid";
+    pairLimit.clear();
+    pairStatus = "approved";
+  }
+  {
+    // A server that answers but not as expected (another account's console,
+    // an error of its own): the QR code shows all the same, never a dead
+    // end. The token stays for the next start and is not sent again this run.
+    for (const int status : {409, 500, 400}) {
+      withoutKey();
+      enrollStatus = status;
+      pairStatus = "pending";
+      net::Session session(server(), loadState(db).value, db);
+      session.setConfigPath(configPath);
+      Error waiting;
+      CHECK(!session.refresh(waiting) && session.pairingPending());
+      CHECK(session.pairingInfo().refusal == (status == 409 ? "other-account" : ""));
+      CHECK(server().enrollToken == token);
+      CHECK(count(mock.take(), "/api/pair/enroll") == 1);
+      CHECK(!session.refresh(waiting) && session.pairingPending());
+      CHECK(count(mock.take(), "/api/pair/enroll") == 0);
+    }
+    pairStatus = "approved";
   }
   {
     // A server that does not know enroll: the token is ignored and the
@@ -345,6 +430,109 @@ int runEnrollTests() {
     };
     net::get(url + "/api/shop/sections", {}, "", nullptr);
     CHECK(!net::takeConsoleRevoked(url)); // expired is renewed, not a take-back
+    mock.take();
+  }
+  {
+    // The key the server gives once could not be written (another write
+    // holds cookingfoil.db past every try): the console connects with it
+    // all the same, and the next refresh writes it. Before, the key was
+    // dropped and the server, having given it, left the console stuck.
+    const auto kept = mock.answer;
+    int keysGiven = 0;
+    mock.answer = [&](const std::string &request) -> Reply {
+      if (request.rfind("POST /api/pair/enroll", 0) == 0)
+        return {200, "", R"({"status":"approved","accessKey":"enrolled-key","shopUrl":null})"};
+      if (request.rfind("GET /api/shop/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
+      if (request.rfind("GET /api/pair/status", 0) == 0)
+        return keysGiven++ == 0 ? Reply{200, "", R"({"status":"approved","accessKey":"issued-key"})"}
+                                : Reply{200, "", R"({"status":"approved"})"};
+      if (request.rfind("GET /api/shop/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
+      return {200, "", "{}"};
+    };
+    const auto lockPath = db + ".lock";
+    const auto holdLock = [&] {
+      std::string written;
+      CHECK(atomicWrite(lockPath, std::to_string((long long)std::time(nullptr)) + " 1 1\n", written));
+    };
+    const auto keyless = [&] {
+      auto state = loadState(db).value;
+      state.accessKeys.erase(url);
+      state.pairSecrets[url] = "secret-made-before"; // no secret to write first
+      Error saved;
+      CHECK(saveState(db, state, saved));
+      return state;
+    };
+    const auto noToken = [&] {
+      std::string written;
+      CHECK(atomicWrite(configPath,
+                        R"({"servers":[{"title":"Shop","url":")" + url +
+                            R"(","username":"","password":"","enrollToken":"","cfClientId":"","cfClientSecret":"","enabled":true}],"language":"ko","installTarget":"sd"})",
+                        written));
+    };
+    const auto logged = (root / "log.txt").string();
+    openLog(logged);
+    noToken();
+    {
+      net::Session session(server(), keyless(), db);
+      session.setConfigPath(configPath);
+      mock.take();
+      holdLock();
+      CHECK(session.refresh(error));
+      CHECK(!error);
+      const auto sent = mock.take();
+      CHECK(count(sent, "GET /api/shop/sections") == 1 && count(sent, "X-Access-Key: issued-key") >= 1);
+      CHECK(!loadState(db).value.accessKeys.count(url));
+      flushLog();
+      CHECK(readFile(logged).find("key not saved (try 3/3)") != std::string::npos);
+      CHECK(readFile(logged).find("key held for this run") != std::string::npos);
+      // The lock let go: the next refresh writes the held key.
+      std::filesystem::remove(lockPath);
+      CHECK(session.refresh(error));
+      CHECK(loadState(db).value.accessKeys.count(url) && loadState(db).value.accessKeys.at(url) == "issued-key");
+      CHECK(!loadState(db).value.pairSecrets.count(url));
+      flushLog();
+      CHECK(readFile(logged).find("the held key is written now") != std::string::npos);
+      CHECK(keysGiven == 2);
+    }
+    {
+      // Let go between tries: written by a later try of the same refresh.
+      keysGiven = 0;
+      net::Session session(server(), keyless(), db);
+      session.setConfigPath(configPath);
+      holdLock();
+      std::thread freeing([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+        std::filesystem::remove(lockPath);
+      });
+      CHECK(session.refresh(error));
+      freeing.join();
+      CHECK(loadState(db).value.accessKeys.count(url) && loadState(db).value.accessKeys.at(url) == "issued-key");
+      mock.take();
+    }
+    {
+      // From the enroll token: the token stays in config.json until the key
+      // is written, then leaves; it is not sent twice meanwhile.
+      keysGiven = 1; // approval gives none here: the key comes from the token
+      writeConfig();
+      net::Session::forgetEnrollAttempts();
+      net::Session session(server(), keyless(), db);
+      session.setConfigPath(configPath);
+      mock.take();
+      holdLock();
+      CHECK(session.refresh(error));
+      auto sent = mock.take();
+      CHECK(count(sent, "POST /api/pair/enroll") == 1 && count(sent, "X-Access-Key: enrolled-key") >= 1);
+      CHECK(!loadState(db).value.accessKeys.count(url));
+      CHECK(server().enrollToken == token);
+      std::filesystem::remove(lockPath);
+      CHECK(session.refresh(error));
+      sent = mock.take();
+      CHECK(count(sent, "POST /api/pair/enroll") == 0);
+      CHECK(loadState(db).value.accessKeys.count(url) && loadState(db).value.accessKeys.at(url) == "enrolled-key");
+      CHECK(server().enrollToken.empty());
+    }
+    std::filesystem::remove(lockPath);
+    mock.answer = kept;
     mock.take();
   }
   {

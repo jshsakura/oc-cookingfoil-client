@@ -18,6 +18,7 @@ struct Response {
     uint64_t contentLength = 0; // 0 when absent
     std::string session; // X-CookingFoil-Session: why the session token was refused
     std::string enroll;  // X-CookingFoil-Enroll: "invalid" when an enroll token was refused
+    std::string auth;    // X-CookingFoil-Auth: why a 401 refused (no-access-key, access-key-wrong, ...)
     int curl = 0;        // curl's result; 7 (CURLE_COULDNT_CONNECT): nothing was sent
     int64_t date = 0;    // the Date header, Unix seconds; 0 when absent
     bool directNamed = false; // X-CookingFoil-Download-Origin came with it
@@ -116,7 +117,7 @@ struct Detail {
     std::vector<std::string> screenshots;
     // eShop price as the store formats it ("64,800원"); empty when unknown.
     std::string priceRegular, priceDiscount, priceCountry;
-    std::string requiredFirmware, ratingContent;
+    std::string requiredFirmware, keyFirmware, ratingContent;
     int dlcTotal = 0;
     int score = 0, scoreCount = 0; // review score 0-100 and its vote count
     std::string scoreLabel;
@@ -128,8 +129,14 @@ struct PairingInfo {
     std::string url, code;
     int64_t expiresAt = 0;
     // Why the download's token did not connect this console (X-CookingFoil-Enroll:
-    // "used", "expired", "revoked"); empty when there was none or it was unknown.
+    // "used", "expired", "revoked", "limit": as many consoles by download this
+    // hour as the account may; "other-account" from its 409); empty when there
+    // was none or it was unknown.
     std::string refusal;
+    // The account holds as many consoles as it may (limit: "device"): waiting
+    // approves nothing until one is removed.
+    bool deviceLimit = false;
+    int deviceLimitCount = 0; // its deviceLimit: how many; 0 when not said
 };
 Parsed<PairingInfo> parsePairingInfo(const std::string& json, const Server& server);
 // The note sent with an approval request, read as the server reads it: line
@@ -183,6 +190,8 @@ public:
     // The server's own id (/api/shop/info server_id): two addresses of one
     // server give the same. Empty until it answers, or from a server without one.
     const std::string& serverId() const { return serverId_; }
+    // The newest firmware whose content the server can re-encrypt (nca-rewrap); empty: not said.
+    const std::string& rewrapMaxFirmware() const { return rewrapMaxFirmware_; }
     bool pairingPending() const { return pairingPending_; }
     const PairingInfo& pairingInfo() const { return pairingInfo_; }
     // The note for this server's approval request, from the app; a changed
@@ -197,6 +206,17 @@ private:
     // access key before anything else; false (with the reason) when refused.
     // replacing: spent even with a key kept, which the server no longer approves.
     bool enroll(Error& error, bool replacing = false);
+    bool keepEnrolledKey(const std::string& accessKey, const std::string& device, Error& error);
+    // The file's state (settings chosen since this session began stay), with
+    // the key this run holds but has not written yet. Under stateFile.
+    State stateFromFile();
+    // An issued key, written with a few tries (another write may hold the
+    // file a while). None taking, it is held for this run (keyUnsaved_) and
+    // written at the next refresh: the console connects all the same, since
+    // the server gives the key once. True when written. Under stateFile.
+    bool saveKey(const std::function<void(State&)>& change, int tries);
+    // The held key reached the file: a spent enroll token leaves config.json.
+    void keyWritten();
     bool pair(Error& error);
     void rebind();
     void sendPairMessage();
@@ -204,13 +224,18 @@ private:
     // was taken back), and its session token with them.
     void forgetAccessKey();
     void forgetPasswordOnceKeyed();
+    // A list refused with 401: approval again when its reason says the key
+    // is no good, a new sign-in when it was the session token. True when the
+    // list should be asked once more; error set when approval is pending or
+    // failed.
+    bool answerRefusal(const Response& reply, Error& error);
     bool pairPasswordOnly_ = false; // a /api/pair/* reply said passwordOnly
     // This server's pair secret, made and saved first when the console has no
     // key from it yet; empty when it has one or the secret could not be saved.
     std::string pairSecret();
     Server server_;
     State state_;
-    std::string path_, etag_, patchesEtag_, configPath_, serverId_;
+    std::string path_, etag_, patchesEtag_, configPath_, serverId_, rewrapMaxFirmware_;
     int patchesRetryAfter_ = 0;
     std::vector<UserPatch> patches_;
     std::vector<Item> items_;
@@ -226,6 +251,8 @@ private:
     // The server holds another secret for this console's request (409): an
     // admin must clear that request before a QR code means anything.
     bool pairMismatch_ = false;
+    bool keyUnsaved_ = false;
+    bool enrollUnsaved_ = false; // the key came from the enroll token, kept until written
     const std::atomic<bool>* cancel_ = nullptr;
 };
 }

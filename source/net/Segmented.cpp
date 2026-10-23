@@ -529,7 +529,6 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
     bool fileChanged = false, fallBack = false;
     auto lastProgress = Clock::now(), lastCheckpoint = Clock::now(), lastTurn = Clock::now();
     uint64_t checkpointSeen = checkpointAsked.load();
-    bool offlineSaid = false;
     // Where every part stands, by the bytes actually written, to the caller.
     const auto checkpointNow = [&] {
       if (!options.checkpoint || !s.known || !s.ranged || !s.prepared) return;
@@ -591,23 +590,12 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
       }
       // Back from sleep (or the background): the parts get their full window
       // again rather than failing on the first try after the gap.
-      if (const auto now = Clock::now(); now - lastTurn > SleepGap) {
-        log("download went on after " + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(now - lastTurn).count()) +
-            " s away");
-        s.lastData = now;
-      }
+      if (const auto now = Clock::now(); now - lastTurn > SleepGap) s.lastData = now;
       lastTurn = Clock::now();
       // No network on the console: nothing is asked for and nothing counts
       // against the parts; they go on from where they stood once it is back.
       const bool offline = linkDown(url);
-      if (offline) {
-        s.lastData = Clock::now();
-        if (!offlineSaid) log("download waits for the network");
-        offlineSaid = true;
-      } else if (offlineSaid) {
-        log("network back; download goes on");
-        offlineSaid = false;
-      }
+      if (offline) s.lastData = Clock::now();
       if (const int tuned = tunedConnections(); tuned > 0) {
         const int target = std::min(tuned, std::max(1, options.connections));
         if (target != wanted) {
@@ -658,7 +646,6 @@ SegmentedResult segmentedFetch(const std::string &url, const std::function<bool(
         if (limit < wanted && now - limitedAt >= LimitCalm) {
           ++limit;
           limitedAt = now;
-          log("download limit eased: " + std::to_string(limit) + " connections");
         }
         for (size_t i = 0; i < plan.segments().size() && active() < limit; ++i) {
           const auto busy = busyParts();

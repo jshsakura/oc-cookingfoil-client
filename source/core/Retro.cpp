@@ -72,6 +72,8 @@ System parseSystem(json_object *object, const std::string &base) {
   s.iconUrl = url(object, "iconUrl", base);
   s.romCount = int(std::min<int64_t>(std::max<int64_t>(integerField(object, "romCount"), 0), 1 << 30));
   s.names = languageTexts(object, "names");
+  if (auto *core = field(object, "core"); json_object_is_type(core, json_type_object))
+    s.coreOff = stringField(core, "state") == "core-off";
   return s;
 }
 // Empty id or bundle URL means the entry is skipped.
@@ -111,6 +113,8 @@ Game parseGame(json_object *object, const std::string &base) {
   g.variants = int(std::clamp<int64_t>(integerField(object, "variants", 1), 1, 999));
   auto *verified = field(object, "verified");
   g.verified = json_object_is_type(verified, json_type_boolean) && json_object_get_boolean(verified);
+  auto *coreOff = field(object, "coreOff");
+  g.coreOff = json_object_is_type(coreOff, json_type_boolean) && json_object_get_boolean(coreOff);
   g.votes = votes::fromItem(object);
   g.iconUrl = url(object, "iconUrl", base);
   g.bundleUrl = url(object, "bundleUrl", base);
@@ -296,6 +300,8 @@ bool packPathAllowed(const std::string &path) {
 std::string bundleFailure(long status, bool game) {
   if (game && status == 404)
     return tr("The game's details changed on the server. Download it again from the Retro games list.");
+  // The server turned its core off: the files are kept back until it is on.
+  if (status == 409) return tr("The server has no core registered for this game.");
   const auto code = std::to_string(status);
   return game ? trf("Could not get the game. HTTP {0}", {code}) : trf("Could not get the file. HTTP {0}", {code});
 }

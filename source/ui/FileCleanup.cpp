@@ -143,7 +143,6 @@ void Application::pollFileCleanup() {
   const auto done = std::move(tidyIncoming_);
   tidyFound_ = {};
   const uint64_t freed = (done.leftovers.error ? 0 : done.leftovers.value.bytes) + done.pieceBytes + done.cacheBytes;
-  logLine("cleanup: freed " + std::to_string(freed >> 20) + " MB");
   if (tidyRemoving_[0] || tidyRemoving_[1]) cardChanged(); // free space changed
   if (tidyRemoving_[0]) refreshInstalled();
   if (done.leftovers.error) {
@@ -186,7 +185,7 @@ void Application::fileCleanupDialog() {
   for (int n = 0; n < 3; ++n) {
     const float y = top + n * (Row + Gap), mid = y + Row / 2;
     if (!tidyDeleting_)
-      hit(x, y, w, Row, [this, n] {
+      rowHit(x, y, w, Row, 12, [this, n] {
         tidyRow_ = n;
         action(Action::Accept);
       });

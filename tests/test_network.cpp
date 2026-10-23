@@ -66,7 +66,7 @@ int runNetworkTests() {
         const std::string body = R"({"sections":[{"items":[
             {"url":"https://h/a.nsp","name":"A","base_title_id":"0100000000010000","app_type":"base",
              "price_regular":"64,800원","price_discount":"45,360원","price_discount_ends":"2026-10-20T14:59:59Z",
-             "price_country":"KR","install_size":123,"required_firmware":"16.0.0","latest_version":131072,"dlc_total":3}]},
+             "price_country":"KR","install_size":123,"required_firmware":"16.0.0","key_firmware":"17.0.0","latest_version":131072,"dlc_total":3}]},
           {"items":[{"url":"https://h/a.nsp","name":"A"}]}],
           "featured":[{"id":"pick","title":"이번 주 추천","title_ids":["0100000000010000","bad"]},{"id":"x","title":"","title_ids":[]}]})";
         const auto parsed = foil::net::parseSections(body);
@@ -74,7 +74,7 @@ int runNetworkTests() {
         if (!parsed.value.empty()) {
             const auto &a = parsed.value[0];
             CHECK(a.priceRegular == "64,800원" && a.priceDiscount == "45,360원" && a.priceCountry == "KR");
-            CHECK(a.installSize == 123 && a.requiredFirmware == "16.0.0" && a.latestVersion == 131072 && a.dlcTotal == 3);
+            CHECK(a.installSize == 123 && a.requiredFirmware == "16.0.0" && a.keyFirmware == "17.0.0" && a.latestVersion == 131072 && a.dlcTotal == 3);
         }
         const auto featured = foil::net::parseFeatured(body);
         CHECK(featured.size() == 1 && featured[0].titleIds.size() == 1 && featured[0].title == "이번 주 추천");
@@ -92,8 +92,8 @@ int runNetworkTests() {
               rated.value[0].scoreCount == 1234 && rated.value[0].scoreLabel == "매우 긍정적");
         const auto ratedDetail = foil::net::parseDetail(R"({"name":"A","score":101,"scoreCount":5,"scoreLabel":"x"})");
         CHECK(ratedDetail.value.score == 100 && ratedDetail.value.scoreCount == 5);
-        const auto detail = foil::net::parseDetail(R"({"requiredFirmware":"16.0.0","dlcTotal":2,"ratingContent":["폭력","공포"]})").value;
-        CHECK(detail.requiredFirmware == "16.0.0" && detail.dlcTotal == 2 && detail.ratingContent == "폭력, 공포");
+        const auto detail = foil::net::parseDetail(R"({"requiredFirmware":"16.0.0","keyFirmware":"17.0.0","dlcTotal":2,"ratingContent":["폭력","공포"]})").value;
+        CHECK(detail.requiredFirmware == "16.0.0" && detail.keyFirmware == "17.0.0" && detail.dlcTotal == 2 && detail.ratingContent == "폭력, 공포");
     }
     {
         auto ranked = foil::net::parseSections(R"({"sections":[{"items":[{"url":"https://h/a.nsp","name":"A","rank":12,"players":4}]}]})");

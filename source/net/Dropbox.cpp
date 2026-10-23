@@ -61,7 +61,6 @@ bool Dropbox::load() {
   credentials_ = parsed.value;
   if (store()) return linked(); // not saved: the file stays for the next try
   std::filesystem::remove(legacyPath_, ec);
-  logLine("dropbox: dropbox.json moved into cookingfoil.db, encrypted");
   return linked();
 }
 
@@ -132,7 +131,6 @@ Error Dropbox::finish(const Server &server, const State &state, const db::Bridge
   for (int attempt = 1; attempt <= Tries; ++attempt) {
     consumed = post(url, shopHeaders(server, state, url), options, cancel_);
     if (consumed.curl != 7 || attempt == Tries || (cancel_ && cancel_->load())) break;
-    logLine("dropbox: consume could not connect; trying again (" + std::to_string(attempt) + ")");
     std::this_thread::sleep_for(std::chrono::seconds(attempt));
   }
   if (!consumed.error.empty()) return {consumed.error};

@@ -1,4 +1,5 @@
 #include "core/Json.hpp"
+#include "platform/Cores.hpp"
 #include "ui/Application.hpp"
 #include "core/Log.hpp"
 #include "net/ShopSavesApi.hpp"
@@ -161,13 +162,13 @@ void Application::savesScreen() {
   // The row at the top follows the cursor, or the finger while it glides.
   const float top = glide("saves", 232, Top, 1048, 660 - (Top), float(std::clamp(selected_ - Visible / 2, 0, std::max(0, count - Visible))),
                           float((count) - (Visible)), RowStep);
-  const int first = int(top);
+  const int first = std::max(0, int(top));
   paint_.scrollbar(1266, Top, RowStep * Visible - 12, top, Visible, float(count));
   clipTo(232, Top - 8, 1048, 660 - Top + 8);
   for (int i = first; i < count && i <= first + Visible + 1; ++i) {
     const auto &g = installed_.games[rows[i]];
     const float y = Top + (i - top) * RowStep;
-    hit(260, y, 992, RowHeight, [this, i] {
+    rowHit(260, y, 992, RowHeight, 16, [this, i] {
       if (inContent() && selected_ == i) action(Action::Accept);
       sidebar_ = false;
       selected_ = i;
@@ -197,6 +198,7 @@ void Application::loadShopSaves() {
   const auto state = state_;
   shopSavesError_ = {};
   shopSavesWorker_ = std::thread([this, servers, state] {
+    const platform::OnCore off(platform::NetworkCore);
     net::ShopSavesReply reply;
     if (!guarded("shop saves", [&] {
           // The one in use says whether the list failed; another server that
@@ -323,6 +325,7 @@ void Application::readBackupSummary() {
     return;
   }
   backupSummaryWorker_ = std::thread([this, root = saves::keeperRoot(sdRoot_)] {
+    const platform::OnCore off(platform::WriterCore);
     guarded("backup summary", [&] {
       incomingSummary_ = saves::summarizeBackups(root);
       auto saved = platform::savedApplications();
@@ -459,6 +462,7 @@ void Application::applyShopSave() {
   saveRestoring_ = true;
   applyRunning_ = deviceBusy_ = true;
   saveWorker_ = std::thread([this, job, save, server, state] {
+    const platform::OnCore off(platform::WriterCore);
     if (!guarded("shop save", [&] {
           // Kept as a backup first (source "shop"), so it can be restored
           // again later, then restored like any other backup.
@@ -513,14 +517,14 @@ void Application::shopSavesList() {
   // The row at the top follows the cursor, or the finger while it glides.
   const float top = glide("shopSaves", 232, Top, 1048, 660 - (Top), float(std::clamp(shopSaveRow_ - Visible / 2, 0, std::max(0, count - Visible))),
                           float((count) - (Visible)), RowStep);
-  const int first = int(top);
+  const int first = std::max(0, int(top));
   paint_.scrollbar(1266, Top, RowStep * Visible - 12, top, Visible, float(count));
   clipTo(232, Top - 8, 1048, 660 - Top + 8);
   for (int i = first; i < count && i <= first + Visible + 1; ++i) {
     const auto [start, saves] = groups[i];
     const auto &save = shopSaves_[start];
     const float y = Top + (i - top) * RowStep;
-    hit(260, y, 992, RowHeight, [this, i] {
+    rowHit(260, y, 992, RowHeight, 16, [this, i] {
       if (inContent() && shopSaveRow_ == i) action(Action::Accept);
       sidebar_ = false;
       shopSaveRow_ = i;
@@ -573,12 +577,12 @@ void Application::savePickDialog() {
   // The row at the top follows the cursor, or the finger while it glides.
   const float topRow = glide("savePick", x, body.y + 24, w, rows * (Row + Gap), float(std::clamp(savePickRow_ - Shown / 2, 0, std::max(0, count - Shown))),
                           float((count) - (Shown)), (Row + Gap));
-  const int top = int(topRow);
+  const int top = std::max(0, int(topRow));
   clipTo(x, body.y + 24, w, rows * (Row + Gap));
   for (int n = top; n < count && n <= top + rows; ++n) {
     const auto &save = shopSaves_[start + n];
     const float y = body.y + 24 + (n - topRow) * (Row + Gap);
-    hit(x, y, w, Row, [this, n] {
+    rowHit(x, y, w, Row, 12, [this, n] {
       savePickRow_ = n;
       action(Action::Accept);
     });

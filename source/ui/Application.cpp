@@ -64,7 +64,6 @@ Application::~Application() {
   // in, before the screen heard: kept as done, or the next start would take
   // it from the queue and fetch it all again.
   if (observedInstall_ == install::Status::Running && installer_.progress().status == install::Status::Succeeded) {
-    logLine("install done as the app closed: " + installer_.progress().name);
     history::finish(history_, history::Outcome::Done, "", int64_t(std::time(nullptr)));
     saveHistory();
     forgetInstall();
@@ -196,7 +195,6 @@ void Application::followTakeBack() {
   if (session_ && net::takeConsoleRevoked(session_->server().url)) takenBack_ = true;
   if (!takenBack_ || !session_ || network_.joinable()) return;
   takenBack_ = false;
-  logLine("the server took this console back; refreshing to ask for approval again");
   refresh();
 }
 // Where a cut-off file stands, from the install thread to the card.
@@ -476,10 +474,7 @@ void Application::openCardRecords(const std::string &sd) {
   }
   if (!moved.empty() && lists) {
     std::string error;
-    if (atomicWrite(ledgerFile, homebrew::serializeLedger(homebrewLedger_), error))
-      logLine("homebrew ledger: file lists of " + std::to_string(moved.size()) + " app(s) moved to their own files");
-    else
-      logLine("homebrew ledger: " + error);
+    if (!atomicWrite(ledgerFile, homebrew::serializeLedger(homebrewLedger_), error)) logLine("homebrew ledger: " + error);
   }
   // An app that closed mid-install left that one running: it goes back in
   // the queue, which picks up again once the shop is reachable.
@@ -760,6 +755,7 @@ void Application::screen(Screen screen) {
   sidebar_ = autoSidebar_ = !hasFocusable();
 }
 bool Application::hasFocusable() const {
+  if (refreshSkeleton()) return false; // placeholders while the server is asked again
   switch (screen_) {
   case Screen::Home:
     return !groups_.empty() || homeOffersSettings() || homeOffersRetry(); // its notice's button
@@ -808,6 +804,7 @@ void Application::reload(int prefer) {
     return;
   }
   reloadWorker_ = std::thread([this] {
+    const platform::OnCore off(platform::WriterCore);
     guarded("reload", [&] { reloadRead_ = readForReload(false); });
     reloadDone_ = true;
   });
@@ -911,6 +908,9 @@ void Application::connect(size_t index) {
     return;
   }
   poll();
+  // Files read before this connection (a reload still reading) are older
+  // than what it saves (an enrolled key, the token gone): read again after.
+  if (reloadWorker_.joinable()) reloadAgain_ = true;
   const bool keep = std::exchange(keepCatalog_, false) && session_ && connected_ &&
                     session_->server().url == config_.servers[index].url;
   if (!keep) clearCatalog();
@@ -966,11 +966,16 @@ void Application::refresh() {
     incomingError_ = {};
     incomingCatalog_ = false;
     const bool ok = guarded("catalog", [this] {
+      askOthers();
       const bool read = session_->refresh(incomingError_);
       const bool changed = read && !session_->unchanged();
+      // The others' lists are taken even when this one failed: what they
+      // read is not asked again (their next answer is a 304).
+      const bool othersChanged = readOthers(changed);
+      if (!read) othersUnshown_ = othersUnshown_ || othersChanged;
       // Grouped here, off the drawing thread: it takes a few hundred
       // milliseconds for a large catalog, which stopped the screen.
-      if (read && readOthers(changed)) {
+      if (read && (othersChanged || std::exchange(othersUnshown_, false))) {
         incomingCatalog_ = true;
         incomingGroups_ = groupedCatalog(mergeServers([&] {
           std::vector<ServerItems> lists{{session_->server().url, serverItems_[session_->server().url]}};
@@ -984,6 +989,7 @@ void Application::refresh() {
         incomingGroups_ = groupedCatalog(mergeServers({{session_->server().url, session_->takeItems()}}));
       }
     });
+    joinOthers(); // also when the list above stopped part way
     if (!ok)
       incomingError_.message = tr("Failed to process the list. Check log.txt.");
     done_ = true;
@@ -997,6 +1003,7 @@ void Application::waitForState(int prefer) {
   error_ = {};
   if (stateWorker_.joinable()) stateWorker_.join();
   stateWorker_ = std::thread([this, path = statePath_] {
+    const platform::OnCore off(platform::WriterCore);
     while (!stop_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(300));
       bool busy = false;
@@ -1120,9 +1127,9 @@ void Application::poll() {
                          : installStatus == install::Status::Cancelled ? history::Outcome::Cancelled
                                                                        : history::Outcome::Failed;
     const auto error = outcome == history::Outcome::Failed ? failureText(installer_.progress().error) : installer_.progress().error;
-    // How it ended, with what the player was told: a report shows it.
-    logLine("install " + std::string(outcome == history::Outcome::Done ? "done" : outcome == history::Outcome::Cancelled ? "cancelled" : "failed") +
-            ": " + installer_.progress().name + (installer_.progress().error.empty() ? "" : " · " + installer_.progress().error));
+    // A failure with what the player was told: a report shows it.
+    if (outcome == history::Outcome::Failed)
+      logLine("install failed: " + installer_.progress().name + (installer_.progress().error.empty() ? "" : " · " + installer_.progress().error));
     if (history::finish(history_, outcome, error, int64_t(std::time(nullptr)))) saveHistory();
   }
   pumpPatchQueue();
@@ -1196,18 +1203,9 @@ void Application::poll() {
       pairPollAt_ = 0;
       refresh();
     }
-    // Not connected: a few more tries, then it waits for - (새로고침).
-    // Any error counts (a name that did not resolve is often the network
-    // still joining); the console's own online check never stops a try,
-    // since it can read offline on a network that works.
-    constexpr uint32_t RetryMs = 5000;
-    constexpr int MaxRetries = 3;
-    if (!network_.joinable() && !connected_ && session_ && error_ && !pairingPending_ && retries_ < MaxRetries &&
-        SDL_GetTicks() - offlineCheckAt_ >= RetryMs) {
-      offlineCheckAt_ = SDL_GetTicks();
-      ++retries_;
-      refresh();
-    }
+    // Not connected: the card says why and waits for 다시 시도 (or -). Tries
+    // made on their own put the skeleton back each time, which only read as
+    // a load that never ended.
     return;
   }
   takeNetwork();
@@ -1278,7 +1276,6 @@ void Application::takeNetwork() {
     state_.queueJson = mine.queueJson;
     state_.language = mine.language;
     state_.skipSignatureCheck = mine.skipSignatureCheck;
-    state_.skipFirmwareCheck = mine.skipFirmwareCheck;
     state_.makeShortcuts = mine.makeShortcuts;
     state_.sounds = mine.sounds;
     state_.installTarget = mine.installTarget;
@@ -1307,15 +1304,18 @@ void Application::takeNetwork() {
   features_ = session_->features();
   serverFeatures_.clear();
   serverFeatures_[session_->server().url] = features_;
+  serverRewrapMax_.clear();
+  serverRewrapMax_[session_->server().url] = session_->rewrapMaxFirmware();
   for (const auto &other : others_)
-    if (const auto status = serverStatus_.find(other->server().url); status != serverStatus_.end() && status->second.empty())
+    if (const auto status = serverStatus_.find(other->server().url); status != serverStatus_.end() && status->second.empty()) {
       serverFeatures_[other->server().url] = other->features();
+      serverRewrapMax_[other->server().url] = other->rewrapMaxFirmware();
+    }
   // Same server: keep decoded covers; only the access keys may have changed.
   images_->updateState(state_);
   if (screen_ == Screen::Detail)
     screen_ = previous_;
   // A 304 keeps the catalog already on screen.
-  retries_ = 0;
   if (!incomingCatalog_ && !groups_.empty()) {
     connected_ = true;
     serverAnsweredAt_ = SDL_GetTicks();
@@ -1551,6 +1551,10 @@ void Application::action(Action a) {
     adminEditAction(a);
     return;
   }
+  if (serverInfo_) {
+    serverInfoAction(a);
+    return;
+  }
   if (resumeAsked()) {
     if (a == Action::Accept && settled()) {
       confirmResume_ = false;
@@ -1630,8 +1634,10 @@ void Application::action(Action a) {
       confirmInstall_ = false;
       installSelected();
     }
-    if (a == Action::Back)
+    if (a == Action::Back) {
       confirmInstall_ = false;
+      forceInstall_ = false;
+    }
     return;
   }
   // The header's buttons: the d-pad moves along them, A presses one.
@@ -1710,6 +1716,10 @@ void Application::action(Action a) {
       raField_ = -1; // the keyboard is this field's now
       bugMessageField_ = true;
     }
+    // Up and down pick the server it goes to.
+    const int last = int(reportServers().size()) - 1;
+    if (a == Action::Up) bugServer_ = std::max(0, bugServer_ - 1);
+    if (a == Action::Down) bugServer_ = std::min(std::max(0, last), bugServer_ + 1);
     if (a == Action::Back) bugAsk_ = false;
     return;
   }
@@ -1766,7 +1776,7 @@ void Application::action(Action a) {
     return;
   }
   if (a == Action::Reload) {
-    retries_ = patchRetries_ = retroRetries_ = 0; // a refresh by hand earns the automatic tries again
+    patchRetries_ = retroRetries_ = 0; // a refresh by hand earns the automatic tries again
     pairSince_ = 0;
     menuKnown_ = false; // the menu waits for the answer, as at start
     reload();
@@ -1795,6 +1805,8 @@ void Application::action(Action a) {
     sidebar_ = true;
     return;
   }
+  // A page drawn without the menu never leaves the cursor on it.
+  if (sidebar_ && fullPage()) sidebar_ = autoSidebar_ = false;
   if (sidebar_) {
     // While the menu is placeholders there is nothing to move to yet.
     if (menuPending()) return;
@@ -1996,17 +2008,13 @@ void Application::action(Action a) {
       case 3: openFileCleanup(); break;
       // The switches, together.
       case 4: toggleInstallCheck(state_.skipSignatureCheck); break;
-      case 5: toggleInstallCheck(state_.skipFirmwareCheck); break;
-      case 6: toggleInstallCheck(state_.makeShortcuts); break;
-      case 7:
+      case 5: toggleInstallCheck(state_.makeShortcuts); break;
+      case 6:
         toggleInstallCheck(state_.sounds);
         sounds_.setOn(state_.sounds);
         sounds_.play(Cue::Add); // turned on: heard at once
         break;
-      case 8:
-        bugAsk_ = true;
-        bugMessage_.clear();
-        break;
+      case 7: openBugReport(""); break;
       default:
         // A server opens its form; "+ 서버 추가" an empty one.
         openServerForm(selected_ < int(config_.servers.size()) ? std::max(0, selected_) : -1);
@@ -2081,8 +2089,9 @@ void Application::card(const Group &g, float x, float y, bool selected,
   if (index < groups_.size())
     hit(x, y, 150, 220, [this, index] { openDetail(index); });
   cover(g.representative.icon, x, y, 150, selected, g.representative.name);
-  // Download size on the top left, in the same small badge as the score.
-  if (const auto bytes = g.base ? g.base->size : g.representative.size; bytes > 0) {
+  // Download size on the top left, in the same small badge as the score:
+  // the base with its update, as a player installs them.
+  if (const auto bytes = groupBytes(g); bytes > 0) {
     const auto label = formatBytes(bytes);
     const float w = paint_.fonts.measure(label, 13, true) + 10, h = 19;
     paint_.rect(x + 6, y + 6, w, h, {22, 22, 26, 190}, 5);
@@ -2147,7 +2156,7 @@ void Application::footer(
     float x = 1248;
     for (const float w : {96.f, 110.f, 96.f, 110.f}) {
       x -= w;
-      paint_.skeleton(x, 676, w, 30, 15);
+      paint_.skeleton(x, 676, w, 30, 15, false, Surface); // on the footer's white
       x -= 24;
     }
     return;
@@ -2209,7 +2218,7 @@ void Application::shell() {
   // and 홈브류 appear only when it has them, and the rows would jump.
   if (menuPending()) {
     for (int i = 0; i < MenuItems; ++i)
-      paint_.skeleton(16, 92 + i * MenuRowPitch, 200, MenuRowHeight, 12);
+      paint_.skeleton(16, 92 + i * MenuRowPitch, 200, MenuRowHeight, 12, false, Surface); // on the menu's white
     return;
   }
   // A screen left open when approval began reads as 홈 in the menu.
@@ -2301,7 +2310,7 @@ float Application::statusBar() {
   // buttons show (the link, then the two storages).
   if (menuPending()) {
     for (const float w : {120.f, 210.f, 210.f}) {
-      paint_.skeleton(x, Mid - 15, w, 30, 15);
+      paint_.skeleton(x, Mid - 15, w, 30, 15, false, Surface);
       x += w + 24;
     }
     return x;
@@ -2310,9 +2319,16 @@ float Application::statusBar() {
   // outranks the console's own check, which can read offline on a working
   // network; a link that dropped after that answer does not.
   const bool cut = (!connected_ || linkDropped()) && (signal_ < 0 || offline);
+  // Pressed: the servers' popup while connected, a try again when not.
+  const float linkLeft = x;
   paint_.icon(cut ? 20 : 39, x, Mid - 10, cut ? Bad : signal_ >= 0 && signal_ <= 1 ? Pending : Ink, 20);
   x += 30;
   x = paint_.fonts.middle(tr(status), x, Mid, 17, statusColor(status), true) + 30;
+  // The finger gets the band's height; the pressed look hugs the icon and
+  // the word, as a chip.
+  const float linkRight = x - 30;
+  hit(linkLeft - 10, Mid - 22, linkRight - linkLeft + 20, 44, [this] { pressLinkState(); },
+      {linkLeft - 8, Mid - 16, linkRight - linkLeft + 16, 32}, 16);
   const struct {
     int icon;
     std::optional<uint64_t> free, total;
@@ -2351,11 +2367,18 @@ float Application::statusBar() {
   return x;
 }
 bool Application::refreshSkeleton() const {
-  return menuPending() && !fullPage() && screen_ != Screen::Home;
+  return menuPending() && !fullPage();
 }
-// A menu screen's shape while the server is asked: its title, then cards
-// for the screens of games, rows for the others.
+// A menu screen's shape while the server is asked: 홈's banner and first
+// row; elsewhere its title, then cards for the screens of games, rows for
+// the others.
 void Application::screenSkeleton() {
+  if (screen_ == Screen::Home) {
+    paint_.skeleton(260, 24, 992, 248, 20);
+    paint_.skeleton(260, 300, 160, 28, 8);
+    paint_.skeletonCards(260, 346, 6);
+    return;
+  }
   paint_.skeleton(260, 30, 180, 34, 10);
   const bool cards = screen_ == Screen::Library || screen_ == Screen::Installed || screen_ == Screen::Homebrew ||
                      screen_ == Screen::Retro;
@@ -2469,7 +2492,9 @@ void Application::render() {
       using Hints = std::vector<std::pair<std::string, std::string>>;
       auto hints = descriptionFocus_ ? Hints{{"A", tr("Back to items")}, {"B", tr("Back")}}
                                        : Hints{{"A", onTheWay   ? tr("Cancel download")
-                                                     : onButton ? tr("Install")
+                                                     : onButton ? (pickedUnreachable().empty() ? tr("Install")
+                                                                 : rewrapServers().empty() ? tr("See why")
+                                                                                           : tr("Force install|button"))
                                                      : onStorage ? tr("Choose this")
                                                      : part_ == 0 && selection_ && selection_->baseChoices() > 1 &&
                                                                selection_->parts().front().type == "base"
@@ -2642,6 +2667,8 @@ void Application::render() {
       SDL_RenderSetClipRect(paint_.renderer, nullptr);
       if (pressedLook_.w > 0)
         paint_.rect(pressedLook_.x, pressedLook_.y, pressedLook_.w, pressedLook_.h, {0, 0, 0, 36}, pressedRadius_);
+      else if (pressedRadius_ < 0) // a row (rowHit): exactly its shape
+        paint_.rect(pressed_.x, pressed_.y, pressed_.w, pressed_.h, {0, 0, 0, 36}, -pressedRadius_);
       else
         paint_.rect(pressed_.x - Pad, pressed_.y - Pad, pressed_.w + 2 * Pad, pressed_.h + 2 * Pad, {0, 0, 0, 36}, 18);
     }
@@ -2649,6 +2676,46 @@ void Application::render() {
   SDL_RenderPresent(paint_.renderer);
 }
 
+std::vector<Item> Application::pickedNeeds() const {
+  auto needs = selection_ ? selection_->files() : std::vector<Item>{};
+  if (!detail_.requiredFirmware.empty() && !needs.empty()) {
+    Item title;
+    title.requiredFirmware = detail_.requiredFirmware;
+    title.keyFirmware = detail_.keyFirmware;
+    needs.push_back(std::move(title));
+  }
+  return needs;
+}
+std::string Application::pickedUnreachable() const {
+  return install::unreachableFirmware(pickedNeeds(), platform::firmwareVersion());
+}
+std::vector<std::string> Application::rewrapServers() const {
+  std::vector<std::string> servers;
+  if (!selection_) return servers;
+  // The key the content needs, against the newest each server's keys reach.
+  const auto need = install::keyFirmwareOf(pickedNeeds());
+  for (const auto &url : selection_->servers()) {
+    const auto at = url.empty() ? serverInUse() : url;
+    const auto f = serverFeatures_.find(at);
+    if (f == serverFeatures_.end() || !f->second.count("nca-rewrap")) continue;
+    const auto most = serverRewrapMax_.find(at);
+    if (most == serverRewrapMax_.end() || most->second.empty() || need.empty() ||
+        install::masterKeyOf(need) <= install::masterKeyOf(most->second))
+      servers.push_back(url);
+  }
+  return servers;
+}
+std::string Application::rewrapKeysTooOld() const {
+  if (!selection_ || pickedUnreachable().empty() || !rewrapServers().empty()) return "";
+  const auto servers = selection_->servers();
+  const bool offered = std::any_of(servers.begin(), servers.end(), [&](const std::string &url) {
+    const auto f = serverFeatures_.find(url.empty() ? serverInUse() : url);
+    return f != serverFeatures_.end() && f->second.count("nca-rewrap");
+  });
+  return offered ? trf("The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.",
+                       {install::keyFirmwareOf(pickedNeeds())})
+                 : "";
+}
 void Application::requestInstall() {
   if (!selection_ || detailGroup_ >= groups_.size())
     return;
@@ -2661,9 +2728,18 @@ void Application::requestInstall() {
     alert_ = tr("Turn on at least one item to install.");
     return;
   }
+  // Content for a newer master key than the console's: not tried as it is.
+  // A server that re-encrypts it for this console's key offers it anyway.
+  const auto need = pickedUnreachable();
+  forceInstall_ = !need.empty() && !rewrapServers().empty();
+  if (!need.empty() && !forceInstall_) {
+    const auto keys = rewrapKeysTooOld();
+    alert_ = keys.empty() ? install::firmwareShortfall(need, platform::firmwareVersion()) : keys;
+    return;
+  }
   confirmInstall_ = true;
   // From several servers it comes from the game's own unless picked.
-  const auto servers = selection_->servers();
+  const auto servers = forceInstall_ ? rewrapServers() : selection_->servers();
   if (std::find(servers.begin(), servers.end(), selection_->server) == servers.end())
     selection_->server = servers.empty() ? std::string() : servers.front();
 }
@@ -2731,7 +2807,7 @@ int Application::pickedOnTheWay(double &percent) const {
     return 0;
   const auto row = [&](const Item &f, history::Outcome outcome) {
     return std::any_of(history_.begin(), history_.end(), [&](const history::Entry &e) {
-      return e.outcome == outcome && e.kind.empty() && e.install.files.size() == 1 && e.install.files[0].url == f.url;
+      return e.outcome == outcome && e.kind.empty() && e.install.files.size() == 1 && install::sameFile(e.install.files[0].url, f.url);
     });
   };
   // Every picked file waits, runs or came in already (the base before its
@@ -2739,7 +2815,7 @@ int Application::pickedOnTheWay(double &percent) const {
   bool running = false, waiting = false;
   for (const auto &f : files) {
     const bool queued = std::any_of(installQueue_.begin(), installQueue_.end(),
-                                    [&](const QueuedInstall &q) { return q.file.url == f.url; });
+                                    [&](const QueuedInstall &q) { return install::sameFile(q.file.url, f.url); });
     const bool now = installer_.running() && row(f, history::Outcome::Running);
     if (!queued && !now && !row(f, history::Outcome::Done))
       return 0;
@@ -2765,13 +2841,23 @@ void Application::installSelected() {
   const auto &g = groups_[detailGroup_];
   // Patches alone (every file off) go in as one pick; with files they come
   // right after the game's files and go with them if the game fails.
-  const auto files = selection_->files();
+  auto files = selection_->files();
+  // Past the firmware: each file's server sends it re-encrypted for this
+  // console's own master key.
+  if (std::exchange(forceInstall_, false))
+    for (auto &file : files) file.url = install::rewrapUrl(file.url, platform::firmwareVersion());
   if (!files.empty()) {
     if (auto error = startInstall(files, g.representative.name, g.representative.icon, selection_->target,
                                   selection_->patchesOn())) {
       alert_ = error.message;
       return;
     }
+    // Older firmware than the game asks for, with the same master key: it
+    // goes on, and says so.
+    const auto console = platform::firmwareVersion();
+    if (const auto need = install::missingFirmware(pickedNeeds(), console); !need.empty())
+      message(trf("The console's firmware {0} is older than the {1} this game needs. The install or the game may fail.",
+                  {console, need}));
   } else {
     queuePatchJobs(selection_->patchesOn(), ++installGroups_);
     const bool waits = downloadRunning() || installQueue_.size() > 1;
@@ -2823,10 +2909,10 @@ Error Application::enqueueInstall(const std::vector<Item> &files, const std::str
   std::vector<Item> fresh;
   for (const auto &f : files) {
     const bool waiting = std::any_of(installQueue_.begin(), installQueue_.end(),
-                                     [&](const QueuedInstall &q) { return q.file.url == f.url; }) ||
+                                     [&](const QueuedInstall &q) { return install::sameFile(q.file.url, f.url); }) ||
                          (installer_.running() && std::any_of(history_.begin(), history_.end(), [&](const history::Entry &e) {
                             return e.outcome == history::Outcome::Running && e.kind.empty() && e.install.files.size() == 1 &&
-                                   e.install.files[0].url == f.url;
+                                   install::sameFile(e.install.files[0].url, f.url);
                           }));
     if (!waiting)
       fresh.push_back(f);
@@ -2839,7 +2925,7 @@ Error Application::enqueueInstall(const std::vector<Item> &files, const std::str
                                          (e.outcome == history::Outcome::Failed || e.outcome == history::Outcome::Cancelled) &&
                                          std::any_of(e.install.files.begin(), e.install.files.end(), [&](const Item &old) {
                                            return std::any_of(fresh.begin(), fresh.end(),
-                                                              [&](const Item &f) { return f.url == old.url; });
+                                                              [&](const Item &f) { return install::sameFile(f.url, old.url); });
                                          });
                                 }),
                  history_.end());
@@ -3014,7 +3100,7 @@ void Application::askCancelPick(bool running) {
   }
   const auto files = selection_ ? selection_->files() : std::vector<Item>{};
   for (size_t i = 0; i < installQueue_.size(); ++i)
-    if (std::any_of(files.begin(), files.end(), [&](const Item &f) { return f.url == installQueue_[i].file.url; })) {
+    if (std::any_of(files.begin(), files.end(), [&](const Item &f) { return install::sameFile(f.url, installQueue_[i].file.url); })) {
       unqueueAsk_ = int(i);
       unqueuePick_ = true;
       return;
@@ -3052,7 +3138,7 @@ std::vector<std::string> Application::groupServers(const Group &g) const {
   return servers;
 }
 void Application::stepInstallServer(int by) {
-  const auto servers = selection_->servers();
+  const auto servers = forceInstall_ ? rewrapServers() : selection_->servers();
   if (servers.size() < 2) return;
   const auto at = std::find(servers.begin(), servers.end(), selection_->server);
   const int now = at == servers.end() ? 0 : int(at - servers.begin()), count = int(servers.size());
@@ -3077,17 +3163,31 @@ net::Session *Application::sessionFor(const std::string &url) const {
     if (other->server().url == url) return other.get();
   return session_.get();
 }
+void Application::askOthers() {
+  othersRead_.assign(others_.size(), {});
+  for (size_t i = 0; i < others_.size(); ++i)
+    othersAsking_.emplace_back([this, i] {
+      const platform::OnCore off(platform::NetworkCore);
+      guarded("catalog", [&] { othersRead_[i].read = others_[i]->refresh(othersRead_[i].error); });
+    });
+}
+void Application::joinOthers() {
+  for (auto &asking : othersAsking_) asking.join();
+  othersAsking_.clear();
+}
 bool Application::readOthers(bool primaryChanged) {
+  joinOthers();
   incomingStatus_.clear();
   if (others_.empty()) return false;
   if (primaryChanged) serverItems_[session_->server().url] = session_->takeItems();
   bool changed = primaryChanged;
   std::set<std::string> ids;
   if (!session_->serverId().empty()) ids.insert(session_->serverId());
-  for (const auto &other : others_) {
+  for (size_t i = 0; i < others_.size(); ++i) {
+    const auto &other = others_[i];
     const auto &url = other->server().url;
-    Error error;
-    const bool read = other->refresh(error);
+    const auto &error = othersRead_[i].error;
+    const bool read = othersRead_[i].read;
     // Two addresses of one server (its own and a tunnel's): listed once.
     if (read && !other->serverId().empty() && !ids.insert(other->serverId()).second) {
       incomingStatus_[url] = "same";
@@ -3181,7 +3281,6 @@ Error Application::launchJob(const QueuedInstall &next) {
     // addresses may have changed), so it does not fetch a file now gone.
     if (!apps.empty() && homebrewLoaded_)
       if (const auto now = homebrewLike(apps.front()); now != homebrew_.end() && now->id != apps.front().id) {
-        logLine("homebrew: " + apps.front().name + " is listed under a new id; fetched from there");
         apps.front() = *now;
       }
     started = !apps.empty() && runHomebrew(apps.front(), serverFor(next.server));
@@ -3289,6 +3388,7 @@ void Application::checkResumePoints() {
   for (const auto &[key, point] : resumeChecked_) keys.push_back(key);
   const auto started = std::filesystem::file_time_type::clock::now();
   resumeCheckWorker_ = std::thread([this, keys, started] {
+    const platform::OnCore off(platform::WriterCore);
     const platform::Behind behind; // runs while the splash is up
     ResumeLeftovers leftovers;
     guarded("resume check", [&] {
@@ -3303,8 +3403,6 @@ void Application::checkResumePoints() {
         return found == there.end() ? std::nullopt : std::optional<bool>(found->second);
       }, names);
       for (const auto &name : leftovers.windows) std::filesystem::remove(dir + "/" + name, ec);
-      if (!leftovers.windows.empty())
-        logLine("resume: removed " + std::to_string(leftovers.windows.size()) + " window file(s) no point owns");
       // Placeholders this app made whose point is gone (its file deleted, a
       // cut before the first one was kept) go, so nothing is left on the
       // console for good; one with a point stays to be gone on from. Not
@@ -3315,9 +3413,6 @@ void Application::checkResumePoints() {
       if (!orphans.empty() && !installer_.running()) {
         const auto dropped = platform::dropPlaceholders(orphans);
         for (const auto &key : dropped.gone) store_.dropMadePlaceholder(key);
-        if (!dropped.gone.empty())
-          logLine("resume: cleared " + std::to_string(dropped.gone.size()) + " placeholder(s) no point owns, " +
-                  std::to_string(dropped.bytes >> 20) + " MB");
         resumeCleared_ = dropped.bytes;
       }
     });
@@ -3337,7 +3432,6 @@ void Application::pollResumeCheck() {
     const auto then = resumeChecked_.find(key);
     if (!now || then == resumeChecked_.end() || now->plan != then->second.plan || now->url != then->second.url) continue;
     installer_.forgetResumePoint(key);
-    logLine("resume: " + key + " has no placeholder on the console; it starts over");
   }
   resumeChecked_.clear();
 }
@@ -3369,6 +3463,7 @@ void Application::pollStorage() {
   std::vector<std::string> paths(asked.begin(), asked.end());
   const bool totals = !sdTotal_ || !nandTotal_;
   storageWorker_ = std::thread([this, paths = std::move(paths), totals, sd = sdRoot_, generation = cardGeneration_] {
+    const platform::OnCore off(platform::WriterCore);
     StorageFound found;
     found.generation = generation;
 #ifdef __SWITCH__
@@ -3496,7 +3591,7 @@ void Application::languageDialog() {
   const float w = (body.w - 48 - Gap * 2) / 2;
   for (int i = 0; i < LanguageCount; ++i) {
     const float x = body.x + 24 + (i / LanguageRows) * (w + Gap * 2), y = body.y + 16 + (i % LanguageRows) * (Row + Gap);
-    hit(x, y, w, Row, [this, i] {
+    rowHit(x, y, w, Row, 12, [this, i] {
       languageRow_ = i;
       action(Action::Accept);
     });

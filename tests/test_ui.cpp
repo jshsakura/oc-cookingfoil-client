@@ -6,6 +6,7 @@
 #include "core/ShopSaves.hpp"
 #include "ui/Application.hpp"
 #include "ui/Images.hpp"
+#include "MockServer.hpp"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -32,6 +33,23 @@ static void settle(foil::ui::Application &app) {
 }
 int runUiTests(SDL_Renderer *renderer) {
   int failures = 0;
+  {
+    // 펌웨어 버전 무시 설치 in every language: the full name heads the
+    // confirm, and the install button (386 wide) keeps a margin; a language
+    // whose name does not fit there says Force install instead.
+    foil::ui::Painter painter(renderer);
+    CHECK(painter.fonts.open());
+    const auto before = foil::language();
+    for (int n = 0; n < foil::LanguageCount; ++n) {
+      foil::setLanguage(foil::Language(n));
+      CHECK(painter.fonts.measure(foil::tr("Install ignoring firmware version"), 22, true) <= 700 - 64 - 34);
+      CHECK(painter.keyLabelWidth("A", foil::tr("Force install|button"), 22, true) <= 386 - 32);
+      // Its confirm's note is read whole in every language, never cut.
+      const auto note = foil::ui::Application::forceInstallNote("18.1.0", "20.0.0");
+      CHECK(painter.fonts.lineCount(note, 18, foil::ui::Application::ForceNoteWidth, 99) <= foil::ui::Application::ForceNoteLines);
+    }
+    foil::setLanguage(before);
+  }
   {
     // The picture cache folder keeps the newest files under three quarters
     // of the limit once over it, and leaves other files alone.
@@ -234,6 +252,20 @@ int runUiTests(SDL_Renderer *renderer) {
   CHECK(app.selectedName() == "버터 블록 대작전");
   app.action(foil::ui::Action::Accept);
   CHECK(app.current() == foil::ui::Screen::Detail);
+  {
+    // A card touched while the cursor sat on the menu: A on the page still
+    // acts on the page, it does not go back to 홈.
+    app.action(foil::ui::Action::Back);
+    CHECK(app.current() == foil::ui::Screen::Library);
+    app.action(foil::ui::Action::Left);
+    CHECK(app.onMenu());
+    app.render();
+    app.touch(252 * 3 / 2 / 1.5f + 60, 220 * 3 / 2 / 1.5f + 60);
+    app.render();
+    CHECK(app.current() == foil::ui::Screen::Detail && !app.onMenu());
+    app.action(foil::ui::Action::Down);
+    CHECK(app.current() == foil::ui::Screen::Detail);
+  }
   const auto bytes = app.selectedBytes();
   // L and R no longer change the storage target.
   app.action(foil::ui::Action::Next);
@@ -306,6 +338,33 @@ int runUiTests(SDL_Renderer *renderer) {
     app.action(foil::ui::Action::Back);
     CHECK(!app.confirmingInstall());
     CHECK(app.queuedPatches() == 0);
+    // Made for a newer master key than the console's: A says why, unless
+    // the server re-encrypts it, when the confirm offers to install anyway.
+    setenv("FOIL_FIRMWARE", "18.1.0", 1);
+    auto newer = withPatches;
+    newer.requiredFirmware = "20.0.0";
+    app.setDetail(newer);
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(!app.confirmingInstall() && !app.alert().empty());
+    app.action(foil::ui::Action::Back);
+    CHECK(app.alert().empty());
+    // The server's keys stop short of the game's: it says to replace them.
+    newer.keyFirmware = "20.0.0";
+    app.setDetail(newer);
+    app.offerFeature("", "nca-rewrap", "19.0.0");
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(!app.confirmingInstall() && app.alert().find("prod.keys") != std::string::npos);
+    app.action(foil::ui::Action::Back);
+    app.offerFeature("", "nca-rewrap", "22.0.0");
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.forcingInstall() && app.alert().empty());
+    app.render();
+    app.action(foil::ui::Action::Back);
+    CHECK(!app.confirmingInstall() && !app.forcingInstall());
+    unsetenv("FOIL_FIRMWARE");
   }
   app.action(foil::ui::Action::Back);
   CHECK(app.current() == foil::ui::Screen::Library);
@@ -764,6 +823,194 @@ int runUiTests(SDL_Renderer *renderer) {
     // No server left: it stays put (홈 says how to add one), not 설정.
     CHECK(reload.current() != foil::ui::Screen::Settings);
     std::filesystem::remove_all(root);
+  }
+  char refreshDirectory[] = "/tmp/cookingfoil-refresh-XXXXXX";
+  if (const auto refreshRoot = mkdtemp(refreshDirectory)) {
+    // - on 홈 turns it to placeholders with the menu and the buttons, as on
+    // every menu screen: the cursor waits on the menu until the answer.
+    const auto configPath = std::string(refreshRoot) + "/config.json";
+    std::string error;
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:1"}]})", error));
+    foil::ui::Application home(renderer, configPath, std::string(refreshRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(home.open());
+    settle(home);
+    for (int frame = 0; frame < 400 && home.asking(); ++frame) { SDL_Delay(5); home.render(); }
+    home.setItems(parsed.value);
+    home.render();
+    home.action(foil::ui::Action::Right); // into the rows
+    home.render();
+    CHECK(home.current() == foil::ui::Screen::Home && !home.onMenu());
+    home.refreshAll(); // what - does (main.cpp)
+    home.render();
+    CHECK(home.onMenu());
+    std::filesystem::remove_all(refreshRoot);
+  }
+  char togetherDirectory[] = "/tmp/cookingfoil-together-XXXXXX";
+  if (const auto togetherRoot = mkdtemp(togetherDirectory)) {
+    // Two servers slow to give their lists are asked together: the home
+    // waits for the slower one, not for both in turn.
+    static constexpr int SlowMs = 700;
+    const auto slow = [](const std::string &request) -> Reply {
+      if (request.rfind("GET /api/shop/sections", 0) != 0) return {404, "", "{}"};
+      std::this_thread::sleep_for(std::chrono::milliseconds(SlowMs));
+      return {200, "", R"({"sections":[]})"};
+    };
+    Mock first, second;
+    first.answer = slow;
+    second.answer = slow;
+    const auto configPath = std::string(togetherRoot) + "/config.json";
+    std::string error;
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:)" + std::to_string(first.port) +
+                                            R"("},{"title":"B","url":"http://127.0.0.1:)" + std::to_string(second.port) + R"("}]})",
+                            error));
+    foil::ui::Application both(renderer, configPath, std::string(togetherRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(both.open());
+    for (int frame = 0; frame < 800 && both.asking(); ++frame) { SDL_Delay(5); both.render(); }
+    first.take();
+    second.take();
+    const auto started = std::chrono::steady_clock::now();
+    both.refreshAll();
+    settle(both);
+    for (int frame = 0; frame < 800 && both.asking(); ++frame) { SDL_Delay(5); both.render(); }
+    const auto took = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+    CHECK(!both.asking());
+    CHECK(first.take().size() >= 1 && second.take().size() >= 1);
+    CHECK(took < 2 * SlowMs - 100);
+    std::filesystem::remove_all(togetherRoot);
+  }
+  char downDirectory[] = "/tmp/cookingfoil-down-XXXXXX";
+  if (const auto downRoot = mkdtemp(downDirectory)) {
+    // A server that does not answer: the card with 다시 시도 stays, and
+    // nothing asks again on its own (each try put the skeleton back, which
+    // read as a load that never ended).
+    Mock down;
+    down.answer = [](const std::string &) -> Reply { return {503, "", "{}"}; };
+    const auto configPath = std::string(downRoot) + "/config.json";
+    std::string error;
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:)" + std::to_string(down.port) + R"("}]})", error));
+    foil::ui::Application app(renderer, configPath, std::string(downRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(app.open());
+    for (int frame = 0; frame < 800 && app.asking(); ++frame) { SDL_Delay(5); app.render(); }
+    CHECK(!app.asking());
+    down.take();
+    for (int frame = 0; frame < 600; ++frame) { SDL_Delay(10); app.render(); } // past the 5s the old retry waited
+    CHECK(down.take().empty() && !app.asking());
+    // The footer's link state, pressed, is the try again.
+    app.pressLink();
+    for (int frame = 0; frame < 800 && (app.asking() || app.reloading()); ++frame) { SDL_Delay(5); app.render(); }
+    CHECK(!down.take().empty() && !app.serverInfoOpen());
+    std::filesystem::remove_all(downRoot);
+  }
+  char adminDirectory[] = "/tmp/cookingfoil-adminhb-XXXXXX";
+  if (const auto adminRoot = mkdtemp(adminDirectory)) {
+    // An app's cores changed from its page by an admin console: the server
+    // makes its shortcut again, so closing the editor reads the app list
+    // again (before, only the shop's lists were, and the page kept the old
+    // shortcut until 홈브류 was left).
+    Mock shop;
+    std::atomic<int> lists{0};
+    std::string cores = "3";
+    shop.answer = [&](const std::string &request) -> Reply {
+      if (request.rfind("GET /api/shop/info", 0) == 0) return {200, "", R"({"features":["homebrew","admin-edit"]})"};
+      if (request.rfind("GET /api/shop/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
+      if (request.rfind("GET /api/homebrew?", 0) == 0) {
+        ++lists;
+        return {200, "", R"({"homebrew":[{"id":"gh-1","name":"Demo","version":"1.0.0","file_name":"demo.nro","hash":"sha256:ab",)"
+                         R"("download_url":"/api/homebrew/gh-1/download","source":"github"}]})"};
+      }
+      const bool patch = request.rfind("PATCH /api/admin/items/homebrew/gh-1/fields", 0) == 0;
+      if (patch || request.rfind("GET /api/admin/items/homebrew/gh-1/fields", 0) == 0) {
+        if (patch) cores = "4";
+        return {200, "", R"({"fields":[{"key":"cores","type":"choice","label":{"en":"Cores"},"value":")" + cores +
+                             R"x(","options":[{"value":"3","label":{"en":"3 (default)"}},{"value":"4","label":{"en":"4"}}]}]})x"};
+      }
+      return {404, "", "{}"};
+    };
+    const auto configPath = std::string(adminRoot) + "/config.json";
+    std::string error;
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:)" + std::to_string(shop.port) + R"("}]})", error));
+    foil::ui::Application admin(renderer, configPath, std::string(adminRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(admin.open());
+    for (int frame = 0; frame < 800 && admin.asking(); ++frame) { SDL_Delay(5); admin.render(); }
+    admin.screen(foil::ui::Screen::Homebrew);
+    for (int frame = 0; frame < 400 && (lists == 0 || !admin.homebrewCardScanned()); ++frame) { SDL_Delay(5); admin.render(); }
+    settle(admin);
+    CHECK(lists == 1);
+    if (admin.onMenu()) admin.action(foil::ui::Action::Right);
+    admin.action(foil::ui::Action::Next); // 도구: the app is not on the card
+    for (int frame = 0; frame < 400 && admin.homebrewListed() == 0; ++frame) { SDL_Delay(5); admin.render(); }
+    CHECK(admin.homebrewListed() == 1);
+    settle(admin);
+    admin.action(foil::ui::Action::Down); // off the tabs, onto the app
+    admin.action(foil::ui::Action::Accept);
+    CHECK(admin.appPopupOpen());
+    admin.render();
+    admin.action(foil::ui::Action::Up); // the admin chip, above the panel's first row
+    settle(admin);
+    admin.action(foil::ui::Action::Accept);
+    CHECK(admin.adminEditOpen());
+    for (int frame = 0; frame < 400 && admin.adminEditBusy(); ++frame) { SDL_Delay(5); admin.render(); }
+    for (int frame = 0; frame < 60; ++frame) { SDL_Delay(10); admin.render(); } // the editor settles
+    admin.action(foil::ui::Action::Accept); // cores: 3 → 4
+    for (int frame = 0; frame < 400 && admin.adminEditBusy(); ++frame) { SDL_Delay(5); admin.render(); }
+    CHECK(cores == "4");
+    admin.action(foil::ui::Action::Back);
+    CHECK(!admin.adminEditOpen());
+    for (int frame = 0; frame < 400 && lists < 2; ++frame) { SDL_Delay(5); admin.render(); }
+    CHECK(lists == 2);
+    // Connected, the footer's link state opens the servers' popup; B closes it.
+    for (int frame = 0; frame < 800 && (admin.asking() || admin.reloading()); ++frame) { SDL_Delay(5); admin.render(); }
+    admin.pressLink();
+    CHECK(admin.serverInfoOpen());
+    admin.render();
+    admin.action(foil::ui::Action::Back);
+    CHECK(!admin.serverInfoOpen());
+    std::filesystem::remove_all(adminRoot);
+  }
+  char bugDirectory[] = "/tmp/cookingfoil-bug-XXXXXX";
+  if (const auto bugRoot = mkdtemp(bugDirectory)) {
+    // A bug report goes to a server the player picks among the ones on,
+    // starting from the one the lists come from; one that is off is not offered.
+    const auto configPath = std::string(bugRoot) + "/config.json";
+    std::string error;
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:1"},
+      {"title":"B","url":"http://127.0.0.1:2","enabled":false},{"title":"C","url":"http://127.0.0.1:3"}]})", error));
+    foil::ui::Application bug(renderer, configPath, std::string(bugRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(bug.open());
+    bug.openBugReport("");
+    CHECK(bug.bugReportOpen() && bug.bugReportServer() == 0);
+    bug.action(foil::ui::Action::Down);
+    CHECK(bug.bugReportServer() == 2);
+    bug.action(foil::ui::Action::Down); // the last stays
+    CHECK(bug.bugReportServer() == 2);
+    bug.action(foil::ui::Action::Up);
+    CHECK(bug.bugReportServer() == 0);
+    bug.action(foil::ui::Action::Back);
+    CHECK(!bug.bugReportOpen());
+    std::filesystem::remove_all(bugRoot);
+  }
+  char pullDirectory[] = "/tmp/cookingfoil-pull-XXXXXX";
+  if (const auto pullRoot = mkdtemp(pullDirectory)) {
+    // A list of short rows pulled past its top stretches more than a row:
+    // the first row drawn is still the first, not one before it (레트로
+    // 게임's versions closed the app this way).
+    const auto configPath = std::string(pullRoot) + "/config.json";
+    std::string error;
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"url":"http://127.0.0.1:1"},{"url":"http://127.0.0.1:2"},
+      {"url":"http://127.0.0.1:3"},{"url":"http://127.0.0.1:4"},{"url":"http://127.0.0.1:5"}]})", error));
+    foil::ui::Application pull(renderer, configPath, std::string(pullRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(pull.open());
+    pull.openBugReport("");
+    pull.render();
+    pull.fingerDown();
+    pull.dragBegin(640, 400);
+    pull.drag(0, 2000);
+    pull.render();
+    CHECK(pull.gliding() && pull.glidePos() < -1);
+    pull.dragEnd(0, 0);
+    for (int i = 0; i < 60; ++i) { SDL_Delay(5); pull.render(); }
+    CHECK(pull.glidePos() == 0 && pull.bugReportOpen());
+    std::filesystem::remove_all(pullRoot);
   }
   char formDirectory[] = "/tmp/cookingfoil-form-XXXXXX";
   const auto formRoot = mkdtemp(formDirectory);
