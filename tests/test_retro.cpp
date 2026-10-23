@@ -1,6 +1,13 @@
 #include "Test.hpp"
 #include "core/Retro.hpp"
 #include "core/I18n.hpp"
+#include "MockServer.hpp"
+#include "core/Json.hpp"
+#include <algorithm>
+#include "net/FileFetch.hpp"
+#include "net/RetroApi.hpp"
+#include <filesystem>
+#include <unistd.h>
 #include <set>
 using namespace foil::retro;
 namespace {
@@ -392,5 +399,34 @@ int runRetroTests() {
   CHECK(bezelOf(R"({"hasBezel":true,"generic":false})") == Game::Bezel::Game);
   CHECK(bezelOf(R"({"hasBezel":false})") == Game::Bezel::None);
   CHECK(parseGameJson("not json").id.empty());
+  {
+    // A pack file with a Korean name (a game's core options) waits as a short
+    // ".cf-<hash>.part": "<name>.opt.part" could not be created on the console.
+    const std::string path = "retroarch/config/Mupen64Plus-Next/슈퍼 마리오 64 (Super Mario 64) [J-K v20230118 v1 진동버전].opt";
+    const auto part = foil::net::filePart("/sd", path);
+    const auto name = std::filesystem::path(part).filename().string();
+    CHECK(part.rfind("/sd/retroarch/config/Mupen64Plus-Next/.cf-", 0) == 0 && name.size() == 4 + 16 + 5);
+    CHECK(std::all_of(name.begin(), name.end(), [](unsigned char c) { return c < 128; }));
+    char directory[] = "/tmp/cookingfoil-retrofile-XXXXXX";
+    if (const auto root = mkdtemp(directory)) {
+      Mock server;
+      server.answer = [](const std::string &) { return Reply{200, "", "core options"}; };
+      foil::Server at;
+      at.url = "http://127.0.0.1:" + std::to_string(server.port);
+      foil::retro::PackFile file;
+      file.path = path;
+      file.url = at.url + "/api/retro/file/opt";
+      file.size = 12;
+      file.sha256 = "not a hash"; // checked only when it is one
+      std::atomic<uint64_t> received{0};
+      foil::Error error;
+      long status = 0;
+      CHECK(foil::net::retroFile(at, foil::State{}, file, root, received, error, nullptr, &status));
+      CHECK(!error && status == 200);
+      CHECK(foil::readFile(std::string(root) + "/" + path) == "core options");
+      CHECK(!std::filesystem::exists(foil::net::filePart(root, path)));
+      std::filesystem::remove_all(root);
+    }
+  }
   return failures;
 }

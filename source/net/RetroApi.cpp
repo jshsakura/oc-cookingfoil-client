@@ -1,4 +1,5 @@
 #include "net/RetroApi.hpp"
+#include "net/FileFetch.hpp"
 #include "core/I18n.hpp"
 #include "core/Json.hpp"
 #include "core/Patches.hpp"
@@ -127,31 +128,6 @@ bool retroFile(const Server &server, const State &state, const retro::PackFile &
     error.message = trf("Not an allowed place: {0}", {file.path});
     return false;
   }
-  const std::filesystem::path target = sd + "/" + file.path;
-  const auto part = target.string() + ".part";
-  std::error_code ec;
-  makeDirectories(std::filesystem::path(target.parent_path()).string());
-  PartInfo wanted;
-  wanted.url = file.url;
-  wanted.tag = file.sha256;
-  wanted.size = file.size;
-  const auto got = fetchPart(file.url, downloadHeaders(server, state, file.url), part, wanted, false, received, cancel);
-  if (status) *status = got.response.status;
-  const auto fail = [&](const std::string &message) {
-    if (!keepPart(got)) dropPart(part);
-    error.message = message;
-    return false;
-  };
-  if (!got.failure.empty()) return fail(got.failure);
-  if (got.tooLong) return fail(trf("The downloaded file has the wrong size: {0}", {file.path}));
-  if (!got.response.error.empty()) return fail(got.response.error);
-  if (!rangedOk(got.response))
-    return fail(trf("Could not get the file. HTTP {0}", {std::to_string(got.response.status)}));
-  if (file.size && got.size != file.size) return fail(trf("The downloaded file has the wrong size: {0}", {file.path}));
-  // The old file goes only once the new one can take its place.
-  if (std::string reason; !replaceFile(part, target, reason))
-    return fail(trf("Could not write the file: {0}", {file.path}));
-  std::filesystem::remove(partInfoPath(part), ec);
-  return true;
+  return fetchFile(server, state, file.url, sd, file.path, file.sha256, file.size, received, error, cancel, nullptr, status);
 }
 } // namespace foil::net
