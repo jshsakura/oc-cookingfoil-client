@@ -131,12 +131,24 @@ std::mutex &saveStripe(const std::string& path) {
 // rename() under the card's rule (nothing over an existing file), for a
 // caller that already holds the file's stripe.
 bool replaceHeld(const std::string& from, const std::string& to, std::string& error) {
-    // A name on the card can outlive its own remove for a moment: a reader
-    // holds the file open (the card deletes an open file's name late, and
-    // will not rename it either), so the remove and the rename go a few
-    // rounds, a breath apart, before the save is said failed.
+    // A name on the card can outlive its own remove: the remove the library
+    // does for remove_all says success without taking the name off (the
+    // probe saw the file still opening after twenty rounds of it), while a
+    // plain unlink takes it off for real. So a regular file goes through
+    // unlink and the dance breathes between rounds; split files are folders
+    // and keep remove_all.
     constexpr int rounds = 20;
     constexpr auto breath = std::chrono::milliseconds(250);
+    const auto drop = [&to](std::string &why) {
+        std::error_code ec;
+        if (std::filesystem::is_directory(std::filesystem::symlink_status(to, ec))) {
+            std::filesystem::remove_all(to, ec);
+            if (ec) { why = ec.message(); return false; }
+            return true;
+        }
+        if (::unlink(to.c_str()) != 0 && errno != ENOENT) { why = std::strerror(errno); return false; }
+        return true;
+    };
     for (int round = 0;; ++round) {
         if (::rename(from.c_str(), to.c_str()) == 0) return true;
         const int reason = errno;
@@ -144,11 +156,10 @@ bool replaceHeld(const std::string& from, const std::string& to, std::string& er
             error = std::strerror(reason);
             return false;
         }
-        // The console refuses rename over an existing file; split files are folders.
-        std::error_code ec;
-        std::filesystem::remove_all(to, ec);
-        if (ec) {
-            error = "removing " + std::filesystem::path(to).filename().string() + ": " + ec.message();
+        // The console refuses rename over an existing file.
+        std::string why;
+        if (!drop(why)) {
+            error = "removing " + std::filesystem::path(to).filename().string() + ": " + why;
             return false;
         }
         if (round == rounds) {
