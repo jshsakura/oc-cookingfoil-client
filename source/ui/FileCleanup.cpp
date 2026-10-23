@@ -6,41 +6,10 @@
 #include "platform/Cores.hpp"
 #include "platform/Installed.hpp"
 #include "core/Log.hpp"
-#include "core/Resume.hpp"
+#include "core/DownloadCleanup.hpp"
 #include <algorithm>
 #include <filesystem>
 namespace foil::ui {
-namespace {
-bool endsWith(const std::string &text, const std::string &end) {
-  return text.size() >= end.size() && text.compare(text.size() - end.size(), end.size(), end) == 0;
-}
-// Files a download stopped part way leaves beside where it was going: an
-// app's or a retro game's .part (and its .resume or .plan note), and the record of
-// an app's folder install. A patch keeps its own and settles them itself.
-std::vector<std::pair<std::string, uint64_t>> downloadPieces(const std::string &sd) {
-  namespace fs = std::filesystem;
-  std::vector<std::pair<std::string, uint64_t>> out;
-  for (const char *root : {"switch", "retroarch"}) {
-    std::error_code ec;
-    fs::recursive_directory_iterator it(sd + "/" + root, fs::directory_options::skip_permission_denied, ec), end;
-    for (; !ec && it != end; it.increment(ec)) {
-      const auto name = it->path().filename().string();
-      if (it->is_directory(ec)) {
-        if (endsWith(name, ".part")) it.disable_recursion_pending(); // a patch's staging
-        continue;
-      }
-      const bool record = it->path().parent_path().filename() == "resume" && name.rfind("homebrew-", 0) == 0 &&
-                          endsWith(name, ".json");
-      if (!endsWith(name, ".part") && !endsWith(name, std::string(".part") + ResumeFile) &&
-          !endsWith(name, std::string(".part") + PlanFile) && !record) continue;
-      std::error_code size;
-      const auto bytes = it->file_size(size);
-      out.push_back({it->path().string(), size ? 0 : uint64_t(bytes)});
-    }
-  }
-  return out;
-}
-} // namespace
 bool Application::tidyLeftoversAllowed() const { return !installer_.running() && !deviceBusy_; }
 // A row still queued or running may go on from its .part: none are touched
 // until the queue is empty.
@@ -114,7 +83,7 @@ void Application::deletePickedFiles() {
           if (pieces)
             for (const auto &[path, bytes] : list) {
               std::error_code ec;
-              if (std::filesystem::remove(path, ec)) freed.pieceBytes += bytes;
+              if (std::filesystem::remove_all(path, ec) && !ec) freed.pieceBytes += bytes;
             }
           if (cache) {
             const auto before = std::max<int64_t>(0, imageCacheTally());

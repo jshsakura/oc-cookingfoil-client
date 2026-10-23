@@ -1127,7 +1127,7 @@ private:
   // and the picked ones deleted, on a worker thread.
   struct TidyFound {
     Parsed<CleanupReport> leftovers;
-    std::vector<std::pair<std::string, uint64_t>> pieces; // half-downloaded files, by full path
+    std::vector<std::pair<std::string, uint64_t>> pieces;
     uint64_t pieceBytes = 0, cacheBytes = 0;
   };
   void openFileCleanup();
