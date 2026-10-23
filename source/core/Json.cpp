@@ -7,7 +7,9 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <chrono>
 #include <mutex>
+#include <thread>
 #include <fcntl.h>
 #include <unistd.h>
 namespace foil {
@@ -128,10 +130,17 @@ std::mutex &saveStripe(const std::string& path) {
 // rename() under the card's rule (nothing over an existing file), for a
 // caller that already holds the file's stripe.
 bool replaceHeld(const std::string& from, const std::string& to, std::string& error) {
-    for (int again = 0;; ++again) {
+    // A name on the card can outlive its own remove for a moment: a reader
+    // holds the file open (the card deletes an open file's name late, and
+    // will not rename it either), so the remove and the rename go a few
+    // rounds, a breath apart, before the save is said failed.
+    constexpr int rounds = 10;
+    constexpr auto breath = std::chrono::milliseconds(100);
+    for (int round = 0;; ++round) {
         if (::rename(from.c_str(), to.c_str()) == 0) return true;
-        if (errno != EEXIST && errno != ENOTEMPTY) {
-            error = std::strerror(errno);
+        const int reason = errno;
+        if (reason != EEXIST && reason != ENOTEMPTY) {
+            error = std::strerror(reason);
             return false;
         }
         // The console refuses rename over an existing file; split files are folders.
@@ -141,13 +150,11 @@ bool replaceHeld(const std::string& from, const std::string& to, std::string& er
             error = "removing " + std::filesystem::path(to).filename().string() + ": " + ec.message();
             return false;
         }
-        if (::rename(from.c_str(), to.c_str()) == 0) return true;
-        // The file came back between the remove and the rename (a writer
-        // that does not pass through here): one more round, then it is said.
-        if (again) {
-            error = "putting " + std::filesystem::path(to).filename().string() + " in place: " + std::strerror(errno);
+        if (round == rounds) {
+            error = "putting " + std::filesystem::path(to).filename().string() + " in place: " + std::strerror(reason);
             return false;
         }
+        std::this_thread::sleep_for(breath);
     }
 }
 }
