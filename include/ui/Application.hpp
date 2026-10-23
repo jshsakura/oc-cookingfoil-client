@@ -1610,8 +1610,7 @@ private:
   Qr qr_;
   bool pairingPending_ = false;
   net::PairingInfo pairingInfo_;
-  uint32_t pairPollAt_ = 0, offlineCheckAt_ = 0;
-  int retries_ = 0; // automatic reconnects since the last success or -
+  uint32_t pairPollAt_ = 0;
   // Updates and DLC the console lacks, worked out once per catalog or
   // installed list; the last answer stays while the list is read again, so
   // the menu's count does not blink.

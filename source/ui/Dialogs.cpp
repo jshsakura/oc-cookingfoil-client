@@ -120,7 +120,7 @@ void Application::offlineNotice(const std::string &body) {
     notice(tr("Loading from the server."), tr("This appears once the server answers."), 21);
   // No internet: what to fix is the console's link, as on 홈.
   else if (error_ && error_.message == net::offlineMessage())
-    notice(tr("No internet connection."), error_.message, 20, tr("Try again"), [this] { refreshAll(); }, "", "", {}, 46);
+    notice(tr("No internet connection."), error_.message + "\n" + tr("Try again in a moment."), 20, tr("Try again"), [this] { refreshAll(); }, "", "", {}, 46);
   else
     notice(tr("Not connected to a server."), body, 21);
 }

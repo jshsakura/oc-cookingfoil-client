@@ -820,6 +820,25 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(took < 2 * SlowMs - 100);
     std::filesystem::remove_all(togetherRoot);
   }
+  char downDirectory[] = "/tmp/cookingfoil-down-XXXXXX";
+  if (const auto downRoot = mkdtemp(downDirectory)) {
+    // A server that does not answer: the card with 다시 시도 stays, and
+    // nothing asks again on its own (each try put the skeleton back, which
+    // read as a load that never ended).
+    Mock down;
+    down.answer = [](const std::string &) -> Reply { return {503, "", "{}"}; };
+    const auto configPath = std::string(downRoot) + "/config.json";
+    std::string error;
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:)" + std::to_string(down.port) + R"("}]})", error));
+    foil::ui::Application app(renderer, configPath, std::string(downRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(app.open());
+    for (int frame = 0; frame < 800 && app.asking(); ++frame) { SDL_Delay(5); app.render(); }
+    CHECK(!app.asking());
+    down.take();
+    for (int frame = 0; frame < 600; ++frame) { SDL_Delay(10); app.render(); } // past the 5s the old retry waited
+    CHECK(down.take().empty() && !app.asking());
+    std::filesystem::remove_all(downRoot);
+  }
   char adminDirectory[] = "/tmp/cookingfoil-adminhb-XXXXXX";
   if (const auto adminRoot = mkdtemp(adminDirectory)) {
     // An app's cores changed from its page by an admin console: the server

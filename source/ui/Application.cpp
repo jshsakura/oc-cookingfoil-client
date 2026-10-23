@@ -1203,18 +1203,9 @@ void Application::poll() {
       pairPollAt_ = 0;
       refresh();
     }
-    // Not connected: a few more tries, then it waits for - (새로고침).
-    // Any error counts (a name that did not resolve is often the network
-    // still joining); the console's own online check never stops a try,
-    // since it can read offline on a network that works.
-    constexpr uint32_t RetryMs = 5000;
-    constexpr int MaxRetries = 3;
-    if (!network_.joinable() && !connected_ && session_ && error_ && !pairingPending_ && retries_ < MaxRetries &&
-        SDL_GetTicks() - offlineCheckAt_ >= RetryMs) {
-      offlineCheckAt_ = SDL_GetTicks();
-      ++retries_;
-      refresh();
-    }
+    // Not connected: the card says why and waits for 다시 시도 (or -). Tries
+    // made on their own put the skeleton back each time, which only read as
+    // a load that never ended.
     return;
   }
   takeNetwork();
@@ -1321,7 +1312,6 @@ void Application::takeNetwork() {
   if (screen_ == Screen::Detail)
     screen_ = previous_;
   // A 304 keeps the catalog already on screen.
-  retries_ = 0;
   if (!incomingCatalog_ && !groups_.empty()) {
     connected_ = true;
     serverAnsweredAt_ = SDL_GetTicks();
@@ -1776,7 +1766,7 @@ void Application::action(Action a) {
     return;
   }
   if (a == Action::Reload) {
-    retries_ = patchRetries_ = retroRetries_ = 0; // a refresh by hand earns the automatic tries again
+    patchRetries_ = retroRetries_ = 0; // a refresh by hand earns the automatic tries again
     pairSince_ = 0;
     menuKnown_ = false; // the menu waits for the answer, as at start
     reload();
