@@ -1,4 +1,5 @@
 #include "ui/Application.hpp"
+#include <chrono>
 #include "platform/Cores.hpp"
 #include <cstdlib>
 #include <filesystem>
@@ -119,12 +120,20 @@ void Application::installAppUpdate() {
       // A build put on the server while this one came down makes it differ
       // from what was asked: the newest is asked for and taken once more.
       for (int tries = 0; tries < 2 && !ok && !updateCancel_; ++tries) {
+        // How long each step took goes to the log: a download that seemed to
+        // stand still says whether it waited on the check, on a connection
+        // or partway through.
+        const auto since = [start = std::chrono::steady_clock::now()] {
+          return std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count()) + "ms";
+        };
         net::ClientUpdateReply reply;
         const auto fresh = net::latestClient(server, state, reply, &updateCancel_);
+        logLine("update: check " + (fresh ? "v" + fresh->version : std::string("failed")) + " after " + since());
         if (tries && (!fresh || fresh->sha256 == release.sha256)) break; // the same build: a real mismatch
         if (fresh) release = *fresh;
         updateReceived_ = 0;
         ok = net::installClient(server, state, release, target, updateReceived_, error, &updateCancel_);
+        if (!ok) logLine("update: stopped after " + since());
       }
     });
     if (!ok) logLine("update failed: " + error.message);
@@ -274,7 +283,7 @@ void Application::sendBugReport(const std::string &said) {
       const auto log = note + logTail(Limit - std::min<size_t>(note.size(), 8 * 1024) - crash.size()) + crash;
       ok = net::sendBugReport(server, state, log, error, &stop_);
     });
-    incomingBugStatus_ = ok ? std::string(tr("Sent. Thank you.")) : error.message;
+    incomingBugStatus_ = ok ? std::string(tr("Sent the bug report to the server.")) : error.message;
     bugDone_ = true;
   });
 }

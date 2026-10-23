@@ -1547,6 +1547,10 @@ void Application::action(Action a) {
     adminEditAction(a);
     return;
   }
+  if (serverInfo_) {
+    serverInfoAction(a);
+    return;
+  }
   if (resumeAsked()) {
     if (a == Action::Accept && settled()) {
       confirmResume_ = false;
@@ -2306,9 +2310,12 @@ float Application::statusBar() {
   // outranks the console's own check, which can read offline on a working
   // network; a link that dropped after that answer does not.
   const bool cut = (!connected_ || linkDropped()) && (signal_ < 0 || offline);
+  // Pressed: the servers' popup while connected, a try again when not.
+  const float linkLeft = x;
   paint_.icon(cut ? 20 : 39, x, Mid - 10, cut ? Bad : signal_ >= 0 && signal_ <= 1 ? Pending : Ink, 20);
   x += 30;
   x = paint_.fonts.middle(tr(status), x, Mid, 17, statusColor(status), true) + 30;
+  hit(linkLeft - 10, Mid - 22, x - 20 - linkLeft, 44, [this] { pressLinkState(); });
   const struct {
     int icon;
     std::optional<uint64_t> free, total;

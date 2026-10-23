@@ -277,7 +277,8 @@ bool fetchParallel(const std::string &url, const std::vector<std::string> &heade
   result.tooLong = tooLong;
   if (got.cancelled)
     result.response.error = tr("Cancelled");
-  logLine("parallel " + name + " did not finish: " + (got.cancelled ? std::string("cancelled") : got.error));
+  logLine("parallel " + name + " did not finish after " + std::to_string(counted) + " bytes: " +
+          (got.cancelled ? std::string("cancelled") : got.error));
   return false;
 }
 } // namespace

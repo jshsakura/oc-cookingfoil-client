@@ -89,6 +89,8 @@ public:
   // already written, going to the server the lists come from.
   void openBugReport(const std::string &note);
   bool bugReportOpen() const { return bugAsk_; }
+  bool serverInfoOpen() const { return serverInfo_; }
+  void pressLink() { pressLinkState(); } // tests: the footer's link state, pressed
   // The 설정 index of the server the report goes to; npos with none on.
   size_t bugReportServer() const {
     const auto on = reportServers();
@@ -1179,6 +1181,15 @@ private:
   std::string recentCrashReport(size_t room) const;
   void sendBugReport(const std::string &said);
   void bugReportDialog();
+  // The footer's link state pressed (ServerInfo.cpp): connected, the servers'
+  // popup; not, a try again.
+  const char *serverState(size_t i) const;
+  void pressLinkState();
+  void serverInfoAction(Action a);
+  void serverInfoDialog();
+  bool serverInfo_ = false;
+  int serverInfoRow_ = 0;
+  std::map<std::string, int> serverGames_; // games each server brings, counted as the popup opens
   std::vector<size_t> reportServers() const; // the servers a report can go to: the ones on, in 설정's order
   bool bugAsk_ = false, bugMessageField_ = false; // the report's popup, and its note being typed
   int bugServer_ = 0; // the row of reportServers() it goes to

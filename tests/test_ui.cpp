@@ -837,6 +837,10 @@ int runUiTests(SDL_Renderer *renderer) {
     down.take();
     for (int frame = 0; frame < 600; ++frame) { SDL_Delay(10); app.render(); } // past the 5s the old retry waited
     CHECK(down.take().empty() && !app.asking());
+    // The footer's link state, pressed, is the try again.
+    app.pressLink();
+    for (int frame = 0; frame < 800 && (app.asking() || app.reloading()); ++frame) { SDL_Delay(5); app.render(); }
+    CHECK(!down.take().empty() && !app.serverInfoOpen());
     std::filesystem::remove_all(downRoot);
   }
   char adminDirectory[] = "/tmp/cookingfoil-adminhb-XXXXXX";
@@ -896,6 +900,13 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(!admin.adminEditOpen());
     for (int frame = 0; frame < 400 && lists < 2; ++frame) { SDL_Delay(5); admin.render(); }
     CHECK(lists == 2);
+    // Connected, the footer's link state opens the servers' popup; B closes it.
+    for (int frame = 0; frame < 800 && (admin.asking() || admin.reloading()); ++frame) { SDL_Delay(5); admin.render(); }
+    admin.pressLink();
+    CHECK(admin.serverInfoOpen());
+    admin.render();
+    admin.action(foil::ui::Action::Back);
+    CHECK(!admin.serverInfoOpen());
     std::filesystem::remove_all(adminRoot);
   }
   char bugDirectory[] = "/tmp/cookingfoil-bug-XXXXXX";

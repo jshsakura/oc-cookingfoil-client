@@ -52,24 +52,8 @@ void Application::settings() {
     const auto &server = config_.servers[i];
     if (selected_ == i && !sidebar_) paint_.ring(Left, top, Width, ServerCard, 12);
     paint_.rect(Left, top, Width, ServerCard, Surface, 12);
-    const bool active = size_t(i) == serverIndex_ && connected_;
     paint_.fonts.middle(server.title, Inner + 27, mid, 21, Ink, true, 640);
-    const bool current = size_t(i) == serverIndex_ && session_;
-    const auto other = serverStatus_.find(server.url);
-    const bool read = other != serverStatus_.end() && !current;
-    const bool waiting = read && other->second == "pairing", same = read && other->second == "same"; // i18n: as is
-    // The Korean status is a key: statusColor() reads it, tr() draws it.
-    const char *status = !server.enabled                         ? "Off|kept" // i18n: keep
-                        : read && other->second.empty()         ? "Connected" // i18n: keep
-                        : waiting                               ? "Awaiting approval" // i18n: keep
-                        : same                                  ? "Same server" // i18n: keep
-                        : read                                  ? "Failed|connection" // i18n: keep
-                        : active                                ? "Connected" // i18n: keep
-                        : current && pairingPending_            ? "Awaiting approval" // i18n: keep
-                        : current && network_.joinable() && !detailRequest_ ? "Connecting" // i18n: keep
-                        : current && error_.message == net::offlineMessage() ? "No internet" // i18n: keep
-                        : current && error_                     ? "Failed|connection" // i18n: keep
-                                                                : "Not connected"; // i18n: keep
+    const char *status = serverState(size_t(i));
     const char *statusText = tr(status);
     paint_.fonts.middle(statusText, Right - paint_.fonts.measure(statusText, 17), mid, 17, statusColor(status));
     paint_.rect(Inner, mid - 6, 12, 12, statusColor(status), 6);
@@ -150,7 +134,7 @@ void Application::settings() {
   // The log's tail to the server, only when pressed: what went wrong reaches
   // whoever runs it.
   option(7, 33, tr("Send a bug report"),
-         bugWorker_.joinable() ? std::string(tr("Sending")) : std::string(tr("Sends the end of the app's log to your server")),
+         bugWorker_.joinable() ? std::string(tr("Sending")) : std::string(tr("Sends the end of the app's log to the connected server")),
          Secondary, false);
   // What the app leaves on the card: A shows how much each kind takes in a
   // popup and deletes the ones picked.
