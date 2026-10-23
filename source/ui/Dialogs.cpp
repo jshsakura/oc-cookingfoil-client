@@ -27,7 +27,9 @@ void Application::dialogHints(float right, float y, const std::string &close,
       action(key == "A" ? Action::Accept : key == "Y" ? Action::Queue : key == "X" ? Action::Search : Action::Back);
     }, {x - 8, y - 20, w + 16, 40}, 20);
     const bool strong = key == "Y" || (key == "A" && !accept.empty());
-    paint_.keyLabel(key, label, x, y, 18, strong ? Ink : Secondary, strong);
+    // The install past the firmware says so in orange, as its button does.
+    const bool forced = key == "A" && confirmInstall_ && forceInstall_;
+    paint_.keyLabel(key, label, x, y, 18, forced ? Pending : strong ? Ink : Secondary, strong);
     x += w + 22;
   }
 }
