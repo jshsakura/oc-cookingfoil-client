@@ -83,7 +83,13 @@ build-host/cookingfoil-host: $(HOST_APP_OBJ) $(SHARED_OBJ)
 	$(HOST_CXX) $^ -o $@ $(HOST_LIBS)
 build-host/unit-tests: $(TEST_OBJ) $(SHARED_OBJ)
 	$(HOST_CXX) $^ -o $@ $(HOST_LIBS)
-test: build-host/unit-tests
+build-host/switch-fs-tests: tests/switch_fs/test.cpp tests/switch_fs/switch.h source/platform/FileSystem.cpp include/platform/FileSystem.hpp source/core/Json.cpp include/core/Json.hpp
+	@mkdir -p build-host
+	$(HOST_CXX) -std=c++17 -Wall -Wextra -Wpedantic -D__SWITCH__ -Itests/switch_fs -Iinclude $(shell pkg-config --cflags json-c) -ffunction-sections -fdata-sections tests/switch_fs/test.cpp source/platform/FileSystem.cpp source/core/Json.cpp -Wl,--gc-sections -pthread -o $@
+.PHONY: test-switch-fs
+test-switch-fs: build-host/switch-fs-tests
+	./build-host/switch-fs-tests
+test: build-host/unit-tests test-switch-fs
 	SDL_VIDEODRIVER=dummy ./build-host/unit-tests
 clean:
 	rm -rf build build-host cookingfoil.nro cookingfoil.nacp cookingfoil.elf

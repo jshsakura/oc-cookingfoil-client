@@ -1,3 +1,4 @@
+#include "platform/FileSystem.hpp"
 #include <cerrno>
 #include "core/Log.hpp"
 #include "core/Patches.hpp"
@@ -260,7 +261,7 @@ bool TarWriter::fail(const std::string &message) {
     std::fclose(file_);
     file_ = nullptr;
     std::error_code ec;
-    fs::remove_all(writingPart(root_ + "/" + current_), ec); // the file it would have replaced stays
+    platform::removePath(writingPart(root_ + "/" + current_), ec); // the file it would have replaced stays
   }
   return false;
 }
@@ -271,7 +272,7 @@ void TarWriter::abandon() {
   }
   if (!current_.empty() && remaining_ > 0) {
     std::error_code ec;
-    fs::remove_all(writingPart(root_ + "/" + current_), ec);
+    platform::removePath(writingPart(root_ + "/" + current_), ec);
   }
   current_.clear();
 }
@@ -366,15 +367,15 @@ bool TarWriter::fileDone() {
   file_ = nullptr;
   std::error_code ec;
   if (!closed) {
-    fs::remove_all(part, ec);
+    platform::removePath(part, ec);
     return fail(tr("Could not write to the SD card. Check the free space."));
   }
   if (check_ && !check_(path, entrySize_, hash_.hex())) {
-    fs::remove_all(part, ec);
+    platform::removePath(part, ec);
     return fail(tr("The downloaded file does not match the server's. Try again."));
   }
   if (std::string reason; !replaceFile(part, root_ + "/" + path, reason)) {
-    fs::remove_all(part, ec);
+    platform::removePath(part, ec);
     logLine("tar: cannot put " + path + " in place: " + reason);
     return fail(trf("Could not write the file: {0}", {path}) + " (" + reason + ")");
   }
@@ -527,13 +528,11 @@ bool PatchStore::save(Error &error) {
 bool PatchStore::move(const std::string &from, const std::string &to, Error &error) {
   std::error_code ec;
   makeDirectories(std::filesystem::path(fs::path(to).parent_path()).string());
-  // Through the shared replace: on the card a rename over a name that is
-  // already there (a staging file an earlier try left) is refused, and the
-  // remove that clears it has to be the dance's own unlink.
+  // Shared replacement handles native files and directories separately.
   std::string why;
   if (!replaceFile(from, to, why)) {
     logLine("patch move " + fs::path(from).filename().string() + " -> " + fs::path(to).filename().string() + ": " + why);
-    error.message = tr("Could not move the patch files. Check the SD card.");
+    error.message = std::string(tr("Could not move the patch files. Check the SD card.")) + " (" + why + ")";
     return false;
   }
   return true;
@@ -648,7 +647,7 @@ bool PatchStore::load(Error &error) {
       const auto name = entry.path().filename().string();
       if (name.size() > 5 && name.compare(name.size() - 5, 5, ".part") == 0 &&
           !fs::is_regular_file(entry.path() / ResumeFile, ec))
-        fs::remove_all(entry.path(), ec);
+        platform::removePath(entry.path().string(), ec);
     }
   return true;
 }
@@ -1003,7 +1002,11 @@ bool PatchStore::remove(const std::string &id, Error &error) {
   if (!validId(id) || !disable(id, error))
     return false;
   std::error_code ec;
-  fs::remove_all(storeRoot_ + "/" + id, ec);
+  if (!platform::removePath(storeRoot_ + "/" + id, ec)) {
+    logLine("patch remove " + id + ": " + ec.message());
+    error.message = std::string(tr("Could not move the patch files. Check the SD card.")) + " (" + ec.message() + ")";
+    return false;
+  }
   records_.erase(id);
   return save(error);
 }
@@ -1072,7 +1075,6 @@ bool PatchStore::commit(const UserPatch &patch, Error &error) {
     if (!remove(patch.id, error))
       return false;
   }
-  fs::remove_all(storeRoot_ + "/" + patch.id, ec);
   if (!move(from, storeRoot_ + "/" + patch.id, error))
     return false;
   auto &fresh = records_[patch.id] = std::move(record);
