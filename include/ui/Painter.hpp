@@ -16,6 +16,10 @@ public:
             int radius = 0);
   void line(float x, float y, float xx, float yy, SDL_Color color,
             int width = 2);
+  // Diagonal stripes `period` apart inside a rounded rectangle already
+  // filled, kept off its curved corners.
+  void stripes(float x, float y, float w, float h, SDL_Color color,
+               int radius = 0, float period = 28);
   // Placeholder block that pulses while content loads.
   // A waiting place that breathes in the shades of what it sits on: light
   // greys on the page, dark ones on a dark backdrop (gallery, banners).

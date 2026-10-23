@@ -360,8 +360,9 @@ void Application::detail() {
     // Content the console cannot open: gray, and A says why; one a server
     // re-encrypts for this console offers to install it anyway.
     const bool past = !pickedUnreachable().empty(), blocked = past && rewrapServers().empty();
-    // Past the firmware it is butter like any install: its confirm warns.
+    // Past the firmware it is butter with stripes: its confirm warns.
     paint_.rect(840, 568, 386, 60, blocked ? Line : Butter, 14);
+    if (past && !blocked) paint_.stripes(840, 568, 386, 60, ButterStripe, 14);
     const auto install = blocked ? tr("Can't install|button") : past ? tr("Force install|button") : tr("Install|action");
     paint_.keyLabel("A", install, 840 + (386 - paint_.keyLabelWidth("A", install, 22, true)) / 2, 598, 22,
                     blocked ? Secondary : Ink, true);

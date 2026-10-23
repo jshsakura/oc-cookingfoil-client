@@ -7,6 +7,7 @@
 #include <iterator>
 #include <map>
 #include <string>
+#include <vector>
 namespace foil::ui {
 // A white top-left quarter circle of radius r whose edge pixels carry
 // their coverage as alpha (4x4 samples), tinted per draw.
@@ -112,6 +113,45 @@ void Painter::line(float x, float y, float xx, float yy, SDL_Color color,
                        std::lround(xx * sx - dy / length * offset),
                        std::lround(yy * sy + dx / length * offset));
   }
+  SDL_RenderSetScale(renderer, sx, sy);
+  if (clipped)
+    SDL_RenderSetClipRect(renderer, &clip);
+}
+void Painter::stripes(float x, float y, float w, float h, SDL_Color color,
+                      int radius, float period) {
+  float sx, sy;
+  SDL_RenderGetScale(renderer, &sx, &sy);
+  SDL_Rect clip;
+  const bool clipped = SDL_RenderIsClipEnabled(renderer);
+  SDL_RenderGetClipRect(renderer, &clip);
+  SDL_RenderSetScale(renderer, 1, 1);
+  if (clipped) {
+    SDL_Rect physical{int(clip.x * sx), int(clip.y * sy), int(clip.w * sx),
+                      int(clip.h * sy)};
+    SDL_RenderSetClipRect(renderer, &physical);
+  }
+  // Physical rows: each row's span stays inside the corners' curve, and a
+  // stripe is where column plus row falls in the second half of a period.
+  const int left = int(std::lround(x * sx)), top = int(std::lround(y * sy));
+  const int width = int(std::lround((x + w) * sx)) - left;
+  const int height = int(std::lround((y + h) * sy)) - top;
+  const float r = std::min({radius * sx, width / 2.f, height / 2.f});
+  const float step = std::max(4.f, period * sx), half = step / 2;
+  std::vector<SDL_Rect> bands;
+  for (int row = 0; row < height; ++row) {
+    const float centre = row + .5f;
+    const float dy = std::max({0.f, r - centre, centre - (height - r)});
+    const int inset = int(std::ceil(r - std::sqrt(std::max(0.f, r * r - dy * dy))));
+    const int from = inset, to = width - inset;
+    for (float start = std::floor((from + row) / step) * step + half - row; start < to; start += step) {
+      const int a = std::max(from, int(std::lround(start))), b = std::min(to, int(std::lround(start + half)));
+      if (b > a)
+        bands.push_back({left + a, top + row, b - a, 1});
+    }
+  }
+  SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+  if (!bands.empty())
+    SDL_RenderFillRects(renderer, bands.data(), int(bands.size()));
   SDL_RenderSetScale(renderer, sx, sy);
   if (clipped)
     SDL_RenderSetClipRect(renderer, &clip);
