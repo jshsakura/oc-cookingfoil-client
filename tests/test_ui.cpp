@@ -307,6 +307,25 @@ int runUiTests(SDL_Renderer *renderer) {
     app.action(foil::ui::Action::Back);
     CHECK(!app.confirmingInstall());
     CHECK(app.queuedPatches() == 0);
+    // Made for a newer master key than the console's: A says why, unless
+    // the server re-encrypts it, when the confirm offers to install anyway.
+    setenv("FOIL_FIRMWARE", "18.1.0", 1);
+    auto newer = withPatches;
+    newer.requiredFirmware = "20.0.0";
+    app.setDetail(newer);
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(!app.confirmingInstall() && !app.alert().empty());
+    app.action(foil::ui::Action::Back);
+    CHECK(app.alert().empty());
+    app.offerFeature("", "nca-rewrap");
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.forcingInstall() && app.alert().empty());
+    app.render();
+    app.action(foil::ui::Action::Back);
+    CHECK(!app.confirmingInstall() && !app.forcingInstall());
+    unsetenv("FOIL_FIRMWARE");
   }
   app.action(foil::ui::Action::Back);
   CHECK(app.current() == foil::ui::Screen::Library);

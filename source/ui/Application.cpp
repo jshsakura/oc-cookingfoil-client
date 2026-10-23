@@ -1630,8 +1630,10 @@ void Application::action(Action a) {
       confirmInstall_ = false;
       installSelected();
     }
-    if (a == Action::Back)
+    if (a == Action::Back) {
       confirmInstall_ = false;
+      forceInstall_ = false;
+    }
     return;
   }
   // The header's buttons: the d-pad moves along them, A presses one.
@@ -2480,7 +2482,9 @@ void Application::render() {
       using Hints = std::vector<std::pair<std::string, std::string>>;
       auto hints = descriptionFocus_ ? Hints{{"A", tr("Back to items")}, {"B", tr("Back")}}
                                        : Hints{{"A", onTheWay   ? tr("Cancel download")
-                                                     : onButton ? (pickedUnreachable().empty() ? tr("Install") : tr("See why"))
+                                                     : onButton ? (pickedUnreachable().empty() ? tr("Install")
+                                                                 : rewrapServers().empty() ? tr("See why")
+                                                                                           : tr("Force install"))
                                                      : onStorage ? tr("Choose this")
                                                      : part_ == 0 && selection_ && selection_->baseChoices() > 1 &&
                                                                selection_->parts().front().type == "base"
@@ -2674,6 +2678,15 @@ std::vector<Item> Application::pickedNeeds() const {
 std::string Application::pickedUnreachable() const {
   return install::unreachableFirmware(pickedNeeds(), platform::firmwareVersion());
 }
+std::vector<std::string> Application::rewrapServers() const {
+  std::vector<std::string> servers;
+  if (!selection_) return servers;
+  for (const auto &url : selection_->servers())
+    if (const auto f = serverFeatures_.find(url.empty() ? serverInUse() : url);
+        f != serverFeatures_.end() && f->second.count("nca-rewrap"))
+      servers.push_back(url);
+  return servers;
+}
 void Application::requestInstall() {
   if (!selection_ || detailGroup_ >= groups_.size())
     return;
@@ -2686,14 +2699,17 @@ void Application::requestInstall() {
     alert_ = tr("Turn on at least one item to install.");
     return;
   }
-  // Content for a newer master key than the console's: not tried at all.
-  if (const auto need = pickedUnreachable(); !need.empty()) {
+  // Content for a newer master key than the console's: not tried as it is.
+  // A server that re-encrypts it for this console's key offers it anyway.
+  const auto need = pickedUnreachable();
+  forceInstall_ = !need.empty() && !rewrapServers().empty();
+  if (!need.empty() && !forceInstall_) {
     alert_ = install::firmwareShortfall(need, platform::firmwareVersion());
     return;
   }
   confirmInstall_ = true;
   // From several servers it comes from the game's own unless picked.
-  const auto servers = selection_->servers();
+  const auto servers = forceInstall_ ? rewrapServers() : selection_->servers();
   if (std::find(servers.begin(), servers.end(), selection_->server) == servers.end())
     selection_->server = servers.empty() ? std::string() : servers.front();
 }
@@ -2795,7 +2811,11 @@ void Application::installSelected() {
   const auto &g = groups_[detailGroup_];
   // Patches alone (every file off) go in as one pick; with files they come
   // right after the game's files and go with them if the game fails.
-  const auto files = selection_->files();
+  auto files = selection_->files();
+  // Past the firmware: each file's server sends it re-encrypted for this
+  // console's own master key.
+  if (std::exchange(forceInstall_, false))
+    for (auto &file : files) file.url = install::rewrapUrl(file.url, platform::firmwareVersion());
   if (!files.empty()) {
     if (auto error = startInstall(files, g.representative.name, g.representative.icon, selection_->target,
                                   selection_->patchesOn())) {
@@ -3088,7 +3108,7 @@ std::vector<std::string> Application::groupServers(const Group &g) const {
   return servers;
 }
 void Application::stepInstallServer(int by) {
-  const auto servers = selection_->servers();
+  const auto servers = forceInstall_ ? rewrapServers() : selection_->servers();
   if (servers.size() < 2) return;
   const auto at = std::find(servers.begin(), servers.end(), selection_->server);
   const int now = at == servers.end() ? 0 : int(at - servers.begin()), count = int(servers.size());

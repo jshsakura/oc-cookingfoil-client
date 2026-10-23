@@ -129,6 +129,8 @@ public:
   std::string selectedName() const;
   void setDetail(net::Detail detail);
   bool confirmingInstall() const { return confirmInstall_; }
+  bool forcingInstall() const { return confirmInstall_ && forceInstall_; }
+  void offerFeature(const std::string &server, const std::string &feature) { serverFeatures_[server].insert(feature); }
   std::string detailId() const { return detailGroup_ < groups_.size() ? groups_[detailGroup_].id : ""; }
   // Patches picked with a game install that have not started yet.
   size_t queuedPatches() const { return patchQueue_.size(); }
@@ -1330,6 +1332,9 @@ private:
   // among them the console cannot reach (install::unreachableFirmware).
   std::vector<Item> pickedNeeds() const;
   std::string pickedUnreachable() const;
+  // Of the servers with every picked file, the ones that re-encrypt content
+  // for this console's older master key (feature nca-rewrap).
+  std::vector<std::string> rewrapServers() const;
   // A row: pressed, it darkens as itself (its own corners), only the part on screen.
   void rowHit(float x, float y, float w, float h, int radius, std::function<void()> run) {
     hit(x, y, w, h, std::move(run), {}, -radius);
@@ -1573,6 +1578,8 @@ private:
   bool confirmCancel_ = false, confirmExit_ = false, exitAfterCancel_ = false,
        exitRequested_ = false;
   bool searchRequested_ = false, confirmInstall_ = false;
+  // The confirm asks to install past the firmware: the server re-encrypts it.
+  bool forceInstall_ = false;
   void dialogHints(float right, float y, const std::string &close,
                    const std::string &apply = "", const std::string &accept = "", const std::string &remove = "");
   static inline const std::string NoAccept = "\x1f"; // `accept` for a popup A does nothing in

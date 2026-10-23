@@ -2,6 +2,7 @@
 #include "core/Json.hpp"
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <cstring>
@@ -23,7 +24,9 @@ std::string firmwareVersion() {
   return std::to_string(HOSVER_MAJOR(v)) + "." + std::to_string(HOSVER_MINOR(v)) + "." +
          std::to_string(HOSVER_MICRO(v));
 #else
-  return "";
+  // Off the console nothing blocks, unless a test or a preview names one.
+  const char *named = std::getenv("FOIL_FIRMWARE");
+  return named ? named : "";
 #endif
 }
 #ifndef __SWITCH__

@@ -60,6 +60,16 @@ int runInstallerTests() {
   CHECK(foil::install::missingFirmware({patch}, "19.0.0") == "19.0.1");
   CHECK(foil::install::unreachableFirmware({patch}, "19.0.0").empty());
   CHECK(foil::install::unreachableFirmware({newer}, "").empty()); // unknown console: never blocks
+  // Past the firmware: the file asks its server for the console's own key,
+  // and then counts as reachable.
+  auto forced = newer;
+  forced.url = foil::install::rewrapUrl("http://192.0.2.1/api/files/a.nsp", "18.1.0");
+  CHECK(forced.url == "http://192.0.2.1/api/files/a.nsp?rewrap=17");
+  CHECK(foil::install::rewrapUrl("http://192.0.2.1/f?t=1", "12.1.0") == "http://192.0.2.1/f?t=1&rewrap=11");
+  CHECK(foil::install::rewrapUrl(forced.url, "12.1.0") == forced.url); // asked once
+  CHECK(foil::install::rewrapped(forced.url) && !foil::install::rewrapped("http://192.0.2.1/rewrap=1"));
+  CHECK(foil::install::unreachableFirmware({forced}, "18.1.0").empty());
+  CHECK(foil::install::unreachableFirmware({forced, newer}, "18.1.0") == "19.0.0");
   foil::install::Installer installer;
   auto error = installer.start({item}, "Title", "", "sd", {}, {});
   CHECK(error);

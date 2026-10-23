@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <iterator>
 #include <limits>
 #include <stdexcept>
 namespace foil::install {
@@ -56,8 +57,18 @@ std::string firmwareShortfall(const std::string &need, const std::string &consol
              {console, need});
 }
 std::string unreachableFirmware(const std::vector<Item> &files, const std::string &console) {
-  const auto need = missingFirmware(files, console);
+  std::vector<Item> own;
+  std::copy_if(files.begin(), files.end(), std::back_inserter(own), [](const Item &f) { return !rewrapped(f.url); });
+  const auto need = missingFirmware(own, console);
   return !need.empty() && masterKeyOf(need) > masterKeyOf(console) ? need : "";
+}
+bool rewrapped(const std::string &url) {
+  const auto query = url.find('?');
+  return query != std::string::npos && (url.find("?rewrap=", query) == query || url.find("&rewrap=", query) != std::string::npos);
+}
+std::string rewrapUrl(const std::string &url, const std::string &console) {
+  if (rewrapped(url)) return url;
+  return url + (url.find('?') == std::string::npos ? "?" : "&") + "rewrap=" + std::to_string(masterKeyOf(console));
 }
 Error preflight(const std::vector<Item> &files,
                 std::optional<uint64_t> space) {

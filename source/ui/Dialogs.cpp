@@ -1,4 +1,6 @@
 #include "ui/Application.hpp"
+#include "install/Installer.hpp"
+#include "platform/Storage.hpp"
 #include <algorithm>
 namespace foil::ui {
 // Key hints ending at `right`, like the screen footer; each one is tappable.
@@ -323,12 +325,22 @@ void Application::dialogs() {
   } else if (confirmInstall_ && selection_ && detailGroup_ < groups_.size()) {
     const auto &g = groups_[detailGroup_];
     // More than one server has every file: a row to pick which sends them.
-    const auto servers = selection_->servers();
+    const auto servers = forceInstall_ ? rewrapServers() : selection_->servers();
     const bool pick = servers.size() > 1;
     constexpr float PickRow = 64;
-    const auto body = modal(700, 24 + 96 + 24 + (pick ? PickRow : 0), tr("Install this game?"), tr("Cancel"), "",
-                            tr("Install"), 4);
+    // Past the firmware: what the game needs, and that it may still not run.
+    const auto console = platform::firmwareVersion();
+    const std::string past =
+        forceInstall_
+            ? trf("This game needs firmware {1} or later, and the console has {0}. The server re-encrypts it for this console's keys, but the game may still not start.",
+                  {console, install::missingFirmware(pickedNeeds(), console)})
+            : std::string();
+    const float pastH = past.empty() ? 0 : paint_.fonts.lineCount(past, 18, 700 - 64, 4) * 18 * 1.3f + 20;
+    const auto body = modal(700, 24 + 96 + 24 + (pick ? PickRow : 0) + pastH,
+                            forceInstall_ ? tr("Install past the firmware?") : tr("Install this game?"), tr("Cancel"), "",
+                            forceInstall_ ? tr("Force install") : tr("Install"), 4);
     const float x = body.x + 32, y = body.y + 24;
+    if (!past.empty()) paint_.fonts.wrapped(past, x, y + 96 + 20 + (pick ? PickRow : 0), 18, Bad, body.w - 64, 4);
     cover(g.representative.icon, x, y, 96, false, g.representative.name);
     paint_.fonts.text(g.representative.name, x + 116, y + 4, 22, Ink, true, body.w - 180);
     paint_.fonts.text(trf("{0} items · {1}", {std::to_string(selection_->count()),
