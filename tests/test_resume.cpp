@@ -284,6 +284,16 @@ int runResumeTests() {
     CHECK(foil::atomicWrite(onCard + ".new", "next", ignored));
     CHECK(foil::replaceFile(onCard + ".new", onCard, ignored));
     CHECK(foil::readFile(onCard) == "next" && leftovers() == 0);
+    CHECK(!foil::replaceFile(onCard + ".missing", onCard, ignored));
+    CHECK(foil::readFile(onCard) == "next");
+    const auto split = root / "split", incoming = root / "incoming";
+    fs::create_directories(split);
+    fs::create_directories(incoming);
+    CHECK(foil::atomicWrite((split / "00").string(), "old", ignored));
+    CHECK(foil::atomicWrite((incoming / "00").string(), "new", ignored));
+    CHECK(foil::replaceFile(incoming.string(), split.string(), ignored));
+    CHECK(foil::readFile((split / "00").string()) == "new");
+    CHECK(!fs::exists(root / "split.old") && !fs::exists(incoming));
     fs::remove_all(root);
   }
   {

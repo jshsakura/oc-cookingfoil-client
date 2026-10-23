@@ -137,25 +137,21 @@ bool atomicWrite(const std::string& path, const std::string& contents, std::stri
 }
 bool replaceFile(const std::string& from, const std::string& to, std::string& error) {
     if (::rename(from.c_str(), to.c_str()) == 0) return true;
-    // The console's SD card refuses to rename over an existing file
-    // (EEXIST). Move the old file aside, rename, then drop the old one, so a
-    // power cut leaves either file readable rather than neither. A file of
-    // 4 GB or more is a folder there: removed as one.
-    const std::string old = to + ".old";
+    if (errno != EEXIST && errno != ENOTEMPTY) {
+        error = std::strerror(errno);
+        return false;
+    }
+    // The console refuses rename over an existing file; split files are folders.
     std::error_code ec;
-    std::filesystem::remove_all(old, ec);
-    // Which step failed and on what: a card that refuses one says so in the log.
-    const auto name = [](const std::string& path) { return std::filesystem::path(path).filename().string(); };
-    if (::rename(to.c_str(), old.c_str()) != 0) {
-        error = "moving " + name(to) + " aside: " + std::strerror(errno) + (ec ? " (" + name(old) + " stays: " + ec.message() + ")" : "");
+    std::filesystem::remove_all(to, ec);
+    if (ec) {
+        error = "removing " + std::filesystem::path(to).filename().string() + ": " + ec.message();
         return false;
     }
     if (::rename(from.c_str(), to.c_str()) != 0) {
-        error = "putting " + name(to) + " in place: " + std::strerror(errno);
-        ::rename(old.c_str(), to.c_str()); // the old file stays in its place
+        error = "putting " + std::filesystem::path(to).filename().string() + " in place: " + std::strerror(errno);
         return false;
     }
-    std::filesystem::remove_all(old, ec);
     return true;
 }
 static std::string absoluteUrl(const std::string& value, const std::string& base) {
