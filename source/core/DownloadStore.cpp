@@ -601,8 +601,7 @@ bool DownloadStore::open(const std::string &path, std::string &error) {
     // look, and a fresh one made so the app goes on.
     const std::string reason = error;
     const std::string aside = file + ".broken";
-    std::remove(aside.c_str());
-    if (std::rename(file.c_str(), aside.c_str()) != 0) {
+    if (!replaceFile(file, aside, error)) {
       error = reason + "; cannot set it aside";
       return false;
     }

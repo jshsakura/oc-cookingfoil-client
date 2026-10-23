@@ -527,20 +527,16 @@ bool PatchStore::save(Error &error) {
 bool PatchStore::move(const std::string &from, const std::string &to, Error &error) {
   std::error_code ec;
   makeDirectories(std::filesystem::path(fs::path(to).parent_path()).string());
-  // The card can refuse a rename for a moment under load (its directory
-  // entries catch up late, the same as the saves' dance); a refusal goes a
-  // few rounds, each said, before the move is called failed.
-  for (int again = 0;; ++again) {
-    ec.clear();
-    fs::rename(from, to, ec);
-    if (!ec) return true;
-    logLine("patch move " + fs::path(from).filename().string() + " -> " + fs::path(to).filename().string() +
-            ": " + ec.message());
-    if (again >= 19 || ec == std::errc::no_such_file_or_directory) break;
-    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+  // Through the shared replace: on the card a rename over a name that is
+  // already there (a staging file an earlier try left) is refused, and the
+  // remove that clears it has to be the dance's own unlink.
+  std::string why;
+  if (!replaceFile(from, to, why)) {
+    logLine("patch move " + fs::path(from).filename().string() + " -> " + fs::path(to).filename().string() + ": " + why);
+    error.message = tr("Could not move the patch files. Check the SD card.");
+    return false;
   }
-  error.message = tr("Could not move the patch files. Check the SD card.");
-  return false;
+  return true;
 }
 void PatchStore::prune(const std::string &path) const {
   std::error_code ec;
