@@ -34,6 +34,20 @@ static void settle(foil::ui::Application &app) {
 int runUiTests(SDL_Renderer *renderer) {
   int failures = 0;
   {
+    // 펌웨어 버전 무시 설치 in every language: the full name heads the
+    // confirm, and the install button (386 wide) keeps a margin; a language
+    // whose name does not fit there says Force install instead.
+    foil::ui::Painter painter(renderer);
+    CHECK(painter.fonts.open());
+    const auto before = foil::language();
+    for (int n = 0; n < foil::LanguageCount; ++n) {
+      foil::setLanguage(foil::Language(n));
+      CHECK(painter.fonts.measure(foil::tr("Install ignoring firmware version"), 22, true) <= 700 - 64 - 34);
+      CHECK(painter.keyLabelWidth("A", foil::tr("Force install|button"), 22, true) <= 386 - 32);
+    }
+    foil::setLanguage(before);
+  }
+  {
     // The picture cache folder keeps the newest files under three quarters
     // of the limit once over it, and leaves other files alone.
     const auto folder = std::filesystem::temp_directory_path() / "cookingfoil-trim-test";

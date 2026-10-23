@@ -68,7 +68,7 @@ bool rewrapped(const std::string &url) {
 }
 std::string rewrapUrl(const std::string &url, const std::string &console) {
   if (rewrapped(url)) return url;
-  return url + (url.find('?') == std::string::npos ? "?" : "&") + "rewrap=" + std::to_string(masterKeyOf(console));
+  return url + (url.find('?') == std::string::npos ? "?" : "&") + "rewrap=" + console;
 }
 Error preflight(const std::vector<Item> &files,
                 std::optional<uint64_t> space) {

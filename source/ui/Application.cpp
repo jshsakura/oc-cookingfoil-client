@@ -2484,7 +2484,7 @@ void Application::render() {
                                        : Hints{{"A", onTheWay   ? tr("Cancel download")
                                                      : onButton ? (pickedUnreachable().empty() ? tr("Install")
                                                                  : rewrapServers().empty() ? tr("See why")
-                                                                                           : tr("Force install"))
+                                                                                           : tr("Force install|button"))
                                                      : onStorage ? tr("Choose this")
                                                      : part_ == 0 && selection_ && selection_->baseChoices() > 1 &&
                                                                selection_->parts().front().type == "base"

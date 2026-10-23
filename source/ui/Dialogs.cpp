@@ -338,8 +338,8 @@ void Application::dialogs() {
             : std::string();
     const float pastH = past.empty() ? 0 : paint_.fonts.lineCount(past, 18, 700 - 64, 5) * 18 * 1.3f + 20;
     const auto body = modal(700, 24 + 96 + 24 + (pick ? PickRow : 0) + pastH,
-                            forceInstall_ ? tr("Install past the firmware?") : tr("Install this game?"), tr("Cancel"), "",
-                            forceInstall_ ? tr("Force install") : tr("Install"), 4);
+                            forceInstall_ ? tr("Install ignoring firmware version") : tr("Install this game?"), tr("Cancel"), "",
+                            forceInstall_ ? tr("Force install|button") : tr("Install"), 4);
     const float x = body.x + 32, y = body.y + 24;
     if (!past.empty()) paint_.fonts.wrapped(past, x, y + 96 + 20 + (pick ? PickRow : 0), 18, Bad, body.w - 64, 5);
     cover(g.representative.icon, x, y, 96, false, g.representative.name);

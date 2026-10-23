@@ -39,8 +39,9 @@ std::string firmwareShortfall(const std::string &need, const std::string &consol
 // firmware with the same key may still install and run).
 // A file the server re-encrypts (feature nca-rewrap) counts as reachable.
 std::string unreachableFirmware(const std::vector<Item> &files, const std::string &console);
-// A file's address asking its server to re-encrypt it for the console's own
-// master key (feature nca-rewrap): content for a newer key still installs.
+// A file's address asking its server to re-encrypt it for the console's
+// firmware ("rewrap=21.0.1", feature nca-rewrap): the server picks that
+// firmware's master key, so content for a newer key still installs.
 std::string rewrapUrl(const std::string &url, const std::string &console);
 bool rewrapped(const std::string &url);
 // The speed shown, calm enough to read: everything received since this
