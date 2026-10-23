@@ -79,6 +79,8 @@ int runInstallerTests() {
   // A server that cannot re-encrypt says why, at the top or under "error".
   CHECK(foil::install::rewrapRefusal(R"({"code":"rewrap.keysTooOld","message":"keys too old"})") == "keys too old");
   CHECK(foil::install::rewrapRefusal(R"({"error":{"code":"rewrap.noKeys","message":"no keys"}})") == "no keys");
+  // The server's own shape: the text in "error", the reason in "code".
+  CHECK(foil::install::rewrapRefusal(R"({"error":"서버 키가 낮습니다","code":"rewrap.keysTooOld"})") == "서버 키가 낮습니다");
   CHECK(!foil::install::rewrapRefusal("<html>").empty());
   foil::install::Installer installer;
   auto error = installer.start({item}, "Title", "", "sd", {}, {});

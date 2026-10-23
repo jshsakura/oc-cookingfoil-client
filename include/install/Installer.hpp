@@ -45,7 +45,8 @@ std::string unreachableFirmware(const std::vector<Item> &files, const std::strin
 std::string rewrapUrl(const std::string &url, const std::string &console);
 bool rewrapped(const std::string &url);
 // What a server that cannot re-encrypt a file (409, rewrap.*) says, in the
-// console's language ({"code","message"}, or under "error").
+// console's language: {"error": text, "code": "rewrap.keysTooOld"}; a
+// "message" at the top or inside an "error" object reads too.
 std::string rewrapRefusal(const std::string &body);
 // The newest keyFirmware among the files ("" when none says).
 std::string keyFirmwareOf(const std::vector<Item> &files);
