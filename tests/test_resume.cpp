@@ -297,6 +297,10 @@ int runResumeTests() {
     CHECK(foil::replaceFile(incoming.string(), split.string(), ignored));
     CHECK(foil::readFile((split / "00").string()) == "new");
     CHECK(!fs::exists(root / "split.old") && !fs::exists(incoming));
+    CHECK(!foil::replaceFile((split / "00").string(), split.string(), ignored));
+    CHECK(foil::readFile((split / "00").string()) == "new");
+    CHECK(!foil::replaceFile(split.string(), split.string(), ignored));
+    CHECK(foil::readFile((split / "00").string()) == "new");
     fs::remove_all(root);
   }
   {
@@ -673,6 +677,11 @@ int runResumeTests() {
     patch.hash = "abc123";
     patch.size = data.size();
     const auto dir = (root / "p1.part").string();
+    // An interrupted attempt without a usable resume record leaves more
+    // than .part files. Starting over must clear the entire staging tree.
+    std::string stagingError;
+    CHECK(foil::atomicWrite(dir + "/nested/unrelated.old", "stale", stagingError));
+    CHECK(foil::atomicWrite(dir + "/.resume.old", "invalid", stagingError));
     std::atomic<uint64_t> received{0};
     foil::Error error;
     CHECK(session.downloadPatch(patch, dir, received, error));
@@ -681,6 +690,7 @@ int runResumeTests() {
     for (const auto &f : files)
       CHECK(foil::readFile(dir + "/" + f.path) == f.body);
     CHECK(!fs::exists(dir + "/" + foil::ResumeFile) && received == data.size());
+    CHECK(!fs::exists(dir + "/nested") && !fs::exists(dir + "/.resume.old"));
 
     Mock later;
     later.body = data;

@@ -2,15 +2,14 @@
 #include "core/Json.hpp"
 #include "core/I18n.hpp"
 #include "core/Log.hpp"
+#include "platform/FileSystem.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
-#include <chrono>
 #include <mutex>
-#include <thread>
 #include <fcntl.h>
 #include <unistd.h>
 namespace foil {
@@ -88,7 +87,7 @@ bool systemJunk(const std::string& name) {
 }
 std::string readFile(const std::string& path) {
     std::ifstream input(path, std::ios::binary);
-    // atomicWrite leaves "<path>.old" if power went out mid-replace.
+    // Recover a backup left by versions that used .old replacements.
     if (!input) input.open(path + ".old", std::ios::binary);
     if (!input) return {};
     input.seekg(0, std::ios::end);
@@ -131,75 +130,37 @@ std::mutex &saveStripe(const std::string& path) {
 // rename() under the card's rule (nothing over an existing file), for a
 // caller that already holds the file's stripe.
 bool replaceHeld(const std::string& from, const std::string& to, std::string& error) {
-    // A name on the card can outlive its own remove: the remove the library
-    // does for remove_all says success without taking the name off (the
-    // probe saw the file still opening after twenty rounds of it), while a
-    // plain unlink takes it off for real. So a regular file goes through
-    // unlink and the dance breathes between rounds; split files are folders
-    // and keep remove_all.
-    constexpr int rounds = 20;
-    constexpr auto breath = std::chrono::milliseconds(250);
-    const auto drop = [&to](std::string &why) {
-        std::error_code ec;
-        if (std::filesystem::is_directory(std::filesystem::symlink_status(to, ec))) {
-            std::filesystem::remove_all(to, ec);
-            if (ec) { why = ec.message(); return false; }
-            return true;
-        }
-        if (::unlink(to.c_str()) != 0 && errno != ENOENT) { why = std::strerror(errno); return false; }
-        return true;
-    };
-    for (int round = 0;; ++round) {
-        if (::rename(from.c_str(), to.c_str()) == 0) return true;
-        const int reason = errno;
-        if (reason != EEXIST && reason != ENOTEMPTY) {
-            error = std::strerror(reason);
-            return false;
-        }
-        // The console refuses rename over an existing file.
-        std::string why;
-        if (!drop(why)) {
-            error = "removing " + std::filesystem::path(to).filename().string() + ": " + why;
-            return false;
-        }
-        if (round == rounds) {
-            error = "putting " + std::filesystem::path(to).filename().string() + " in place: " + std::strerror(reason);
-            return false;
-        }
-        std::this_thread::sleep_for(breath);
+    error.clear();
+    const auto source = std::filesystem::path(from).lexically_normal();
+    const auto target = std::filesystem::path(to).lexically_normal();
+    // Never remove an ancestor containing the incoming file or directory.
+    const auto relative = source.lexically_relative(target);
+    if (source == target || (!relative.empty() && *relative.begin() != "..")) {
+        error = "overlapping replacement paths";
+        return false;
     }
-}
-// The card's own words for a name that would not go: what the filesystem
-// says about it right then, so a report tells which of the cases it was.
-std::string probeName(const std::string &to) {
-    struct stat st {};
-    std::string out = ::stat(to.c_str(), &st) == 0 ? (S_ISDIR(st.st_mode) ? "a folder" : "a file") : "gone";
-    if (FILE *f = std::fopen(to.c_str(), "rb")) { std::fclose(f); out += ", opens"; }
-    else out += std::string(", no open: ") + std::strerror(errno);
-    if (::unlink(to.c_str()) == 0) out += ", unlink now works";
-    else out += std::string(", unlink: ") + std::strerror(errno);
-    return out;
-}
-// The bytes straight into the target: the last way in when the card will
-// not give the name up for a rename. Not atomic (a cut leaves the file
-// short); it runs only after the rename dance has failed outright, where
-// the old bytes were not reachable anyway.
-bool writeWhole(const std::string &path, const std::string &contents, std::string &error) {
-    const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd < 0) { error = std::strerror(errno); return false; }
-    size_t offset = 0;
-    while (offset < contents.size()) {
-        const auto written = ::write(fd, contents.data() + offset, contents.size() - offset);
-        if (written <= 0) { error = std::strerror(errno); ::close(fd); return false; }
-        offset += written;
+    std::error_code ec;
+    if (platform::renamePath(from, to, ec)) return true;
+    if (ec != std::errc::file_exists && ec != std::errc::directory_not_empty) {
+        error = "rename: " + ec.message();
+        return false;
     }
-    const bool flushed = ::fsync(fd) == 0;
-    const bool closed = ::close(fd) == 0;
-    if (!flushed || !closed) { error = std::strerror(errno); return false; }
+    // FS refuses replacement. Delete by entry type, verify the name is gone,
+    // then move once. A failure must not be hidden by truncating the target.
+    if (!platform::removePath(to, ec)) {
+        error = "removing " + std::filesystem::path(to).filename().string() + ": " + ec.message();
+        return false;
+    }
+    if (!platform::renamePath(from, to, ec)) {
+        error = "putting " + std::filesystem::path(to).filename().string() + " in place: " + ec.message();
+        return false;
+    }
+    error.clear();
     return true;
 }
 }
 bool atomicWrite(const std::string& path, const std::string& contents, std::string& error) {
+    error.clear();
     // One writer at a time: the temp keeps its plain name beside the target
     // (a save cut short is finished from it), so the writers queue here.
     const std::lock_guard<std::mutex> held(saveStripe(path));
@@ -221,19 +182,9 @@ bool atomicWrite(const std::string& path, const std::string& contents, std::stri
     const bool closed = ::close(fd) == 0;
     if (!flushed || !closed) { error = std::strerror(errno); ::unlink(temp.c_str()); return false; }
     if (!replaceHeld(temp, path, error)) {
-        // The card would not give the name up for a rename. The bytes go in
-        // anyway, straight through, and the trouble is said for the log.
-        const auto probe = probeName(path);
-        std::string fallen;
-        if (!writeWhole(path, contents, fallen)) {
-            error += "; in place: " + fallen;
-            ::unlink(temp.c_str());
-            return false;
-        }
-        logLine("save: " + std::filesystem::path(path).filename().string() +
-                " written in place; the card kept its name (" + probe + "): " + error);
+        logLine("save: " + std::filesystem::path(path).filename().string() + ": " + error);
         ::unlink(temp.c_str());
-        return true;
+        return false;
     }
     return true;
 }

@@ -1,3 +1,4 @@
+#include "platform/FileSystem.hpp"
 #include "net/Socket.hpp"
 #include "net/Api.hpp"
 #include "net/Segments.hpp"
@@ -17,6 +18,8 @@
 #include <cctype>
 #include <limits>
 #include <cstdio>
+#include <cstring>
+#include <cerrno>
 #include <filesystem>
 #include <cstdlib>
 #include <ctime>
@@ -1544,12 +1547,17 @@ bool Session::downloadPatch(const UserPatch& patch, const std::string& dir, std:
     const auto kept = parsePartInfo(readFile(record));
     const uint64_t from = samePart(kept, wanted) ? kept.offset : 0;
     std::error_code ec;
-    if (!from) std::filesystem::remove_all(dir, ec);
+    std::string prepareError;
     const auto fetch = rangedTar(url, downloadHeaders(server_, state_, url), from, from ? kept.etag : "",
-        [&](uint64_t at) {
-            std::error_code ignored;
-            if (!at) std::filesystem::remove_all(dir, ignored);
-            makeDirectories(dir);
+        [&](uint64_t at) -> std::unique_ptr<ArchiveWriter> {
+            if (!at && !platform::removePath(dir, ec)) {
+                prepareError = ec.message();
+                return {};
+            }
+            if (!makeDirectories(dir)) {
+                prepareError = std::strerror(errno);
+                return {};
+            }
             return std::make_unique<TarWriter>(dir, [&patch](const std::string& path) { return patchPathAllowed(patch, path); });
         },
         [&](uint64_t boundary, const std::string& etag) {
@@ -1564,16 +1572,26 @@ bool Session::downloadPatch(const UserPatch& patch, const std::string& dir, std:
     // starts that try over.
     const auto fail = [&](const std::string& message, bool keep) {
         std::error_code ignored;
-        if (!keep) std::filesystem::remove_all(dir, ignored);
+        if (!keep && !platform::removePath(dir, ignored))
+            logLine("patch cleanup: " + ignored.message());
         error.message = message;
         return false;
     };
+    if (!prepareError.empty()) {
+        logLine("patch prepare: " + prepareError);
+        error.message = std::string(tr("Could not move the patch files. Check the SD card.")) + " (" + prepareError + ")";
+        return false;
+    }
     if (!fetch.tarError.empty()) return fail(fetch.tarError, false);
     if (!fetch.response.error.empty()) return fail(fetch.response.error, true);
     if (!rangedOk(fetch.response))
         return fail(trf("Could not download the patch. HTTP {0}", {std::to_string(fetch.response.status)}), false);
     if (!fetch.complete) return fail(tr("The patch download was interrupted. Download it again."), false);
-    std::filesystem::remove(record, ec);
+    if (!platform::removePath(record, ec)) {
+        logLine("patch resume cleanup: " + ec.message());
+        error.message = std::string(tr("Could not move the patch files. Check the SD card.")) + " (" + ec.message() + ")";
+        return false;
+    }
     return true;
 }
 }

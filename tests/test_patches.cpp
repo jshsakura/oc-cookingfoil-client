@@ -178,7 +178,18 @@ static int runPatchLayerTests() {
     const auto stageOne = [&](const std::string &id, const std::string &body) {
       return stage(store, id, {{Stack, body}});
     };
+    // A failed earlier commit can leave an unrecorded installation tree.
+    // Replace it completely, including files absent from the new archive.
+    write(storeRoot + "/s1/old/nested.bin", "stale");
     CHECK(stageOne("s1", "one") && stageOne("s2", "two") && stageOne("s3", "three"));
+    CHECK(!fs::exists(storeRoot + "/s1/old"));
+    // A deletion error must keep the ledger entry for a later retry.
+    fs::rename(storeRoot, storeRoot + "-saved");
+    write(storeRoot, "not a directory");
+    CHECK(!store.remove("s1", error) && store.find("s1"));
+    fs::remove(storeRoot);
+    fs::rename(storeRoot + "-saved", storeRoot);
+    error = {};
     CHECK(store.enable("s1", error) && store.enable("s2", error) && store.enable("s3", error));
     CHECK(onCard() == "three" && inStore("s1") == "one" && inStore("s2") == "two");
     const auto over = store.conflicts("s1");

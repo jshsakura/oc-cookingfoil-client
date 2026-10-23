@@ -1,3 +1,4 @@
+#include "platform/FileSystem.hpp"
 // 설정 > 파일 정리: one popup for what the app leaves on the card. It shows
 // how much each kind takes (leftover install files, half-downloaded files,
 // the image cache) and deletes the ones picked, all on a worker thread.
@@ -83,7 +84,8 @@ void Application::deletePickedFiles() {
           if (pieces)
             for (const auto &[path, bytes] : list) {
               std::error_code ec;
-              if (std::filesystem::remove_all(path, ec) && !ec) freed.pieceBytes += bytes;
+              if (platform::removePath(path, ec)) freed.pieceBytes += bytes;
+              else logLine("download cleanup: " + ec.message());
             }
           if (cache) {
             const auto before = std::max<int64_t>(0, imageCacheTally());
