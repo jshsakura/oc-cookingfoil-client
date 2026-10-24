@@ -1129,6 +1129,7 @@ private:
     Parsed<CleanupReport> leftovers;
     std::vector<std::pair<std::string, uint64_t>> pieces;
     uint64_t pieceBytes = 0, cacheBytes = 0;
+    std::string pieceError;
   };
   void openFileCleanup();
   void deletePickedFiles();
