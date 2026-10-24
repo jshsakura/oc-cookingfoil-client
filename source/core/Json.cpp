@@ -161,6 +161,7 @@ bool replaceHeld(const std::string& from, const std::string& to, std::string& er
 }
 bool atomicWrite(const std::string& path, const std::string& contents, std::string& error) {
     error.clear();
+    if (path.empty()) { error = "empty save path"; return false; }
     // One writer at a time: the temp keeps its plain name beside the target
     // (a save cut short is finished from it), so the writers queue here.
     const std::lock_guard<std::mutex> held(saveStripe(path));
@@ -183,7 +184,8 @@ bool atomicWrite(const std::string& path, const std::string& contents, std::stri
     if (!flushed || !closed) { error = std::strerror(errno); ::unlink(temp.c_str()); return false; }
     if (!replaceHeld(temp, path, error)) {
         logLine("save: " + std::filesystem::path(path).filename().string() + ": " + error);
-        ::unlink(temp.c_str());
+        // Removal may have succeeded before the rename failed. Keep the
+        // fully flushed new copy available for retry or recovery.
         return false;
     }
     return true;

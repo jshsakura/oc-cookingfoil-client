@@ -1,3 +1,4 @@
+#include "platform/FileSystem.hpp"
 #include "ui/Application.hpp"
 #include "platform/Cores.hpp"
 #include "core/I18n.hpp"
@@ -562,7 +563,8 @@ void Application::startPatchGet(const UserPatch &patch, bool fresh) {
                 if (!session.downloadPatch(patch, store.staging(patch.id), *received, error))
                   return;
                 if (!store.commit(patch, error)) {
-                  std::filesystem::remove_all(store.staging(patch.id), ec);
+                  if (!platform::removePath(store.staging(patch.id), ec))
+                    logLine("patch cleanup: " + ec.message());
                   return;
                 }
                 if (!fresh) {
@@ -636,7 +638,8 @@ bool Application::startPatchReapply(const UserPatch &patch, bool onServer) {
         return;
       if (!store.commit(patch, error)) {
         std::error_code ec;
-        std::filesystem::remove_all(store.staging(patch.id), ec);
+        if (!platform::removePath(store.staging(patch.id), ec))
+          logLine("patch cleanup: " + ec.message());
         return;
       }
       left = 0;

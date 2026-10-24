@@ -1,3 +1,4 @@
+#include "platform/FileSystem.hpp"
 #include "core/ZipStream.hpp"
 #include "core/I18n.hpp"
 #include "core/Json.hpp"
@@ -113,7 +114,7 @@ bool ZipWriter::fail(const std::string &message) {
     std::fclose(file_);
     file_ = nullptr;
     std::error_code ec;
-    std::filesystem::remove_all(writingPart(root_ + "/" + jobs_[next_].path), ec); // the file it would replace stays
+    platform::removePath(writingPart(root_ + "/" + jobs_[next_].path), ec); // the file it would replace stays
   }
   return false;
 }
@@ -132,7 +133,7 @@ void ZipWriter::abandon() {
   }
   if (writing && next_ < jobs_.size()) {
     std::error_code ec;
-    std::filesystem::remove_all(writingPart(root_ + "/" + jobs_[next_].path), ec);
+    platform::removePath(writingPart(root_ + "/" + jobs_[next_].path), ec);
   }
 }
 bool ZipWriter::open() {
@@ -209,15 +210,15 @@ bool ZipWriter::close() {
   file_ = nullptr;
   std::error_code ec;
   if (!closed) {
-    std::filesystem::remove_all(part, ec);
+    platform::removePath(part, ec);
     return fail(tr("Could not write to the SD card. Check the free space."));
   }
   if ((inflater_ && !inflater_->ended) || produced_ != job.entry.size || crc_ != job.entry.crc) {
-    std::filesystem::remove_all(part, ec);
+    platform::removePath(part, ec);
     return fail(trf("The archive does not match the server's list: {0}", {job.path}));
   }
   if (std::string reason; !replaceFile(part, root_ + "/" + job.path, reason)) {
-    std::filesystem::remove_all(part, ec);
+    platform::removePath(part, ec);
     logLine("zip: cannot put " + job.path + " in place: " + reason);
     return fail(trf("Could not write the file: {0}", {job.path}) + " (" + reason + ")");
   }

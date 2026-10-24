@@ -1587,10 +1587,15 @@ bool Session::downloadPatch(const UserPatch& patch, const std::string& dir, std:
     if (!rangedOk(fetch.response))
         return fail(trf("Could not download the patch. HTTP {0}", {std::to_string(fetch.response.status)}), false);
     if (!fetch.complete) return fail(tr("The patch download was interrupted. Download it again."), false);
-    if (!platform::removePath(record, ec)) {
-        logLine("patch resume cleanup: " + ec.message());
-        error.message = std::string(tr("Could not move the patch files. Check the SD card.")) + " (" + ec.message() + ")";
-        return false;
+    // Legacy backups can have supplied the resume offset through readFile.
+    // Keep metadata out of the staged payload, and remove the live record
+    // last so a cleanup failure still leaves a usable resume point.
+    for (const auto &metadata : {record + ".old", record + ".tmp", record}) {
+        if (!platform::removePath(metadata, ec)) {
+            logLine("patch resume cleanup " + std::filesystem::path(metadata).filename().string() + ": " + ec.message());
+            error.message = std::string(tr("Could not move the patch files. Check the SD card.")) + " (" + ec.message() + ")";
+            return false;
+        }
     }
     return true;
 }

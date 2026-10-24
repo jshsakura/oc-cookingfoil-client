@@ -1,9 +1,11 @@
+#include "platform/FileSystem.hpp"
 // An app's patches and saves in 홈브류: the server lists them with the
 // game ones, naming the app's folder (switch/<app>) instead of a Title ID.
 #include "ui/Application.hpp"
 #include <cmath>
 #include "core/I18n.hpp"
 #include "core/Json.hpp"
+#include "core/Log.hpp"
 #include "net/ShopSavesApi.hpp"
 #include <algorithm>
 #include <ctime>
@@ -223,15 +225,13 @@ void Application::applyHomebrewSave(const shopsaves::ShopSave &save) {
                 const auto root = sd + "/switch/cookingfoil/homebrew-saves";
                 const auto staging = root + "/" + save.id + ".part";
                 std::error_code ec;
-                std::filesystem::remove_all(staging, ec);
-                makeDirectories(staging);
                 std::string failed;
                 if (!net::downloadShopSave(server, state, save, staging, patchReceived_, error, &stop_) ||
                     !shopsaves::placeFiles(staging, sd + "/" + save.installRoot,
                                            root + "/" + save.homebrewApp + "/" + std::to_string(std::time(nullptr)),
                                            failed)) {
                   if (!failed.empty()) error.message = failed;
-                  std::filesystem::remove_all(staging, ec);
+                  if (!platform::removePath(staging, ec)) logLine("save cleanup: " + ec.message());
                   return;
                 }
                 done = tr("Save applied. The app starts with it next time.");

@@ -8,15 +8,26 @@
 #include <cstring>
 #include <map>
 #include <vector>
+#include <filesystem>
+#include <fstream>
+#include <unistd.h>
+namespace foil { void logLine(const std::string &) {} } // logging is outside this FS test
 namespace {
 FsFileSystem sd{1}, other{2};
 std::map<std::string, FsDirEntryType> entries;
 std::vector<std::string> calls;
 Result deleteError = 0;
 bool pretendDelete = false;
+std::string physicalRoot;
+bool failFinalRename = false;
 }
 int fsdevTranslatePath(const char *path, FsFileSystem **fs, char *out) {
   const std::string name = path;
+  if (!physicalRoot.empty() && name.rfind(physicalRoot + "/", 0) == 0 && name.size() < FS_MAX_PATH) {
+    *fs = &sd;
+    std::strcpy(out, path);
+    return 0;
+  }
   const auto colon = name.find(':');
   if (colon == std::string::npos || name.size() - colon >= FS_MAX_PATH) {
     errno = EINVAL;
@@ -27,6 +38,11 @@ int fsdevTranslatePath(const char *path, FsFileSystem **fs, char *out) {
   return 0;
 }
 Result fsFsGetEntryType(FsFileSystem *, const char *path, FsDirEntryType *type) {
+  if (!physicalRoot.empty() && std::string(path).rfind(physicalRoot + "/", 0) == 0) {
+    if (!std::filesystem::exists(path)) return 0x202;
+    *type = std::filesystem::is_directory(path) ? FsDirEntryType_Dir : FsDirEntryType_File;
+    return 0;
+  }
   const auto it = entries.find(path);
   if (it == entries.end()) return 0x202;
   *type = it->second;
@@ -35,6 +51,8 @@ Result fsFsGetEntryType(FsFileSystem *, const char *path, FsDirEntryType *type) 
 Result fsFsDeleteFile(FsFileSystem *, const char *path) {
   calls.push_back("file " + std::string(path));
   if (deleteError) return deleteError;
+  if (!physicalRoot.empty() && std::string(path).rfind(physicalRoot + "/", 0) == 0)
+    return std::filesystem::remove(path) ? 0 : 0x202;
   if (!entries.count(path) || entries.at(path) != FsDirEntryType_File) return 0x202;
   if (!pretendDelete) entries.erase(path);
   return 0;
@@ -54,6 +72,13 @@ Result fsFsDeleteDirectoryRecursively(FsFileSystem *, const char *path) {
 }
 Result rename(const char *from, const char *to, FsDirEntryType type) {
   calls.push_back(std::string(type == FsDirEntryType_Dir ? "rename tree " : "rename file ") + from);
+  if (!physicalRoot.empty() && std::string(from).rfind(physicalRoot + "/", 0) == 0) {
+    if (!std::filesystem::exists(from)) return 0x202;
+    if (std::filesystem::exists(to)) return 0x402;
+    if (failFinalRename) return 0xE02;
+    std::filesystem::rename(from, to);
+    return 0;
+  }
   if (!entries.count(from) || entries.at(from) != type) return 0x202;
   if (entries.count(to)) return 0x402;
   entries[to] = entries.at(from);
@@ -125,6 +150,23 @@ int main() {
   entries["/folder/stale"] = FsDirEntryType_File;
   CHECK(foil::replaceFile("sdmc:/folder.part", "sdmc:/folder", error));
   CHECK(!entries.count("/folder/stale") && !entries.count("/folder.part") && entries.count("/folder"));
+  physicalRoot = (std::filesystem::temp_directory_path() / ("cf-fs-save-" + std::to_string(getpid()))).string();
+  std::filesystem::create_directories(physicalRoot);
+  const auto ledger = physicalRoot + "/ledger.json";
+  std::ofstream(ledger) << "old";
+  failFinalRename = true;
+  CHECK(!foil::atomicWrite(ledger, "complete new record", error));
+  CHECK(!std::filesystem::exists(ledger));
+  CHECK(foil::readFile(ledger + ".tmp") == "complete new record");
+  failFinalRename = false;
+  CHECK(foil::atomicWrite(ledger, "complete new record", error));
+  CHECK(foil::readFile(ledger) == "complete new record" && !std::filesystem::exists(ledger + ".tmp"));
+  const auto cwd = std::filesystem::current_path();
+  std::filesystem::current_path(physicalRoot);
+  CHECK(!foil::atomicWrite("", "no destination", error));
+  CHECK(!std::filesystem::exists(".tmp"));
+  std::filesystem::current_path(cwd);
+  std::filesystem::remove_all(physicalRoot);
   std::cout << "Switch FS service checks: " << failures << " failures\n";
   return failures ? 1 : 0;
 }

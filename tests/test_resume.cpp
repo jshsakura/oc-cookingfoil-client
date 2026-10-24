@@ -244,8 +244,45 @@ void setHostInstall(std::function<void(const Item &)> run);
 namespace foil::platform {
 void setHostSpace(uint64_t bytes);
 }
-int runResumeTests() {
+int runLegacyPatchResumeTests() {
   int failures = 0;
+  const auto root = fs::temp_directory_path() / ("cf-legacy-resume-" + std::to_string(getpid()));
+  fs::remove_all(root);
+  for (bool current : {false, true}) {
+    Mock server;
+    const std::vector<File> files{{inGame("a.bin"), "first"}, {inGame("b.bin"), "second"}};
+    server.body = archive(files);
+    server.start(1);
+    foil::Server shop;
+    shop.url = server.url;
+    foil::net::Session session(shop, foil::State{}, (root / "cookingfoil.db").string());
+    foil::UserPatch patch;
+    patch.id = current ? "both" : "old-only";
+    patch.titleId = Tid;
+    patch.hash = "legacy";
+    patch.size = server.body.size();
+    foil::PatchStore store((root / "sd").string(), (root / "store").string());
+    const auto dir = store.staging(patch.id);
+    std::string error;
+    CHECK(foil::atomicWrite(dir + "/" + files[0].path, files[0].body, error));
+    const foil::PartInfo saved{server.url + "/api/patches/" + patch.id + "/download",
+                              patch.hash, server.etag, patch.size, 1024, ""};
+    CHECK(foil::atomicWrite(dir + "/.resume.old", foil::serializePartInfo(saved), error));
+    if (current) CHECK(foil::atomicWrite(dir + "/.resume", foil::serializePartInfo(saved), error));
+    std::atomic<uint64_t> received{0};
+    foil::Error problem;
+    CHECK(session.downloadPatch(patch, dir, received, problem));
+    server.thread.join();
+    CHECK(server.requests.size() == 1 && rangeOf(server.requests[0]) == "1024-");
+    CHECK(!fs::exists(dir + "/.resume.old") && !fs::exists(dir + "/.resume"));
+    CHECK(store.commit(patch, problem));
+    CHECK(foil::readFile((root / "store" / patch.id / files[1].path).string()) == files[1].body);
+  }
+  fs::remove_all(root);
+  return failures;
+}
+int runResumeTests() {
+  int failures = runLegacyPatchResumeTests();
   using foil::RangeReply;
   {
     // An update over files already on the card: a file is replaced only once

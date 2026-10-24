@@ -1,4 +1,3 @@
-#include "platform/FileSystem.hpp"
 // 설정 > 파일 정리: one popup for what the app leaves on the card. It shows
 // how much each kind takes (leftover install files, half-downloaded files,
 // the image cache) and deletes the ones picked, all on a worker thread.
@@ -29,7 +28,7 @@ uint64_t Application::tidyBytes(int row) const {
 bool Application::tidyPicked(int row) const {
   if (!tidyOn_[row] || tidyBusy_) return false;
   if (row == 0) return tidyKnown_ && tidyLeftoversAllowed() && tidyBytes(0) > 0;
-  if (row == 1) return tidyKnown_ && tidyPiecesAllowed() && tidyBytes(1) > 0;
+  if (row == 1) return tidyKnown_ && tidyPiecesAllowed() && !tidyFound_.pieces.empty();
   return tidyBytes(2) > 0 && !imageCacheFolder().empty();
 }
 void Application::openFileCleanup() {
@@ -81,12 +80,12 @@ void Application::deletePickedFiles() {
             freed.leftovers = platform::cleanOrphans(true, &cleanupProgress_, [this](const std::string &key) {
               return installer_.resumePoint(key).has_value();
             });
-          if (pieces)
-            for (const auto &[path, bytes] : list) {
-              std::error_code ec;
-              if (platform::removePath(path, ec)) freed.pieceBytes += bytes;
-              else logLine("download cleanup: " + ec.message());
-            }
+          if (pieces) {
+            const auto removed = cleanDownloadPieces(list);
+            freed.pieceBytes = removed.bytes;
+            freed.pieceError = removed.error;
+            if (!removed.error.empty()) logLine("download cleanup: " + removed.error);
+          }
           if (cache) {
             const auto before = std::max<int64_t>(0, imageCacheTally());
             clearImageCache(folder);
@@ -119,6 +118,11 @@ void Application::pollFileCleanup() {
   if (done.leftovers.error) {
     alertTitle_ = tr("Could not clean up leftovers");
     alert_ = done.leftovers.error.message;
+    return;
+  }
+  if (!done.pieceError.empty()) {
+    alertTitle_ = tr("Could not clean up leftovers");
+    alert_ = std::string(tr("Cleanup failed. Check log.txt.")) + " (" + done.pieceError + ")";
     return;
   }
   message(trf("Cleanup finished. Freed {0}.", {formatBytes(freed)}));

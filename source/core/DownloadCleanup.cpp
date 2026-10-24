@@ -1,5 +1,6 @@
 #include "core/DownloadCleanup.hpp"
 #include "core/Resume.hpp"
+#include "platform/FileSystem.hpp"
 #include <filesystem>
 namespace foil {
 namespace {
@@ -42,5 +43,15 @@ std::vector<std::pair<std::string, uint64_t>> downloadPieces(const std::string &
     }
   }
   return out;
+}
+DownloadCleanupResult cleanDownloadPieces(const std::vector<std::pair<std::string, uint64_t>> &pieces) {
+  DownloadCleanupResult result;
+  for (const auto &[path, bytes] : pieces) {
+    std::error_code ec;
+    if (platform::removePath(path, ec)) result.bytes += bytes;
+    else if (result.error.empty())
+      result.error = std::filesystem::path(path).filename().string() + ": " + ec.message();
+  }
+  return result;
 }
 }

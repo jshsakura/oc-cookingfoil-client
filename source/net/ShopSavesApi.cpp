@@ -1,3 +1,6 @@
+#include "platform/FileSystem.hpp"
+#include <cerrno>
+#include <cstring>
 #include "net/ShopSavesApi.hpp"
 #include "core/I18n.hpp"
 #include "core/Json.hpp"
@@ -28,16 +31,27 @@ bool downloadShopSave(const Server &server, const State &state, const shopsaves:
   const auto allow = [&save](const std::string &path) {
     return save.homebrewApp.empty() ? shopsaves::pathAllowed(path) : shopsaves::homebrewPathAllowed(save, path);
   };
+  std::string prepareError;
   const auto fetch = rangedTar(save.url, downloadHeaders(server, state, save.url), 0, "",
-                               [&](uint64_t at) {
+                               [&](uint64_t at) -> std::unique_ptr<ArchiveWriter> {
                                  std::error_code ec;
                                  if (!at) {
-                                   std::filesystem::remove_all(dir, ec);
-                                   makeDirectories(dir);
+                                   if (!platform::removePath(dir, ec)) {
+                                     prepareError = ec.message();
+                                     return {};
+                                   }
+                                   if (!makeDirectories(dir)) {
+                                     prepareError = std::strerror(errno);
+                                     return {};
+                                   }
                                  }
                                  return std::make_unique<TarWriter>(dir, allow);
                                },
                                nullptr, received, cancel);
+  if (!prepareError.empty()) {
+    error.message = std::string(tr("Could not apply the save")) + " (" + prepareError + ")";
+    return false;
+  }
   if (!fetch.tarError.empty()) { error.message = fetch.tarError; return false; }
   if (!fetch.response.error.empty()) { error.message = fetch.response.error; return false; }
   if (!rangedOk(fetch.response)) {

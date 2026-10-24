@@ -1,3 +1,4 @@
+#include "platform/FileSystem.hpp"
 #include "core/ShopSaves.hpp"
 #include "core/Homebrew.hpp"
 #include "core/I18n.hpp"
@@ -107,7 +108,10 @@ bool placeFiles(const std::string &from, const std::string &to, const std::strin
     if (fs::exists(to + "/" + rel, ec) && !move(to + "/" + rel, keep + "/" + rel, rel)) return false;
     if (!move(from + "/" + rel, to + "/" + rel, rel)) return false;
   }
-  fs::remove_all(from, ec);
+  if (!platform::removePath(from, ec)) {
+    error = std::string(tr("Could not apply the save")) + " (" + ec.message() + ")";
+    return false;
+  }
   return true;
 }
 Error targetMismatch(const ShopSave &save, bool deviceTarget) {
