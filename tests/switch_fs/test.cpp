@@ -161,6 +161,11 @@ int main() {
   failFinalRename = false;
   CHECK(foil::atomicWrite(ledger, "complete new record", error));
   CHECK(foil::readFile(ledger) == "complete new record" && !std::filesystem::exists(ledger + ".tmp"));
+  const auto cwd = std::filesystem::current_path();
+  std::filesystem::current_path(physicalRoot);
+  CHECK(!foil::atomicWrite("", "no destination", error));
+  CHECK(!std::filesystem::exists(".tmp"));
+  std::filesystem::current_path(cwd);
   std::filesystem::remove_all(physicalRoot);
   std::cout << "Switch FS service checks: " << failures << " failures\n";
   return failures ? 1 : 0;
