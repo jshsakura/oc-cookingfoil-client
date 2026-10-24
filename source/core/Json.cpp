@@ -183,7 +183,8 @@ bool atomicWrite(const std::string& path, const std::string& contents, std::stri
     if (!flushed || !closed) { error = std::strerror(errno); ::unlink(temp.c_str()); return false; }
     if (!replaceHeld(temp, path, error)) {
         logLine("save: " + std::filesystem::path(path).filename().string() + ": " + error);
-        ::unlink(temp.c_str());
+        // Removal may have succeeded before the rename failed. Keep the
+        // fully flushed new copy available for retry or recovery.
         return false;
     }
     return true;
