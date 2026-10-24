@@ -81,6 +81,22 @@ the cue slipped a beat once SD reads came first. (note) Where: `Application.cpp:
 
 ## Files on the card
 
+**Recursive deletion goes through `platform::removePath`.** Switch's directory-open errors do
+not match the POSIX assumptions of `std::filesystem::remove_all`; a file can survive a reported
+successful removal, and client-side directory traversal can retain handles during deletion.
+The platform adapter dispatches by native entry type, deletes the tree through FS, and checks
+that the name is gone. Preparation errors must stop the operation; cleanup errors must be
+reported. Enforced by `tests/check_filesystem_policy.py` in `make test`.
+
+**Replacement failures retain a fully written temporary copy.** Removing a destination and
+renaming its replacement are separate operations on Switch. If the latter fails, deleting the
+temporary copy loses both versions. Native service fault tests cover that boundary, existing
+targets, missing sources, and a successful delete response with a surviving name.
+
+**Resume compatibility needs an end-to-end commit check.** Old `.resume.old` records may be
+read by the legacy fallback. On successful download, remove recognized resume metadata before
+patch payload validation; test both old-only records and old/current records together.
+
 **Whole small files go through `atomicWrite`.** It writes a temp file, syncs, renames, works
 around the card refusing to rename over a file, and skips the write when nothing changed.
 (code: 36 sites) (history: cc617d6) Where: `source/core/Json.cpp:117-146`.
