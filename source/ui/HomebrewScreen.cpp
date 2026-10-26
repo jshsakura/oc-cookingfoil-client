@@ -230,7 +230,8 @@ const homebrew::App &Application::homebrewAt(int index) const {
   return index < int(homebrew_.size()) ? homebrew_[index] : homebrewLocal_[index - homebrew_.size()];
 }
 // An app on the card shows the icon in its file there, as the HOME Menu
-// and other launchers do; the server's only for one not on the card.
+// and other launchers do; the server's when the file has none or the app
+// is not on the card.
 std::string Application::homebrewIcon(const homebrew::App &app) {
   const auto file = homebrewFile(app);
   const auto nro = std::find_if(homebrewCard_.begin(), homebrewCard_.end(),

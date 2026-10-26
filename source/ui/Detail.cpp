@@ -188,11 +188,8 @@ void Application::detail() {
     paint_.skeleton(0, 0, 1280, 212, 0, true);
   images_->draw(banner, 0, 0, 1280, 212, 0, true);
   // Back link names the screen it returns to, with room before the cover.
-  const auto back = screenLabel(previous_);
-  paint_.icon(7, 32, BackLine - 10, Surface, 20);
+  backLink(screenLabel(previous_));
   adminChip();
-  paint_.fonts.middle(back, 56, BackLine, 17, Surface);
-  hit(24, BackLine - 20, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
   cover(item.icon, 40, Top, 140, false, item.name, false, true);
   paint_.fonts.text(name, 208, Top + 4, 38, Surface, true, 1010);

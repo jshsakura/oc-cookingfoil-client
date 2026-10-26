@@ -52,8 +52,8 @@ std::vector<CardNro> scanCard(const std::string &sdRoot, const std::vector<int> 
 // it is straight under switch/ (switch/<fileName>); nullptr when none.
 const App *matchCard(const std::vector<App> &apps, const std::string &path);
 // The picture an app's tile shows: an app on the card shows the icon in its
-// file there (`cardKey`; empty when the file has none, and the tile draws
-// the name's initial), never the server's; one not on the card the server's.
+// file there (`cardKey`, empty when the file has none); without one, and for
+// an app not on the card, the server's. Neither: the tile draws the initial.
 std::string tileIcon(const App &app, bool onCard, const std::string &cardKey);
 // The image key of a card file's icon. The file's size and time are in it,
 // so a file written again (an update, a reinstall) shows its new icon in
