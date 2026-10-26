@@ -61,7 +61,7 @@ const std::string *textIn(const LanguageTexts &texts, const std::string &code);
 // The first of languageChain(code) the texts hold, or null.
 const std::string *nearestText(const LanguageTexts &texts, const std::string &code);
 // What a screen shows for `code`, or null for the server's own name: Korean
-// takes only Korean (the shop's name is Korean), the others nearestText.
+// takes only Korean (the server's name is Korean), the others nearestText.
 const std::string *displayText(const LanguageTexts &texts, const std::string &code);
 // The language's own name, as a picker shows it (한국어, English, 日本語, ...).
 const char *languageName(Language language);

@@ -16,18 +16,18 @@ int runDropboxRowsTests() {
                                                   installed(0x0100000000001000ULL, "0100000000001000", "amber Fields"),
                                                   installed(0x0100000000003000ULL, "0100000000003000", "Comet Run")};
   // Comet Run is installed and on Dropbox; two more are on Dropbox only,
-  // one the shop knows and one it does not; an empty folder lists nothing.
+  // one the server knows and one it does not; an empty folder lists nothing.
   const foil::net::DropboxRevisions remote = {
       {0x0100000000003000ULL, {{"20260311_090000", 1773219600, 10}}},
       {0x0100000000004000ULL, {{"20260312_090000", 1773306000, 20}, {"20260301_120000", 1772366400, 30}}},
       {0x0100000000005000ULL, {{"20260313_090000", 1773392400, 40}}},
       {0x0100000000006000ULL, {}}};
-  foil::Group shop;
-  shop.id = "0100000000004000";
-  shop.representative.name = "Bramble Keep";
-  shop.representative.icon = "http://fixture/bramble.png";
+  foil::Group listed;
+  listed.id = "0100000000004000";
+  listed.representative.name = "Bramble Keep";
+  listed.representative.icon = "http://fixture/bramble.png";
   const foil::ui::GroupLookup lookup = [&](const std::string &id) -> const foil::Group * {
-    return id == shop.id ? &shop : nullptr;
+    return id == listed.id ? &listed : nullptr;
   };
   const auto rows = foil::ui::dropboxRows(games, remote, lookup);
   // The union, each game once: three installed plus two on Dropbox only.

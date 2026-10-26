@@ -22,7 +22,7 @@
 #include "core/Retro.hpp"
 #include "core/DownloadHistory.hpp"
 #include "core/DownloadStore.hpp"
-#include "core/ShopSaves.hpp"
+#include "core/ServerSaves.hpp"
 #include "core/ClientUpdate.hpp"
 #include "core/Patches.hpp"
 #include "core/Votes.hpp"
@@ -53,7 +53,7 @@ constexpr SortMode SortOrders[] = {SortMode::Recent,  SortMode::Popular, SortMod
                                    SortMode::Largest, SortMode::Default};
 enum class Screen { Home, Library, Detail, Downloads, Updates, Settings, Installed, Patches, Retro, Saves, Homebrew, RetroDetail, RetroArch };
 // The menu, top to bottom; 설정 stays last (menuOpen() relies on it).
-// Browsing first (the shop, retro games), then this console's own (내 게임
+// Browsing first (the server, retro games), then this console's own (내 게임
 // with its updates and DLC as tabs, saves, patches), then downloads and
 // settings. 업데이트 is a tab of 내 게임 and shares its row; 홈브류 sits
 // right above 유저 패치.
@@ -197,7 +197,7 @@ public:
     noticeRollBack();
     considerSelfShortcut();
   }
-  // - on any screen: the shop, the console's games and free space again.
+  // - on any screen: the server, the console's games and free space again.
   void refreshAll();
   // The right stick pressed in: the list's first row, the view following.
   void scrollToTop();
@@ -320,7 +320,7 @@ public:
     return homebrewScanned_ && !homebrewCardWorker_.joinable();
   }
   // 홈브류 without a server: the menu item and this list.
-  // 패치's shop list in the preview, as the server would send it.
+  // 패치's library list in the preview, as the server would send it.
   void previewPatches(std::vector<UserPatch> patches) {
     serverPatches_ = std::move(patches);
     patchesLoaded_ = true;
@@ -382,7 +382,7 @@ public:
   uint64_t dropboxFocused() const { return dropboxCursor_; }
   bool confirmingRestore() const { return saveConfirm_ == SaveConfirm::Restore; }
   bool askingApply() const { return applyAsking_; }
-  void previewApplying(shopsaves::ShopSave save) { applying_ = std::move(save); }
+  void previewApplying(serversaves::ServerSave save) { applying_ = std::move(save); }
   int savesTab() const { return savesTab_; }
   const std::string &headerFocus() const { return headerFocus_; }
   bool onMenu() const { return sidebar_; }
@@ -448,7 +448,7 @@ public:
     std::string game, icon, installedVersion;
     int64_t installedNumber = -1; // the installed update's version number
     bool installed = false;
-    int shopGroup = -1; // the game in the shop's catalog, if it is there
+    int libraryGroup = -1; // the game in the server's catalog, if it is there
     // Files on the card no record of this app accounts for (scanCardPatches):
     // a patch of some kind is there, which one cannot be told. Shown only.
     bool onCard = false;
@@ -493,8 +493,8 @@ private:
   labels::Book labelBook_, retroLabelBook_;
   void shell();
   float statusBar();
-  // Before the shop approves this device only 홈 (the approval page) and
-  // 설정 open; the rest need the shop.
+  // Before the server approves this device only 홈 (the approval page) and
+  // 설정 open; the rest need the server.
   // 레트로 게임 and 홈브류 show only when the server has some.
   bool menuShown(int item) const {
     switch (MenuScreens[item]) {
@@ -506,7 +506,7 @@ private:
   bool menuOpen(int item) const {
     return menuShown(item) && (!pairingPending_ || item == 0 || item == MenuItems - 1);
   }
-  std::set<std::string> features_; // the server's /api/shop/info features
+  std::set<std::string> features_; // the server's /api/library/info features
   bool menuKnown_ = false;          // the server has answered once: menuShown() holds
   std::string thisDevice_; // oc-save-keeper's id for this console, read when a save panel opens
   // 홈브류: the server's apps beside what this console holds (the ledger).
@@ -570,13 +570,13 @@ private:
   void homebrewExtrasAction(Action a);
   void homebrewExtrasDialog();
   void homebrewSaveDialog();
-  void applyHomebrewSave(const shopsaves::ShopSave &save);
+  void applyHomebrewSave(const serversaves::ServerSave &save);
   // 패치 and 세이브 > 공유 name apps' patches and saves from 홈브류's list:
   // asks for it once when the server has 홈브류 and it is not here yet.
   void needHomebrewList();
   // The popup before an app's save from 공유 goes into switch/<app>/.
-  bool shopAppSaveAsk_ = false;
-  void appSaveConfirm(const shopsaves::ShopSave &save);
+  bool serverAppSaveAsk_ = false;
+  void appSaveConfirm(const serversaves::ServerSave &save);
   std::thread homebrewWorker_;
   std::atomic<bool> homebrewDone_{false};
   std::function<void()> homebrewFinish_;
@@ -827,7 +827,7 @@ private:
   std::map<std::string, int> shelfPage_;   // per system: the list pages taken so far
   std::set<std::string> shelfDone_;        // systems whose shelf holds all it can
   std::string shelfWant_;                  // asked while the list worker was busy
-  // A retro game's page (RetroDetail.cpp), as a shop game has one.
+  // A retro game's page (RetroDetail.cpp), as a library game has one.
   void openRetroDetail(const retro::Game &game);
   // RetroArch's own page (RetroArchPage.cpp): its state, and the button that
   // gets it or checks it for new files.
@@ -850,7 +850,7 @@ private:
   // The page's button: 2 while this game or a checked version downloads, 1
   // while one waits (`queueAt` its place in the queue), else 0.
   int retroPageOnTheWay(double &percent, int &queueAt) const;
-  // A page the menu gives way to: a game's, shop or retro.
+  // A page the menu gives way to: a game's, library or retro.
   bool fullPage() const {
     return screen_ == Screen::Detail || screen_ == Screen::RetroDetail || screen_ == Screen::RetroArch ||
            (screen_ == Screen::Homebrew && homebrewPageOpen());
@@ -986,18 +986,18 @@ private:
   void raListDialog();
   bool raModal() const { return raOpen_ || raListOpen_; }
   void retroArchConfirm(); // Y with RetroArch already there
-  // On the card from before the shop had its bezel: getting it again adds it.
+  // On the card from before the server had its bezel: getting it again adds it.
   bool retroBezelMissing(const retro::Game &game) const;
   bool retroArchPresent() const;
   // 세이브: the console's games, each opening its saves (SavesScreen.cpp).
   void savesScreen();
   void savesAction(Action action);
-  // 세이브's second tab: saves the shop offers, applied to an account.
-  void shopSavesList();
-  void loadShopSaves();
-  void pollShopSaves();
-  void chooseShopSave();
-  void applyShopSave();
+  // 세이브's second tab: saves the server offers, applied to an account.
+  void serverSavesList();
+  void loadServerSaves();
+  void pollServerSaves();
+  void chooseServerSave();
+  void applyServerSave();
   void applyConfirm();
   void saveNeedsGameDialog();
   void marquee(const std::string &text, float x, float y, int size, float width, bool bold = true);
@@ -1005,16 +1005,16 @@ private:
   std::map<std::string, std::pair<uint32_t, uint32_t>> marquees_;
   static constexpr int SavesTabs = 3;
   int savesTab_ = 0; // 0 the console's games, 1 the server's saves, 2 Dropbox
-  std::vector<shopsaves::ShopSave> shopSaves_, incomingShopSaves_;
-  std::vector<shopsaves::ShopSave> homebrewSaves_; // apps' saves, for the app's popup in 홈브류
+  std::vector<serversaves::ServerSave> serverSaves_, incomingServerSaves_;
+  std::vector<serversaves::ServerSave> homebrewSaves_; // apps' saves, for the app's popup in 홈브류
   // A server save's game or app: the name and icon 공유 shows, and whether
   // it is on this console (an app 홈브류 does not list counts as here).
-  std::string shopSaveTitle(const shopsaves::ShopSave &save) const;
-  std::string shopSaveIcon(const shopsaves::ShopSave &save) const;
-  bool shopSaveTargetHere(const shopsaves::ShopSave &save) const;
-  void sortShopSaves(); // games and apps here first, then by name, each one's saves together
-  bool shopSavesLoaded_ = false, shopSavesMissing_ = false, incomingShopSavesMissing_ = false;
-  Error shopSavesError_, incomingShopSavesError_;
+  std::string serverSaveTitle(const serversaves::ServerSave &save) const;
+  std::string serverSaveIcon(const serversaves::ServerSave &save) const;
+  bool serverSaveTargetHere(const serversaves::ServerSave &save) const;
+  void sortServerSaves(); // games and apps here first, then by name, each one's saves together
+  bool serverSavesLoaded_ = false, serverSavesMissing_ = false, incomingServerSavesMissing_ = false;
+  Error serverSavesError_, incomingServerSavesError_;
   // The app's records held by a write still going at start (a slow card):
   // the servers show at once and a worker reads them again until it can,
   // then reload goes on (stateWaiting_ meanwhile, from stateWaitAt_).
@@ -1024,20 +1024,20 @@ private:
   uint32_t stateWaitAt_ = 0;
   int statePrefer_ = -1;
   void waitForState(int prefer);
-  std::thread shopSavesWorker_;
-  std::atomic<bool> shopSavesDone_{false};
-  int shopSaveRow_ = 0;
+  std::thread serverSavesWorker_;
+  std::atomic<bool> serverSavesDone_{false};
+  int serverSaveRow_ = 0;
   bool savePicking_ = false; // the picker for a game with several server saves
-  int savePickRow_ = 0, shopSavePick_ = 0; // picker row; the save chosen (index into shopSaves_)
-  std::vector<std::pair<int, int>> shopSaveGroups() const;
-  void chooseShopGame();
+  int savePickRow_ = 0, serverSavePick_ = 0; // picker row; the save chosen (index into serverSaves_)
+  std::vector<std::pair<int, int>> serverSaveGroups() const;
+  void chooseLibraryGame();
   void savePickDialog();
   bool saveNeedsGame_ = false; // a server save picked whose game is not installed
   int saveGameGroup_ = -1;     // that game in the catalog, or -1
-  std::optional<shopsaves::ShopSave> applying_; // waiting for its account
+  std::optional<serversaves::ServerSave> applying_; // waiting for its account
   bool applyAsking_ = false, applyRunning_ = false;
   int applySave_ = -1;
-  // 세이브's third tab: link Dropbox through the shop's bridge (a QR code
+  // 세이브's third tab: link Dropbox through the server's bridge (a QR code
   // for the phone), then each game's backups go up to Dropbox or come down
   // into the console's backups, in oc-save-keeper's layout (DropboxScreen.cpp).
   void dropboxTab();
@@ -1104,7 +1104,7 @@ private:
   UserPatch patchQueueNow_; // the queued patch the worker has
   void gallery();
   int screenshotStrip(int y);
-  std::string shopAddress(const std::string &url, const std::string &server = "") const; // server: by url, empty the one in use
+  std::string fullAddress(const std::string &url, const std::string &server = "") const; // server: by url, empty the one in use
   float chipRow(const std::string &title, const std::vector<std::string> &labels, float y);
   std::string homebrewNotesOf_, homebrewNotes_; // the app whose notes homebrewNotes_ holds, as plain text
   std::string galleryName() const;
@@ -1524,7 +1524,7 @@ private:
   // groups_ by id, rebuilt with it: a title ID finds its game without a scan.
   std::unordered_map<std::string, size_t> groupIndex_;
   const Group *findGroup(const std::string &id) const;
-  // An installed game's cover: the console's own icon, else the shop's.
+  // An installed game's cover: the console's own icon, else the server's.
   std::string installedIcon(const InstalledGame &game);
   Screen screen_ = Screen::Home, previous_ = Screen::Home;
   bool sidebar_ = true, connected_ = false; // the cursor starts on the menu, on 홈
@@ -1545,7 +1545,7 @@ private:
   GenreNames genreNames_, scoreLabels_; // key -> name on screen
   net::NameTable genreTable_;            // fixtures only; a session has its own
   std::string heroBanner_; // admin banner for the hero, when featured has one
-  // Which of the shop's games are on the console, from the installed list.
+  // Which of the server's games are on the console, from the installed list.
   InstalledMask installedMaskNow() const;
   void rebuildHome();
   // Shows each game under its name in the interface language when the
@@ -1567,7 +1567,7 @@ private:
   // already read) or "failed". incoming* is the network thread's.
   std::map<std::string, std::string> serverStatus_, incomingStatus_;
   bool incomingCatalog_ = false; // the network thread brought a list (incomingGroups_)
-  // What each server read now offers (/api/shop/info features), by url.
+  // What each server read now offers (/api/library/info features), by url.
   std::map<std::string, std::set<std::string>> serverFeatures_;
   // The servers read now that offer `feature` (empty: all of them): the one
   // in use first, then the others in config.json's order.
@@ -2016,6 +2016,6 @@ private:
   bool draftOn(int index) const;
   int popupColumn_ = 0, popupRow_ = 0;
   void viewPopup();
-  SortMode librarySort_ = SortMode::Recent; // newest first, like a shop
+  SortMode librarySort_ = SortMode::Recent; // newest first
 };
 } // namespace foil::ui

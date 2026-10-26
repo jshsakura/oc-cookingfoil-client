@@ -85,7 +85,7 @@ void Application::loadHomebrew() {
         const auto *was = screen_ == Screen::Homebrew ? homebrewPicked() : nullptr;
         const auto keep = was ? was->id : std::string();
         homebrew_ = std::move(apps);
-        sortShopSaves(); // apps' saves in 공유 now sort by the app's name
+        sortServerSaves(); // apps' saves in 공유 now sort by the app's name
         matchHomebrewCard();
         // Its server shortcuts, asked about once the card was looked at.
         if (homebrewScanned_ && shortcutsUnasked()) scanHomebrewCard();
@@ -782,7 +782,7 @@ void Application::homebrewScreen() {
   // An app's patches and saves come from 유저 패치's and 세이브's lists.
   if (homebrewLoaded_ && connected_) {
     if (!patchesLoaded_ && !patchFetching_ && !patchError_) fetchPatches();
-    if (!shopSavesLoaded_ && !shopSavesWorker_.joinable()) loadShopSaves();
+    if (!serverSavesLoaded_ && !serverSavesWorker_.joinable()) loadServerSaves();
   }
   const auto rows = homebrewRows();
   int updates[3] = {0, 0, 0}; // 설치됨, 도구, 포트

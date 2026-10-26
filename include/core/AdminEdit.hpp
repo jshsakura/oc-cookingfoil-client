@@ -1,6 +1,6 @@
 #pragma once
 // 관리자 편집: what the server lets an admin console change about a homebrew
-// app, a retro game or a shop game (feature admin-edit). The server decides
+// app, a retro game or a library game (feature admin-edit). The server decides
 // the fields, their labels and their choices; the console only draws them and
 // sends a change back. Long text stays on the web dashboard.
 #include <map>

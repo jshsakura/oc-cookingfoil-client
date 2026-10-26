@@ -98,7 +98,7 @@ struct ListPage {
 };
 constexpr size_t MaxListEntries = 10000;
 Parsed<ListPage> parseListFolder(const std::string &json);
-// The shop's copy of save-keeper's bridge: server + /api/dropbox/v1/sessions/
+// The server's copy of save-keeper's bridge: server + /api/dropbox/v1/sessions/
 // start, or <id>/status and <id>/consume.
 std::string bridgeUrl(const std::string &server, const std::string &sessionId, const std::string &op);
 

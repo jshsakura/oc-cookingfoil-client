@@ -20,7 +20,7 @@ history::Entry entry(const std::string &name, history::Outcome outcome) {
   e.install.name = name;
   e.install.target = "sd";
   Item file;
-  file.url = "https://shop.example/f/" + name;
+  file.url = "https://server.example/f/" + name;
   file.name = name;
   file.size = 1000;
   e.install.files = {file};
@@ -160,7 +160,7 @@ int runStoreTests() {
       CHECK(back[0].install.name == "old" && back[0].bytes == (4ull << 30) && back[0].downloadSeconds == 120.5 &&
             back[0].installSeconds == 30 && back[0].startedAt == 50 && back[0].outcome == history::Outcome::Done);
       CHECK(back[2].install.name == "base" && back[2].group == 3 && back[2].outcome == history::Outcome::Queued);
-      CHECK(back[2].install.files.size() == 1 && back[2].install.files[0].url == "https://shop.example/f/base");
+      CHECK(back[2].install.files.size() == 1 && back[2].install.files[0].url == "https://server.example/f/base");
     }
     // A row that goes is deleted; a row that changes is written again.
     list.erase(list.begin());
@@ -169,7 +169,7 @@ int runStoreTests() {
     const auto again = store.load();
     CHECK(again.size() == 2 && again[0].outcome == history::Outcome::Cancelled);
     // Where a cut-off file stands, by its key, until it is forgotten.
-    DownloadStore::ResumePoint point{"https://shop.example/f/base", "\"etag-1\"", 1000, "0-500-1000"};
+    DownloadStore::ResumePoint point{"https://server.example/f/base", "\"etag-1\"", 1000, "0-500-1000"};
     CHECK(store.saveResumePoint("nca:abc", point));
     const auto read = store.resumePoint("nca:abc");
     CHECK(read && read->url == point.url && read->etag == point.etag && read->total == 1000 && read->plan == point.plan);
@@ -213,7 +213,7 @@ int runStoreTests() {
       sqlite3 *raw = nullptr;
       CHECK(sqlite3_open(path.c_str(), &raw) == SQLITE_OK);
       CHECK(sqlite3_exec(raw, "INSERT INTO resume_points(key, url, etag, total, plan, updated_at)"
-                              " VALUES('nca:old','https://shop.example/f/old','e',9,'0-9',1)",
+                              " VALUES('nca:old','https://server.example/f/old','e',9,'0-9',1)",
                          nullptr, nullptr, nullptr) == SQLITE_OK);
       sqlite3_close(raw);
       DownloadStore reopened;
@@ -309,7 +309,7 @@ int runStoreTests() {
       std::string error;
       CHECK(store.open(hot, error));
       CHECK(store.save(committed, error));
-      CHECK(store.saveResumePoint("nca:kept", {"https://shop.example/f/kept", "e", 9, "plan"}));
+      CHECK(store.saveResumePoint("nca:kept", {"https://server.example/f/kept", "e", 9, "plan"}));
     }
     // A write cut off part way leaves its temporary file (half written) and
     // perhaps an older build's journal: neither touches the file.
@@ -377,7 +377,7 @@ int runStoreTests() {
       DownloadStore store;
       std::string error;
       CHECK(store.open(big, error));
-      CHECK(store.saveResumePoint("nca:big", {"https://shop.example/f/big", "\"e\"", 1ull << 34, plan}));
+      CHECK(store.saveResumePoint("nca:big", {"https://server.example/f/big", "\"e\"", 1ull << 34, plan}));
       CHECK(store.saveResumePoint("nca:small", {"u", "", 1, "0-1"}));
     }
     DownloadStore store;

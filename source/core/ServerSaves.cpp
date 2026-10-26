@@ -1,5 +1,5 @@
 #include "platform/FileSystem.hpp"
-#include "core/ShopSaves.hpp"
+#include "core/ServerSaves.hpp"
 #include "core/Homebrew.hpp"
 #include "core/I18n.hpp"
 #include "core/SaveBackups.hpp"
@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <set>
 #include <filesystem>
-namespace foil::shopsaves {
+namespace foil::serversaves {
 namespace {
 std::string url(json_object *object, const char *key, const std::string &base) {
   const auto value = stringField(object, key);
@@ -19,15 +19,15 @@ bool hexId(const std::string &id) {
   return id.size() == 16 && id.find_first_not_of("0123456789ABCDEFabcdef") == std::string::npos;
 }
 } // namespace
-std::vector<ShopSave> parse(const std::string &json, const std::string &base) {
-  std::vector<ShopSave> out;
+std::vector<ServerSave> parse(const std::string &json, const std::string &base) {
+  std::vector<ServerSave> out;
   Error error;
   auto root = parseJson(json, error);
   auto *list = root ? field(root.get(), "saves") : nullptr;
   if (!json_object_is_type(list, json_type_array)) return out;
   for (size_t i = 0; i < json_object_array_length(list) && out.size() < 5000; ++i) {
     auto *object = json_object_array_get_idx(list, i);
-    ShopSave s;
+    ServerSave s;
     s.id = stringField(object, "id");
     s.titleId = stringField(object, "titleId");
     std::transform(s.titleId.begin(), s.titleId.end(), s.titleId.begin(), ::toupper);
@@ -83,7 +83,7 @@ bool pathAllowed(const std::string &path) {
     start = slash + 1;
   }
 }
-bool homebrewPathAllowed(const ShopSave &save, const std::string &path) {
+bool homebrewPathAllowed(const ServerSave &save, const std::string &path) {
   return !save.homebrewApp.empty() && save.installRoot == "switch/" + save.homebrewApp && pathAllowed(path) &&
          homebrew::insideApp(save.homebrewApp, save.installRoot + "/" + path);
 }
@@ -114,18 +114,18 @@ bool placeFiles(const std::string &from, const std::string &to, const std::strin
   }
   return true;
 }
-Error targetMismatch(const ShopSave &save, bool deviceTarget) {
+Error targetMismatch(const ServerSave &save, bool deviceTarget) {
   if (save.saveType.empty()) return {};
   return saves::kindMismatch(save.saveType == "device", deviceTarget);
 }
-std::string gameName(const ShopSave &save, const std::string &languageCode) {
+std::string gameName(const ServerSave &save, const std::string &languageCode) {
   if (const auto *own = displayText(save.gameNames, languageCode)) return *own;
   if (!save.gameName.empty()) return save.gameName;
   if (!save.gameNames.empty()) return save.gameNames.front().text;
   return save.titleId;
 }
-std::vector<ShopSave> mergeServers(std::vector<std::pair<std::string, std::vector<ShopSave>>> lists) {
-  std::vector<ShopSave> merged;
+std::vector<ServerSave> mergeServers(std::vector<std::pair<std::string, std::vector<ServerSave>>> lists) {
+  std::vector<ServerSave> merged;
   std::set<std::string> hashes;
   for (auto &[server, saves] : lists)
     for (auto &save : saves) {
@@ -134,4 +134,4 @@ std::vector<ShopSave> mergeServers(std::vector<std::pair<std::string, std::vecto
     }
   return merged;
 }
-} // namespace foil::shopsaves
+} // namespace foil::serversaves

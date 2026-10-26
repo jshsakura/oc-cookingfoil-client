@@ -31,12 +31,6 @@ std::string normalizeUrl(const std::string& input) {
     for (unsigned char c : url) if (c <= 32 || c == 127) return {};
     if (url.find("://") == std::string::npos) url = "https://" + url;
     while (!url.empty() && url.back() == '/') url.pop_back();
-    const auto lowered = lower(url);
-    for (const std::string suffix : {"/shop.tfl", "/shop.json"}) {
-        if (lowered.size() >= suffix.size() && lowered.compare(lowered.size() - suffix.size(), suffix.size(), suffix) == 0) {
-            url.resize(url.size() - suffix.size()); break;
-        }
-    }
     auto* handle = curl_url();
     if (!handle) return {};
     const bool parsed = curl_url_set(handle, CURLUPART_URL, url.c_str(), 0) == CURLUE_OK;

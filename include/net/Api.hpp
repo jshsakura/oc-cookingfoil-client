@@ -94,7 +94,7 @@ std::vector<Featured> parseFeatured(json_object* root);
 std::map<std::string, std::string> parseNames(const std::string& json, const char* table, const std::string& lang = "ko");
 // The same table for every language at once: key -> lang -> name.
 using NameTable = std::map<std::string, std::map<std::string, std::string>>;
-// The whole /api/shop/sections answer, read one game at a time.
+// The whole /api/library/sections answer, read one game at a time.
 struct Catalog {
     std::vector<Item> items;
     std::vector<Featured> featured;
@@ -173,7 +173,7 @@ std::string pairRequestBody(const std::string& deviceKey, const std::string& mes
 // The console's nickname (System Settings), sent as `label` when it asks a
 // server to take it; set once at start, before any session.
 void setConsoleName(std::string name);
-// /api/shop/info's "features": what this server offers beyond the catalog
+// /api/library/info's "features": what this server offers beyond the catalog
 // (retro, homebrew, ...). Empty for a reply without them.
 std::set<std::string> parseFeatures(const std::string& json);
 // Its client_strings.languages: every language the server's dictionary has,
@@ -209,7 +209,7 @@ public:
     const labels::Book &labels() const { return labels_; }
     const State& state() const { return state_; }
     const Server& server() const { return server_; }
-    // The server's own id (/api/shop/info server_id): two addresses of one
+    // The server's own id (/api/library/info server_id): two addresses of one
     // server give the same. Empty until it answers, or from a server without one.
     const std::string& serverId() const { return serverId_; }
     bool pairingPending() const { return pairingPending_; }

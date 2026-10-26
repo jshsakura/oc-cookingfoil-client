@@ -4,7 +4,7 @@
 #include "core/SaveBackups.hpp"
 #include "core/SaveArchive.hpp"
 #include "platform/Saves.hpp"
-#include "core/ShopSaves.hpp"
+#include "core/ServerSaves.hpp"
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -270,28 +270,28 @@ int runSaveBackupTests() {
     CHECK(foil::platform::restoreSave(job, missing));
     fsys::remove_all(sd);
   }
-  // Shop saves: the list, and one imported as a backup then restored.
+  // Server saves: the list, and one imported as a backup then restored.
   {
-    const auto list = foil::shopsaves::parse(R"({"saves":[
+    const auto list = foil::serversaves::parse(R"({"saves":[
       {"id":"0100152000022000-a1b2c3d4e5f6","titleId":"0100152000022000","name":"전 차종 언락","size":1024,
        "url":"/api/saves/0100152000022000-a1b2c3d4e5f6/download","game":{"name":"Mario Kart 8 Deluxe","names":{"ko":"마리오 카트 8 디럭스"}}},
       {"id":"bad/id","titleId":"0100152000022000","url":"/x"},
-      {"id":"x-1","titleId":"nothex","url":"/x"}]})", "https://shop.example");
+      {"id":"x-1","titleId":"nothex","url":"/x"}]})", "https://server.example");
     CHECK(list.size() == 1);
     if (!list.empty()) {
-      CHECK(list[0].url == "https://shop.example/api/saves/0100152000022000-a1b2c3d4e5f6/download");
-      CHECK(foil::shopsaves::gameName(list[0], "ko") == "마리오 카트 8 디럭스");
-      CHECK(foil::shopsaves::gameName(list[0], "en") == "Mario Kart 8 Deluxe");
+      CHECK(list[0].url == "https://server.example/api/saves/0100152000022000-a1b2c3d4e5f6/download");
+      CHECK(foil::serversaves::gameName(list[0], "ko") == "마리오 카트 8 디럭스");
+      CHECK(foil::serversaves::gameName(list[0], "en") == "Mario Kart 8 Deluxe");
       auto chained = list[0];
       chained.gameNames = {{"zh", "马力欧卡丁车8 豪华版"}};
-      CHECK(foil::shopsaves::gameName(chained, "zh-Hant") == "马力欧卡丁车8 豪华版");
+      CHECK(foil::serversaves::gameName(chained, "zh-Hant") == "马力欧卡丁车8 豪华版");
     }
-    CHECK(foil::shopsaves::pathAllowed("save/slot1.bin"));
-    CHECK(!foil::shopsaves::pathAllowed("../x"));
-    CHECK(!foil::shopsaves::pathAllowed("/abs"));
-    CHECK(!foil::shopsaves::pathAllowed("a//b"));
+    CHECK(foil::serversaves::pathAllowed("save/slot1.bin"));
+    CHECK(!foil::serversaves::pathAllowed("../x"));
+    CHECK(!foil::serversaves::pathAllowed("/abs"));
+    CHECK(!foil::serversaves::pathAllowed("a//b"));
 
-    const auto sd = scratch("shop");
+    const auto sd = scratch("server");
     foil::platform::SaveJob job;
     job.sd = sd;
     job.save.applicationId = Title;
@@ -303,9 +303,9 @@ int runSaveBackupTests() {
     auto imported = foil::platform::importBackup(job, [](const std::string &dir) {
       write(dir + "/progress.dat", "unlocked");
       return foil::Error{};
-    }, "shop");
+    }, "server");
     CHECK(!imported.error);
-    CHECK(imported.value.meta.source == "shop");
+    CHECK(imported.value.meta.source == "server");
     CHECK(!foil::platform::restoreSave(job, imported.value));
     CHECK(read(live + "/progress.dat") == "unlocked");
     // The player's own save was kept as the rollback copy.
@@ -317,33 +317,33 @@ int runSaveBackupTests() {
     auto failed = foil::platform::importBackup(job, [](const std::string &dir) {
       write(dir + "/part.bin", "x");
       return foil::Error{"cut off"};
-    }, "shop");
+    }, "server");
     CHECK(failed.error);
     CHECK(listBackups(keeperRoot(sd), Title).size() == 2);
     fsys::remove_all(sd);
   }
   // An app's save: no Title ID, files for switch/<app>/ on the SD card.
   {
-    const auto list = foil::shopsaves::parse(R"({"saves":[
+    const auto list = foil::serversaves::parse(R"({"saves":[
       {"id":"hb-sm64-1","titleId":null,"homebrew":"sm64","installRoot":"switch/sm64","name":"전 스테이지","url":"/api/saves/hb-sm64-1/download"},
       {"id":"hb-2","titleId":null,"homebrew":"sm64","installRoot":"switch/other","url":"/x"},
       {"id":"hb-3","titleId":null,"homebrew":"../x","installRoot":"switch/../x","url":"/x"},
       {"id":"hb-4","titleId":null,"homebrew":"sm64","url":"/x"},
-      {"id":"hb-5","titleId":null,"url":"/x"}]})", "https://shop.example");
+      {"id":"hb-5","titleId":null,"url":"/x"}]})", "https://server.example");
     CHECK(list.size() == 1);
     if (!list.empty()) {
       CHECK(list[0].titleId.empty() && list[0].homebrewApp == "sm64" && list[0].installRoot == "switch/sm64");
-      CHECK(foil::shopsaves::homebrewPathAllowed(list[0], "sm64_save_file.bin"));
-      CHECK(foil::shopsaves::homebrewPathAllowed(list[0], "saves/slot1.sav"));
-      CHECK(!foil::shopsaves::homebrewPathAllowed(list[0], "../other/a"));
-      CHECK(!foil::shopsaves::homebrewPathAllowed(list[0], "a/../../b"));
-      CHECK(!foil::shopsaves::homebrewPathAllowed(list[0], "/abs"));
-      CHECK(!foil::shopsaves::homebrewPathAllowed(list[0], ""));
+      CHECK(foil::serversaves::homebrewPathAllowed(list[0], "sm64_save_file.bin"));
+      CHECK(foil::serversaves::homebrewPathAllowed(list[0], "saves/slot1.sav"));
+      CHECK(!foil::serversaves::homebrewPathAllowed(list[0], "../other/a"));
+      CHECK(!foil::serversaves::homebrewPathAllowed(list[0], "a/../../b"));
+      CHECK(!foil::serversaves::homebrewPathAllowed(list[0], "/abs"));
+      CHECK(!foil::serversaves::homebrewPathAllowed(list[0], ""));
     }
     // A game save is never treated as an app's.
-    foil::shopsaves::ShopSave game;
+    foil::serversaves::ServerSave game;
     game.titleId = "0100152000022000";
-    CHECK(!foil::shopsaves::homebrewPathAllowed(game, "save.bin"));
+    CHECK(!foil::serversaves::homebrewPathAllowed(game, "save.bin"));
     // Unpacked files go into place; files they replace are kept aside first.
     const auto sd = scratch("hbsave");
     const auto staging = sd + "/staging", target = sd + "/switch/sm64", kept = sd + "/kept";
@@ -352,7 +352,7 @@ int runSaveBackupTests() {
     write(target + "/save.bin", "mine");
     write(target + "/sm64.nro", "app");
     std::string error;
-    CHECK(foil::shopsaves::placeFiles(staging, target, kept, error));
+    CHECK(foil::serversaves::placeFiles(staging, target, kept, error));
     CHECK(read(target + "/save.bin") == "unlocked" && read(target + "/saves/slot1.sav") == "slot");
     CHECK(read(kept + "/save.bin") == "mine" && !fsys::exists(kept + "/saves/slot1.sav"));
     CHECK(read(target + "/sm64.nro") == "app" && !fsys::exists(staging));
@@ -371,18 +371,18 @@ int runSaveBackupTests() {
     CHECK(!restoreMismatch(device, true) && restoreMismatch(device, false));
     CHECK(kindMismatch(true, false).message != kindMismatch(false, true).message);
     // A server save says which save it is for, or nothing and fits either.
-    const auto list = foil::shopsaves::parse(R"({"saves":[
+    const auto list = foil::serversaves::parse(R"({"saves":[
       {"id":"a","titleId":"0100ABCD00010000","url":"/a","saveType":"device"},
       {"id":"b","titleId":"0100ABCD00010000","url":"/b","saveType":"account"},
       {"id":"c","titleId":"0100ABCD00010000","url":"/c","saveType":"other"},
-      {"id":"d","titleId":"0100ABCD00010000","url":"/d"}]})", "https://shop.example");
+      {"id":"d","titleId":"0100ABCD00010000","url":"/d"}]})", "https://server.example");
     CHECK(list.size() == 4);
     if (list.size() == 4) {
       CHECK(list[0].saveType == "device" && list[1].saveType == "account");
       CHECK(list[2].saveType.empty() && list[3].saveType.empty());
-      CHECK(!foil::shopsaves::targetMismatch(list[0], true) && foil::shopsaves::targetMismatch(list[0], false));
-      CHECK(!foil::shopsaves::targetMismatch(list[1], false) && foil::shopsaves::targetMismatch(list[1], true));
-      CHECK(!foil::shopsaves::targetMismatch(list[3], true) && !foil::shopsaves::targetMismatch(list[3], false));
+      CHECK(!foil::serversaves::targetMismatch(list[0], true) && foil::serversaves::targetMismatch(list[0], false));
+      CHECK(!foil::serversaves::targetMismatch(list[1], false) && foil::serversaves::targetMismatch(list[1], true));
+      CHECK(!foil::serversaves::targetMismatch(list[3], true) && !foil::serversaves::targetMismatch(list[3], false));
     }
   }
   // The shared save: no account, user {0, 0}, its own fake-saves/<TID>/device
@@ -404,7 +404,7 @@ int runSaveBackupTests() {
     auto server = foil::platform::importBackup(shared, [](const std::string &dir) {
       write(dir + "/world.dat", "from server");
       return foil::Error{};
-    }, "shop");
+    }, "server");
     CHECK(!server.error);
     CHECK(server.value.meta.userId == "device" && deviceBackup(server.value));
     CHECK(!foil::platform::restoreSave(shared, server.value));

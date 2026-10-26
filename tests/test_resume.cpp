@@ -253,9 +253,9 @@ int runLegacyPatchResumeTests() {
     const std::vector<File> files{{inGame("a.bin"), "first"}, {inGame("b.bin"), "second"}};
     server.body = archive(files);
     server.start(1);
-    foil::Server shop;
-    shop.url = server.url;
-    foil::net::Session session(shop, foil::State{}, (root / "cookingfoil.db").string());
+    foil::Server upstream;
+    upstream.url = server.url;
+    foil::net::Session session(upstream, foil::State{}, (root / "cookingfoil.db").string());
     foil::UserPatch patch;
     patch.id = current ? "both" : "old-only";
     patch.titleId = Tid;
@@ -509,7 +509,7 @@ int runResumeTests() {
     int asked = 0;
     foil::net::setTokenRenewer(server.url, [&] {
       ++asked;
-      return foil::net::get(server.url + "/api/shop/info").status;
+      return foil::net::get(server.url + "/api/library/info").status;
     });
     const auto part = (root / "token.part").string();
     std::atomic<uint64_t> received{0};
@@ -705,9 +705,9 @@ int runResumeTests() {
     server.body = data;
     server.drop = [&](int index) { return index == 0 ? firstEnd + 512 + 3000 : std::string::npos; };
     server.start(2);
-    foil::Server shop;
-    shop.url = server.url;
-    foil::net::Session session(shop, foil::State{}, (root / "cookingfoil.db").string());
+    foil::Server upstream;
+    upstream.url = server.url;
+    foil::net::Session session(upstream, foil::State{}, (root / "cookingfoil.db").string());
     foil::UserPatch patch;
     patch.id = "p1";
     patch.titleId = Tid;
@@ -732,8 +732,8 @@ int runResumeTests() {
     Mock later;
     later.body = data;
     later.start(1);
-    shop.url = later.url;
-    foil::net::Session next(shop, foil::State{}, (root / "cookingfoil.db").string());
+    upstream.url = later.url;
+    foil::net::Session next(upstream, foil::State{}, (root / "cookingfoil.db").string());
     const auto second = (root / "p2.part").string();
     std::string ignored;
     foil::atomicWrite(second + "/" + files[0].path, files[0].body, ignored);

@@ -148,7 +148,7 @@ void heardHeader(const std::string &url, const char *data, size_t bytes) {
     return;
   }
   // How many connections the server takes from a console now; the next
-  // download opens that many (as /api/shop/info's download.maxConnections).
+  // download opens that many (as /api/library/info's download.maxConnections).
   if (key == "x-cookingfoil-max-connections") {
     const long most = std::strtol(trimmed().c_str(), nullptr, 10);
     if (most > 0 && most <= 64) recommendConnections(url, int(most));

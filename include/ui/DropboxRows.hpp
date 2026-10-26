@@ -23,7 +23,7 @@ struct DropboxRow {
 // Y on 드롭박스: what is on Dropbox, newest backup first or by name, or that
 // with this console's games added.
 enum class DropboxView { Latest, Name, WithConsole };
-// A title id to its shop game, or null when the catalog has none.
+// A title id to its library game, or null when the catalog has none.
 using GroupLookup = std::function<const Group *(const std::string &titleId)>;
 // Whether an installed game has a save or a backup to upload.
 using SaveLookup = std::function<bool(uint64_t applicationId)>;

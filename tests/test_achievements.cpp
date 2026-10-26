@@ -25,14 +25,14 @@ int runAchievementsTests() {
                    "earnedAt":1773219600,"badge":"/api/retro/achievements/badge/1.png","badgeLocked":"/api/retro/achievements/badge/1_lock.png"},
                   {"id":2,"title":"Second","points":10,"earned":false,"earnedAt":null,"badge":null},
                   {"id":3,"title":""}]})",
-      "https://shop.example");
+      "https://server.example");
   CHECK(game.summary.raGameId == 42 && !game.summary.byTitle && game.hasUser && game.username == "player");
   CHECK(game.earned == 1 && game.userPoints == 5);
   CHECK(game.list.size() == 2); // the untitled one is left out
   if (game.list.size() == 2) {
     CHECK(game.list[0].earned && game.list[0].earnedAt == 1773219600);
-    CHECK(game.list[0].badge == "https://shop.example/api/retro/achievements/badge/1.png");
-    CHECK(game.list[0].badgeLocked == "https://shop.example/api/retro/achievements/badge/1_lock.png");
+    CHECK(game.list[0].badge == "https://server.example/api/retro/achievements/badge/1.png");
+    CHECK(game.list[0].badgeLocked == "https://server.example/api/retro/achievements/badge/1_lock.png");
     CHECK(!game.list[1].earned && game.list[1].earnedAt == 0 && game.list[1].badge.empty());
   }
   CHECK(!a::parseGame(R"({"raGameId":1,"user":null,"list":[]})", "").hasUser);

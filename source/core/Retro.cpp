@@ -208,7 +208,7 @@ Detail parseDetail(const std::string &json, const std::string &base) {
       if (json_object_is_type(genre, json_type_string) && json_object_get_string_len(genre) > 0)
         m.genres.emplace_back(json_object_get_string(genre));
     }
-  // Shop paths and full addresses, as the game's other pictures.
+  // Server paths and full addresses, as the game's other pictures.
   m.screenshots = urlList(root.get(), "screenshots", base, 8);
   m.achievements = achievements::parseSummary(json);
   auto *list = field(root.get(), "variants");

@@ -192,11 +192,11 @@ int bridgeTests() {
 }
 int linkTests() {
   int failures = 0;
-  CHECK(db::bridgeUrl("https://shop.example", "", "start") == "https://shop.example/api/dropbox/v1/sessions/start");
-  CHECK(db::bridgeUrl("https://shop.example/", "abc", "consume") ==
-        "https://shop.example/api/dropbox/v1/sessions/abc/consume");
-  CHECK(db::bridgeUrl("https://shop.example", "a/b", "status") ==
-        "https://shop.example/api/dropbox/v1/sessions/a%2Fb/status");
+  CHECK(db::bridgeUrl("https://server.example", "", "start") == "https://server.example/api/dropbox/v1/sessions/start");
+  CHECK(db::bridgeUrl("https://server.example/", "abc", "consume") ==
+        "https://server.example/api/dropbox/v1/sessions/abc/consume");
+  CHECK(db::bridgeUrl("https://server.example", "a/b", "status") ==
+        "https://server.example/api/dropbox/v1/sessions/a%2Fb/status");
   {
     db::Credentials c;
     c.accessToken = "a\"1";
@@ -241,10 +241,10 @@ int linkTests() {
     db::BridgeGrant g;
     g.authorizationCode = "c 1";
     g.codeVerifier = "v";
-    g.redirectUri = "https://shop.example/api/dropbox/oauth/dropbox/callback";
+    g.redirectUri = "https://server.example/api/dropbox/oauth/dropbox/callback";
     const auto body = db::authorizationCodeBody(g, "key");
     CHECK(body == "grant_type=authorization_code&code=c%201&code_verifier=v&client_id=key&redirect_uri="
-                  "https%3A%2F%2Fshop.example%2Fapi%2Fdropbox%2Foauth%2Fdropbox%2Fcallback");
+                  "https%3A%2F%2Fserver.example%2Fapi%2Fdropbox%2Foauth%2Fdropbox%2Fcallback");
     CHECK(db::refreshBody("r+1", "key") == "grant_type=refresh_token&refresh_token=r%2B1&client_id=key");
   }
   CHECK(db::isRevoked(400, "{\"error\":\"invalid_grant\"}") && db::isRevoked(401, ""));
