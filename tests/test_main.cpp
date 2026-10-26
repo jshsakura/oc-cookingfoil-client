@@ -47,6 +47,7 @@ int runCardPatchTests();
 int runTunerTests();
 int runAdminEditTests();
 int runVotesTests();
+int runSendsTests();
 int runClientStringsTests();
 int runOriginTests();
 int runOriginRecordTests();
@@ -84,7 +85,7 @@ int main() {
   const int failures = runDownloadCleanupTests() + runMacJunkTests() + runOrderedTests() + runConfigTests() + runNetworkTests() + runNtpTests() + runStateTests() + runRebindTests() + runSessionTokenTests() + runVaultTests() + runEnrollTests() +
                        runSessionTests() + runPairingTests() + runCatalogTests() + runUpdatesTests() + runInstalledTests() +
                        runSelectionTests() + runInstallerTests() + runPatchTests() + runI18nTests() +
-                       runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runLabelsTests() + runHistoryTests() + runStoreTests() + runZstdResumeTests() + runNczPointTests() + runClientUpdateTests() + runHomebrewTests() + runHomebrewCardTests() + runNacpTests() + runDropboxRowsTests() + runAchievementsTests() + runResumeTests() + runForwarderTests() + runDirectTests() + runCardPatchTests() + runTunerTests() + runSegmentedTests() + runAdminEditTests() + runVotesTests() + runClientStringsTests() + runOriginTests() + runOriginRecordTests() + runMergeCatalogTests() +
+                       runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runLabelsTests() + runHistoryTests() + runStoreTests() + runZstdResumeTests() + runNczPointTests() + runClientUpdateTests() + runHomebrewTests() + runHomebrewCardTests() + runNacpTests() + runDropboxRowsTests() + runAchievementsTests() + runResumeTests() + runForwarderTests() + runDirectTests() + runCardPatchTests() + runTunerTests() + runSegmentedTests() + runAdminEditTests() + runVotesTests() + runSendsTests() + runClientStringsTests() + runOriginTests() + runOriginRecordTests() + runMergeCatalogTests() +
                        runUiTests(app.renderer()) + runPairingUiTests(app.renderer()) + runShortcutUiTests(app.renderer());
   std::printf("Core tests: %d failures\n", failures);
   return (ok && failures == 0) ? 0 : 1;
