@@ -1,6 +1,7 @@
 #ifdef __SWITCH__
 #include "core/Config.hpp"
 #include "core/I18n.hpp"
+#include "install/EngineDownload.hpp"
 #include "install/EngineHooks.hpp"
 #include "install/Installer.hpp"
 #include "install/http_nsp.hpp"
@@ -50,10 +51,6 @@ struct Current {
   bool application = false;
 } current;
 } // namespace
-namespace tin::network {
-void SetExtraHeaders(const std::vector<std::string> &headers,
-                     const std::string &origin);
-}
 namespace inst::ui {
 static MainApplication adapter;
 MainApplication *mainApp = &adapter;
@@ -140,16 +137,18 @@ void nativeInstall(const Item &item, const std::string &target,
   // off, so the bar and the card keep moving. A slow piece at the front
   // does not stop the others: an application holds up to two pieces a
   // connection (8 x 2 x 8 MB = 128 MB at most), the album one (16 MB).
-  tin::network::SetParallelDownload(current.connections, current.application ? 0x800000 : 0x400000,
-                                    current.application ? 2 : 1);
+  net::OrderedOptions download;
+  download.connections = current.connections;
+  download.chunk = current.application ? 0x800000 : 0x400000;
+  download.ahead = current.application ? 2 : 1;
+  download.headers = headers;
+  setEngineDownload(std::move(download));
   // The required system version stays as the game says: a console too old
   // for it never gets this far (install::missingFirmware).
   constexpr bool ignoreFirmware = false;
-  tin::network::ClearBasicAuth();
-  tin::network::SetExtraHeaders(headers, originOf(from));
   struct Headers {
     ~Headers() {
-      tin::network::SetExtraHeaders({}, "");
+      clearEngineDownload();
       tin::data::ReleaseSpareRing(); // kept between this file's NCAs only
     }
   } clear;
