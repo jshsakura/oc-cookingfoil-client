@@ -694,8 +694,11 @@ bool parseItem(json_object* object, Item& item) {
     item.requiredPatches = int(std::min<uint64_t>(positive(object, "required_patches"), 999));
     item.koreanPatches = int(std::min<uint64_t>(positive(object, "korean_patches"), 999));
     item.labels = labels::parseRefs(object, item.hasLabels);
-    if (const auto integrity = stringField(object, "integrity"); integrity == "damaged") item.integrity = 2;
-    else if (integrity == "modified") item.integrity = 1;
+    if (const auto integrity = stringField(object, "integrity"); integrity == "damaged") {
+        auto* detail = field(object, "integrity_detail");
+        auto* certain = json_object_is_type(detail, json_type_object) ? field(detail, "certain") : nullptr;
+        item.integrity = json_object_is_type(certain, json_type_boolean) && json_object_get_boolean(certain) ? 3 : 2;
+    } else if (integrity == "modified") item.integrity = 1;
     item.icons = languageTexts(object, "icons", isHttp);
     item.names = languageTexts(object, "names");
     item.icon = stringField(object, "icon_url"); if (!isHttp(item.icon)) item.icon.clear();
@@ -953,6 +956,27 @@ Parsed<Detail> parseDetail(const std::string& json) {
         d.priceRegular = stringField(price, "regular");
         d.priceDiscount = stringField(price, "discount");
         d.priceCountry = stringField(price, "country");
+    }
+    // integrity: the files of this title the server's check flagged, worded
+    // in the language asked (feature item-integrity-detail).
+    auto* checks = field(root.get(), "integrity");
+    if (json_object_is_type(checks, json_type_array)) for (size_t i = 0; i < json_object_array_length(checks) && i < 64; ++i) {
+        auto* row = json_object_array_get_idx(checks, i);
+        if (!json_object_is_type(row, json_type_object)) continue;
+        FileCheck check;
+        check.file = stringField(row, "file");
+        check.verdict = stringField(row, "verdict");
+        check.reason = stringField(row, "reason");
+        auto* certain = field(row, "certain");
+        check.certain = json_object_is_type(certain, json_type_boolean) && json_object_get_boolean(certain);
+        check.label = stringField(row, "label");
+        auto* help = field(row, "help");
+        if (json_object_is_type(help, json_type_object)) {
+            check.title = stringField(help, "title");
+            check.body = tidyDescription(stringField(help, "body"));
+        }
+        if (check.file.empty() || (check.verdict != "modified" && check.verdict != "damaged")) continue;
+        d.integrity.push_back(std::move(check));
     }
     auto* shots = field(root.get(), "screenshots");
     if (json_object_is_type(shots, json_type_array)) for (size_t i = 0; i < json_object_array_length(shots); ++i) {

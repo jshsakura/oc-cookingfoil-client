@@ -5,6 +5,7 @@
 #include "install/Installer.hpp"
 #include "core/I18n.hpp"
 #include "core/Log.hpp"
+#include "net/DropboxUtil.hpp"
 #include <algorithm>
 #include <optional>
 namespace foil::ui {
@@ -17,6 +18,12 @@ std::string countText(int count) {
   return text;
 }
 std::string dateLabel(int date) { return dateText(date); }
+// The file's own name from its address, as the server names it in
+// detail.integrity[].file.
+std::string fileNameOf(const std::string &url) {
+  const auto path = url.substr(0, url.find_first_of("?#"));
+  return net::dropbox::percentDecode(path.substr(path.rfind('/') + 1));
+}
 } // namespace
 // Only that the game needs a patch to run, ahead of its description; what
 // it is shows in the install list, and the story belongs in the description.
@@ -42,6 +49,38 @@ int Application::notesCard(int y) {
   paint_.fonts.text(tr("More info"), Inner, y + 18, 18, Ink, true, InnerW);
   paint_.fonts.wrapped(detail_.notes, Inner, y + 18 + 28, 18, Ink, InnerW, 12, false, 1.5f);
   return int(y + height + 16);
+}
+// 파일 상태: each file the server's check flagged, with its label and the
+// server's help open below it (what was found, what it means, what an
+// install does, what to do). Long help scrolls with the page.
+int Application::fileChecksCard(int y) {
+  if (detail_.integrity.empty()) return y;
+  constexpr float X = 40, W = 750, Inner = X + 24, InnerW = W - 48, Gap = 18;
+  constexpr int MostLines = 40;
+  const auto height = [&](const net::FileCheck &check) {
+    float h = 26 + 12; // the label and the file's name
+    if (!check.title.empty()) h += paint_.fonts.wrapped(check.title, Inner, -10000, 18, Ink, InnerW, 3, true, 1.4f) + 8;
+    if (!check.body.empty()) h += paint_.fonts.wrapped(check.body, Inner, -10000, 17, Ink, InnerW, MostLines, false, 1.5f);
+    return h;
+  };
+  float total = 18 + 28;
+  for (const auto &check : detail_.integrity) total += height(check) + Gap;
+  paint_.rect(X, y, W, total, Surface, 14);
+  paint_.fonts.text(tr("File status"), Inner, y + 18, 18, Ink, true, InnerW);
+  float at = y + 18 + 28;
+  for (const auto &check : detail_.integrity) {
+    const auto label = !check.label.empty()     ? check.label
+                       : check.level() == 3     ? std::string(tr("Damaged|file"))
+                       : check.level() == 2     ? std::string(tr("May be damaged"))
+                                                : std::string(tr("Modified|file"));
+    const float labelW = paint_.pill(label, Inner, at);
+    paint_.fonts.middle(check.file, Inner + labelW + 10, at + 13, 15, Secondary, false, InnerW - labelW - 10);
+    float line = at + 26 + 12;
+    if (!check.title.empty()) line += paint_.fonts.wrapped(check.title, Inner, line, 18, Ink, InnerW, 3, true, 1.4f) + 8;
+    if (!check.body.empty()) paint_.fonts.wrapped(check.body, Inner, line, 17, Ink, InnerW, MostLines, false, 1.5f);
+    at += height(check) + Gap;
+  }
+  return int(y + total + 16);
 }
 void Application::syncDetailPatches() {
   if (!selection_ || detailGroup_ >= groups_.size()) return;
@@ -148,7 +187,7 @@ void Application::detail() {
   if (item.requiredPatches || (g.base && g.base->requiredPatches))
     pill(tr("Required patch"));
   if (const int integrity = groupIntegrity(g))
-    pill(integrity == 2 ? tr("May be damaged") : tr("Modified file"));
+    pill(integrity == 3 ? tr("Damaged|file") : integrity == 2 ? tr("May be damaged") : tr("Modified file"));
   // With several servers, the ones it is on by name, its own first.
   if (manyServers()) {
     std::string on;
@@ -178,6 +217,7 @@ void Application::detail() {
   int y = BandTop + Pad - offset;
   y = requiredPatchesCard(y);
   y = notesCard(y);
+  y = fileChecksCard(y);
   if (!detail_.description.empty()) {
     y += paint_.fonts.wrapped(detail_.description, 40, y, 20, Ink, 750, 20, false, 1.6f) + 24;
   } else if (detailLoading_) {
@@ -289,6 +329,10 @@ void Application::detail() {
             : f.type == "base"     ? trf("{0} · Required", {versionLabel(f)})
             : f.type == "update" ? trf("{0} · Latest", {versionLabel(f)})
                                  : std::string(tr("Add-on content"));
+      // A file the check flagged says so on its row; 파일 상태 says why.
+      const auto file = fileNameOf(f.url);
+      for (const auto &check : detail_.integrity)
+        if (check.file == file && !check.label.empty()) sub = check.label + " · " + sub;
       bytes = f.size;
     }
     const auto size = formatBytes(bytes);

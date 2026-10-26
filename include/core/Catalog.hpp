@@ -16,15 +16,15 @@ struct Group {
   std::string search;
   int64_t addedAt = 0;
 };
-// The worst file check among a game's files (Item::integrity): 0, 1 or 2.
+// The worst file check among a game's files (Item::integrity): 0 to 3.
 int groupIntegrity(const Group &g);
 // What a game takes to play as the server has it: the base and its update
 // (a small base with a large update reads as the large one it is).
 uint64_t groupBytes(const Group &g);
 // A card's labels, most wanted first. The file's state is one label:
-// 손상 의심 or 수정됨 over 최신 버전 (its update is the newest the server
-// knows) or 업데이트.
-enum class CardLabel { KoreanPatch, RequiredPatch, Damaged, Modified, Latest, Update, Sale, Dlc };
+// 손상됨, 손상 의심 or 수정됨 over 최신 버전 (its update is the newest the
+// server knows) or 업데이트.
+enum class CardLabel { KoreanPatch, RequiredPatch, Damaged, MaybeDamaged, Modified, Latest, Update, Sale, Dlc };
 std::vector<CardLabel> cardLabels(const Group &g);
 // Genre key (the server's English name) -> name shown on screen.
 using GenreNames = std::map<std::string, std::string>;

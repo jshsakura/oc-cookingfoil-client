@@ -35,7 +35,8 @@ struct Item {
     int koreanPatches = 0;   // of those, the ones that put the game in Korean
     // The server's check of the file (feature item-integrity): 0 fine or not
     // checked yet, 1 modified (signature off: a mod or a repack), 2 maybe
-    // damaged. Said only; installs go ahead either way.
+    // damaged, 3 damaged (item-integrity-detail's certain: the install
+    // surely fails). Said only; installs go ahead either way.
     uint8_t integrity = 0;
     // The server's labels for its card, in order (core/Labels.hpp);
     // hasLabels false: an older server, the client words them itself.

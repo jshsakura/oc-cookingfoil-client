@@ -1207,6 +1207,8 @@ const Translation rows[] = {
     {"Getting additional language data.", "追加の言語データを受信しています。"},
     {"Could not get the additional language data.", "追加の言語データを受信できませんでした。"},
     {"Nothing arrived for 5 seconds. Check the connection and try again.", "5秒間データが届きませんでした。接続を確認してもう一度お試しください。"},
+    {"Damaged|file", "破損"},
+    {"File status", "ファイルの状態"},
 };
 const TranslationTable table(Language::Japanese, rows, sizeof rows / sizeof rows[0]);
 } // namespace

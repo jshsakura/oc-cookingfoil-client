@@ -44,6 +44,8 @@ int runCatalogTests() {
     g.dlc.push_back(foil::Item{});
     g.dlc.back().integrity = 2;
     CHECK(foil::groupIntegrity(g) == 2);
+    g.base->integrity = 3;
+    CHECK(foil::groupIntegrity(g) == 3);
   }
   {
     // A card's labels: 한글패치 first, one label for the file's state.
@@ -60,6 +62,10 @@ int runCatalogTests() {
     CHECK((foil::cardLabels(g) == std::vector<L>{L::KoreanPatch, L::Latest, L::Dlc}));
     g.base->integrity = 1;
     CHECK((foil::cardLabels(g) == std::vector<L>{L::KoreanPatch, L::Modified, L::Dlc}));
+    g.base->integrity = 2;
+    CHECK((foil::cardLabels(g) == std::vector<L>{L::KoreanPatch, L::MaybeDamaged, L::Dlc}));
+    g.base->integrity = 3;
+    CHECK((foil::cardLabels(g) == std::vector<L>{L::KoreanPatch, L::Damaged, L::Dlc}));
     g.base->latestVersion = 0;
     g.base->integrity = 0;
     CHECK((foil::cardLabels(g) == std::vector<L>{L::KoreanPatch, L::Update, L::Dlc}));

@@ -1207,6 +1207,8 @@ const Translation rows[] = {
     {"Getting additional language data.", "正在取得附加語言資料。"},
     {"Could not get the additional language data.", "無法取得附加語言資料。"},
     {"Nothing arrived for 5 seconds. Check the connection and try again.", "5 秒內沒有收到資料。請檢查網路連線後再試一次。"},
+    {"Damaged|file", "已損毀"},
+    {"File status", "檔案狀態"},
 };
 const TranslationTable table(Language::ChineseTraditional, rows, sizeof rows / sizeof rows[0]);
 } // namespace

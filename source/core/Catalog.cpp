@@ -488,7 +488,8 @@ std::vector<CardLabel> cardLabels(const Group &g) {
   if (either(&Item::koreanPatches)) labels.push_back(CardLabel::KoreanPatch);
   if (either(&Item::requiredPatches)) labels.push_back(CardLabel::RequiredPatch);
   const uint32_t latest = g.base ? g.base->latestVersion : g.representative.latestVersion;
-  if (const int integrity = groupIntegrity(g)) labels.push_back(integrity == 2 ? CardLabel::Damaged : CardLabel::Modified);
+  if (const int integrity = groupIntegrity(g))
+    labels.push_back(integrity == 3 ? CardLabel::Damaged : integrity == 2 ? CardLabel::MaybeDamaged : CardLabel::Modified);
   else if (g.update) labels.push_back(latest && g.update->version >= latest ? CardLabel::Latest : CardLabel::Update);
   if (g.base && !g.base->priceDiscount.empty()) labels.push_back(CardLabel::Sale);
   if (!g.dlc.empty()) labels.push_back(CardLabel::Dlc);

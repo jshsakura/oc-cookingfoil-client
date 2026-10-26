@@ -36,7 +36,10 @@ int runNetworkTests() {
             {"id": "new", "items": [
               {"url": "https://h/a.nsp", "name": "A \"quoted\" {brace} [x]", "icons": {"ko": "https://h/i.jpg"},
                "categories": ["Action"], "size": 10},
-              {"url": "https://h/b.nsp", "name": "B\\path", "size": 20, "required_patches": 2, "korean_patches": 1, "integrity": "damaged"}
+              {"url": "https://h/b.nsp", "name": "B\\path", "size": 20, "required_patches": 2, "korean_patches": 1, "integrity": "damaged"},
+              {"url": "https://h/c.nsp", "name": "C", "integrity": "damaged", "integrity_detail": {"reason": "truncated", "certain": true, "present": 0.4}},
+              {"url": "https://h/d.nsp", "name": "D", "integrity": "damaged", "integrity_detail": {"reason": "hash-mismatch", "certain": false}},
+              {"url": "https://h/e.nsp", "name": "E", "integrity": "modified", "integrity_detail": {"reason": "signature-fail", "certain": false}}
             ]},
             {"id": "all", "items": [{"url": "https://h/a.nsp", "name": "again"}, {"url": "ftp://bad"}]}
           ],
@@ -44,7 +47,7 @@ int runNetworkTests() {
           "score_labels": {}
         } )");
         CHECK(!catalog.error);
-        CHECK(catalog.value.items.size() == 2);
+        CHECK(catalog.value.items.size() == 5);
         CHECK(catalog.value.items[0].name == "A \"quoted\" {brace} [x]");
         CHECK(catalog.value.items[0].categories.size() == 1);
         CHECK(catalog.value.items[1].name == "B\\path");
@@ -53,6 +56,8 @@ int runNetworkTests() {
         CHECK(catalog.value.items[0].koreanPatches == 0 && catalog.value.items[1].koreanPatches == 1);
         // The file check is said, never blocking: unchecked is 0.
         CHECK(catalog.value.items[0].integrity == 0 && catalog.value.items[1].integrity == 2);
+        // integrity_detail's certain makes it 손상됨; without it 손상 의심.
+        CHECK(catalog.value.items[2].integrity == 3 && catalog.value.items[3].integrity == 2 && catalog.value.items[4].integrity == 1);
         CHECK(catalog.value.genres.count("Action") && catalog.value.genres.at("Action").at("ko") == "액션");
         // Cut short, or no sections at all: the list's format error.
         CHECK(foil::net::parseCatalog(R"({"sections":[{"items":[{"url":"https://h/a.nsp")").error);
@@ -115,6 +120,18 @@ int runNetworkTests() {
     // The operator's notes come apart from the description; null is none.
     CHECK(foil::net::parseDetail(R"({"notes":"데이터 49GB 필요  \n"})").value.notes == "데이터 49GB 필요");
     CHECK(foil::net::parseDetail(R"({"notes":null})").value.notes.empty());
+    {
+        // The files a title's check flagged, worded by the server.
+        const auto checked = foil::net::parseDetail(R"({"integrity":[
+          {"file":"Game [0100].nsp","kind":"base","titleId":"0100","verdict":"damaged","reason":"truncated","certain":true,"present":0.4,
+           "label":"손상됨","help":{"title":"파일이 잘려 있습니다","body":"40%만 있습니다.\n\n설치하면 실패합니다."}},
+          {"file":"Upd.nsp","verdict":"modified","reason":"signature-fail","certain":false,"label":"수정됨","help":{"title":"t","body":"b"}},
+          {"file":"","verdict":"damaged"},{"file":"x.nsp","verdict":"other"},"junk"]})").value;
+        CHECK(checked.integrity.size() == 2);
+        CHECK(checked.integrity[0].file == "Game [0100].nsp" && checked.integrity[0].level() == 3 && checked.integrity[0].label == "손상됨");
+        CHECK(checked.integrity[0].title == "파일이 잘려 있습니다" && checked.integrity[0].body == "40%만 있습니다.\n\n설치하면 실패합니다.");
+        CHECK(checked.integrity[1].level() == 1);
+    }
     {
         const auto priced = foil::net::parseDetail(R"({"price":{"country":"KR","regular":"64,800원","discount":"45,360원"}})").value;
         CHECK(priced.priceRegular == "64,800원" && priced.priceDiscount == "45,360원" && priced.priceCountry == "KR");

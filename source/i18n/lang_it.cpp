@@ -1207,6 +1207,8 @@ const Translation rows[] = {
     {"Getting additional language data.", "Recupero dei dati di lingua aggiuntivi in corso."},
     {"Could not get the additional language data.", "Impossibile recuperare i dati di lingua aggiuntivi."},
     {"Nothing arrived for 5 seconds. Check the connection and try again.", "Non è arrivato nulla per 5 secondi. Controlla la connessione e riprova."},
+    {"Damaged|file", "Danneggiato"},
+    {"File status", "Stato del file"},
 };
 const TranslationTable table(Language::Italian, rows, sizeof rows / sizeof rows[0]);
 } // namespace
