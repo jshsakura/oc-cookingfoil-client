@@ -4,6 +4,7 @@
 #include <SDL2/SDL_image.h>
 #include <cstdio>
 int runConfigTests();
+int runOrderedTests();
 int runDownloadCleanupTests();
 int runNetworkTests();
 int runNtpTests();
@@ -79,7 +80,7 @@ int main() {
   // A console that reads its ID, as on the Switch (test_state covers one
   // that cannot).
   foil::setDeviceIdentity(foil::deriveIdentity(0x756e697474657374ull));
-  const int failures = runDownloadCleanupTests() + runConfigTests() + runNetworkTests() + runNtpTests() + runStateTests() + runRebindTests() + runSessionTokenTests() + runVaultTests() + runEnrollTests() +
+  const int failures = runDownloadCleanupTests() + runOrderedTests() + runConfigTests() + runNetworkTests() + runNtpTests() + runStateTests() + runRebindTests() + runSessionTokenTests() + runVaultTests() + runEnrollTests() +
                        runSessionTests() + runPairingTests() + runCatalogTests() + runUpdatesTests() + runInstalledTests() +
                        runSelectionTests() + runInstallerTests() + runPatchTests() + runI18nTests() +
                        runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runLabelsTests() + runHistoryTests() + runStoreTests() + runZstdResumeTests() + runNczPointTests() + runClientUpdateTests() + runHomebrewTests() + runHomebrewCardTests() + runNacpTests() + runDropboxRowsTests() + runAchievementsTests() + runResumeTests() + runForwarderTests() + runDirectTests() + runCardPatchTests() + runTunerTests() + runSegmentedTests() + runAdminEditTests() + runVotesTests() + runClientStringsTests() + runOriginTests() + runOriginRecordTests() + runMergeCatalogTests() +
