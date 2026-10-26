@@ -119,6 +119,8 @@ Application::~Application() {
   raGamesJob_.join();
   voteJob_.join();
   stringsJob_.join();
+  languageCancel_ = true;
+  languageJob_.join();
   historyPageJob_.join(); // reads and clears the store, which closes after
   flushHistory();
   if (storageWorker_.joinable())
@@ -307,6 +309,7 @@ bool Application::open() {
       if (!sd.empty() && !patchWorker_.joinable()) {
         openCardRecords(sd);
         useKeptStrings();
+        applyStartupLanguage(); // a language only a server has needed its text from the card
         background(tr("Reading patches and download history on the SD card"), 0.62f, 0.66f);
         openPatchStore(sd);
       }
@@ -507,7 +510,19 @@ void Application::applyStartupLanguage() {
     code = platform::systemLanguage();
   if (code.empty())
     code = config_.language;
-  setLanguage(languageFromCode(code, Language::Korean));
+  const auto shipped = languageFromCode(code, Language::Korean);
+  // A language only a server has: its text from the card (useKeptStrings),
+  // else the default until it is there.
+  if (languageCode(shipped) != code) {
+    const auto *inUse = extraLanguage();
+    if (inUse && inUse->code == code) return;
+    for (const auto &extra : serverLanguages_)
+      if (extra.code == code && useKeptExtra(extra)) {
+        if (!loading_) paint_.fonts.preferLanguage(language());
+        return;
+      }
+  }
+  setLanguage(shipped);
   if (!loading_) // open() applies it to the fonts on its own thread
     paint_.fonts.preferLanguage(language());
 }
@@ -544,8 +559,11 @@ void Application::writePendingState() {
 }
 void Application::chooseLanguage(Language lang) {
   setLanguage(lang);
-  paint_.fonts.preferLanguage(lang);
-  state_.language = languageCode(lang);
+  languageChanged();
+}
+void Application::languageChanged() {
+  paint_.fonts.preferLanguage(language());
+  state_.language = languageCode();
   shopSavesLoaded_ = false; // server saves come in the language picked
   // A failed check's message was worded in the old language; A asks again.
   if (appUpdate_ == AppUpdate::Failed) appUpdate_ = AppUpdate::Unknown;
@@ -1045,6 +1063,8 @@ void Application::poll() {
   historyPageJob_.poll();
   voteJob_.poll();
   stringsJob_.poll();
+  languageJob_.poll();
+  pollLanguageGet();
   raListJob_.poll();
   raGamesJob_.poll();
   adminJob_.poll();
@@ -1536,6 +1556,10 @@ void Application::action(Action a) {
     appUpdateAction(a);
     return;
   }
+  if (alert_.empty() && languageGet_ != LanguageGet::None) {
+    languageGetAction(a);
+    return;
+  }
   if (alert_.empty() && clockModal()) {
     clockAction(a);
     return;
@@ -1673,14 +1697,15 @@ void Application::action(Action a) {
   }
 
   if (languagePopup_) {
-    // Two columns, filled top to bottom.
-    if (a == Action::Up && languageRow_ % LanguageRows > 0) --languageRow_;
-    if (a == Action::Down && languageRow_ % LanguageRows < LanguageRows - 1 && languageRow_ + 1 < LanguageCount) ++languageRow_;
-    if (a == Action::Left && languageRow_ >= LanguageRows) languageRow_ -= LanguageRows;
-    if (a == Action::Right && languageRow_ + LanguageRows < LanguageCount) languageRow_ += LanguageRows;
+    // Columns filled top to bottom.
+    const int rows = languageRows(), count = languageCount();
+    if (a == Action::Up && languageRow_ % rows > 0) --languageRow_;
+    if (a == Action::Down && languageRow_ % rows < rows - 1 && languageRow_ + 1 < count) ++languageRow_;
+    if (a == Action::Left && languageRow_ >= rows) languageRow_ -= rows;
+    if (a == Action::Right && languageRow_ + rows < count) languageRow_ += rows;
     if (a == Action::Accept) {
       languagePopup_ = false;
-      if (Language(languageRow_) != language()) chooseLanguage(Language(languageRow_));
+      pickLanguage(languageRow_);
     }
     if (a == Action::Back) languagePopup_ = false;
     return;
@@ -2002,6 +2027,11 @@ void Application::action(Action a) {
       case 0:
         languagePopup_ = true;
         languageRow_ = int(language());
+        if (const auto *extra = extraLanguage()) {
+          const auto extras = pickerExtras();
+          for (size_t i = 0; i < extras.size(); ++i)
+            if (extras[i].code == extra->code) languageRow_ = LanguageCount + int(i);
+        }
         break;
       case 1:
         state_.installTarget = installTarget() == "nand" ? "sd" : "nand";
@@ -3592,25 +3622,4 @@ void Application::offerResume() {
 }
 } // namespace foil::ui
 namespace foil::ui {
-void Application::languageDialog() {
-  constexpr float Row = 60, Gap = 8;
-  const auto body = modal(820, 16 + LanguageRows * (Row + Gap) + 8,
-                          // " · Language" stays in English, as on 설정's row.
-                          std::string(tr("Language")) + (language() == Language::English ? "" : " · Language"),
-                          tr("Close"), "", "", 17);
-  const float w = (body.w - 48 - Gap * 2) / 2;
-  for (int i = 0; i < LanguageCount; ++i) {
-    const float x = body.x + 24 + (i / LanguageRows) * (w + Gap * 2), y = body.y + 16 + (i % LanguageRows) * (Row + Gap);
-    rowHit(x, y, w, Row, 12, [this, i] {
-      languageRow_ = i;
-      action(Action::Accept);
-    });
-    if (i == languageRow_) paint_.focusRow(x, y, w, Row, Ground, 12);
-    else paint_.rect(x, y, w, Row, Ground, 12);
-    paint_.flag(i, x + 18, y + (Row - 28) / 2, 42, 28);
-    const auto name = languageName(Language(i));
-    paint_.fonts.middle(name, x + 78, y + Row / 2, 21, Ink, true);
-    if (Language(i) == language()) paint_.icon(8, x + w - 44, y + (Row - 26) / 2, Good, 26);
-  }
-}
 } // namespace foil::ui

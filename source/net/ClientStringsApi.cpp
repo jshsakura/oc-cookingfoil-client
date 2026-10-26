@@ -1,6 +1,7 @@
 #include "net/ClientStringsApi.hpp"
 #include "core/Json.hpp"
 #include "core/Log.hpp"
+#include "core/I18n.hpp"
 #include "core/Version.hpp"
 #include "net/Api.hpp"
 #include "net/DropboxUtil.hpp"
@@ -39,6 +40,45 @@ std::map<std::string, std::string> serverStrings(DownloadStore &store, const Ser
   }
   const auto parsed = parseStringsReply(body);
   return parsed && parsed->lang == lang ? parsed->strings : std::map<std::string, std::string>{};
+}
+bool downloadStrings(DownloadStore &store, const Server &server, const State &state, const std::string &lang,
+                     StringsDownload &progress, StringsReply &reply, std::string &error,
+                     const std::atomic<bool> *cancel) {
+  constexpr uint64_t Most = 4 << 20; // a whole language is about 100KB
+  const auto url = server.url + "/api/client/strings?lang=" + dropbox::percentEncode(lang) +
+                   "&v=" + dropbox::percentEncode(appVersion());
+  std::string body;
+  const auto answer = stream(
+      url, authHeaders(server, state, url),
+      [&](const Response &head) {
+        if (head.status != 200) return Start::Drop;
+        progress.total = head.contentLength;
+        return head.contentLength > Most ? Start::Stop : Start::Take;
+      },
+      [&](const char *data, size_t size) {
+        body.append(data, size);
+        progress.received += size;
+        return body.size() <= Most;
+      },
+      cancel);
+  if (!answer.error.empty() && answer.status != 200) {
+    error = answer.error;
+    return false;
+  }
+  if (answer.status != 200) {
+    error = trf("Could not reach the server. HTTP {0}", {std::to_string(answer.status)});
+    return false;
+  }
+  auto parsed = body.size() <= Most ? parseStringsReply(body) : std::nullopt;
+  if (!answer.error.empty() || !parsed || parsed->lang != lang || parsed->strings.empty()) {
+    error = answer.error.empty() ? tr("The server's answer could not be read.") : answer.error;
+    return false;
+  }
+  std::string unsaved;
+  if (!store.saveClientStrings(lang, {server.url, appVersion(), answer.etag, body}, unsaved))
+    logLine("strings: " + unsaved);
+  reply = std::move(*parsed);
+  return true;
 }
 std::map<std::string, std::map<std::string, std::string>> keptStrings(DownloadStore &store) {
   std::map<std::string, std::map<std::string, std::string>> out;

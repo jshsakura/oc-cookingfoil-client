@@ -5,6 +5,7 @@
 #include "core/I18n.hpp"
 #include "core/I18nChecks.hpp"
 #include "core/Version.hpp"
+#include "net/Api.hpp"
 #include "net/ClientStringsApi.hpp"
 #include <filesystem>
 using namespace foil;
@@ -99,5 +100,71 @@ int runClientStringsTests() {
     store.close();
     fs::remove_all(dir);
   }
+  {
+    // A language only a server has: its text, then its base's, then English;
+    // locked keys show English.
+    setLanguage(Language::Korean);
+    const std::string koreanSettings = tr("Settings");
+    const char *locked = i18n::lockedKeys().front();
+    CHECK(!useExtraLanguage({"vi", "Tiếng Việt", "ko"}, {{locked, "x"}})); // nothing usable: unchanged
+    CHECK(!extraLanguage() && language() == Language::Korean);
+    CHECK(useExtraLanguage({"vi", "Tiếng Việt", "ko"}, {{"Language", "Ngôn ngữ"}, {locked, "x"}}));
+    CHECK(extraLanguage() && std::string(languageCode()) == "vi" && std::string(languageName()) == "Tiếng Việt");
+    CHECK(language() == Language::Korean); // fonts and prices follow the base
+    CHECK(std::string(tr("Language")) == "Ngôn ngữ");
+    CHECK(std::string(tr("Settings")) == koreanSettings);
+    CHECK(std::string(tr(locked)) == english(locked));
+    CHECK((languageChain("vi") == std::vector<std::string>{"vi", "ko", "en"}));
+    // A base the app does not ship comes from its own server text.
+    CHECK(useExtraLanguage({"gl", "Galego", "pt-PT"}, {{"Language", "Lingua"}}, {{"Settings", "Definições"}, {locked, "y"}}));
+    CHECK(language() == Language::English && std::string(tr("Settings")) == "Definições");
+    CHECK(std::string(tr(locked)) == english(locked) && std::string(tr("Close")) == "Close");
+    setLanguage(Language::Korean); // a shipped language leaves it
+    CHECK(!extraLanguage() && std::string(languageCode()) == "ko" && std::string(tr("Language")) != "Ngôn ngữ");
+  }
+  {
+    const auto list = net::parseClientLanguages(
+        R"({"client_strings":{"languages":[{"code":"ko","name":"한국어","base":null},{"code":"vi","name":"Tiếng Việt","base":"en"},)"
+        R"({"code":"ar","name":"العربية"},{"code":"x y","name":"Bad"},{"name":"No code"},{"code":"th","name":""}]}})");
+    CHECK(list.size() == 2 && list[0].code == "ko" && list[0].base.empty() && list[1].code == "vi" && list[1].base == "en");
+    CHECK(net::parseClientLanguages(R"({"features":[]})").empty());
+  }
+  {
+    namespace fs = std::filesystem;
+    const auto dir = fs::temp_directory_path() / "cookingfoil-languages-test";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    DownloadStore store;
+    std::string error;
+    CHECK(store.open((dir / "cookingfoil.db").string(), error));
+    CHECK(store.saveClientLanguages({{"vi", "Tiếng Việt", "en"}, {"id", "Bahasa Indonesia", ""}}, error));
+    auto languages = store.clientLanguages();
+    CHECK(languages.size() == 2 && languages[0].code == "vi" && languages[1].name == "Bahasa Indonesia");
+    const std::vector<ExtraLanguage> thai{{"th", "ไทย", ""}};
+    CHECK(store.saveClientLanguages(thai, error) && store.clientLanguages().size() == 1);
+    Mock mock;
+    int status = 200;
+    const std::string whole = R"({"lang":"vi","base":"en","strings":{"Language":"Ngôn ngữ"}})";
+    mock.answer = [&](const std::string &) { return Reply{status, "ETag: \"v1\"\r\n", status == 200 ? whole : "no"}; };
+    Server server;
+    server.url = "http://127.0.0.1:" + std::to_string(mock.port);
+    State state;
+    net::StringsDownload progress;
+    net::StringsReply reply;
+    CHECK(net::downloadStrings(store, server, state, "vi", progress, reply, error, nullptr));
+    CHECK(reply.strings.at("Language") == "Ngôn ngữ" && reply.base == "en");
+    CHECK(progress.total == whole.size() && progress.received == whole.size());
+    const auto row = store.clientStrings("vi");
+    CHECK(row && row->etag == "\"v1\"" && row->body == whole);
+    // The wrong language, or an error, is not taken and says why.
+    error.clear();
+    CHECK(!net::downloadStrings(store, server, state, "id", progress, reply, error, nullptr) && !error.empty());
+    status = 404;
+    error.clear();
+    CHECK(!net::downloadStrings(store, server, state, "vi", progress, reply, error, nullptr) && error.find("404") != std::string::npos);
+    store.close();
+    fs::remove_all(dir);
+  }
+  setLanguage(Language::Korean);
   return failures;
 }

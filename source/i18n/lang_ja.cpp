@@ -1203,6 +1203,10 @@ const Translation rows[] = {
     {"Could not derive the NCA header key on the console. Shortcuts can be made only when booted into Atmosphere. Restart into Atmosphere and try again.", "本体でNCAヘッダーキーを生成できませんでした。ショートカットはAtmosphereで起動しているときだけ作成できます。Atmosphereで再起動してから、もう一度お試しください。"},
     {"Could not make a shortcut from the app file.", "アプリのファイルからショートカットを作成できませんでした。"},
     {"Enter a game name", "ゲーム名を入力"},
+    {"Downloading additional language data", "追加の言語データをダウンロード"},
+    {"Getting additional language data.", "追加の言語データを受信しています。"},
+    {"Could not get the additional language data.", "追加の言語データを受信できませんでした。"},
+    {"Nothing arrived for 5 seconds. Check the connection and try again.", "5秒間データが届きませんでした。接続を確認してもう一度お試しください。"},
 };
 const TranslationTable table(Language::Japanese, rows, sizeof rows / sizeof rows[0]);
 } // namespace

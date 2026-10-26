@@ -63,6 +63,11 @@ const char *const Migrations[] = {
     "  version TEXT NOT NULL,"
     "  etag TEXT NOT NULL,"
     "  body TEXT NOT NULL);",
+    // 4: the languages a server's dictionary has, to name them before it answers.
+    "CREATE TABLE client_languages("
+    "  code TEXT PRIMARY KEY,"
+    "  name TEXT NOT NULL,"
+    "  base TEXT NOT NULL);",
 };
 std::atomic<bool> setAside{false};
 const char *outcomeName(history::Outcome outcome) {
@@ -1049,6 +1054,35 @@ std::map<std::string, DownloadStore::ClientStrings> DownloadStore::allClientStri
     return rc == SQLITE_DONE;
   });
   return out;
+}
+std::vector<ExtraLanguage> DownloadStore::clientLanguages() {
+  std::lock_guard<std::mutex> held(lock_);
+  std::vector<ExtraLanguage> out;
+  std::string error;
+  run(false, error, [&](sqlite3 *db, std::string &) {
+    Statement read(db, "SELECT code, name, base FROM client_languages ORDER BY rowid");
+    if (!read) return false;
+    int rc;
+    while ((rc = read.step()) == SQLITE_ROW) out.push_back({read.column(0), read.column(1), read.column(2)});
+    return rc == SQLITE_DONE;
+  });
+  return out;
+}
+bool DownloadStore::saveClientLanguages(const std::vector<ExtraLanguage> &languages, std::string &error) {
+  std::lock_guard<std::mutex> held(lock_);
+  return run(true, error, [&](sqlite3 *db, std::string &failure) {
+    if (!exec(db, "DELETE FROM client_languages;", failure)) return false;
+    Statement write(db, "INSERT OR REPLACE INTO client_languages(code, name, base) VALUES(?,?,?)");
+    if (!write) return false;
+    for (const auto &language : languages) {
+      write.reset();
+      write.text(1, language.code);
+      write.text(2, language.name);
+      write.text(3, language.base);
+      if (write.step() != SQLITE_DONE) return false;
+    }
+    return true;
+  });
 }
 bool DownloadStore::saveClientStrings(const std::string &lang, const ClientStrings &row, std::string &error) {
   std::lock_guard<std::mutex> held(lock_);

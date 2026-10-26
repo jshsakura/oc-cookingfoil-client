@@ -396,6 +396,20 @@ int main(int argc, char **argv) {
       if (!app.screenshot(shot + "/00-pairing.png"))
         return 1;
     }
+    // 설정 > 언어 with three languages only a server has, and their window.
+    ui.screen(foil::ui::Screen::Settings);
+    ui.previewServerLanguages({{"ko", "한국어", ""}, {"vi", "Tiếng Việt", "en"}, {"id", "Bahasa Indonesia", ""},
+                               {"pt-PT", "Português (Portugal)", "pt"}});
+    ui.previewLanguagePopup(13);
+    ui.render();
+    if (!app.screenshot(shot + "/06-language.png")) return 1;
+    ui.previewLanguageGet({"vi", "Tiếng Việt", "en"}, 41 << 10, 92 << 10);
+    ui.render();
+    if (!app.screenshot(shot + "/06-language-get.png")) return 1;
+    ui.previewLanguageGet({"vi", "Tiếng Việt", "en"}, 0, 0, foil::tr("Nothing arrived for 5 seconds. Check the connection and try again."));
+    ui.render();
+    if (!app.screenshot(shot + "/06-language-failed.png")) return 1;
+    ui.previewLanguageDone();
     return 0;
   }
   bool running = true, typing = false;

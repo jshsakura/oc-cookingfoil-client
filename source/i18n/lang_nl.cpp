@@ -1203,6 +1203,10 @@ const Translation rows[] = {
     {"Could not derive the NCA header key on the console. Shortcuts can be made only when booted into Atmosphere. Restart into Atmosphere and try again.", "Kan de NCA-headersleutel niet afleiden op de console. Snelkoppelingen kunnen alleen worden gemaakt als de console in Atmosphere is opgestart. Start opnieuw op in Atmosphere en probeer het opnieuw."},
     {"Could not make a shortcut from the app file.", "Kan geen snelkoppeling maken van het app-bestand."},
     {"Enter a game name", "Voer een gamenaam in"},
+    {"Downloading additional language data", "Extra taalgegevens downloaden"},
+    {"Getting additional language data.", "Extra taalgegevens worden opgehaald."},
+    {"Could not get the additional language data.", "De extra taalgegevens konden niet worden opgehaald."},
+    {"Nothing arrived for 5 seconds. Check the connection and try again.", "Er kwam 5 seconden lang niets binnen. Controleer de verbinding en probeer het opnieuw."},
 };
 const TranslationTable table(Language::Dutch, rows, sizeof rows / sizeof rows[0]);
 } // namespace

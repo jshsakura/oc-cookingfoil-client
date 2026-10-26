@@ -9,6 +9,9 @@
 namespace foil {
 namespace {
 std::atomic<Language> current{Language::Korean};
+// The ExtraLanguage in use: each one given stays for the run, so what
+// languageCode() and extraLanguage() return stays readable.
+std::atomic<const ExtraLanguage *> extraInUse{nullptr};
 struct Table {
   Language language;
   const Translation *rows;
@@ -30,6 +33,8 @@ struct Registry {
   // strings behind every set given this run.
   std::array<std::vector<const char *>, LanguageCount> server;
   std::deque<std::vector<std::string>> kept;
+  std::deque<ExtraLanguage> extras;
+  std::vector<const char *> extraTexts; // by id, each key's text resolved: null for English
   std::mutex lock;
 };
 constexpr size_t None = size_t(-1);
@@ -81,8 +86,20 @@ TranslationTable::TranslationTable(Language language, const Translation *rows, s
   std::lock_guard<std::mutex> guard(r.lock);
   r.tables.push_back({language, rows, count});
 }
-void setLanguage(Language language) { current = language; }
+void setLanguage(Language language) {
+  extraInUse = nullptr;
+  current = language;
+}
 Language language() { return current; }
+const ExtraLanguage *extraLanguage() { return extraInUse; }
+const char *languageCode() {
+  const auto *extra = extraInUse.load();
+  return extra ? extra->code.c_str() : languageCode(language());
+}
+const char *languageName() {
+  const auto *extra = extraInUse.load();
+  return extra ? extra->name.c_str() : languageName(language());
+}
 namespace {
 struct LanguageInfo {
   const char *code, *name;
@@ -98,6 +115,8 @@ const char *languageName(Language language) { return Languages[int(language)].na
 std::vector<std::string> languageChain(const std::string &code) {
   std::vector<std::string> chain{code};
   if (code == "zh-Hant") chain.push_back("zh");
+  const auto *extra = extraInUse.load();
+  if (extra && extra->code == code && !extra->base.empty() && extra->base != "en") chain.push_back(extra->base);
   if (code != "en") chain.push_back("en");
   return chain;
 }
@@ -159,6 +178,43 @@ size_t setServerTexts(Language language, const std::map<std::string, std::string
   r.server[size_t(language)] = std::move(byId);
   return ids.size();
 }
+bool useExtraLanguage(const ExtraLanguage &extra, const std::map<std::string, std::string> &texts,
+                      const std::map<std::string, std::string> &baseTexts) {
+  const auto base = languageFromCode(extra.base, Language::English);
+  const bool shipped = !extra.base.empty() && languageCode(base) == extra.base;
+  auto &r = registry();
+  std::lock_guard<std::mutex> guard(r.lock);
+  catchUp(r);
+  std::vector<const char *> byId(r.texts.size(), nullptr);
+  std::vector<std::string> strings;
+  strings.reserve(texts.size() + baseTexts.size()); // c_str()s below must not move
+  size_t own = 0;
+  const auto take = [&](const std::map<std::string, std::string> &from, bool counts) {
+    for (const auto &[key, text] : from) {
+      const auto found = r.ids.find(key);
+      if (found == r.ids.end() || byId[found->second] || i18n::locked(key) ||
+          i18n::checkText(key, text) != i18n::Problem::None)
+        continue;
+      strings.push_back(text);
+      byId[found->second] = strings.back().c_str();
+      own += counts;
+    }
+  };
+  take(texts, true);
+  if (!own) return false;
+  if (!shipped) take(baseTexts, false);
+  for (size_t id = 0; id < byId.size() && shipped; ++id) {
+    if (byId[id] || i18n::locked(r.keys[id])) continue;
+    const auto &server = r.server[size_t(base)];
+    byId[id] = id < server.size() && server[id] ? server[id] : r.texts[id][size_t(base)];
+  }
+  r.kept.push_back(std::move(strings));
+  r.extraTexts = std::move(byId);
+  r.extras.push_back(extra);
+  current = shipped ? base : Language::English;
+  extraInUse = &r.extras.back();
+  return true;
+}
 bool hasTranslation(const std::string &key) {
   auto &r = registry();
   std::lock_guard<std::mutex> guard(r.lock);
@@ -185,6 +241,13 @@ const char *english(const char *key) {
   return it->second.c_str();
 }
 const char *tr(const char *key) {
+  if (key && extraInUse.load()) {
+    const auto id = lookupKey(key);
+    auto &r = registry();
+    std::lock_guard<std::mutex> guard(r.lock);
+    const char *text = id < r.extraTexts.size() ? r.extraTexts[id] : nullptr;
+    return text ? text : english(key);
+  }
   const auto lang = language();
   if (!key || lang == Language::English)
     return english(key);

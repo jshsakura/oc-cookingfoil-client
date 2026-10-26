@@ -159,6 +159,10 @@ void setConsoleName(std::string name);
 // /api/shop/info's "features": what this server offers beyond the catalog
 // (retro, homebrew, ...). Empty for a reply without them.
 std::set<std::string> parseFeatures(const std::string& json);
+// Its client_strings.languages: every language the server's dictionary has,
+// [{"code","name","base"}], the ones the app ships too. A row without a code
+// or a name is left out, and so is one whose name the console cannot draw.
+std::vector<ExtraLanguage> parseClientLanguages(const std::string& json);
 // Its download.maxConnections: how many connections the server would have a
 // console open (0 when it does not say).
 int parseMaxConnections(const std::string& json);
@@ -180,6 +184,7 @@ public:
     std::vector<Item> takeItems() { return std::move(items_); }
     bool unchanged() const { return unchanged_; }
     const std::set<std::string>& features() const { return features_; }
+    const std::vector<ExtraLanguage>& clientLanguages() const { return clientLanguages_; }
     const std::vector<Featured>& featured() const { return featured_; }
     // Names in the current interface language.
     std::map<std::string, std::string> genres() const { return namesIn(genres_, languageCode()); }
@@ -241,6 +246,7 @@ private:
     std::vector<Item> items_;
     bool unchanged_ = false;
     std::set<std::string> features_;
+    std::vector<ExtraLanguage> clientLanguages_;
     std::vector<Featured> featured_;
     NameTable genres_, scoreLabels_;
     labels::Book labels_;

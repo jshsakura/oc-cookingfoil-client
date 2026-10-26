@@ -4,6 +4,7 @@
 // Chinese has no flag (null) and gets a chip with its script's name.
 #include "ui/Painter.hpp"
 #include <SDL2/SDL_image.h>
+#include <cctype>
 #include <cmath>
 #include <map>
 #include <utility>
@@ -83,6 +84,14 @@ void Painter::flag(int language, float x, float y, float w, float h) {
 }
 } // namespace foil::ui
 namespace foil::ui {
+void Painter::languageChip(const std::string &code, float x, float y, float w, float h) {
+  const SDL_Color chip{22, 22, 26, 210}, white{255, 255, 255, 255};
+  rect(x - 1, y - 1, w + 2, h + 2, chip, 4);
+  std::string label = code.substr(0, code.find('-'));
+  for (auto &c : label) c = char(std::toupper(static_cast<unsigned char>(c)));
+  const int size = std::max(9, int(h * 0.5f));
+  fonts.middle(label, x + std::max(2.f, (w - fonts.measure(label, size, true)) / 2), y + h / 2, size, white, true, w - 4);
+}
 void Painter::region(const std::string &code, float x, float y, float w, float h) {
   static const std::pair<const char *, int> Languages[] = {{"kr", 0}, {"us", 1}, {"jp", 2}};
   for (const auto &[name, language] : Languages)

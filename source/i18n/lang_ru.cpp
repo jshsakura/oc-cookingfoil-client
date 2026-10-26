@@ -1203,6 +1203,10 @@ const Translation rows[] = {
     {"Could not derive the NCA header key on the console. Shortcuts can be made only when booted into Atmosphere. Restart into Atmosphere and try again.", "Не удалось получить ключ заголовка NCA на консоли. Ярлыки можно создавать, только если консоль загружена в Atmosphere. Перезапустите её в Atmosphere и попробуйте снова."},
     {"Could not make a shortcut from the app file.", "Не удалось создать ярлык из файла приложения."},
     {"Enter a game name", "Введите название игры"},
+    {"Downloading additional language data", "Загрузка дополнительных языковых данных"},
+    {"Getting additional language data.", "Получение дополнительных языковых данных."},
+    {"Could not get the additional language data.", "Не удалось получить дополнительные языковые данные."},
+    {"Nothing arrived for 5 seconds. Check the connection and try again.", "За 5 секунд ничего не пришло. Проверьте подключение и попробуйте снова."},
 };
 const TranslationTable table(Language::Russian, rows, sizeof rows / sizeof rows[0]);
 } // namespace

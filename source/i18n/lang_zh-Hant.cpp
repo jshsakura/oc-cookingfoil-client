@@ -1203,6 +1203,10 @@ const Translation rows[] = {
     {"Could not derive the NCA header key on the console. Shortcuts can be made only when booted into Atmosphere. Restart into Atmosphere and try again.", "無法在主機上產生 NCA 標頭金鑰。只有以 Atmosphere 啟動時才能建立捷徑。請以 Atmosphere 重新啟動主機後再試一次。"},
     {"Could not make a shortcut from the app file.", "無法讀取應用程式檔案來建立捷徑。"},
     {"Enter a game name", "請輸入遊戲名稱"},
+    {"Downloading additional language data", "下載附加語言資料"},
+    {"Getting additional language data.", "正在取得附加語言資料。"},
+    {"Could not get the additional language data.", "無法取得附加語言資料。"},
+    {"Nothing arrived for 5 seconds. Check the connection and try again.", "5 秒內沒有收到資料。請檢查網路連線後再試一次。"},
 };
 const TranslationTable table(Language::ChineseTraditional, rows, sizeof rows / sizeof rows[0]);
 } // namespace
