@@ -1202,6 +1202,7 @@ const Translation rows[] = {
     {"Theme", "Tema"},
     {"Light|theme", "Chiaro"},
     {"Dark|theme", "Scuro"},
+    {"Black|theme", "Nero"},
     {"Same as the console", "Come la console"},
 };
 const TranslationTable table(Language::Italian, rows, sizeof rows / sizeof rows[0]);

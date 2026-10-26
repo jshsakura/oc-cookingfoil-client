@@ -434,6 +434,18 @@ int main(int argc, char **argv) {
     ui.render();
     if (!app.screenshot(shot + "/06-language-failed.png")) return 1;
     ui.previewLanguageDone();
+    // 설정 > 테마 on each palette, and the home screen in it.
+    for (int row = 0; row < 12; ++row) {
+      const auto name = std::string(row < 10 ? "0" : "") + std::to_string(row);
+      ui.screen(foil::ui::Screen::Settings);
+      ui.previewThemePopup(row);
+      ui.render();
+      if (!app.screenshot(shot + "/07-theme-" + name + ".png")) return 1;
+      ui.previewThemeClosed();
+      ui.screen(foil::ui::Screen::Home);
+      ui.render();
+      if (!app.screenshot(shot + "/07-home-" + name + ".png")) return 1;
+    }
     return 0;
   }
   bool running = true, typing = false;
