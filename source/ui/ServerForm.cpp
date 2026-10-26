@@ -163,9 +163,7 @@ void Application::saveServerForm() {
       if (!(size_t(index) == serverIndex_ && session_)) connect(index);
       else if (noteChanged && !note.empty()) {
         message(tr("Asking for approval again with your message."));
-        pairSince_ = SDL_GetTicks();
-        pairPollAt_ = 0;
-        refresh();
+        retryPairing();
       }
       return;
     }

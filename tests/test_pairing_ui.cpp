@@ -32,6 +32,7 @@ int runPairMessageUiTests(SDL_Renderer *renderer) {
                               "\",\"pairCode\":\"1234ABCD\",\"expiresAt\":2000000000000}";
   std::mutex lock;
   std::vector<std::string> posts;
+  std::atomic<int> statuses{0};
   std::atomic<bool> stop{false};
   std::thread mock([&] {
     while (!stop) {
@@ -62,6 +63,7 @@ int runPairMessageUiTests(SDL_Renderer *renderer) {
         posts.push_back(request);
         body = pending;
       } else if (request.rfind("GET /api/pair/status ", 0) == 0) {
+        ++statuses;
         body = pending;
       }
       const std::string reply = "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: " +
@@ -156,6 +158,20 @@ int runPairMessageUiTests(SDL_Renderer *renderer) {
       app.enterText("다른 기기");
       CHECK(foil::loadState(statePath).value.pairMessages.at(server.url) == "철수 거실 기기");
       pollFor(app, 300);
+      // Ten minutes on, it stops asking on its own; A asks again.
+      CHECK(!app.pairingStopped());
+      app.agePairing(foil::ui::Application::PairWaitMs);
+      pollFor(app, 1000);
+      CHECK(app.pairingStopped());
+      const int stoppedAt = statuses;
+      pollFor(app, 6000);
+      CHECK(statuses == stoppedAt);
+      app.render();
+      app.action(foil::ui::Action::Accept);
+      CHECK(!app.pairingStopped());
+      pollFor(app, 2000);
+      CHECK(statuses == stoppedAt + 1);
+      CHECK(app.pairingPending());
     }
     std::filesystem::remove_all(root);
   }
@@ -207,6 +223,9 @@ int runPairingUiTests(SDL_Renderer *renderer) {
         continue;
       }
       requests.push_back(request);
+      // The approval takes a moment, as a real server's would: the screen
+      // keeps showing the code while it is asked.
+      if (i == 1) std::this_thread::sleep_for(std::chrono::milliseconds(300));
       const std::string body = i == 0
           ? "{\"status\":\"pending\",\"pairUrl\":\"" + pairUrl + "\",\"pairCode\":\"1234ABCD\",\"expiresAt\":2000000000000}"
           : i == 1 ? R"({"status":"approved","accessKey":"issued-once"})"
@@ -238,10 +257,14 @@ int runPairingUiTests(SDL_Renderer *renderer) {
       CHECK(app.groupCount() == 0);
       app.render();
       deadline = SDL_GetTicks() + 8000;
+      bool flickered = false;
       while (app.groupCount() == 0 && SDL_GetTicks() < deadline) {
         app.poll();
+        app.render();
+        flickered = flickered || (app.pairingPending() && app.showingPlaceholders());
         SDL_Delay(10);
       }
+      CHECK(!flickered); // the approval poll never swaps the code for placeholders
       CHECK(app.groupCount() == 1);
       CHECK(!app.pairingPending());
       CHECK(app.pairingInfo().url.empty());

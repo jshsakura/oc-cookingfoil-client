@@ -113,6 +113,13 @@ public:
   // Downloads that find their token run out get a fresh one from this server.
   void renewTokensWith(const Server &server);
   bool pairingPending() const { return pairingPending_; }
+  static constexpr uint32_t PairWaitMs = 10 * 60 * 1000;
+  // Waiting for approval, but no longer asking on its own.
+  bool pairingStopped() const { return pairingPending_ && pairSince_ && SDL_GetTicks() - pairSince_ >= PairWaitMs; }
+  // As if approval had been pending `ms` longer (tests).
+  void agePairing(uint32_t ms) { pairSince_ -= ms; }
+  // The screen shows loading placeholders in place of its content.
+  bool showingPlaceholders() const { return refreshSkeleton(); }
   const net::PairingInfo &pairingInfo() const { return pairingInfo_; }
   bool loading() const { return detailLoading_; }
   void screen(Screen screen);
@@ -1705,8 +1712,14 @@ private:
   std::vector<UpdateCandidate> pendingUpdates() const;
   uint32_t installedAt_ = 0; // when the installed list was last read
   bool updateNewer_ = false; // a newer build was found; kept while checking again
-  // Every automatic ask is bounded; - or Y starts them again.
+  // Every automatic ask is bounded; -, Y or A starts them again.
   uint32_t pairSince_ = 0;    // when approval became pending; polling stops after a while
+  int pairPolls_ = 0;         // approval checks made since: each waits longer
+  // Approval is checked after 5 seconds, then twice as long each time up to
+  // a minute (pairPollGap), and not at all after PairWaitMs until asked again.
+  uint32_t pairPollGap() const { return std::min<uint32_t>(5000u << std::min(pairPolls_, 4), 60000); }
+  // Checks approval now and starts the wait over.
+  void retryPairing();
   int patchRetries_ = 0, retroRetries_ = 0;
   InstalledLibrary installed_, incomingInstalled_;
   std::vector<SaveEntry> saves_, incomingSaves_;
