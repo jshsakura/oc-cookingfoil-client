@@ -820,7 +820,7 @@ void Application::patchesScreen() {
                               : on ? tr("On")
                               : stored ? tr("Off") : tr("Not installed");
     const SDL_Color fill = busy || update ? Butter : on ? Good : Line;
-    const SDL_Color ink = on && !busy && !update ? Surface : Ink;
+    const SDL_Color ink = busy || update ? OnButter : on ? White : Ink;
     const float w = paint_.fonts.measure(state, 16, true) + 20;
     paint_.rect(right - w, y + 16, w, 30, fill, 8);
     paint_.fonts.middle(state, right - w + 10, y + 31, 16, ink, true);
@@ -900,7 +900,7 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
     const bool lit = ((row.record && row.record->on) || row.onCard) && !busy && !update;
     const float sw = paint_.fonts.measure(state, 15, true) + 20;
     paint_.rect(x + w - 16 - sw, y + 10, sw, 26, busy || update ? Butter : lit ? Good : Surface, 8);
-    paint_.fonts.middle(state, x + w - 16 - sw + 10, y + 23, 15, lit ? Surface : Ink, true);
+    paint_.fonts.middle(state, x + w - 16 - sw + 10, y + 23, 15, busy || update ? OnButter : lit ? White : Ink, true);
     const auto size = formatBytes(row.record ? row.record->bytes : row.patch.size);
     paint_.fonts.text(size, x + w - 16 - paint_.fonts.measure(size, 17, true), y + 44, 17, Ink, true);
   }

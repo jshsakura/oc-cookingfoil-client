@@ -104,11 +104,11 @@ void Application::homebrewDetail() {
   paint_.icon(7, 32, BackLine - 10, Surface, 20);
   const float admin = adminChip();
   voteChips(admin < BandRight ? admin - 10 : admin);
-  paint_.fonts.middle(homebrewReturn_ == Screen::Downloads ? tr("Downloads") : tr("Homebrew"), 56, BackLine, 17, Surface, false, 360);
+  paint_.fonts.middle(homebrewReturn_ == Screen::Downloads ? tr("Downloads") : tr("Homebrew"), 56, BackLine, 17, White, false, 360);
   hit(24, BackLine - 20, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
   cover(icon, 40, Top, 140, false, app.name, true, true);
-  paint_.fonts.text(app.name, 208, Top + 4, 38, Surface, true, 1010);
+  paint_.fonts.text(app.name, 208, Top + 4, 38, White, true, 1010);
   std::string byline = app.author;
   const auto onCard = homebrewCardVersion(app);
   if (!app.version.empty()) byline += (byline.empty() ? "" : " · ") + ("v" + app.version);
@@ -140,7 +140,7 @@ void Application::homebrewDetail() {
   } else {
     constexpr float Height = 92, Badge = 52;
     paint_.rect(40, y, 750, Height, Surface, 16);
-    paint_.rect(64, y + (Height - Badge) / 2, Badge, Badge, {255, 241, 204, 255}, int(Badge / 2));
+    paint_.rect(64, y + (Height - Badge) / 2, Badge, Badge, Cream, int(Badge / 2));
     paint_.icon(29, 64 + (Badge - 26) / 2, y + (Height - 26) / 2, Ink, 26);
     paint_.fonts.middle(tr("No description yet"), 136, y + 34, 20, Ink, true, 620);
     paint_.fonts.middle(tr("Check the details below."), 136, y + 62, 16, Secondary, false, 630);
@@ -294,13 +294,13 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
     const bool mine = retroBusy_ == "homebrew:" + app.id && retroBytes_;
     onTheWayButton(X, W, onTheWay == 2, percent, mine ? 100.0 * double(retroKept_.load()) / double(retroBytes_) : 0);
   } else if (app.cardOnly) {
-    paint_.rect(X, 568, W, 60, {228, 225, 218, 255}, 14);
+    paint_.rect(X, 568, W, 60, Line, 14);
     const std::string label = tr("Not on the server");
     paint_.fonts.middle(label, X + (W - paint_.fonts.measure(label, 21, true)) / 2, 598, 21, Secondary, true);
   } else {
     paint_.rect(X, 568, W, 60, Butter, 14);
     const auto label = homebrewButtonLabel(app);
-    paint_.keyLabel("A", label, X + (W - paint_.keyLabelWidth("A", label, 22, true)) / 2, 598, 22, Ink, true);
+    paint_.keyLabel("A", label, X + (W - paint_.keyLabelWidth("A", label, 22, true)) / 2, 598, 22, OnButter, true);
   }
 }
 } // namespace foil::ui

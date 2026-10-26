@@ -5,6 +5,7 @@
 #include "net/Segmented.hpp"
 #include "net/Tuner.hpp"
 #include "platform/Focus.hpp"
+#include "platform/Identity.hpp"
 #include "platform/Cores.hpp"
 #include "core/Config.hpp"
 #include "platform/Storage.hpp"
@@ -48,7 +49,8 @@ int menuIndex(Screen screen) {
 Application::Application(SDL_Renderer *renderer, std::string configPath,
                          std::string statePath, std::string fixture)
     : paint_(renderer), configPath_(std::move(configPath)),
-      statePath_(std::move(statePath)), fixture_(std::move(fixture)) {
+      statePath_(std::move(statePath)), fixture_(std::move(fixture)), consoleDark_(platform::consoleDark()) {
+  applyTheme(); // the loading screen's first frame already in the console's theme
   platform::onLeavingScreen([this] { keepDownloadPlace(); });
 }
 Application::~Application() {
@@ -293,7 +295,9 @@ bool Application::open() {
         const auto saved = loadState(statePath_).value;
         state_.language = saved.language;
         state_.sounds = saved.sounds;
+        state_.theme = saved.theme;
       }
+      applyTheme();
       applyStartupLanguage();
       sounds_.setOn(state_.sounds);
       // Each step says what it is doing under the logo, so a slow SD card or
@@ -504,6 +508,9 @@ void Application::openPatchStore(const std::string &sd) {
   patchRecords_ = patchStore_->records();
   ++patchLedgerGen_;
   patchCheckWanted_ = true; // once after the app starts
+}
+void Application::applyTheme() {
+  usePalette(state_.theme == "dark" || (state_.theme.empty() && consoleDark_) ? DarkPalette : LightPalette);
 }
 void Application::applyStartupLanguage() {
   auto code = state_.language;
@@ -907,6 +914,7 @@ void Application::applyReload(int prefer, ReloadRead read) {
   config_ = std::move(parsed.value);
   error_ = {};
   state_ = state.value;
+  applyTheme();
   applyStartupLanguage();
   if (parsed.created)
     message(tr("Created the config file. Add a server with \"+ Add server\" in Settings."));
@@ -1304,6 +1312,7 @@ void Application::takeNetwork() {
     state_.makeShortcuts = mine.makeShortcuts;
     state_.sounds = mine.sounds;
     state_.installTarget = mine.installTarget;
+    state_.theme = mine.theme;
     state_.pairMessages = mine.pairMessages;
     // Each other server's keys come from its own session.
     for (const auto &other : others_) {
@@ -2034,21 +2043,27 @@ void Application::action(Action a) {
             if (extras[i].code == extra->code) languageRow_ = LanguageCount + int(i);
         }
         break;
+      // The console's theme, then light, then dark.
       case 1:
+        state_.theme = state_.theme.empty() ? "light" : state_.theme == "light" ? "dark" : "";
+        applyTheme();
+        saveOwnState();
+        break;
+      case 2:
         state_.installTarget = installTarget() == "nand" ? "sd" : "nand";
         saveOwnState();
         break;
-      case 2: appUpdateAction(a); break;
+      case 3: appUpdateAction(a); break;
       // What each leftover takes, in a popup; the picked ones go.
-      case 3: openFileCleanup(); break;
+      case 4: openFileCleanup(); break;
       // The switches, together.
-      case 4: toggleInstallCheck(state_.makeShortcuts); break;
-      case 5:
+      case 5: toggleInstallCheck(state_.makeShortcuts); break;
+      case 6:
         toggleInstallCheck(state_.sounds);
         sounds_.setOn(state_.sounds);
         sounds_.play(Cue::Add); // turned on: heard at once
         break;
-      case 6: openBugReport(""); break;
+      case 7: openBugReport(""); break;
       default:
         // A server opens its form; "+ 서버 추가" an empty one.
         openServerForm(selected_ < int(config_.servers.size()) ? std::max(0, selected_) : -1);
@@ -2115,7 +2130,7 @@ void Application::scoreBadge(int score, float right, float y) {
   const float w = paint_.fonts.measure(label, 13, true) + 10, h = 19;
   const SDL_Color band = scoreColor(score);
   paint_.rect(right - w, y, w, h, band, 5);
-  paint_.fonts.middle(label, right - w + 5, y + h / 2, 13, Surface, true);
+  paint_.fonts.middle(label, right - w + 5, y + h / 2, 13, White, true);
 }
 void Application::card(const Group &g, float x, float y, bool selected,
                        bool badges) {
@@ -2125,14 +2140,14 @@ void Application::card(const Group &g, float x, float y, bool selected,
   cover(g.representative.icon, x, y, 150, selected, g.representative.name);
   // Surely unsigned: dimmed, as the console may refuse it.
   if ((g.base ? *g.base : g.representative).unsignedFile)
-    paint_.rect(x, y, 150, 150, {242, 241, 238, 170}, 14);
+    paint_.rect(x, y, 150, 150, {Ground.r, Ground.g, Ground.b, 170}, 14);
   // Download size on the top left, in the same small badge as the score:
   // the base with its update, as a player installs them.
   if (const auto bytes = groupBytes(g); bytes > 0) {
     const auto label = formatBytes(bytes);
     const float w = paint_.fonts.measure(label, 13, true) + 10, h = 19;
     paint_.rect(x + 6, y + 6, w, h, {22, 22, 26, 190}, 5);
-    paint_.fonts.middle(label, x + 11, y + 6 + h / 2, 13, Surface, true);
+    paint_.fonts.middle(label, x + 11, y + 6 + h / 2, 13, White, true);
   }
   // Review score on the poster's top right.
   scoreBadge(g.representative.score, x + 150 - 6, y + 6);
@@ -2287,7 +2302,7 @@ void Application::shell() {
       paint_.ring(16, y, 200, height, 12);
     if (active)
       paint_.rect(16, y, 200, height, Ink, 12);
-    const SDL_Color ink = active ? Surface : open ? Ink : SDL_Color{184, 182, 176, 255};
+    const SDL_Color ink = active ? Surface : open ? Ink : Muted;
     paint_.icon(iconOf(MenuScreens[i]), 32, y + (height - 26) / 2, ink);
     // 내 게임 counts its updates, so they are not missed without a menu row.
     const bool updates = MenuScreens[i] == Screen::Installed, downloads = MenuScreens[i] == Screen::Downloads;
@@ -2304,13 +2319,13 @@ void Application::shell() {
     if (newer) {
       paint_.rect(171, y + height / 2 - 14, 28, 28, Butter, 14);
       paint_.fonts.text("1", 185 - paint_.fonts.measure("1", 16, true) / 2, paint_.fonts.centerTop("1", 16, true, y + height / 2),
-                        16, Ink, true);
+                        16, OnButter, true);
     }
     if (count) {
       paint_.rect(171, y + height / 2 - 14, 28, 28, Butter, 14);
       const auto text = count > 99 ? "99+" : std::to_string(count);
       paint_.fonts.text(text, 185 - paint_.fonts.measure(text, 16, true) / 2,
-                        paint_.fonts.centerTop(text, 16, true, y + height / 2), 16, Ink, true);
+                        paint_.fonts.centerTop(text, 16, true, y + height / 2), 16, OnButter, true);
     }
   }
 }
@@ -2394,7 +2409,7 @@ float Application::statusBar() {
   if (!platform::applicationMode()) {
     const auto mode = tr("Applet mode");
     const float w = paint_.fonts.measure(mode, 15, true) + 18;
-    paint_.rect(x - 8, Mid - 13, w, 26, {255, 236, 196, 255}, 8);
+    paint_.rect(x - 8, Mid - 13, w, 26, Cream, 8);
     paint_.fonts.middle(mode, x + 1, Mid, 15, Pending, true);
     x += w + 10;
   }
@@ -2404,7 +2419,7 @@ float Application::statusBar() {
   if (screen_ == Screen::Downloads && awake_) {
     const auto awake = tr("Screen stays on");
     const float w = paint_.fonts.measure(awake, 15, true) + 18;
-    paint_.rect(x - 8, Mid - 13, w, 26, {214, 241, 223, 255}, 8);
+    paint_.rect(x - 8, Mid - 13, w, 26, GreenTint, 8);
     paint_.fonts.middle(awake, x + 1, Mid, 15, Good, true);
     x += w + 10;
   }
@@ -2695,9 +2710,9 @@ void Application::render() {
     paint_.rect(x, y, w, h, {22, 22, 26, 235}, int(h / 2 < 25 ? h / 2 : 25));
     paint_.icon(33, x + 22, y + (h - Icon) / 2, Butter, int(Icon));
     if (twoLines)
-      paint_.fonts.wrapped(notice_, x + 22 + Icon + 12, y + 12, 18, Surface, text + 4, 2);
+      paint_.fonts.wrapped(notice_, x + 22 + Icon + 12, y + 12, 18, White, text + 4, 2);
     else
-      paint_.fonts.middle(notice_, x + 22 + Icon + 12, y + h / 2, 18, Surface);
+      paint_.fonts.middle(notice_, x + 22 + Icon + 12, y + h / 2, 18, White);
   }
   dialogs();
   // What the finger is on, darker, as a pressed button on the web.
@@ -2712,11 +2727,11 @@ void Application::render() {
       constexpr float Pad = 8;
       SDL_RenderSetClipRect(paint_.renderer, nullptr);
       if (pressedLook_.w > 0)
-        paint_.rect(pressedLook_.x, pressedLook_.y, pressedLook_.w, pressedLook_.h, {0, 0, 0, 36}, pressedRadius_);
+        paint_.rect(pressedLook_.x, pressedLook_.y, pressedLook_.w, pressedLook_.h, Press, pressedRadius_);
       else if (pressedRadius_ < 0) // a row (rowHit): exactly its shape
-        paint_.rect(pressed_.x, pressed_.y, pressed_.w, pressed_.h, {0, 0, 0, 36}, -pressedRadius_);
+        paint_.rect(pressed_.x, pressed_.y, pressed_.w, pressed_.h, Press, -pressedRadius_);
       else
-        paint_.rect(pressed_.x - Pad, pressed_.y - Pad, pressed_.w + 2 * Pad, pressed_.h + 2 * Pad, {0, 0, 0, 36}, 18);
+        paint_.rect(pressed_.x - Pad, pressed_.y - Pad, pressed_.w + 2 * Pad, pressed_.h + 2 * Pad, Press, 18);
     }
   }
   SDL_RenderPresent(paint_.renderer);

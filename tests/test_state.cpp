@@ -98,6 +98,18 @@ int runStateTests() {
     CHECK(foil::loadState(db).value.queueJson == "[]");
   }
   {
+    // The theme chosen in 설정 comes back; anything but light or dark is
+    // dropped, so the console's theme is followed.
+    auto themed = foil::loadState(db).value;
+    CHECK(themed.theme.empty());
+    themed.theme = "dark";
+    CHECK(foil::saveState(db, themed, error));
+    CHECK(foil::loadState(db).value.theme == "dark");
+    themed.theme = "sepia";
+    CHECK(foil::saveState(db, themed, error));
+    CHECK(foil::loadState(db).value.theme.empty());
+  }
+  {
     // Held by a write still going (another instance's lock, fresh), or left
     // by a run closed mid-write: a read does not wait on it (a write replaces
     // the file whole by rename, so a read sees it whole either way).

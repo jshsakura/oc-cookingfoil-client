@@ -60,8 +60,8 @@ float Application::adminChip() {
   // Under the cursor it turns butter, as a focused button does.
   const bool focused = adminFocus_;
   paint_.rect(x, Top, w, Height, focused ? Butter : SDL_Color{255, 255, 255, 41}, 17);
-  paint_.icon(45, x + 14, Top + (Height - 18) / 2, focused ? Ink : Butter, 18);
-  paint_.fonts.middle(label, x + 40, Top + Height / 2, 16, focused ? Ink : Surface, true);
+  paint_.icon(45, x + 14, Top + (Height - 18) / 2, focused ? OnButter : Butter, 18);
+  paint_.fonts.middle(label, x + 40, Top + Height / 2, 16, focused ? OnButter : White, true);
   return x;
 }
 void Application::openAdminEdit() {
@@ -186,7 +186,7 @@ void Application::adminEditDialog() {
     if (field.type == admin::Type::Toggle) {
       constexpr float SwitchW = 52, SwitchH = 30;
       const float sx = x + w - 18 - SwitchW;
-      paint_.rect(sx, mid - SwitchH / 2, SwitchW, SwitchH, field.on ? Good : SDL_Color{214, 211, 204, 255}, 15);
+      paint_.rect(sx, mid - SwitchH / 2, SwitchW, SwitchH, field.on ? Good : Line, 15);
       paint_.rect(field.on ? sx + SwitchW - 27 : sx + 3, mid - 12, 24, 24, Surface, 12);
       const std::string state = field.on ? tr("On|switch") : tr("Off|switch");
       paint_.fonts.middle(state, sx - 12 - paint_.fonts.measure(state, 15, true), mid, 15, field.on ? Good : Secondary, true);

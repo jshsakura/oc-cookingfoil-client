@@ -76,11 +76,11 @@ void Application::retroArchPage() {
   }
   paint_.rect(0, 0, 1280, 212, {10, 10, 14, 255});
   paint_.icon(7, 32, BackLine - 10, Surface, 20);
-  paint_.fonts.middle(previous_ == Screen::Downloads ? tr("Downloads") : tr("Retro games"), 56, BackLine, 17, Surface, false, 360);
+  paint_.fonts.middle(previous_ == Screen::Downloads ? tr("Downloads") : tr("Retro games"), 56, BackLine, 17, White, false, 360);
   hit(24, BackLine - 20, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
   cover("", 40, Top, 140, false, "RetroArch", true, true);
-  paint_.fonts.text("RetroArch", 208, Top + 4, 38, Surface, true, 1010);
+  paint_.fonts.text("RetroArch", 208, Top + 4, 38, White, true, 1010);
   paint_.fonts.text(tr("Runs the retro games"), 208, Top + 62, 19, {228, 228, 234, 255}, false, 960);
   float px = 208;
   px += paint_.pill(present ? tr("Installed") : tr("Not installed"), px, Top + 100, true, 17) + 10;
@@ -159,7 +159,7 @@ void Application::retroArchPage() {
   } else {
     paint_.rect(X, 568, W, 60, Butter, 14);
     const std::string label = present ? tr("Check for updates|retroarch") : tr("Install RetroArch");
-    paint_.keyLabel("A", label, X + (W - paint_.keyLabelWidth("A", label, 22, true)) / 2, 598, 22, Ink, true);
+    paint_.keyLabel("A", label, X + (W - paint_.keyLabelWidth("A", label, 22, true)) / 2, 598, 22, OnButter, true);
   }
 }
 } // namespace foil::ui

@@ -320,7 +320,7 @@ void Application::topCard(const TopCard &c, float dy) {
     const bool done = state == 2, active = state == 1;
     const float mark = done ? 22 : 0;
     const auto width = paint_.fonts.measure(label, 15, true) + 24 + mark;
-    paint_.rect(x, dy + 216, width, 32, done ? SDL_Color{227, 242, 234, 255} : active ? Ink : Ground, 8);
+    paint_.rect(x, dy + 216, width, 32, done ? GreenTint : active ? Ink : Ground, 8);
     if (done)
       paint_.icon(8, x + 10, dy + 223, Okay, 18);
     paint_.fonts.text(label, x + 12 + mark, dy + 220, 15, done ? Okay : active ? Surface : Secondary, true);
@@ -343,7 +343,7 @@ void Application::topCard(const TopCard &c, float dy) {
     bx -= w;
     buttonHit({bx, dy + 216, w, 32}, 8, c.onPause);
     paint_.rect(bx, dy + 216, w, 32, c.paused ? Butter : Ground, 8);
-    paint_.fonts.middle(label, bx + 16, dy + 232, 16, Ink, true);
+    paint_.fonts.middle(label, bx + 16, dy + 232, 16, c.paused ? OnButter : Ink, true);
     bx -= 10;
   }
   // Its page, only when it has one.

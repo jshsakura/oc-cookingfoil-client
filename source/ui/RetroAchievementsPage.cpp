@@ -96,7 +96,7 @@ void Application::raConnectCard(float y) {
   for (int i = 0; i < 3; ++i) {
     const float x = Left + i * StepWidth, top = y + 152;
     paint_.rect(x, top, 28, 28, Butter, 14);
-    paint_.fonts.centered(std::to_string(i + 1), x + 14, top + 2, 16, Ink, 28, 1, true);
+    paint_.fonts.centered(std::to_string(i + 1), x + 14, top + 2, 16, OnButter, 28, 1, true);
     std::string step = tr(steps[i]);
     if (const auto dot = step.find(". "); dot != std::string::npos && dot <= 2) step = step.substr(dot + 2);
     paint_.fonts.wrapped(step, x + 40, top + 3, 17, Ink, StepWidth - 60, 2);
@@ -114,7 +114,7 @@ void Application::raConnectCard(float y) {
   });
   if (focusable && raConnectButton_ == 0) paint_.ring(Left, buttonY, phoneW, ButtonH, 14);
   paint_.rect(Left, buttonY, phoneW, ButtonH, making ? Line : Butter, 14);
-  paint_.fonts.middle(tr("Connect with a phone"), Left + 30, buttonY + ButtonH / 2, 20, making ? Secondary : Ink, true,
+  paint_.fonts.middle(tr("Connect with a phone"), Left + 30, buttonY + ButtonH / 2, 20, making ? Secondary : OnButter, true,
                       phoneW - 60);
   const float handX = Left + phoneW + 16;
   const float handW = std::min(paint_.fonts.measure(tr("Enter here"), 20, true), 240.f) + 60;
@@ -204,7 +204,7 @@ void Application::raAccountRow(float y, bool loading) {
   const std::string out = tr("Sign out|achievements");
   const float bw = paint_.fonts.measure(out, 17, true) + 36;
   paint_.rect(1230 - bw, y + 22, bw, 40, focused ? Butter : Ground, 12);
-  paint_.fonts.middle(out, 1230 - bw + 18, y + 42, 17, Ink, true);
+  paint_.fonts.middle(out, 1230 - bw + 18, y + 42, 17, focused ? OnButter : Ink, true);
 }
 // The account (or, not signed in, the connect card and a line naming the
 // games), then the server's retro games with achievements, scrolling as
@@ -329,7 +329,7 @@ void Application::raGuideCard(float y, const RaGuide &guide) {
   for (size_t i = 0; i < guide.steps.size(); ++i) {
     const float top = stepsTop + i * GuideStep;
     paint_.rect(Text, top, 28, 28, Butter, 14);
-    paint_.fonts.centered(std::to_string(i + 1), Text + 14, top + 2, 16, Ink, 28, 1, true);
+    paint_.fonts.centered(std::to_string(i + 1), Text + 14, top + 2, 16, OnButter, 28, 1, true);
     paint_.fonts.middle(guide.steps[i], Text + 42, top + 14, 18, Ink, false, Width - 42);
   }
 }

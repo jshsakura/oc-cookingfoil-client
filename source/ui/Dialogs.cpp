@@ -218,16 +218,16 @@ void Application::viewPopup() {
       action(Action::Accept);
     });
     // Applied: butter-tinted, bold, filled mark. Focus: border inside the row.
-    const SDL_Color fill = on ? SDL_Color{255, 241, 204, 255} : focused ? Ground : Surface;
+    const SDL_Color fill = on ? Cream : focused ? Ground : Surface;
     if (focused) paint_.focusRow(x, y, w, h, fill, 10);
     else paint_.rect(x, y, w, h, fill, 10);
     const int round = checkbox ? 6 : 10;
-    paint_.rect(x + 12, mid - 10, 20, 20, on ? Ink : SDL_Color{176, 174, 167, 255}, round);
+    paint_.rect(x + 12, mid - 10, 20, 20, on ? Ink : Muted, round);
     paint_.rect(x + 14, mid - 8, 16, 16, on ? Butter : Surface, round - 2);
     if (on && checkbox)
-      paint_.icon(8, x + 14, mid - 8, Ink, 16);
+      paint_.icon(8, x + 14, mid - 8, OnButter, 16);
     else if (on)
-      paint_.rect(x + 18, mid - 4, 8, 8, Ink, 4);
+      paint_.rect(x + 18, mid - 4, 8, 8, OnButter, 4);
     paint_.fonts.middle(label, x + 42, mid, 18, Ink, on, w - 52);
   };
   for (int n = 0; n < int(labels.size()); ++n)
@@ -357,7 +357,7 @@ void Application::dialogs() {
         return rgb.set ? SDL_Color{rgb.r, rgb.g, rgb.b, 255} : otherwise;
       };
       const net::Rgb unset;
-      const SDL_Color fill = own(option ? option->cardColor : unset, SDL_Color{253, 226, 226, 255}),
+      const SDL_Color fill = own(option ? option->cardColor : unset, RedTint),
                       text = own(option ? option->cardText : unset, Bad);
       paint_.rect(x, top, cardW, noteH + 2 * CardPad, fill, 14);
       paint_.icon(!option || option->cardIcon == "warning" ? 25 : 33, x + 18, top + CardPad, text, 24);

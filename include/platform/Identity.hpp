@@ -8,4 +8,7 @@ DeviceIdentity consoleIdentity();
 // The console's nickname from System Settings; empty when it could not be
 // read. The PC preview has none.
 std::string consoleNickname();
+// The console's theme in System Settings is Basic Black. The PC preview's
+// is white.
+bool consoleDark();
 } // namespace foil::platform

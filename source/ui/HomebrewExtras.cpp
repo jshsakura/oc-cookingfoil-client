@@ -181,7 +181,7 @@ void Application::homebrewExtrasDialog() {
     if (!state.empty()) {
       const float sw = paint_.fonts.measure(state, 16, true) + 20;
       paint_.rect(x + w - 16 - sw, y + 10, sw, 28, busy || update ? Butter : lit ? Good : Surface, 8);
-      paint_.fonts.middle(state, x + w - 16 - sw + 10, y + 24, 16, lit ? Surface : Ink, true);
+      paint_.fonts.middle(state, x + w - 16 - sw + 10, y + 24, 16, busy || update ? OnButter : lit ? White : Ink, true);
     }
     if (size) {
       const auto bytes = formatBytes(size);

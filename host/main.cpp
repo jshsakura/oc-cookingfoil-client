@@ -93,6 +93,7 @@ std::pair<foil::InstalledLibrary, foil::SaveEntry> fixtureInstalled(const std::s
 } // namespace
 namespace foil::platform {
 void setHostSpace(uint64_t bytes);
+void setHostDark(bool dark);
 }
 int main(int argc, char **argv) {
   std::string shot, fixture, url, configPath, appConfig, statePath = "out/cookingfoil.db", language, self, retroDetail;
@@ -118,6 +119,8 @@ int main(int argc, char **argv) {
       servePort = std::atoi(value.c_str());
     else if (arg == "--state")
       statePath = value;
+    else if (arg == "--theme")
+      foil::platform::setHostDark(value == "dark"); // the console's theme in System Settings
     else if (arg == "--lang")
       language = value; // ko, en, ja or zh
     else if (arg == "--retro")

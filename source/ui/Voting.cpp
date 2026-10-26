@@ -95,7 +95,7 @@ float Application::voteChips(float right) {
       castVote(up ? "up" : "down");
     });
     const SDL_Color fill = focused ? Butter : mine ? SDL_Color{255, 255, 255, 230} : SDL_Color{255, 255, 255, 41};
-    const SDL_Color ink = focused || mine ? Ink : Surface;
+    const SDL_Color ink = focused || mine ? Night : White;
     paint_.rect(x, Top, w, Height, fill, 17);
     paint_.icon(up ? 47 : 48, x + 12, Top + (Height - 18) / 2, ink, 18);
     paint_.fonts.middle(label, x + 38, Top + Height / 2, 16, ink, true);

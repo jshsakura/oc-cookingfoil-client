@@ -251,7 +251,7 @@ float Application::raHeaderButton(float right) {
     else openRaPage();
   });
   paint_.rect(x, 24, w, 48, open ? Butter : Surface, 12);
-  paint_.keyLabel("X", label, x + 20, 48, 19, ready ? Ink : Secondary, true, ready);
+  paint_.keyLabel("X", label, x + 20, 48, 19, !ready ? Secondary : open ? OnButter : Ink, true, ready);
   return x;
 }
 void Application::raDialog() {
@@ -281,7 +281,7 @@ void Application::raDialog() {
     });
     if (raRow_ == n) paint_.ring(bx, ry, bw, Row, 14); // under the button
     paint_.rect(bx, ry, bw, Row, raRow_ == n ? Butter : Ground, 14);
-    paint_.fonts.centered(label, bx + bw / 2, ry + Row / 2 - 14, 20, Ink, bw, 1, true);
+    paint_.fonts.centered(label, bx + bw / 2, ry + Row / 2 - 14, 20, raRow_ == n ? OnButter : Ink, bw, 1, true);
   };
   const auto field = [&](int n, const std::string &label, const std::string &value) {
     const float ry = y + n * (Row + Gap);

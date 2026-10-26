@@ -67,7 +67,7 @@ void Application::pairing() {
     hit(290, ButtonY, ButtonW, ButtonH, [this] { retryPairing(); });
     paint_.rect(290, ButtonY, ButtonW, ButtonH, Butter, 14);
     const auto label = tr("Try again");
-    paint_.keyLabel("A", label, 290 + (ButtonW - paint_.keyLabelWidth("A", label, 20, true)) / 2, ButtonY + ButtonH / 2, 20, Ink, true);
+    paint_.keyLabel("A", label, 290 + (ButtonW - paint_.keyLabelWidth("A", label, 20, true)) / 2, ButtonY + ButtonH / 2, 20, OnButter, true);
   } else
     paint_.fonts.wrapped(tr("If you cannot scan it, enter the device code in device approval. Connects automatically once approved."),
                          290, 440, 19, Secondary, 570, 3);

@@ -216,7 +216,7 @@ int Application::retroCoreCard(int y) {
   const bool server = retroPick_.coreOff;
   if (!server && !retroCoreMissing(retroPick_)) return y;
   constexpr float X = 40, W = 750, Height = 52;
-  paint_.rect(X, y, W, Height, server ? SDL_Color{253, 226, 226, 255} : SDL_Color{255, 241, 204, 255}, 14);
+  paint_.rect(X, y, W, Height, server ? RedTint : Cream, 14);
   paint_.icon(33, X + 18, y + (Height - 24) / 2, server ? Bad : Pending, 24);
   paint_.fonts.middle(server ? std::string(tr("The server has no core registered for this game."))
                              : trf("The {0} core is missing, so it comes down right after the game.", {retroPick_.core}),
@@ -314,12 +314,12 @@ void Application::retroDetail() {
   if (right < BandRight) right -= 10;
   if (const float left = raChip(right); left < right) right = left - 10;
   voteChips(right);
-  paint_.fonts.middle(back, 56, BackLine, 17, Surface);
+  paint_.fonts.middle(back, 56, BackLine, 17, White);
   hit(24, BackLine - 20, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
   cover(game.iconUrl, 40, Top, 140, false, game.name, true, true);
   paint_.region(game.region, 40 + 140 - 44, Top + 140 - 32, 36, 24);
-  paint_.fonts.text(game.name, 208, Top + 4, 38, Surface, true, 1010);
+  paint_.fonts.text(game.name, 208, Top + 4, 38, White, true, 1010);
   // Under the name: its original title, and the system it runs on.
   std::string subtitle = game.original != game.name ? game.original : "";
   const auto system = std::find_if(retroSystems_.begin(), retroSystems_.end(), [&](const auto &s) { return s.id == game.system; });
@@ -352,7 +352,7 @@ void Application::retroDetail() {
   } else {
     constexpr float Height = 92, Badge = 52;
     paint_.rect(40, y, 750, Height, Surface, 16);
-    paint_.rect(64, y + (Height - Badge) / 2, Badge, Badge, {255, 241, 204, 255}, int(Badge / 2));
+    paint_.rect(64, y + (Height - Badge) / 2, Badge, Badge, Cream, int(Badge / 2));
     paint_.icon(29, 64 + (Badge - 26) / 2, y + (Height - 26) / 2, Ink, 26);
     paint_.fonts.middle(tr("No description yet"), 136, y + 34, 20, Ink, true, 620);
     paint_.fonts.middle(tr("Check the details below."), 136, y + 62, 16, Secondary, false, 630);
@@ -401,10 +401,10 @@ void Application::retroDetailPanel() {
     });
     if (retroPart_ == n && panelFocus) paint_.focusRow(840, ry, W, RowHeight, Ground, 12);
     // A box for each version, as a game's install list: checked ones come down.
-    const SDL_Color edge = checked ? Ink : SDL_Color{138, 138, 147, 255};
+    const SDL_Color edge = checked ? Ink : Muted;
     paint_.rect(852, mid - 14, 28, 28, v.missing ? Line : edge, 8);
     paint_.rect(854, mid - 12, 24, 24, checked ? Butter : Surface, 6);
-    if (checked) paint_.icon(8, 856, mid - 10, Ink, 20);
+    if (checked) paint_.icon(8, 856, mid - 10, OnButter, 20);
     float tx = 888;
     if (!v.region.empty()) {
       paint_.region(v.region, tx, mid - 10, 30, 20);
@@ -447,7 +447,7 @@ void Application::retroDetailPanel() {
   const auto room = sdFree_         ? trf("{0} free", {formatBytes(*sdFree_)})
                     : storageChecked_ ? std::string(tr("Space unknown"))
                                       : std::string(tr("Checking"));
-  paint_.fonts.middle(room, 840 + TextLeft, CardTop + 41, 15, {200, 200, 206, 255}, false, W - TextLeft - 12);
+  paint_.fonts.middle(room, 840 + TextLeft, CardTop + 41, 15, Muted, false, W - TextLeft - 12);
   buttonHit({840, 568, W, 60}, 14, [this] {
     descriptionFocus_ = false;
     retroPart_ = int(retroVersionList().size());
@@ -463,7 +463,7 @@ void Application::retroDetailPanel() {
   } else {
     paint_.rect(840, 568, W, 60, Butter, 14);
     const auto get = retroGetLabel();
-    paint_.keyLabel("A", get, 840 + (W - paint_.keyLabelWidth("A", get, 22, true)) / 2, 598, 22, Ink, true);
+    paint_.keyLabel("A", get, 840 + (W - paint_.keyLabelWidth("A", get, 22, true)) / 2, 598, 22, OnButter, true);
   }
 }
 // What the button does: get it, get it again, or add the bezel it lacks.

@@ -53,7 +53,7 @@ int Application::requiredPatchesCard(int y) {
   const auto mine = patchesFor(detail_.patches, groups_[detailGroup_].id);
   if (std::none_of(mine.begin(), mine.end(), [](const auto &patch) { return patch.required; })) return y;
   constexpr float X = 40, W = 750, Height = 52;
-  paint_.rect(X, y, W, Height, SDL_Color{255, 241, 204, 255}, 14);
+  paint_.rect(X, y, W, Height, Cream, 14);
   paint_.icon(33, X + 18, y + (Height - 24) / 2, Pending, 24);
   paint_.fonts.middle(tr("This game needs a patch to run"), X + 54, y + Height / 2, 18, Ink, true, W - 72);
   return int(y + Height + 16);
@@ -191,11 +191,11 @@ void Application::detail() {
   const auto back = screenLabel(previous_);
   paint_.icon(7, 32, BackLine - 10, Surface, 20);
   adminChip();
-  paint_.fonts.middle(back, 56, BackLine, 17, Surface);
+  paint_.fonts.middle(back, 56, BackLine, 17, White);
   hit(24, BackLine - 20, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
   cover(item.icon, 40, Top, 140, false, item.name, false, true);
-  paint_.fonts.text(name, 208, Top + 4, 38, Surface, true, 1010);
+  paint_.fonts.text(name, 208, Top + 4, 38, White, true, 1010);
   paint_.fonts.text(publisher, 208, Top + 62, 19, {228, 228, 234, 255}, false, 960);
   // Pills stop before the install panel; one that would reach it is left
   // out (genres are listed again in the facts below).
@@ -253,7 +253,7 @@ void Application::detail() {
     // page still opens with something written.
     constexpr float Height = 92, Badge = 52;
     paint_.rect(40, y, 750, Height, Surface, 16);
-    paint_.rect(64, y + (Height - Badge) / 2, Badge, Badge, {255, 241, 204, 255}, int(Badge / 2));
+    paint_.rect(64, y + (Height - Badge) / 2, Badge, Badge, Cream, int(Badge / 2));
     paint_.icon(29, 64 + (Badge - 26) / 2, y + (Height - 26) / 2, Ink, 26);
     paint_.fonts.middle(tr("No description yet"), 136, y + 34, 20, Ink, true, 620);
     paint_.fonts.middle(tr("The publisher has not added a description. Check the details below."), 136,
@@ -323,12 +323,12 @@ void Application::detail() {
     });
     if (part_ == n && panelFocus)
       paint_.focusRow(840, y, 386, RowHeight, Ground, 12);
-    const SDL_Color boxEdge = !locked && checked ? Ink : SDL_Color{138, 138, 147, 255};
+    const SDL_Color boxEdge = !locked && checked ? Ink : Muted;
     paint_.rect(852, mid - 14, 28, 28, boxEdge, 8);
     paint_.rect(854, mid - 12, 24, 24,
                 checked ? (locked ? SDL_Color{255, 224, 138, 255} : Butter) : Surface, 6);
     if (checked)
-      paint_.icon(8, 856, mid - 10, locked ? Secondary : Ink, 20);
+      paint_.icon(8, 856, mid - 10, locked ? Night : OnButter, 20);
     std::string label, sub;
     uint64_t bytes = 0;
     if (patch) {
@@ -407,7 +407,7 @@ void Application::detail() {
                       : storageChecked_ ? std::string(tr("Space unknown"))
                                         : std::string(tr("Checking"));
     paint_.fonts.middle(room, x + TextLeft, CardTop + 41, 15,
-                        chosen ? SDL_Color{200, 200, 206, 255} : Secondary, false, CardWidth - TextLeft - 12);
+                        chosen ? Muted : Secondary, false, CardWidth - TextLeft - 12);
   }
   buttonHit({840, 568, 386, 60}, 14, [this] {
     part_ = int(selection_->rows()) + 1;
@@ -437,7 +437,7 @@ void Application::detail() {
                                 : option ? option->label
                                          : tr("Install|action");
     paint_.keyLabel("A", install, 840 + (386 - paint_.keyLabelWidth("A", install, 22, true)) / 2, 598, 22,
-                    blocked ? Secondary : option ? own(option->buttonText, Ink) : Ink, true);
+                    blocked ? Secondary : option ? own(option->buttonText, OnButter) : OnButter, true);
   }
   if (galleryOpen_) gallery();
 }
@@ -568,7 +568,7 @@ float Application::infoCard(const Group &g, const std::string &publisher, float 
 // forth, so the press shows at once rather than a still 0%.
 void Application::onTheWayButton(float x, float w, bool downloading, double percent, double skipped) {
   constexpr float Top = 568, Height = 60;
-  paint_.rect(x, Top, w, Height, downloading ? Ink : SDL_Color{228, 225, 218, 255}, 14);
+  paint_.rect(x, Top, w, Height, downloading ? Ink : Line, 14);
   const bool preparing = downloading && percent <= 0;
   if (downloading) {
     constexpr float Inset = 18, Track = 5;
