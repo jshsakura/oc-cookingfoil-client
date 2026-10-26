@@ -90,6 +90,16 @@ public:
   std::optional<StateRows> stateRows(std::string &error);
   // Replaces all of them in one transaction.
   bool saveStateRows(const StateRows &rows, std::string &error);
+  // A server's screen text for one language, as its reply came: which server
+  // gave it, for which version of the app, and the reply's ETag and body.
+  struct ClientStrings {
+    std::string server, version, etag, body;
+  };
+  std::optional<ClientStrings> clientStrings(const std::string &lang);
+  // Every language's row, by code, in one read.
+  std::map<std::string, ClientStrings> allClientStrings();
+  // In place of the language's row.
+  bool saveClientStrings(const std::string &lang, const ClientStrings &row, std::string &error);
   // A damaged file was set aside and a fresh one made since the last call,
   // by any instance: whatever it held is gone, the keys too.
   static bool takeSetAside();

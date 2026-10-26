@@ -9,4 +9,6 @@ namespace foil {
 // (its own and the engine's): the server tells the client's version by it.
 // Defined in core/Version.cpp, which a new version always rebuilds.
 const std::string &userAgent();
+// The version alone ("0.5.1").
+const char *appVersion();
 } // namespace foil

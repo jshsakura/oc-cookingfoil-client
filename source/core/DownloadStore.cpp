@@ -56,6 +56,13 @@ const char *const Migrations[] = {
     "  server TEXT NOT NULL DEFAULT '',"
     "  value TEXT NOT NULL,"
     "  PRIMARY KEY(kind, server));",
+    // 3: a server's screen text per language (GET /api/client/strings).
+    "CREATE TABLE client_strings("
+    "  lang TEXT PRIMARY KEY,"
+    "  server TEXT NOT NULL,"
+    "  version TEXT NOT NULL,"
+    "  etag TEXT NOT NULL,"
+    "  body TEXT NOT NULL);",
 };
 std::atomic<bool> setAside{false};
 const char *outcomeName(history::Outcome outcome) {
@@ -1013,6 +1020,47 @@ bool DownloadStore::saveStateRows(const StateRows &rows, std::string &error) {
       if (credential.step() != SQLITE_DONE) return false;
     }
     return true;
+  });
+}
+std::optional<DownloadStore::ClientStrings> DownloadStore::clientStrings(const std::string &lang) {
+  std::lock_guard<std::mutex> held(lock_);
+  std::optional<ClientStrings> out;
+  std::string error;
+  run(false, error, [&](sqlite3 *db, std::string &) {
+    Statement read(db, "SELECT server, version, etag, body FROM client_strings WHERE lang=?");
+    if (!read) return false;
+    read.text(1, lang);
+    const int rc = read.step();
+    if (rc == SQLITE_ROW) out = ClientStrings{read.column(0), read.column(1), read.column(2), read.column(3)};
+    return rc == SQLITE_ROW || rc == SQLITE_DONE;
+  });
+  return out;
+}
+std::map<std::string, DownloadStore::ClientStrings> DownloadStore::allClientStrings() {
+  std::lock_guard<std::mutex> held(lock_);
+  std::map<std::string, ClientStrings> out;
+  std::string error;
+  run(false, error, [&](sqlite3 *db, std::string &) {
+    Statement read(db, "SELECT lang, server, version, etag, body FROM client_strings");
+    if (!read) return false;
+    int rc;
+    while ((rc = read.step()) == SQLITE_ROW)
+      out[read.column(0)] = ClientStrings{read.column(1), read.column(2), read.column(3), read.column(4)};
+    return rc == SQLITE_DONE;
+  });
+  return out;
+}
+bool DownloadStore::saveClientStrings(const std::string &lang, const ClientStrings &row, std::string &error) {
+  std::lock_guard<std::mutex> held(lock_);
+  return run(true, error, [&](sqlite3 *db, std::string &) {
+    Statement write(db, "INSERT OR REPLACE INTO client_strings(lang, server, version, etag, body) VALUES(?,?,?,?,?)");
+    if (!write) return false;
+    write.text(1, lang);
+    write.text(2, row.server);
+    write.text(3, row.version);
+    write.text(4, row.etag);
+    write.text(5, row.body);
+    return write.step() == SQLITE_DONE;
   });
 }
 DownloadStore::KeepReads::KeepReads() {
