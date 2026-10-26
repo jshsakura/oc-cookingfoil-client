@@ -1,6 +1,6 @@
 #pragma once
 #include "core/Votes.hpp"
-// Save files the server offers (/api/saves, feature shop-saves), such as an
+// Save files the server offers (/api/saves, feature library-saves), such as an
 // all-unlocked save. One entry is a whole save folder sent as a tar.
 #include "core/Types.hpp"
 namespace foil::serversaves {

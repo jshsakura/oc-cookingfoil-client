@@ -43,7 +43,7 @@ int runEnrollTests() {
       if (enrollStatus == 401 || enrollStatus == 403)
         return {enrollStatus, "X-CookingFoil-Enroll: " + enrollReason + "\r\n", R"({"error":"x"})"};
       if (enrollStatus != 200) return {enrollStatus, "", R"({"error":"x"})"};
-      return {200, "", R"({"status":"approved","accessKey":"enrolled-key","shopUrl":null})"};
+      return {200, "", R"({"status":"approved","accessKey":"enrolled-key","libraryUrl":null})"};
     }
     if (request.rfind("GET /api/library/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
     if (request.rfind("GET /api/pair/status", 0) == 0)
@@ -464,7 +464,7 @@ int runEnrollTests() {
     int keysGiven = 0;
     mock.answer = [&](const std::string &request) -> Reply {
       if (request.rfind("POST /api/pair/enroll", 0) == 0)
-        return {200, "", R"({"status":"approved","accessKey":"enrolled-key","shopUrl":null})"};
+        return {200, "", R"({"status":"approved","accessKey":"enrolled-key","libraryUrl":null})"};
       if (request.rfind("GET /api/library/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
       if (request.rfind("GET /api/pair/status", 0) == 0)
         return keysGiven++ == 0 ? Reply{200, "", R"({"status":"approved","accessKey":"issued-key"})"}
