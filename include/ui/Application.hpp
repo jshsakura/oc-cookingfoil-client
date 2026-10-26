@@ -599,6 +599,16 @@ private:
   int voteFocus_ = 0; // 0 none, 1 잘 돼요, 2 안 돼요
   std::map<std::string, votes::Votes> votesCast_; // "kind/id"
   Job voteJob_;
+  // A server's screen text (feature "client-strings", ui/ServerStrings): the
+  // row kept on the card goes in while the app loads; a server's answer
+  // waits for the next screen change, so text never changes under the eye.
+  void useKeptStrings();
+  void askServerStrings();
+  void applyServerStrings();
+  Job stringsJob_;
+  std::set<std::string> stringsAsked_; // "lang server" asked this run
+  bool stringsAgain_ = false;          // asked while the job ran
+  std::optional<std::pair<Language, std::map<std::string, std::string>>> pendingStrings_;
   Job adminJob_;
   std::optional<std::vector<admin::Field>> adminPreview_;
   // HOME Menu shortcuts (platform/Shortcut): the ids the console has, as the

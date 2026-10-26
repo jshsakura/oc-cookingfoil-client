@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <initializer_list>
+#include <map>
 #include <string>
 #include <vector>
 namespace foil {
@@ -69,6 +70,13 @@ struct Translation {
 struct TranslationTable {
   TranslationTable(Language language, const Translation *rows, size_t count);
 };
+// A server's dictionary for `language` (GET /api/client/strings), in place
+// of any it gave before: tr() shows its text over the built-in table's. Keys
+// the tables do not have, locked keys (i18n::locked) and text failing
+// i18n::checkText are left out, so those keep the built-in text. English
+// takes none. Returns how many keys took the server's text. Texts given
+// earlier stay allocated for the run: a tr() result may still be held.
+size_t setServerTexts(Language language, const std::map<std::string, std::string> &texts);
 // Whether a key is in any table (screen text in the code must be).
 bool hasTranslation(const std::string &key);
 // Every row registered for `language`, in table order (the tests check them).

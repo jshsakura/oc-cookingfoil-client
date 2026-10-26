@@ -1,7 +1,9 @@
 #include "core/I18n.hpp"
+#include "core/I18nChecks.hpp"
 #include <array>
 #include <atomic>
 #include <cstring>
+#include <deque>
 #include <mutex>
 #include <unordered_map>
 namespace foil {
@@ -24,6 +26,10 @@ struct Registry {
   // against the text, since a buffer can hold another key later.
   std::unordered_map<const char *, size_t> byAddress;
   size_t indexed = 0; // tables already in ids
+  // A server's text by id, per language (null where it gave none), and the
+  // strings behind every set given this run.
+  std::array<std::vector<const char *>, LanguageCount> server;
+  std::deque<std::vector<std::string>> kept;
   std::mutex lock;
 };
 constexpr size_t None = size_t(-1);
@@ -65,6 +71,8 @@ size_t lookupKey(const char *key) {
 const char *textOf(size_t id, Language language) {
   auto &r = registry();
   std::lock_guard<std::mutex> guard(r.lock);
+  const auto &server = r.server[size_t(language)];
+  if (id < server.size() && server[id]) return server[id];
   return r.texts[id][size_t(language)];
 }
 } // namespace
@@ -128,6 +136,28 @@ std::vector<Language> translatedLanguages() {
   for (int i = 0; i < LanguageCount; ++i)
     if (Language(i) != Language::English) out.push_back(Language(i));
   return out;
+}
+size_t setServerTexts(Language language, const std::map<std::string, std::string> &texts) {
+  auto &r = registry();
+  std::lock_guard<std::mutex> guard(r.lock);
+  catchUp(r);
+  std::vector<const char *> byId;
+  std::vector<std::string> strings;
+  std::vector<size_t> ids;
+  if (language != Language::English)
+    for (const auto &[key, text] : texts) {
+      const auto found = r.ids.find(key);
+      if (found == r.ids.end() || i18n::locked(key) || i18n::checkText(key, text) != i18n::Problem::None) continue;
+      ids.push_back(found->second);
+      strings.push_back(text);
+    }
+  if (!ids.empty()) {
+    byId.assign(r.texts.size(), nullptr);
+    for (size_t i = 0; i < ids.size(); ++i) byId[ids[i]] = strings[i].c_str(); // moving the vector keeps these
+    r.kept.push_back(std::move(strings));
+  }
+  r.server[size_t(language)] = std::move(byId);
+  return ids.size();
 }
 bool hasTranslation(const std::string &key) {
   auto &r = registry();

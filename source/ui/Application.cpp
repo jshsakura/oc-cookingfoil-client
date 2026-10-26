@@ -118,6 +118,7 @@ Application::~Application() {
   raListJob_.join();
   raGamesJob_.join();
   voteJob_.join();
+  stringsJob_.join();
   historyPageJob_.join(); // reads and clears the store, which closes after
   flushHistory();
   if (storageWorker_.joinable())
@@ -305,6 +306,7 @@ bool Application::open() {
 #endif
       if (!sd.empty() && !patchWorker_.joinable()) {
         openCardRecords(sd);
+        useKeptStrings();
         background(tr("Reading patches and download history on the SD card"), 0.62f, 0.66f);
         openPatchStore(sd);
       }
@@ -548,6 +550,7 @@ void Application::chooseLanguage(Language lang) {
   // A failed check's message was worded in the old language; A asks again.
   if (appUpdate_ == AppUpdate::Failed) appUpdate_ = AppUpdate::Unknown;
   saveOwnState();
+  askServerStrings();
   // Genre names, filter chips and home rows were built from text.
   if (session_) {
     genreNames_ = session_->genres();
@@ -702,6 +705,7 @@ void Application::openMenuScreen(Screen target) {
 void Application::screen(Screen screen) {
   // A toast belongs to the screen that showed it.
   if (screen != screen_) notice_.clear();
+  applyServerStrings();
   menuPending_ = false;
   headerFocus_.clear();
   header_.clear();
@@ -1040,6 +1044,7 @@ void Application::poll() {
   raJob_.poll();
   historyPageJob_.poll();
   voteJob_.poll();
+  stringsJob_.poll();
   raListJob_.poll();
   raGamesJob_.poll();
   adminJob_.poll();
@@ -1309,6 +1314,7 @@ void Application::takeNetwork() {
       serverFeatures_[other->server().url] = other->features();
       serverRewrapMax_[other->server().url] = other->rewrapMaxFirmware();
     }
+  askServerStrings();
   // Same server: keep decoded covers; only the access keys may have changed.
   images_->updateState(state_);
   if (screen_ == Screen::Detail)
