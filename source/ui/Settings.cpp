@@ -118,24 +118,20 @@ void Application::settings() {
   }
   // Where installs go; A switches between the SD card and the console.
   option(1, 26, tr("Default location"), installTarget() == "nand" ? tr("Console") : tr("SD card"), Ink, true);
-  // Ignoring signatures (the default) installs content that only runs with
-  // sigpatches, which is what most homebrew installers expect.
-  option(4, 34, tr("Ignore signature check"), "", Ink, true, state_.skipSignatureCheck ? 1 : 0);
-  note(4, tr("Installs unsigned files too. Needs sigpatches"));
   // A HOME Menu shortcut with each retro game and homebrew app (and this
   // app's own), when the server builds one.
-  option(5, 0, tr("Make HOME Menu shortcuts"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
+  option(4, 0, tr("Make HOME Menu shortcuts"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
   // Said as it is: made here, or only from the server's shortcuts when this
   // console cannot make them.
-  note(5, !state_.makeShortcuts            ? tr("Not made")
+  note(4, !state_.makeShortcuts            ? tr("Not made")
           : platform::canMakeShortcuts() ? tr("Creates a shortcut when a retro game or homebrew app downloads")
                                          : tr("Only for items the server has a shortcut for"));
   // The app's sounds: the start, cursor steps, the queue, done and errors.
-  option(6, 44, tr("Sound effects"), "", Ink, true, state_.sounds ? 1 : 0);
-  note(6, tr("Turns the startup sound and effects on or off"));
+  option(5, 44, tr("Sound effects"), "", Ink, true, state_.sounds ? 1 : 0);
+  note(5, tr("Turns the startup sound and effects on or off"));
   // The log's tail to the server, only when pressed: what went wrong reaches
   // whoever runs it.
-  option(7, 33, tr("Send a bug report"),
+  option(6, 33, tr("Send a bug report"),
          bugWorker_.joinable() ? std::string(tr("Sending")) : std::string(tr("Sends the end of the app's log to the connected server")),
          Secondary, false);
   // What the app leaves on the card: A shows how much each kind takes in a

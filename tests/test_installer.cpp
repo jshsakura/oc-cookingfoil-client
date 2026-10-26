@@ -49,44 +49,17 @@ int runInstallerTests() {
   CHECK(foil::install::missingFirmware({newer}, "19.0.1").empty());
   CHECK(foil::install::missingFirmware({newer}, "").empty());
   CHECK(foil::install::missingFirmware({item}, "1.0.0").empty());
-  // A newer master key than the console's is never tried; the same key with
-  // a lower version installs with a warning.
-  CHECK(foil::install::masterKeyOf("1.0.0") == 0 && foil::install::masterKeyOf("9.2.0") == 10);
-  CHECK(foil::install::masterKeyOf("12.1.0") == 11 && foil::install::masterKeyOf("20.5.0") == 19);
-  CHECK(foil::install::masterKeyOf("21.0.0") == 20 && foil::install::masterKeyOf("23.1.0") == 22);
-  CHECK(foil::install::unreachableFirmware({item, newer}, "18.1.0") == "19.0.0");
+  // Any version past the console's blocks, a point release too.
   auto patch = item;
   patch.requiredFirmware = "19.0.1";
   CHECK(foil::install::missingFirmware({patch}, "19.0.0") == "19.0.1");
-  CHECK(foil::install::unreachableFirmware({patch}, "19.0.0").empty());
-  CHECK(foil::install::unreachableFirmware({newer}, "").empty()); // unknown console: never blocks
-  // Past the firmware: the file asks its server for the console's firmware,
-  // and then counts as reachable.
-  auto forced = newer;
-  forced.url = foil::install::rewrapUrl("http://192.0.2.1/api/files/a.nsp", "18.1.0");
-  CHECK(forced.url == "http://192.0.2.1/api/files/a.nsp?rewrap=18.1.0");
-  CHECK(foil::install::rewrapUrl("http://192.0.2.1/f?t=1", "12.1.0") == "http://192.0.2.1/f?t=1&rewrap=12.1.0");
-  CHECK(foil::install::rewrapUrl(forced.url, "12.1.0") == forced.url); // asked once
-  CHECK(foil::install::rewrapped(forced.url) && !foil::install::rewrapped("http://192.0.2.1/rewrap=1"));
-  // The pick's rows find a file whether it was asked re-encrypted or not.
-  CHECK(foil::install::sameFile(forced.url, "http://192.0.2.1/api/files/a.nsp"));
-  CHECK(foil::install::sameFile("http://192.0.2.1/f?t=1&rewrap=12.1.0&u=2", "http://192.0.2.1/f?t=1&u=2"));
-  CHECK(foil::install::sameFile("http://192.0.2.1/f?rewrap=12.1.0&t=1", "http://192.0.2.1/f?t=1"));
-  CHECK(!foil::install::sameFile(forced.url, "http://192.0.2.1/api/files/b.nsp"));
-  CHECK(foil::install::unreachableFirmware({forced}, "18.1.0").empty());
-  CHECK(foil::install::unreachableFirmware({forced, newer}, "18.1.0") == "19.0.0");
-  // The key its NCAs use counts even when its own firmware field is lower.
+  // The firmware its key came with counts even when its own field is lower.
   auto keyed = item;
   keyed.requiredFirmware = "18.0.0";
   keyed.keyFirmware = "20.0.0";
-  CHECK(foil::install::unreachableFirmware({keyed}, "18.1.0") == "20.0.0");
-  CHECK(foil::install::keyFirmwareOf({item, keyed, newer}) == "20.0.0" && foil::install::keyFirmwareOf({item}).empty());
-  // A server that cannot re-encrypt says why, at the top or under "error".
-  CHECK(foil::install::rewrapRefusal(R"({"code":"rewrap.keysTooOld","message":"keys too old"})") == "keys too old");
-  CHECK(foil::install::rewrapRefusal(R"({"error":{"code":"rewrap.noKeys","message":"no keys"}})") == "no keys");
-  // The server's own shape: the text in "error", the reason in "code".
-  CHECK(foil::install::rewrapRefusal(R"({"error":"서버 키가 낮습니다","code":"rewrap.keysTooOld"})") == "서버 키가 낮습니다");
-  CHECK(!foil::install::rewrapRefusal("<html>").empty());
+  CHECK(foil::install::missingFirmware({keyed}, "18.1.0") == "20.0.0");
+  CHECK(foil::install::missingFirmware({keyed}, "20.0.0").empty());
+  CHECK(foil::install::firmwareShortfall("20.0.0", "18.1.0").find("20.0.0") != std::string::npos);
   foil::install::Installer installer;
   auto error = installer.start({item}, "Title", "", "sd", {}, {});
   CHECK(error);

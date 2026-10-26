@@ -338,6 +338,12 @@ int runNetworkTests() {
         CHECK(!has(foil::net::downloadHeaders(shop, state, "https://shop.example/api/x"), "Bearer"));
         const auto own = foil::net::authHeaders(shop, state, "https://shop.example/api/shop/sections");
         CHECK(has(own, "X-CookingFoil-Features: direct-token") && has(own, "Basic") && !has(own, "Bearer"));
+        // The console's firmware goes to its own server only, when known.
+        CHECK(!has(own, "X-CookingFoil-Console"));
+        setenv("FOIL_FIRMWARE", "18.1.0", 1);
+        CHECK(has(foil::net::authHeaders(shop, state, "https://shop.example/api/shop/sections"), "X-CookingFoil-Console: firmware=18.1.0"));
+        CHECK(!has(foil::net::authHeaders(shop, state, "https://images.example/icon.jpg"), "X-CookingFoil-Console"));
+        unsetenv("FOIL_FIRMWARE");
         hear("HTTP/1.1 401 Unauthorized\r\n");
         hear("X-CookingFoil-Token: expired\r\n");
         hear("\r\n");

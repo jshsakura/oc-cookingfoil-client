@@ -3,6 +3,7 @@
 #include "net/Api.hpp"
 #include "net/Segments.hpp"
 #include "platform/Cores.hpp"
+#include "platform/Storage.hpp"
 #include <map>
 #include <mutex>
 #include "core/Version.hpp"
@@ -132,6 +133,9 @@ std::vector<std::string> serverHeaders(const Server& server, const State& state,
     // What this client can do, so the server gives it what fits (download
     // links that take the token, not the tunnel's).
     headers.push_back("X-CookingFoil-Features: direct-token");
+    // The console's firmware, for the server's console facts and dashboard.
+    if (const auto firmware = platform::firmwareVersion(); !firmware.empty())
+        headers.push_back("X-CookingFoil-Console: firmware=" + firmware);
     headers.push_back(std::string("Accept-Language: ") + languageCode());
     const auto token = session ? sessionToken(originOf(server.url)) : std::string();
     if (!token.empty()) headers.push_back("Authorization: Bearer " + token);
@@ -1495,7 +1499,6 @@ bool Session::refresh(Error& error) {
             Error ignored;
             const auto body = parseJson(response.body, ignored);
             serverId_ = body ? stringField(body.get(), "server_id") : std::string();
-            rewrapMaxFirmware_ = body ? stringField(body.get(), "rewrapMaxFirmware") : std::string();
         }
         // Only a server that says so is asked for a session token.
         if (response.status == 200 || response.status == 404) {
