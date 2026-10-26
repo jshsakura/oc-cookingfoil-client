@@ -1392,10 +1392,11 @@ bool Session::enroll(Error& error, bool replacing) {
     // A server that does not know enroll (before it, or with pairing off):
     // the token is not for it, and the console connects as before.
     if (sent.status == 404 || sent.status == 405) return true;
-    // Expired or spent, or past the account's limits (403: as many consoles
-    // as it may hold): out of config.json, and the console asks for approval
-    // as any other does (the QR code), instead of stopping here.
-    if (sent.status == 401 || (sent.status == 403 && sent.enroll == "limit")) {
+    // Expired or spent, past the account's limits (403: as many consoles as
+    // it may hold), or another account's console (409): out of config.json,
+    // so no later start sends it again, and the console asks for approval as
+    // any other does (the QR code), instead of stopping here.
+    if (sent.status == 401 || (sent.status == 403 && sent.enroll == "limit") || sent.status == 409) {
         logLine("enroll: refused (" + (sent.enroll.empty() ? std::string("401") : sent.enroll) + "); asking for approval");
         std::string failure;
         if (!dropEnrollToken(configPath_, server_.url, failure)) logLine("enroll: token not taken out of config.json: " + failure);
@@ -1404,12 +1405,8 @@ bool Session::enroll(Error& error, bool replacing) {
         // the approval screen says why it waits.
         // A 403's limit is the account's, which the approval check says too.
         const bool told = sent.enroll == "used" || sent.enroll == "expired" || sent.enroll == "revoked" || sent.enroll == "limit";
-        enrollRefusal_ = sent.status == 401 && told ? sent.enroll : "";
+        enrollRefusal_ = sent.status == 409 ? "other-account" : sent.status == 401 && told ? sent.enroll : "";
         return true;
-    }
-    if (sent.status == 409) {
-        enrollRefusal_ = "other-account";
-        return skip("the console belongs to another account");
     }
     Error unread;
     const auto reply = sent.status == 200 ? parseJson(sent.body, unread) : Json(nullptr);

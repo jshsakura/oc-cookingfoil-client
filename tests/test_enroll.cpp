@@ -283,10 +283,33 @@ int runEnrollTests() {
     pairStatus = "approved";
   }
   {
-    // A server that answers but not as expected (another account's console,
-    // an error of its own): the QR code shows all the same, never a dead
-    // end. The token stays for the next start and is not sent again this run.
-    for (const int status : {409, 500, 400}) {
+    // Another account's console (409): the QR code, and the token is out of
+    // config.json, so a restart does not send it again.
+    withoutKey();
+    enrollStatus = 409;
+    pairStatus = "pending";
+    {
+      net::Session session(server(), loadState(db).value, db);
+      session.setConfigPath(configPath);
+      Error waiting;
+      CHECK(!session.refresh(waiting) && session.pairingPending());
+      CHECK(session.pairingInfo().refusal == "other-account");
+      CHECK(server().enrollToken.empty() && readFile(configPath).find(token) == std::string::npos);
+      CHECK(count(mock.take(), "/api/pair/enroll") == 1);
+    }
+    net::Session::forgetEnrollAttempts(); // a new run remembers nothing it tried
+    net::Session restarted(server(), loadState(db).value, db);
+    restarted.setConfigPath(configPath);
+    Error again;
+    CHECK(!restarted.refresh(again) && restarted.pairingPending());
+    CHECK(count(mock.take(), "/api/pair/enroll") == 0);
+    pairStatus = "approved";
+  }
+  {
+    // A server error of its own: the QR code shows all the same, never a
+    // dead end. The token stays for the next start and is not sent again
+    // this run.
+    for (const int status : {500, 400}) {
       withoutKey();
       enrollStatus = status;
       pairStatus = "pending";
@@ -294,7 +317,7 @@ int runEnrollTests() {
       session.setConfigPath(configPath);
       Error waiting;
       CHECK(!session.refresh(waiting) && session.pairingPending());
-      CHECK(session.pairingInfo().refusal == (status == 409 ? "other-account" : ""));
+      CHECK(session.pairingInfo().refusal.empty());
       CHECK(server().enrollToken == token);
       CHECK(count(mock.take(), "/api/pair/enroll") == 1);
       CHECK(!session.refresh(waiting) && session.pairingPending());

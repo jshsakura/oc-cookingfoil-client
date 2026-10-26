@@ -601,7 +601,7 @@ void Application::setSession(std::unique_ptr<net::Session> session) {
   labelBook_ = serverLabels();
   qr_.encode(pairingInfo_.url);
   pairPollAt_ = pairingPending_ ? SDL_GetTicks() : 0;
-  if (!pairingPending_) pairSince_ = 0;
+  if (!pairingPending_) pairSince_ = 0, pairPolls_ = 0;
   else if (!pairSince_) pairSince_ = SDL_GetTicks();
   images_ = std::make_unique<Images>(paint_.renderer, outputScale_);
   images_->source(
@@ -980,8 +980,9 @@ void Application::refresh() {
   session_->setPairMessage(pairMessage());
   // A menu drawn before the server named its features (a failed first try)
   // was a guess, 레트로 게임 and 홈브류 left out: the next try shows the
-  // placeholders again until it answers. A known menu stays as it is.
-  if (features_.empty()) menuKnown_ = false;
+  // placeholders again until it answers. A known menu stays as it is, and
+  // so does the approval screen: its poll every 5 seconds is no new try.
+  if (features_.empty() && !pairingPending_) menuKnown_ = false;
   network_ = std::thread([this] {
     // Reading the catalog (seconds of JSON) stays off the drawing core too.
     const platform::OnCore off(platform::NetworkCore);
@@ -1221,11 +1222,11 @@ void Application::poll() {
     if (auto error = launchQueued())
       alert_ = error.message;
   if (!done_.exchange(false)) {
-    // Waiting for approval: asked every 5 seconds for 5 minutes, then - asks again.
-    constexpr uint32_t PairWaitMs = 5 * 60 * 1000;
-    if (!network_.joinable() && pairingPending_ && SDL_GetTicks() - pairSince_ < PairWaitMs &&
-        SDL_GetTicks() - pairPollAt_ >= 5000) {
+    // Waiting for approval: asked less and less often, and not after a
+    // while (pairPollGap, PairWaitMs); the screen then has 다시 시도.
+    if (!network_.joinable() && pairingPending_ && !pairingStopped() && SDL_GetTicks() - pairPollAt_ >= pairPollGap()) {
       pairPollAt_ = 0;
+      ++pairPolls_;
       refresh();
     }
     // Not connected: the card says why and waits for 다시 시도 (or -). Tries
@@ -1272,7 +1273,7 @@ void Application::takeNetwork() {
   menuKnown_ = true; // the server answered (or did not): the menu is what it is
   qr_.encode(pairingInfo_.url);
   pairPollAt_ = pairingPending_ ? SDL_GetTicks() : 0;
-  if (!pairingPending_) pairSince_ = 0;
+  if (!pairingPending_) pairSince_ = 0, pairPolls_ = 0;
   else if (!pairSince_) pairSince_ = SDL_GetTicks();
   // Asked while the server restarts (- pressed, or a timed check): not a
   // failure. What is on screen stays, the notice already says why, and the
@@ -1595,9 +1596,14 @@ void Application::action(Action a) {
     serverFormAction(a);
     return;
   }
-  // Y on the approval screen writes a note for the admin.
+  // Y on the approval screen writes a note for the admin; A asks again
+  // once it stopped asking on its own.
   if (pairingPending_ && screen_ != Screen::Settings && a == Action::Queue) {
     askPairMessage();
+    return;
+  }
+  if (pairingStopped() && screen_ != Screen::Settings && a == Action::Accept) {
+    retryPairing();
     return;
   }
   if (viewPopup_ && screen_ == Screen::Retro) {
@@ -1801,6 +1807,7 @@ void Application::action(Action a) {
   if (a == Action::Reload) {
     patchRetries_ = retroRetries_ = 0; // a refresh by hand earns the automatic tries again
     pairSince_ = 0;
+    pairPolls_ = 0;
     menuKnown_ = false; // the menu waits for the answer, as at start
     reload();
     return;
@@ -2505,7 +2512,9 @@ void Application::render() {
   else if (screen_ == Screen::Saves)
     savesScreen();
   SDL_RenderSetClipRect(paint_.renderer, nullptr);
-  if (pairingPending_ && screen_ != Screen::Settings)
+  if (pairingStopped() && screen_ != Screen::Settings)
+    footer({{"A", tr("Try again")}, {"Y", tr("Write message")}, {"B", tr("Back")}});
+  else if (pairingPending_ && screen_ != Screen::Settings)
     footer({{"Y", tr("Write message")}, {"B", tr("Back")}});
   else if (adminFocused())
     footer({{"A", tr("Admin edit")}, {"B", tr("Back")}});

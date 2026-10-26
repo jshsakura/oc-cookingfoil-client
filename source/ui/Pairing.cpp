@@ -28,7 +28,11 @@ void Application::setPairMessage(const std::string &text) {
   if (!note.empty()) message(tr("Asking for approval again with your message."));
   // Asked again now, and for another full wait; a request already running
   // finishes first and the next poll carries the note.
+  retryPairing();
+}
+void Application::retryPairing() {
   pairSince_ = SDL_GetTicks();
+  pairPolls_ = 0;
   pairPollAt_ = 0;
   refresh();
 }
@@ -57,8 +61,16 @@ void Application::pairing() {
     paint_.fonts.text(tr("Device code"), 290, 326, 18, Secondary, false, 570);
     paint_.fonts.text(pairingInfo_.code, 290, 357, 30, Ink, true);
   }
-  paint_.fonts.wrapped(tr("If you cannot scan it, enter the device code in device approval. Connects automatically once approved."),
-                       290, 440, 19, Secondary, 570, 3);
+  // Stopped asking on its own: a button asks again, in the line's place.
+  if (pairingStopped()) {
+    constexpr float ButtonY = 440, ButtonW = 260, ButtonH = 56;
+    hit(290, ButtonY, ButtonW, ButtonH, [this] { retryPairing(); });
+    paint_.rect(290, ButtonY, ButtonW, ButtonH, Butter, 14);
+    const auto label = tr("Try again");
+    paint_.keyLabel("A", label, 290 + (ButtonW - paint_.keyLabelWidth("A", label, 20, true)) / 2, ButtonY + ButtonH / 2, 20, Ink, true);
+  } else
+    paint_.fonts.wrapped(tr("If you cannot scan it, enter the device code in device approval. Connects automatically once approved."),
+                         290, 440, 19, Secondary, 570, 3);
   // The note for the admin, under the card: Y or a touch edits it.
   constexpr float NoteY = 572, NoteH = 60;
   rowHit(260, NoteY, 992, NoteH, 16, [this] { askPairMessage(); });
