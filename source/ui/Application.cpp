@@ -2117,6 +2117,10 @@ void Application::card(const Group &g, float x, float y, bool selected,
   if (index < groups_.size())
     hit(x, y, 150, 220, [this, index] { openDetail(index); });
   cover(g.representative.icon, x, y, 150, selected, g.representative.name);
+  // Surely unsigned where it would not open (no signature patches on the
+  // card): grayed, as its detail's button is.
+  if ((g.base ? *g.base : g.representative).unsignedFile && !signaturePatchesFound_)
+    paint_.rect(x, y, 150, 150, {242, 241, 238, 170}, 14);
   // Download size on the top left, in the same small badge as the score:
   // the base with its update, as a player installs them.
   if (const auto bytes = groupBytes(g); bytes > 0) {

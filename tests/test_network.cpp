@@ -160,6 +160,20 @@ int runNetworkTests() {
         CHECK(options->at("https://h/d.nsp").empty() && !foil::net::parseVariants("{}"));
         CHECK(foil::net::withQuery("https://h/a.nsp", {{"rewrap", "18.1.0"}}) == "https://h/a.nsp?rewrap=18.1.0");
         CHECK(foil::net::withQuery("https://h/a.nsp?t=1", {{"k", "a b"}}) == "https://h/a.nsp?t=1&k=a%20b");
+        // The rest of an option: a titled confirm, the words while it prepares
+        // and when it refuses, the hash flag, a block, and how it looks.
+        const auto full = foil::net::parseVariants(R"({"variants":{"https://h/a.nsp":[
+          {"id":"fw","label":"L","confirm":{"title":"T","body":"B"},"progress":"P","failed":"F","hashesChange":true,
+           "button":{"color":"#F2B544","stripe":null,"text":"#1a1a1a"},"card":{"color":"#FFF4D6","text":"#000000","icon":"info"}},
+          {"id":"no","label":"M","blocked":{"title":"BT","body":"BB"},"button":{"color":"red","stripe":"#102030"}}]}})");
+        CHECK(full && full->at("https://h/a.nsp").size() == 2);
+        const auto &fw = full->at("https://h/a.nsp")[0];
+        CHECK(fw.confirmTitle == "T" && fw.confirmBody == "B" && fw.progress == "P" && fw.failed == "F" && fw.hashesChange);
+        CHECK(!fw.blocked && fw.noStripes && fw.buttonColor.set && fw.buttonColor.r == 0xF2 && fw.buttonColor.b == 0x44);
+        CHECK(fw.buttonText.set && fw.cardColor.g == 0xF4 && fw.cardText.set && fw.cardIcon == "info");
+        const auto &no = full->at("https://h/a.nsp")[1];
+        CHECK(no.blocked && no.blockedTitle == "BT" && no.blockedBody == "BB" && !no.hashesChange);
+        CHECK(!no.buttonColor.set && !no.noStripes && no.buttonStripe.set && no.buttonStripe.g == 0x20);
     }
     {
         const auto priced = foil::net::parseDetail(R"({"price":{"country":"KR","regular":"64,800원","discount":"45,360원"}})").value;

@@ -394,6 +394,26 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(!planned.empty() && planned.front().variant && planned.front().url.find("rewrap=18.1.0") != std::string::npos);
     app.action(foil::ui::Action::Back);
     CHECK(!app.confirmingInstall() && !app.optionConfirm());
+    // Its words while the server prepares and when it refuses go with the
+    // files, and so does a changed file's hash.
+    option.progress = "준비 중";
+    option.failed = "거절";
+    option.hashesChange = true;
+    app.previewFileOption(option);
+    app.render();
+    const auto changed = app.optionFiles();
+    CHECK(!changed.empty() && changed.front().hashesChange && changed.front().variantProgress == "준비 중" &&
+          changed.front().variantFailed == "거절");
+    // A blocked option says why and installs nothing.
+    option.blocked = true;
+    option.blockedTitle = "막힘";
+    option.blockedBody = "이유";
+    app.previewFileOption(option);
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(!app.confirmingInstall() && !app.optionConfirm() && app.alert() == "이유");
+    CHECK(!app.optionFiles().empty() && !app.optionFiles().front().variant);
+    app.action(foil::ui::Action::Back);
     app.previewFileOption({});
   }
   app.action(foil::ui::Action::Back);
