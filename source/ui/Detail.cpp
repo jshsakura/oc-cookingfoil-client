@@ -35,7 +35,7 @@ std::vector<std::string> Application::pickedFileNames() const {
 // server sends those) a failed NCA signature in integrity[].
 const net::Unsigned *Application::pickedUnsigned() const {
   static const net::Unsigned unworded;
-  if (!selection_ || signaturePatchesFound_) return nullptr;
+  if (!selection_) return nullptr;
   for (const auto &f : selection_->files()) {
     const auto name = fileNameOf(f.url);
     for (const auto &file : detail_.unsignedFiles)
@@ -431,7 +431,8 @@ void Application::detail() {
       return rgb.set ? SDL_Color{rgb.r, rgb.g, rgb.b, 255} : otherwise;
     };
     paint_.rect(840, 568, 386, 60, blocked ? Line : option ? own(option->buttonColor, Butter) : Butter, 14);
-    if (option && !option->noStripes) paint_.stripes(840, 568, 386, 60, own(option->buttonStripe, ButterStripe), 14);
+    if (option ? !option->noStripes : kind == InstallButton::Warned)
+      paint_.stripes(840, 568, 386, 60, option ? own(option->buttonStripe, ButterStripe) : ButterStripe, 14);
     const std::string install = blocked  ? tr("Can't install|button")
                                 : option ? option->label
                                          : tr("Install|action");

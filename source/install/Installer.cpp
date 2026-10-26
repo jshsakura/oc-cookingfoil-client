@@ -1,6 +1,5 @@
 #include "core/Json.hpp"
 #include "core/Log.hpp"
-#include "core/Forwarder.hpp"
 #include "install/Installer.hpp"
 #include <utility>
 #include <cstdio>
@@ -288,7 +287,6 @@ void Installer::stagePercent(double value) {
     progress_.percent = std::clamp(value, 0., 99.);
 }
 namespace {
-constexpr const char *SdRoot = "sdmc:";
 // What a server that cannot prepare a file (409) says: "message" at the
 // top, inside an "error" object, or "error" as text; else the option's
 // own words, else the app's.
@@ -428,7 +426,7 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
   } catch (const std::exception &e) {
     // A ticket the console does not take unsigned: said plainly.
     std::string error = e.what();
-    if (error.find("Failed to import ticket") != std::string::npos && !forwarder::signaturePatchesFound(SdRoot))
+    if (error.find("Failed to import ticket") != std::string::npos)
       error = tr("This file is not signed, so it cannot be installed.");
     std::lock_guard<std::mutex> lock(mutex_);
     progress_.status = stop_ ? Status::Stopped : cancel_ ? Status::Cancelled : Status::Failed;

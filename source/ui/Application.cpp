@@ -309,7 +309,6 @@ bool Application::open() {
 #endif
       if (!sd.empty() && !patchWorker_.joinable()) {
         openCardRecords(sd);
-        signaturePatchesFound_ = forwarder::signaturePatchesFound(sd);
         useKeptStrings();
         applyStartupLanguage(); // a language only a server has needed its text from the card
         background(tr("Reading patches and download history on the SD card"), 0.62f, 0.66f);
@@ -2117,9 +2116,8 @@ void Application::card(const Group &g, float x, float y, bool selected,
   if (index < groups_.size())
     hit(x, y, 150, 220, [this, index] { openDetail(index); });
   cover(g.representative.icon, x, y, 150, selected, g.representative.name);
-  // Surely unsigned where it would not open (no signature patches on the
-  // card): grayed, as its detail's button is.
-  if ((g.base ? *g.base : g.representative).unsignedFile && !signaturePatchesFound_)
+  // Surely unsigned: dimmed, as the console may refuse it.
+  if ((g.base ? *g.base : g.representative).unsignedFile)
     paint_.rect(x, y, 150, 150, {242, 241, 238, 170}, 14);
   // Download size on the top left, in the same small badge as the score:
   // the base with its update, as a player installs them.
@@ -2531,9 +2529,9 @@ void Application::render() {
       using Hints = std::vector<std::pair<std::string, std::string>>;
       auto hints = descriptionFocus_ ? Hints{{"A", tr("Back to items")}, {"B", tr("Back")}}
                                        : Hints{{"A", onTheWay   ? tr("Cancel download")
-                                                     : onButton ? (installButton() == InstallButton::Plain    ? std::string(tr("Install"))
-                                                                   : installButton() == InstallButton::Warned ? pickedOption()->label
-                                                                                                              : std::string(tr("See why")))
+                                                     : onButton ? (installButton() == InstallButton::Blocked ? std::string(tr("See why"))
+                                                                   : pickedOption()                         ? pickedOption()->label
+                                                                                                            : std::string(tr("Install")))
                                                      : onStorage ? tr("Choose this")
                                                      : part_ == 0 && selection_ && selection_->baseChoices() > 1 &&
                                                                selection_->parts().front().type == "base"
@@ -2728,12 +2726,12 @@ std::vector<Item> Application::pickedNeeds() const {
 std::string Application::pickedShortfall() const {
   return install::missingFirmware(pickedNeeds(), platform::firmwareVersion());
 }
-// Unsigned where it would not open blocks first; then a plugin's option
-// decides; else only the firmware does.
+// A plugin's option decides first; then the firmware blocks; an unsigned
+// file warns but can be tried.
 Application::InstallButton Application::installButton() const {
-  if (pickedUnsigned()) return InstallButton::Blocked;
   if (const auto *option = pickedOption()) return option->blocked ? InstallButton::Blocked : InstallButton::Warned;
-  return pickedShortfall().empty() ? InstallButton::Plain : InstallButton::Blocked;
+  if (!pickedShortfall().empty()) return InstallButton::Blocked;
+  return pickedUnsigned() ? InstallButton::Warned : InstallButton::Plain;
 }
 void Application::requestInstall() {
   if (!selection_ || detailGroup_ >= groups_.size())
@@ -2745,12 +2743,6 @@ void Application::requestInstall() {
   }
   if (!selection_->count()) {
     alert_ = tr("Turn on at least one item to install.");
-    return;
-  }
-  // Unsigned where it would not open: in the server's words when it gave them.
-  if (const auto *file = pickedUnsigned()) {
-    alertTitle_ = file->title;
-    alert_ = !file->body.empty() ? file->body : std::string(tr("This file is not signed, so it cannot be installed."));
     return;
   }
   // A plugin's option: its own why when it cannot, else its confirm, and the

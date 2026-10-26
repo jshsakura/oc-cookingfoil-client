@@ -39,8 +39,8 @@ struct Item {
     // surely fails). Said only; installs go ahead either way.
     uint8_t integrity = 0;
     // The server found it surely unsigned (feature item-signed, signed.nca or
-    // signed.ticket false): it opens only with signature patches. Not known
-    // is false.
+    // signed.ticket false): the console may refuse it, so it is said before
+    // it is tried. Not known is false.
     bool unsignedFile = false;
     // Installed through a server plugin's option (net/VariantsApi): its
     // address carries the option's query, the server prepares the file

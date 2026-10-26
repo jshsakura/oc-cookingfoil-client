@@ -108,15 +108,8 @@ bool Application::makeShortcutFromNro(const std::string &file, const std::string
     return false;
   }
   shortcuts_.insert(id);
-  // Unsigned, the shortcut opens only with signature patches: said now,
-  // not when the HOME Menu shows an error code.
-  if (!forwarder::signaturePatchesFound(sdRoot_)) {
-    alertTitle_ = tr("Shortcut made");
-    alert_ = trf("Made the {0} shortcut. No signature patches were found, so it may fail to open. Install signature patches such as sys-patch first.", {name});
-  } else {
-    message(justDownloaded ? trf("Got {0} and added its shortcut to the HOME Menu.", {name})
-                           : trf("Added the {0} shortcut to the HOME Menu.", {name}));
-  }
+  message(justDownloaded ? trf("Got {0} and added its shortcut to the HOME Menu.", {name})
+                         : trf("Added the {0} shortcut to the HOME Menu.", {name}));
   return true;
 }
 void Application::removeHomebrewShortcut(const homebrew::App &app) {
@@ -265,13 +258,12 @@ bool Application::startShortcut(const QueuedInstall &next) {
       request.cores = plan.cores;
       error = platform::makeShortcut(request, id);
     }
-    const bool patches = !error && forwarder::signaturePatchesFound(sd);
     bool replaced = false;
     if (!error && replace && plan.replaces != id) {
       if (const auto removed = platform::removeShortcut(plan.replaces)) logLine("shortcut: server one stays: " + removed.message);
       else replaced = true;
     }
-    return [this, plan, error, id, patches, replaced] {
+    return [this, plan, error, id, replaced] {
       finishRetroEntry("shortcut", error ? history::Outcome::Failed : history::Outcome::Done, error.message, 0, 0);
       if (error) {
         alertTitle_ = tr("Could not make the shortcut");
@@ -281,13 +273,7 @@ bool Application::startShortcut(const QueuedInstall &next) {
       shortcuts_.insert(id);
       if (replaced) shortcuts_.erase(plan.replaces);
       rememberShortcutKey(plan.app, plan.key);
-      // Unsigned, the shortcut opens only with signature patches: said now,
-      // not when the HOME Menu shows an error code.
-      if (!patches) {
-        alertTitle_ = tr("Shortcut made");
-        alert_ = trf("Made the {0} shortcut. No signature patches were found, so it may fail to open. Install signature patches such as sys-patch first.", {plan.display});
-      } else
-        message(trf("Added the {0} shortcut to the HOME Menu.", {plan.display}));
+      message(trf("Added the {0} shortcut to the HOME Menu.", {plan.display}));
     };
   });
 }
@@ -363,18 +349,14 @@ void Application::requestHomebrewShortcut(const homebrew::App &app) {
   alert_ = reason.empty() ? std::string(tr("The server has no shortcut for this app.")) : reason;
 }
 void Application::selfShortcutDialog() {
-  const bool patches = forwarder::signaturePatchesFound(sdRoot_);
   constexpr int Lines = 3;
   const float textW = 760 - 64;
   const auto why = tr("Opened from the Album there is little memory, so big installs can be slow or fail. With a HOME Menu shortcut it opens straight from the HOME Menu next time.");
   const float described = paint_.fonts.wrapped(why, -9999, -9999, 19, Ink, textW, Lines);
-  const float bodyH = 24 + described + (patches ? 0 : 16 + 48) + 24;
+  const float bodyH = 24 + described + 24;
   const auto body = modal(760, bodyH, tr("Running in applet mode"), tr("Close"), "", tr("Make shortcut"), HomeIcon);
   const float x = body.x + 32;
   float y = body.y + 24;
-  y += paint_.fonts.wrapped(why, x, y, 19, Ink, textW, Lines) + 16;
-  if (!patches)
-    paint_.fonts.wrapped(tr("No signature patches were found. A shortcut opens only with signature patches installed."), x, y, 17,
-                         Pending, textW, 2);
+  paint_.fonts.wrapped(why, x, y, 19, Ink, textW, Lines);
 }
 } // namespace foil::ui

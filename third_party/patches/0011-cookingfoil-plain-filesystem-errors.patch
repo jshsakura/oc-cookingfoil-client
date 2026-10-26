@@ -1,0 +1,16 @@
+diff --git a/source/nx/fs.cpp b/source/nx/fs.cpp
+index 5297f66..aa6d44f 100755
+--- a/source/nx/fs.cpp
++++ b/source/nx/fs.cpp
+@@ -117,9 +117,9 @@ namespace nx::fs
+         rc = fsOpenFileSystemWithId(&m_fileSystem, titleId, fileSystemType, path.c_str(), FsContentAttributes_All);
+ 
+         if (rc == 0x236e02)
+-            errorMsg = "File " + path + " is unreadable! You may have a bad dump, fs_mitm may need to be removed, or your firmware version may be too low to decrypt it.";
++            errorMsg = "File " + path + " is unreadable: it may be damaged, or need newer firmware.";
+         else if (rc == 0x234c02)
+-            errorMsg = "Failed to open filesystem. Make sure your signature patches are up to date and set up properly!";
++            errorMsg = "Failed to open the file system: the console did not accept this file.";
+ 
+         ASSERT_OK(rc, errorMsg.c_str());
+     }

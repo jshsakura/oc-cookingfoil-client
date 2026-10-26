@@ -10,8 +10,7 @@
 // the NCA headers (HeaderCipher) and writes the result (platform/Shortcut).
 //
 // What comes out is three NCAs, none of them encrypted beyond the header and
-// none signed, so no ticket or title key is involved; running one needs
-// signature patches on the console, as sphaira's do.
+// none signed, so no ticket or title key is involved.
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -108,11 +107,6 @@ struct Package {
 // False with `error` (an internal reason, for the log) when an input is
 // missing or malformed.
 bool build(const Input &input, const HeaderCipher &cipher, Package &out, std::string &error);
-
-// Signature patches are what lets an unsigned NCA run: sys-patch, or
-// Atmosphere or hekate patch files on the card. A guess from the SD card,
-// used only to warn.
-bool signaturePatchesFound(const std::string &sdRoot);
 
 // Whether to offer this app's own shortcut at start: opened from the album
 // (applet mode), never asked before, its .nro path known and no shortcut for
