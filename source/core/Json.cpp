@@ -127,6 +127,24 @@ std::mutex &saveStripe(const std::string& path) {
     static std::mutex stripes[32];
     return stripes[std::hash<std::string>{}(path) & 31];
 }
+// The bytes of `from` written straight into `to`, for a name Horizon will
+// not take by rename.
+static bool copyInto(const std::string& from, const std::string& to, std::string& error) {
+    std::FILE* in = std::fopen(from.c_str(), "rb");
+    if (!in) { error = std::strerror(errno); return false; }
+    std::FILE* out = std::fopen(to.c_str(), "wb");
+    if (!out) { error = std::strerror(errno); std::fclose(in); return false; }
+    std::vector<char> buffer(1 << 16);
+    bool ok = true;
+    for (size_t got; ok && (got = std::fread(buffer.data(), 1, buffer.size(), in)) > 0;)
+        ok = std::fwrite(buffer.data(), 1, got, out) == got;
+    ok = ok && !std::ferror(in);
+    if (!ok) error = std::strerror(errno);
+    std::fclose(in);
+    if (std::fclose(out) != 0 && ok) { ok = false; error = std::strerror(errno); }
+    if (!ok) ::unlink(to.c_str());
+    return ok;
+}
 // rename() under the card's rule (nothing over an existing file), for a
 // caller that already holds the file's stripe.
 bool replaceHeld(const std::string& from, const std::string& to, std::string& error) {
@@ -141,22 +159,50 @@ bool replaceHeld(const std::string& from, const std::string& to, std::string& er
     }
     std::error_code ec;
     if (platform::renamePath(from, to, ec)) return true;
-    if (ec != std::errc::file_exists && ec != std::errc::directory_not_empty) {
+    const auto name = std::filesystem::path(to).filename().string();
+    if (ec == std::errc::file_exists || ec == std::errc::directory_not_empty) {
+        // FS refuses replacement. Delete by entry type, verify the name is
+        // gone, then move once. A failure must not be hidden by truncating
+        // the target.
+        if (!platform::removePath(to, ec)) {
+            error = "removing " + name + ": " + ec.message();
+            return false;
+        }
+        if (platform::renamePath(from, to, ec)) return true;
+        if (ec != std::errc::no_such_file_or_directory) {
+            error = "putting " + name + " in place: " + ec.message();
+            return false;
+        }
+    } else if (ec != std::errc::no_such_file_or_directory) {
         error = "rename: " + ec.message();
         return false;
     }
-    // FS refuses replacement. Delete by entry type, verify the name is gone,
-    // then move once. A failure must not be hidden by truncating the target.
-    if (!platform::removePath(to, ec)) {
-        error = "removing " + std::filesystem::path(to).filename().string() + ": " + ec.message();
+    // Horizon answers PathNotFound for some renames whose source and folder
+    // are both there (a Korean .opt into a RetroArch config folder, 0.5.4).
+    // What was there is logged; the name is freed and the bytes copied in.
+    struct stat st {};
+    const bool sourceThere = ::stat(from.c_str(), &st) == 0;
+    const bool sourceFile = sourceThere && S_ISREG(st.st_mode);
+    const bool targetThere = ::stat(to.c_str(), &st) == 0;
+    logLine("replace " + name + ": " + ec.message() + " source=" + (sourceThere ? "yes" : "no") +
+            " target=" + (targetThere ? "yes" : "no"));
+    if (!sourceFile) {
+        error = "rename: " + ec.message();
         return false;
     }
-    if (!platform::renamePath(from, to, ec)) {
-        error = "putting " + std::filesystem::path(to).filename().string() + " in place: " + ec.message();
+    std::error_code again;
+    if (targetThere && !platform::removePath(to, again)) {
+        error = "removing " + name + ": " + again.message();
         return false;
     }
-    error.clear();
-    return true;
+    if (copyInto(from, to, error)) {
+        ::unlink(from.c_str());
+        error.clear();
+        return true;
+    }
+    logLine("replace " + name + ": copy: " + error);
+    error = "rename: " + ec.message() + ", copy: " + error;
+    return false;
 }
 }
 bool atomicWrite(const std::string& path, const std::string& contents, std::string& error) {

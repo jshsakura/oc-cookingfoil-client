@@ -20,6 +20,9 @@ Result deleteError = 0;
 bool pretendDelete = false;
 std::string physicalRoot;
 bool failFinalRename = false;
+// Horizon's PathNotFound for a rename whose source and folder are there
+// (a Korean .opt into a RetroArch config folder, 0.5.4).
+bool refuseName = false;
 }
 int fsdevTranslatePath(const char *path, FsFileSystem **fs, char *out) {
   const std::string name = path;
@@ -76,6 +79,7 @@ Result rename(const char *from, const char *to, FsDirEntryType type) {
     if (!std::filesystem::exists(from)) return 0x202;
     if (std::filesystem::exists(to)) return 0x402;
     if (failFinalRename) return 0xE02;
+    if (refuseName) return 0x202;
     std::filesystem::rename(from, to);
     return 0;
   }
@@ -161,6 +165,19 @@ int main() {
   failFinalRename = false;
   CHECK(foil::atomicWrite(ledger, "complete new record", error));
   CHECK(foil::readFile(ledger) == "complete new record" && !std::filesystem::exists(ledger + ".tmp"));
+  // Rename refused with PathNotFound: the bytes go in by copy, over an old
+  // file too, and the part goes.
+  const auto opt = physicalRoot + "/슈퍼 마리오 64 (Super Mario 64) [J-K v20261021 v1 올스타즈 한글].opt";
+  const auto part = physicalRoot + "/.cf-0123456789abcdef.part";
+  refuseName = true;
+  std::ofstream(part) << "new options";
+  CHECK(foil::replaceFile(part, opt, error));
+  CHECK(foil::readFile(opt) == "new options" && !std::filesystem::exists(part));
+  std::ofstream(part) << "newer options";
+  CHECK(foil::replaceFile(part, opt, error));
+  CHECK(foil::readFile(opt) == "newer options" && !std::filesystem::exists(part));
+  CHECK(!foil::replaceFile(part, opt, error) && error.find("0x00000202") != std::string::npos);
+  refuseName = false;
   const auto cwd = std::filesystem::current_path();
   std::filesystem::current_path(physicalRoot);
   CHECK(!foil::atomicWrite("", "no destination", error));
