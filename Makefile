@@ -78,20 +78,28 @@ $(HOST_OBJ)/third_party/sqlite/sqlite3.o: third_party/sqlite/sqlite3.c
 $(addprefix $(HOST_OBJ)/,$(ZSTD_C:.c=.o)): $(HOST_OBJ)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O2 -w $(ZSTD_FLAGS) -c $< -o $@
--include $(SHARED_OBJ:.o=.d) $(HOST_APP_OBJ:.o=.d) $(TEST_OBJ:.o=.d)
+TOOL_OBJ := $(call host_obj,tools/strings-check.cpp source/core/I18n.cpp source/core/I18nChecks.cpp $(wildcard source/i18n/*.cpp))
+-include $(SHARED_OBJ:.o=.d) $(HOST_APP_OBJ:.o=.d) $(TEST_OBJ:.o=.d) $(TOOL_OBJ:.o=.d)
 build-host/cookingfoil-host: $(HOST_APP_OBJ) $(SHARED_OBJ)
 	$(HOST_CXX) $^ -o $@ $(HOST_LIBS)
 build-host/unit-tests: $(TEST_OBJ) $(SHARED_OBJ)
 	$(HOST_CXX) $^ -o $@ $(HOST_LIBS)
+# The server dictionary's checks (tools/strings-check.cpp), for its CI.
+build-host/strings-check: $(TOOL_OBJ)
+	$(HOST_CXX) $^ -o $@ $(HOST_LIBS)
 build-host/switch-fs-tests: tests/switch_fs/test.cpp tests/switch_fs/switch.h source/platform/FileSystem.cpp include/platform/FileSystem.hpp source/core/Json.cpp include/core/Json.hpp
 	@mkdir -p build-host
 	$(HOST_CXX) -std=c++17 -Wall -Wextra -Wpedantic -D__SWITCH__ -Itests/switch_fs -Iinclude $(shell pkg-config --cflags json-c) -ffunction-sections -fdata-sections tests/switch_fs/test.cpp source/platform/FileSystem.cpp source/core/Json.cpp -Wl,--gc-sections -pthread -o $@
-.PHONY: test-switch-fs test-filesystem-policy
+.PHONY: test-switch-fs test-filesystem-policy test-i18n-tools
 test-filesystem-policy:
 	python3 tests/check_filesystem_policy.py
 test-switch-fs: build-host/switch-fs-tests
 	./build-host/switch-fs-tests
-test: build-host/unit-tests test-switch-fs test-filesystem-policy
+# The tables go out to the dictionary format and back unchanged, and every
+# shipped language passes the checks a server's dictionary must.
+test-i18n-tools: build-host/strings-check
+	python3 scripts/i18n.py selftest
+test: build-host/unit-tests test-switch-fs test-filesystem-policy test-i18n-tools
 	SDL_VIDEODRIVER=dummy ./build-host/unit-tests
 clean:
 	rm -rf build build-host cookingfoil.nro cookingfoil.nacp cookingfoil.elf
