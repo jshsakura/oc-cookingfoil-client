@@ -1,5 +1,6 @@
 #include "Test.hpp"
 #include "core/I18n.hpp"
+#include "core/I18nChecks.hpp"
 #include "core/Json.hpp"
 #include <SDL2/SDL_ttf.h>
 #include <cstdint>
@@ -24,16 +25,6 @@ bool cjk(const std::string &text) {
       return true;
   }
   return false;
-}
-std::set<std::string> placeholders(const char *text) {
-  std::set<std::string> out;
-  const std::string s = text ? text : "";
-  for (size_t at = s.find('{'); at != std::string::npos; at = s.find('{', at + 1)) {
-    const auto end = s.find('}', at);
-    if (end != std::string::npos && end - at <= 3)
-      out.insert(s.substr(at, end - at + 1));
-  }
-  return out;
 }
 // String literals on one line, outside // comments, with what precedes each.
 struct Literal {
@@ -94,7 +85,7 @@ int runI18nTests() {
       if (!row.text || !*row.text)
         std::cerr << foil::languageCode(language) << ": empty translation: " << row.key << '\n';
       CHECK(row.text && *row.text);
-      const bool same = placeholders(row.text) == placeholders(foil::english(row.key));
+      const bool same = foil::i18n::placeholders(row.text ? row.text : "") == foil::i18n::placeholders(foil::english(row.key));
       if (!same)
         std::cerr << foil::languageCode(language) << ": placeholder mismatch: " << row.key << '\n';
       CHECK(same);
@@ -207,5 +198,35 @@ int runI18nTests() {
   foil::setLanguage(foil::Language::Korean);
   CHECK(foil::languageFromCode("zh", foil::Language::Korean) == foil::Language::Chinese);
   CHECK(foil::languageFromCode("xx", foil::Language::English) == foil::Language::English);
+  // Server text in a key's place: the checks it passes before it shows.
+  {
+    using foil::i18n::Problem;
+    using foil::i18n::checkText;
+    CHECK(checkText("Delete {0}?|test", "{0} 삭제?") == Problem::None);
+    CHECK(checkText("Name|sort", "이름순") == Problem::None);
+    CHECK(checkText("Name|sort", "") == Problem::Empty);
+    CHECK(checkText("Delete {0}?|test", "삭제?") == Problem::Placeholders);
+    CHECK(checkText("Delete {0}?|test", "{0} {1} 삭제?") == Problem::Placeholders);
+    CHECK(checkText("Name|sort", "이름\t순") == Problem::Control);
+    CHECK(checkText("Name|sort", "\xE2\x80\xAE" "eman") == Problem::Control); // right-to-left override
+    CHECK(checkText("Two lines|test", "한 줄\n두 줄") == Problem::None);
+    CHECK(checkText("OK|test", std::string(16, 'a')) == Problem::None); // short keys get 16 characters
+    CHECK(checkText("OK|test", std::string(17, 'a')) == Problem::TooLong);
+    CHECK(foil::i18n::englishOf("Name|sort") == "Name" && foil::i18n::englishOf("Name") == "Name");
+    CHECK(foil::i18n::undrawable(0x0627) && foil::i18n::undrawable(0x0E01) && foil::i18n::undrawable(0x1100));
+    CHECK(!foil::i18n::undrawable('a') && !foil::i18n::undrawable(0xAC00) && !foil::i18n::undrawable(0x0410));
+    CHECK((foil::i18n::codePoints("a한") == std::vector<uint32_t>{'a', 0xD55C}));
+  }
+  // Every key a server may not reword is one the app draws, once.
+  {
+    std::set<std::string> lockedSeen;
+    for (const auto *key : foil::i18n::lockedKeys()) {
+      if (!foil::hasTranslation(key)) std::cerr << "locked key not in the tables: " << key << '\n';
+      CHECK(foil::hasTranslation(key));
+      CHECK(lockedSeen.insert(key).second);
+      CHECK(foil::i18n::locked(key));
+    }
+    CHECK(!foil::i18n::locked("Name|sort"));
+  }
   return failures;
 }
