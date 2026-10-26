@@ -422,7 +422,7 @@ void Application::dropboxTab() {
       paint_.fonts.wrapped(tr("Scan the QR code and tap Allow in Dropbox; this console finishes on its own. Your password is never kept on the console or the server."),
                            290, Top + 140, 21, Secondary, 570, 4);
       const auto left = (dropboxExpiresAt_ > SDL_GetTicks() ? dropboxExpiresAt_ - SDL_GetTicks() : 0) / 1000;
-      paint_.fonts.text(trf("Approve within {0} min.", {std::to_string(left / 60 + 1)}), 290, Top + 290, 18, Secondary);
+      paint_.fonts.text(trf("Approve within {0} min.", {std::to_string(left / 60 + 1)}), 290, Top + 290, 18, Secondary, false, 580);
       dropboxQr_.draw(paint_.renderer, 908, int(Top + 75), 300);
       return;
     }
@@ -509,12 +509,12 @@ void Application::dropboxTab() {
     if (!dropboxListed_ || dropboxBusy_ == "list" || deviceBusy_)
       for (int n = 0; n + 1 < Visible; ++n) paint_.skeleton(260, y + n * RowStep, 992, RowHeight, 16);
     else if (!savesQuery_.empty())
-      paint_.fonts.text(trf("No games match '{0}'.", {savesQuery_}), 290, y + 20, 19, Secondary);
+      paint_.fonts.text(trf("No games match '{0}'.", {savesQuery_}), 290, y + 20, 19, Secondary, false, 940);
     else if (!withConsole)
       paint_.fonts.wrapped(tr("No backups on Dropbox yet. Press Y to list this console's games and upload one."), 290,
                            y + 20, 19, Secondary, 940, 2);
     else
-      paint_.fonts.text(tr("No games to manage saves for."), 290, y + 20, 19, Secondary);
+      paint_.fonts.text(tr("No games to manage saves for."), 290, y + 20, 19, Secondary, false, 940);
     unclip();
     return;
   }
@@ -635,9 +635,9 @@ void Application::dropboxDialog() {
   const float line = body.y + 24 + rows * (Row + Gap) + 4;
   if (working)
     paint_.fonts.text(dropboxBusy_ == "upload" ? tr("Uploading to Dropbox.") : tr("Downloading from Dropbox."), x, line,
-                      18, Secondary);
+                      18, Secondary, false, w);
   else if (revisions.empty() && dropboxListed_)
-    paint_.fonts.text(tr("Dropbox has no backups of this game."), x, line, 18, Secondary);
+    paint_.fonts.text(tr("Dropbox has no backups of this game."), x, line, 18, Secondary, false, w);
   else if (revisions.empty())
     paint_.skeleton(x, line - 2, 420, 22, 6); // the Dropbox list is on its way
   else if (!game.installed)
@@ -684,6 +684,6 @@ void Application::dropboxUploadList() {
   unclip();
   const float line = body.y + 24 + rows * (Row + Gap) + 4;
   paint_.fonts.text(working ? tr("Uploading to Dropbox.") : tr("A backup already on Dropbox is replaced under the same name."), x, line, 18,
-                    Secondary);
+                    Secondary, false, w);
 }
 } // namespace foil::ui

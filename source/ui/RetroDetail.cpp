@@ -272,18 +272,19 @@ float Application::retroInfoCard(float y) {
     const float top = y + 16 + rows * RowHeight;
     paint_.rect(Left + 20, top - 6, Width - 40, 1, Line);
     paint_.icon(26, Left + 20, top + 9, Secondary, 16);
-    paint_.fonts.middle(tr("Install location"), Left + 42, top + 17, 15, Secondary);
-    const float labelW = paint_.fonts.measure(tr("Install location"), 15) + 18;
+    const float labelW = std::min(paint_.fonts.measure(tr("Install location"), 15), (Width - 82) / 2) + 18;
+    paint_.fonts.middle(tr("Install location"), Left + 42, top + 17, 15, Secondary, false, labelW - 18);
     paint_.fonts.middle(game.romPath, Left + 42 + labelW, top + 17, 16, Ink, false, Width - 82 - labelW);
   }
   y += rows * RowHeight + 24 + pathRow + 22;
   if (!meta.genres.empty()) {
-    paint_.fonts.text(tr("Genres"), Left, y, 18, Ink, true);
-    float x = Left + 110;
+    // The chips start past the heading, however long it reads.
+    const float start = std::max(Left + 110, paint_.fonts.text(tr("Genres"), Left, y, 18, Ink, true, 200) + 14);
+    float x = start;
     for (const auto &label : meta.genres) {
       const float w = paint_.fonts.measure(label, 16, true) + 24;
       if (x + w > Left + Width) {
-        x = Left + 110;
+        x = start;
         y += 38;
       }
       paint_.rect(x, y - 3, w, 30, Surface, 15);
@@ -434,9 +435,10 @@ void Application::retroDetailPanel() {
     paint_.scrollbar(1232, RowTop, 4 * RowPitch - 4, float(first), 4, float(rows));
   }
   paint_.rect(818, 454, 430, 1, Line);
-  paint_.fonts.middle(tr("Total"), 852, 476, 18, Secondary);
   const auto total = formatBytes(retroCheckedBytes());
-  paint_.fonts.middle(total, 1214 - paint_.fonts.measure(total, 24, true), 476, 24, Ink, true);
+  const float totalW = paint_.fonts.measure(total, 24, true);
+  paint_.fonts.middle(tr("Total"), 852, 476, 18, Secondary, false, 1214 - 16 - totalW - 852);
+  paint_.fonts.middle(total, 1214 - totalW, 476, 24, Ink, true);
   // Retro games always go to the SD card: one card, already chosen.
   constexpr float CardTop = 494, CardHeight = 60, TextLeft = 52;
   paint_.rect(840, CardTop, W, CardHeight, Ink, 12);

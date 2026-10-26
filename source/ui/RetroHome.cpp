@@ -40,9 +40,9 @@ void Application::retroHeader() {
     // goes to the shelves, as B does.
     constexpr float Mid = 48;
     paint_.icon(7, 258, Mid - 11, Secondary, 22);
-    const float end = paint_.fonts.middle(tr("Retro games"), 284, Mid, 22, Secondary, true);
+    const float end = paint_.fonts.middle(tr("Retro games"), 284, Mid, 22, Secondary, true, 220);
     hit(252, Mid - 22, end - 252 + 8, 44, [this] { leaveRaPage(); }, {252, Mid - 22, end - 252 + 8, 44}, 12);
-    paint_.fonts.middle(tr("Achievements"), end + 20, Mid, 30, Ink, true);
+    paint_.fonts.middle(tr("Achievements"), end + 20, Mid, 30, Ink, true, 300);
   } else
     pageTitle(tr("Retro games"), std::to_string(roms), 0);
   // X 업적 at the right end (where search sits elsewhere), Y RetroArch left

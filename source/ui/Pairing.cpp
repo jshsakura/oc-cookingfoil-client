@@ -54,7 +54,7 @@ void Application::pairing() {
                         : tr(why);
   paint_.fonts.wrapped(said, 290, 230, 21, Secondary, 570, 3);
   if (!pairingInfo_.code.empty()) {
-    paint_.fonts.text(tr("Device code"), 290, 326, 18, Secondary);
+    paint_.fonts.text(tr("Device code"), 290, 326, 18, Secondary, false, 570);
     paint_.fonts.text(pairingInfo_.code, 290, 357, 30, Ink, true);
   }
   paint_.fonts.wrapped(tr("If you cannot scan it, enter the device code in device approval. Connects automatically once approved."),

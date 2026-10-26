@@ -639,6 +639,6 @@ void Application::saveNeedsGameDialog() {
     paint_.fonts.text(s.name, x + 30, ly, 18, Ink, false, body.w - 64 - 30 - 100);
     paint_.fonts.text(size, x + body.w - 64 - paint_.fonts.measure(size, 17, true), ly + 1, 17, Secondary, true);
   }
-  if (count > Shown) paint_.fonts.text(trf("and {0} more", {std::to_string(count - Shown)}), x + 30, ly, 17, Secondary);
+  if (count > Shown) paint_.fonts.text(trf("and {0} more", {std::to_string(count - Shown)}), x + 30, ly, 17, Secondary, false, body.w - 64 - 30);
 }
 } // namespace foil::ui

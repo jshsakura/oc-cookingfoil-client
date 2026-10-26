@@ -270,7 +270,7 @@ void Application::management() {
                     applying_ ? Ink : Secondary, bool(applying_), w);
   y += 28;
   if (!savesOnly) {
-    paint_.fonts.text(tr("Delete game"), x, y + 4, 19, Secondary, true);
+    paint_.fonts.text(tr("Delete game"), x, y + 4, 19, Secondary, true, w);
     y += Label;
     rowHit(x, y, w, Row, 12, [this] {
       manageRow_ = 0;
@@ -279,15 +279,15 @@ void Application::management() {
     if (manageRow_ == 0 && !removal_) paint_.focusRow(x, y, w, Row, Ground, 12);
     else paint_.rect(x, y, w, Row, Ground, 12);
     paint_.icon(37, x + 20, y + Row / 2 - 13, Bad, 26);
-    paint_.fonts.text(tr("Delete game files"), x + 62, y + 9, 21, Ink, true);
-    paint_.fonts.text(tr("Deletes the game, updates and DLC. Saves are kept."), x + 62, y + 39, 16, Secondary);
+    paint_.fonts.text(tr("Delete game files"), x + 62, y + 9, 21, Ink, true, w - 82);
+    paint_.fonts.text(tr("Deletes the game, updates and DLC. Saves are kept."), x + 62, y + 39, 16, Secondary, false, w - 82);
     y += Row + 16;
   }
-  paint_.fonts.text(tr("Save backup and restore"), x, y + 4, 19, Secondary, true);
+  paint_.fonts.text(tr("Save backup and restore"), x, y + 4, 19, Secondary, true, w);
   y += Label;
   if (applyRunning_) {
-    paint_.fonts.text(trf("Getting and applying the save · {0}", {formatBytes(saveCopied_.load())}), x, y + 6, 19, Ink, true);
-    paint_.fonts.text(tr("Keep the console on until it finishes."), x, y + 36, 17, Secondary);
+    paint_.fonts.text(trf("Getting and applying the save · {0}", {formatBytes(saveCopied_.load())}), x, y + 6, 19, Ink, true, w);
+    paint_.fonts.text(tr("Keep the console on until it finishes."), x, y + 36, 17, Secondary, false, w);
   } else if (deviceBusy_ && !removalOperation_) {
     // The save rows' shape while they are read.
     for (int n = 0; n < listed; ++n) paint_.skeleton(x, y + n * (Row + Gap), w, Row, 14);

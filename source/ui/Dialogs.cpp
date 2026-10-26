@@ -209,8 +209,8 @@ void Application::viewPopup() {
   const auto body = modal(Width, 44 + rows * RowHeight + 16, tr("Filter and sort"), tr("Cancel"), tr("Apply"), "", 10);
   const float gridLeft = body.x + 32, sortLeft = body.x + Width - 32 - SortWidth;
   const float cell = (sortLeft - 32 - gridLeft - Gap * (Cols - 1)) / Cols;
-  paint_.fonts.middle(tr("Filter"), gridLeft, body.y + 26, 16, Secondary, true);
-  paint_.fonts.middle(tr("Sort"), sortLeft, body.y + 26, 16, Secondary, true);
+  paint_.fonts.middle(tr("Filter"), gridLeft, body.y + 26, 16, Secondary, true, sortLeft - 32 - gridLeft);
+  paint_.fonts.middle(tr("Sort"), sortLeft, body.y + 26, 16, Secondary, true, SortWidth);
   paint_.rect(sortLeft - 18, body.y + 16, 1, rows * RowHeight + 24, Line);
   auto option = [&](int column, int index, float x, float y, float w, const std::string &label,
                     bool on, bool checkbox) {
@@ -358,15 +358,15 @@ void Application::dialogs() {
     paint_.fonts.text(g.representative.name, x + 116, y + 4, 22, Ink, true, body.w - 180);
     paint_.fonts.text(trf("{0} items · {1}", {std::to_string(selection_->count()),
                                               formatBytes(selection_->total())}),
-                      x + 116, y + 42, 19, Secondary);
+                      x + 116, y + 42, 19, Secondary, false, body.w - 180);
     paint_.fonts.text(selection_->target == "nand" ? tr("Installs to the console.") : tr("Installs to the SD card."),
-                      x + 116, y + 70, 19, Secondary);
+                      x + 116, y + 70, 19, Secondary, false, body.w - 180);
     if (pick) {
       const float top = y + 96 + 20, mid = top + 24, right = body.x + body.w - 32;
-      paint_.fonts.middle(tr("Download from"), x, mid, 19, Ink, true);
       // ‹ ● 서버 이름 › with the d-pad (or a tap on either side) stepping.
       constexpr float Width = 360;
       const float left = right - Width;
+      paint_.fonts.middle(tr("Download from"), x, mid, 19, Ink, true, left - 16 - x);
       paint_.ring(left, top, Width, 48, 12);
       paint_.rect(left, top, Width, 48, Ground, 12);
       hit(left, top, Width / 2, 48, [this] { stepInstallServer(-1); });

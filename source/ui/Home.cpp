@@ -157,7 +157,7 @@ void Application::home() {
   }
   cover(thumbnailUrl(g.representative.icon, "md"), 296 + hx, 56 - scroll, 184, false, g.representative.name, false, true);
   paint_.fonts.text(heroes_.empty() ? tr("Featured") : heroes_[heroSlide_].label, 512 + hx,
-                    61 - scroll, 18, Butter, true);
+                    61 - scroll, 18, Butter, true, 700);
   paint_.fonts.text(g.representative.name, 512 + hx, 98 - scroll, 40, Surface, true,
                     700);
   paint_.fonts.text(g.representative.publisher, 512 + hx, 155 - scroll, 19,
