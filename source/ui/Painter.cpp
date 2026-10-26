@@ -207,16 +207,17 @@ void Painter::scrollbar(float x, float y, float height, float offset,
   rect(x + 1, top, Width, thumb, color, 2);
 }
 void Painter::outline(float x, float y, float w, float h, int radius) {
-  rect(x - 3, y - 3, w + 6, h + 6, Focus, radius + 3);
+  rect(x - 4, y - 4, w + 8, h + 8, Focus, radius + 4);
 }
 void Painter::focusRow(float x, float y, float w, float h, SDL_Color fill, int radius) {
-  constexpr float Border = 3;
+  constexpr float Border = 5;
   rect(x, y, w, h, Focus, radius);
-  rect(x + Border, y + Border, w - 2 * Border, h - 2 * Border, fill, std::max(0, radius - 3));
+  rect(x + Border, y + Border, w - 2 * Border, h - 2 * Border, fill, std::max(0, radius - int(Border)));
 }
 void Painter::ring(float x, float y, float w, float h, int radius) {
+  // A 6px band with a 2px gap: the 4px one was hard to see on cards.
   rect(x - 8, y - 8, w + 16, h + 16, Focus, radius + 8);
-  rect(x - 4, y - 4, w + 8, h + 8, Surface, radius + 4);
+  rect(x - 2, y - 2, w + 4, h + 4, Surface, radius + 2);
 }
 // Brand mark (brand/cookfoil-icon.svg) rasterized once, then the two-tone
 // wordmark: "Cooking" in ink, "Foil" on a butter tag.
