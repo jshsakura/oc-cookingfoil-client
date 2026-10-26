@@ -237,7 +237,7 @@ Parsed<InstalledLibrary> readInstalled() {
         }
         g.displayVersion = bounded(control->nacp.display_version);
         // Every installed game keeps its icon in memory; an oversized one is
-        // dropped and the card falls back to the shop cover or a letter tile.
+        // dropped and the card falls back to the library cover or a letter tile.
         constexpr uint64_t MaxIconBytes = 256 * 1024;
         const auto iconSize = std::min<uint64_t>(size - sizeof(NacpStruct), sizeof(control->icon));
         if (iconSize <= MaxIconBytes)

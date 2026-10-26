@@ -27,8 +27,8 @@ int Application::screenshotStrip(int y) {
   }
   return y + 134;
 }
-// A shop path ("/api/…") made full against the server; a full address as it is.
-std::string Application::shopAddress(const std::string &url, const std::string &server) const {
+// A server path ("/api/…") made full against the server; a full address as it is.
+std::string Application::fullAddress(const std::string &url, const std::string &server) const {
   return !url.empty() && url[0] == '/' && session_ ? serverFor(server).url + url : url;
 }
 // Whose screenshots the gallery shows: the game, the RetroArch game or the app.

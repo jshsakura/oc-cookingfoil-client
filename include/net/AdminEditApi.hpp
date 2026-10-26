@@ -1,5 +1,5 @@
 #pragma once
-// 관리자 편집 on the shop (feature admin-edit): an item's fields, and one
+// 관리자 편집 on the server (feature admin-edit): an item's fields, and one
 // field changed. `kind` is homebrew, retro or game.
 #include "core/AdminEdit.hpp"
 #include "core/State.hpp"

@@ -37,8 +37,8 @@ int runOriginTests() {
   foil::State state;
   {
     // Each server's token and direct address are its own.
-    reply(a + "/api/shop/sections", {"X-CookingFoil-Download-Token: token-a", "X-CookingFoil-Download-Origin: https://dl-a.example"});
-    reply(b + "/api/shop/sections", {"X-CookingFoil-Download-Token: token-b"});
+    reply(a + "/api/library/sections", {"X-CookingFoil-Download-Token: token-a", "X-CookingFoil-Download-Origin: https://dl-a.example"});
+    reply(b + "/api/library/sections", {"X-CookingFoil-Download-Token: token-b"});
     CHECK(downloadToken(a) == "token-a" && downloadToken(b) == "token-b");
     CHECK(downloadTokenOrigin(a) == "https://dl-a.example" && downloadTokenOrigin(b).empty());
     // A reply from the direct address counts as its server's.
@@ -50,7 +50,7 @@ int runOriginTests() {
   {
     // A server naming another server's own address as its direct one is
     // not taken: the other's replies and token stay the other's.
-    reply(b + "/api/shop/sections", {"X-CookingFoil-Download-Origin: https://a.example"});
+    reply(b + "/api/library/sections", {"X-CookingFoil-Download-Origin: https://a.example"});
     CHECK(downloadTokenOrigin(b).empty() && serverOf(a + "/api/x") == a);
   }
   {
@@ -81,7 +81,7 @@ int runOriginTests() {
     setTokenRenewer(a, [&] { ++askedA; return 401L; });
     setTokenRenewer(b, [&] {
       ++askedB;
-      reply(b + "/api/shop/info", {"X-CookingFoil-Download-Token: token-b2"});
+      reply(b + "/api/library/info", {"X-CookingFoil-Download-Token: token-b2"});
       return 200L;
     });
     CHECK(renewDownloadToken(b + "/api/get/x", "token-b") && askedB == 1 && askedA == 0);
@@ -117,14 +117,14 @@ int runOriginTests() {
     // another host: that host's refusal is the server's, and renewing
     // through a file there asks the server.
     forgetLinks();
-    reply(a + "/api/shop/sections", {"X-CookingFoil-Download-Token: lent"});
+    reply(a + "/api/library/sections", {"X-CookingFoil-Download-Token: lent"});
     CHECK(hasBearer(downloadHeaders(serverA, state, "https://cdn.example/f.nsz"), "lent"));
     reply("https://cdn.example/f.nsz", {"X-CookingFoil-Token: expired"});
     CHECK(downloadTokenRejected(a) && serverOf("https://cdn.example/f.nsz") == a);
     int asked = 0;
     setTokenRenewer(a, [&] {
       ++asked;
-      reply(a + "/api/shop/info", {"X-CookingFoil-Download-Token: lent2"});
+      reply(a + "/api/library/info", {"X-CookingFoil-Download-Token: lent2"});
       return 200L;
     });
     CHECK(renewDownloadToken("https://cdn.example/f.nsz", "lent") && asked == 1 && !downloadTokenRejected(a));
@@ -134,12 +134,12 @@ int runOriginTests() {
     // A direct address one server named is not taken by another, in
     // either order, and a server added later keeps its own address.
     forgetLinks();
-    reply(b + "/api/shop/sections", {"X-CookingFoil-Download-Token: tb", "X-CookingFoil-Download-Origin: https://dl-b.example"});
-    reply(a + "/api/shop/sections", {"X-CookingFoil-Download-Token: ta", "X-CookingFoil-Download-Origin: https://dl-b.example"});
+    reply(b + "/api/library/sections", {"X-CookingFoil-Download-Token: tb", "X-CookingFoil-Download-Origin: https://dl-b.example"});
+    reply(a + "/api/library/sections", {"X-CookingFoil-Download-Token: ta", "X-CookingFoil-Download-Origin: https://dl-b.example"});
     CHECK(downloadTokenOrigin(a).empty() && serverOf("https://dl-b.example/x") == b);
     CHECK(headersFor("https://dl-b.example/api/get/1", {}) == std::vector<std::string>{"Authorization: Bearer tb"});
     foil::setKnownServers(std::vector<std::string>{a});
-    reply(a + "/api/shop/sections", {"X-CookingFoil-Download-Origin: https://c.example"});
+    reply(a + "/api/library/sections", {"X-CookingFoil-Download-Origin: https://c.example"});
     foil::setKnownServers(std::vector<std::string>{a, "https://c.example"});
     CHECK(serverOf("https://c.example/api/x") == "https://c.example");
     foil::setKnownServers(std::vector<std::string>{a, b});
@@ -163,7 +163,7 @@ int runOriginTests() {
       return 401L;
     });
     setTokenRenewer(b, [&] {
-      reply(b + "/api/shop/info", {"X-CookingFoil-Download-Token: quick"});
+      reply(b + "/api/library/info", {"X-CookingFoil-Download-Token: quick"});
       return 200L;
     });
     std::thread slow([&] { renewDownloadToken(a + "/f", ""); });

@@ -69,7 +69,7 @@ struct HomeTheme {
 };
 // A shelf holds this many, then a 모두 보기 card opens the full list.
 constexpr size_t HomeRowLimit = 30, HomeRowVisible = 6;
-// Shop lists show only games that have a base; update or DLC-only rows are
+// Library lists show only games that have a base; update or DLC-only rows are
 // leftovers, not something to install on their own.
 std::vector<size_t> browseCatalog(const std::vector<Group> &groups,
                                   const std::string &query, const Theme &theme);
@@ -83,7 +83,7 @@ bool textMatches(std::initializer_list<std::string_view> texts, const std::strin
 std::vector<size_t> browseFiltered(const std::vector<Group> &groups, const std::string &query,
                                    const std::vector<Theme> &filters, SortMode sort,
                                    const InstalledMask &installed = {});
-// Home skips installed games; the shop is for what is not on the console yet.
+// Home skips installed games; the library is for what is not on the console yet.
 size_t homeHero(const std::vector<Group> &groups, const InstalledMask &installed = {});
 // The rotating banner at the top of home: one game per reason, no repeats.
 struct HeroSlide {

@@ -289,7 +289,7 @@ std::vector<HomeTheme> homeThemes(const std::vector<Group> &groups, size_t hero,
   // took their games, so every genre with enough games shows, each once.
   constexpr size_t MinCategoryGames = HomeRowVisible;
   // Sample sizes for rotating rows. Time-ordered rows (최근 추가, 신작, 최근
-  // 업데이트) change on their own as the shop grows, so they stay sorted.
+  // 업데이트) change on their own as the library grows, so they stay sorted.
   constexpr size_t TopPool = 36, WidePool = 80, AnyGame = SIZE_MAX;
   std::vector<HomeTheme> rows;
   // Games an earlier row shows on screen, as a mask: with every genre a row,
@@ -308,12 +308,12 @@ std::vector<HomeTheme> homeThemes(const std::vector<Group> &groups, size_t hero,
     rows.push_back(std::move(row));
   }
   // Each row skips the games an earlier row shows on screen (its first
-  // HomeRowVisible), so no two rows look alike without starving small shops.
+  // HomeRowVisible), so no two rows look alike without starving small libraries.
   // A row with a `pool` draws a seeded sample from the first `pool` games of
   // its sort instead of always showing the same top dozen.
   unsigned rowSalt = 0;
   // `order` is a list already sorted for the row (the genre rows share one
-  // instead of sorting the whole shop once per genre); `least` is how many
+  // instead of sorting the whole library once per genre); `least` is how many
   // games the row needs to show at all.
   auto add = [&](Theme theme, size_t pool = 0, const std::vector<size_t> *order = nullptr,
                  size_t least = 1) {

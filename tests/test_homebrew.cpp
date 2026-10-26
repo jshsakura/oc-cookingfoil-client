@@ -31,14 +31,14 @@ int runHomebrewTests() {
       R"("size":33584861,"hash":"sha256:fb7d","file_name":"ytb-player.nro","icon_url":"/api/homebrew/gh-9c9ef5794087/icon",)"
       R"("download_url":"/api/homebrew/gh-9c9ef5794087/download","source":"github","released_at":"2026-09-26T20:06:01Z",)"
       R"("repo_url":"https://github.com/murat303/ytb-player"})";
-  const auto apps = parse(R"({"homebrew":[)" + entry + "]}", "https://shop.example");
+  const auto apps = parse(R"({"homebrew":[)" + entry + "]}", "https://server.example");
   CHECK(apps.size() == 1);
   if (!apps.empty()) {
     const auto &a = apps.front();
     CHECK(a.id == "gh-9c9ef5794087" && a.name == "YTB Player" && a.version == "1.1.0" && a.author == "muratgokce");
     CHECK(a.description.empty() && a.size == 33584861 && a.hash == "sha256:fb7d");
-    CHECK(a.iconUrl == "https://shop.example/api/homebrew/gh-9c9ef5794087/icon");
-    CHECK(a.downloadUrl == "https://shop.example/api/homebrew/gh-9c9ef5794087/download");
+    CHECK(a.iconUrl == "https://server.example/api/homebrew/gh-9c9ef5794087/icon");
+    CHECK(a.downloadUrl == "https://server.example/api/homebrew/gh-9c9ef5794087/download");
     CHECK(a.source == "github" && a.repoUrl == "https://github.com/murat303/ytb-player");
     // No verified field (an older server): no badge.
     CHECK(!a.verified);
@@ -47,18 +47,18 @@ int runHomebrewTests() {
     // The admin's 검수됨 mark, kept through the queue's copy of the app.
     auto marked = entry;
     marked.insert(marked.size() - 1, R"(,"verified":true,"verified_at":"2026-10-20T00:00:00Z")");
-    const auto verified = parse(R"({"homebrew":[)" + marked + "]}", "https://shop.example");
+    const auto verified = parse(R"({"homebrew":[)" + marked + "]}", "https://server.example");
     CHECK(verified.size() == 1 && verified.front().verified);
     CHECK(!verified.empty() && parse(R"({"homebrew":[)" + serialize(verified.front()) + "]}", "").front().verified);
     auto unmarked = entry;
     unmarked.insert(unmarked.size() - 1, R"(,"verified":false,"verified_at":null)");
-    CHECK(!parse(R"({"homebrew":[)" + unmarked + "]}", "https://shop.example").front().verified);
+    CHECK(!parse(R"({"homebrew":[)" + unmarked + "]}", "https://server.example").front().verified);
   }
   // An entry that could write outside its folder, or lacks what is needed, is left out.
   const auto bad = [&](const std::string &from, const std::string &to) {
     auto e = entry;
     e.replace(e.find(from), from.size(), to);
-    return parse(R"({"homebrew":[)" + e + "]}", "https://shop.example").empty();
+    return parse(R"({"homebrew":[)" + e + "]}", "https://server.example").empty();
   };
   CHECK(bad(R"("ytb-player.nro")", R"("../ytb-player.nro")"));
   CHECK(bad(R"("ytb-player.nro")", R"("a/ytb-player.nro")"));
@@ -74,13 +74,13 @@ int runHomebrewTests() {
     auto e = entry;
     e.replace(e.rfind('}'), 1, R"(,"banner_url":"/api/homebrew/x/banner?v=1","screenshots":["/s/1.jpg?v=1",7,"ftp://no",)"
                                R"("https://cdn.example/2.jpg","/3","/4","/5","/6","/7","/8","/9"]})");
-    const auto got = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
+    const auto got = parse(R"({"homebrew":[)" + e + "]}", "https://server.example");
     CHECK(got.size() == 1);
     if (!got.empty()) {
-      CHECK(got[0].bannerUrl == "https://shop.example/api/homebrew/x/banner?v=1");
-      CHECK(got[0].screenshots.size() == 8 && got[0].screenshots[0] == "https://shop.example/s/1.jpg?v=1" &&
+      CHECK(got[0].bannerUrl == "https://server.example/api/homebrew/x/banner?v=1");
+      CHECK(got[0].screenshots.size() == 8 && got[0].screenshots[0] == "https://server.example/s/1.jpg?v=1" &&
             got[0].screenshots[1] == "https://cdn.example/2.jpg");
-      const auto again = parse(R"({"homebrew":[)" + serialize(got[0]) + "]}", "https://shop.example");
+      const auto again = parse(R"({"homebrew":[)" + serialize(got[0]) + "]}", "https://server.example");
       CHECK(again.size() == 1 && again[0].bannerUrl == got[0].bannerUrl && again[0].screenshots == got[0].screenshots);
     }
     CHECK(apps.size() == 1 && apps[0].bannerUrl.empty() && apps[0].screenshots.empty());
@@ -90,7 +90,7 @@ int runHomebrewTests() {
     auto e = entry;
     e.replace(e.rfind('}'), 1, R"(,"languages":["en-US","ko","ja"],"required_firmware":"16.0.0","stars":1234,)"
                                R"("license":"MIT","updated_at":"2026-10-15T08:00:00Z","release_notes":"## New\n- one"})");
-    const auto got = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
+    const auto got = parse(R"({"homebrew":[)" + e + "]}", "https://server.example");
     CHECK(got.size() == 1);
     if (!got.empty()) {
       CHECK((got[0].languages == std::vector<std::string>{"en-US", "ko", "ja"}) && got[0].requiredFirmware == "16.0.0");
@@ -111,13 +111,13 @@ int runHomebrewTests() {
         R"({"id":"tvswiki","name":"TVSWIKI","version":"1.0.9","install_type":"title","title_id":"053f13457f6b0000",)"
         R"("size":66060288,"download_url":"/api/homebrew/tvswiki/download","install_path":null,"app":null,)"
         R"("files":null,"archive":null,"forwarder_url":null})";
-    const auto got = parse(R"({"homebrew":[)" + title + "]}", "https://shop.example");
+    const auto got = parse(R"({"homebrew":[)" + title + "]}", "https://server.example");
     CHECK(got.size() == 1);
     if (!got.empty()) {
       const auto &a = got.front();
       CHECK(a.title && a.titleId == "053F13457F6B0000" && a.installPath.empty() && a.files.empty());
-      CHECK(a.downloadUrl == "https://shop.example/api/homebrew/tvswiki/download" && a.forwarderUrl.empty());
-      const auto again = parse(R"({"homebrew":[)" + serialize(a) + "]}", "https://shop.example");
+      CHECK(a.downloadUrl == "https://server.example/api/homebrew/tvswiki/download" && a.forwarderUrl.empty());
+      const auto again = parse(R"({"homebrew":[)" + serialize(a) + "]}", "https://server.example");
       CHECK(again.size() == 1 && again.front().title && again.front().titleId == a.titleId);
       // A card file never counts as a title app's.
       CHECK(matchCard(got, "switch/tvswiki/tvswiki.nro") == nullptr);
@@ -134,10 +134,10 @@ int runHomebrewTests() {
   {
     auto e = entry;
     e.insert(e.size() - 1, R"(,"forwarder_url":"/api/homebrew/gh-9c9ef5794087/forwarder","forwarder_title_id":"05ABCDEF01234000","forwarder_size":524288)");
-    const auto withShortcut = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
+    const auto withShortcut = parse(R"({"homebrew":[)" + e + "]}", "https://server.example");
     CHECK(withShortcut.size() == 1 && withShortcut.front().forwarderTitleId == "05ABCDEF01234000" &&
           withShortcut.front().forwarderSize == 524288 &&
-          withShortcut.front().forwarderUrl == "https://shop.example/api/homebrew/gh-9c9ef5794087/forwarder");
+          withShortcut.front().forwarderUrl == "https://server.example/api/homebrew/gh-9c9ef5794087/forwarder");
     // No cores given: three; the key as given (none here).
     CHECK(!withShortcut.empty() && withShortcut.front().forwarderCores == 3 && withShortcut.front().forwarderKey.empty());
     if (!withShortcut.empty()) {
@@ -147,7 +147,7 @@ int runHomebrewTests() {
     // Four cores and a key; any other count is three.
     auto four = e;
     four.insert(four.size() - 1, R"(,"forwarder_cores":4,"forwarder_key":"0123456789ab")");
-    const auto withFour = parse(R"({"homebrew":[)" + four + "]}", "https://shop.example");
+    const auto withFour = parse(R"({"homebrew":[)" + four + "]}", "https://server.example");
     CHECK(withFour.size() == 1 && withFour.front().forwarderCores == 4 && withFour.front().forwarderKey == "0123456789ab");
     if (!withFour.empty()) {
       const auto again = parse(R"({"homebrew":[)" + serialize(withFour.front()) + "]}", "");
@@ -155,18 +155,18 @@ int runHomebrewTests() {
     }
     auto odd = e;
     odd.insert(odd.size() - 1, R"(,"forwarder_cores":8)");
-    const auto withOdd = parse(R"({"homebrew":[)" + odd + "]}", "https://shop.example");
+    const auto withOdd = parse(R"({"homebrew":[)" + odd + "]}", "https://server.example");
     CHECK(withOdd.size() == 1 && withOdd.front().forwarderCores == 3);
     // A game's or a system title's id is never a shortcut's: none.
     for (const char *other : {"0100000000001000", "0100ABCDEF012000", "05ABCDEF01234001"}) {
       auto foreign = e;
       foreign.replace(foreign.find("05ABCDEF01234000"), 16, other);
-      const auto read = parse(R"({"homebrew":[)" + foreign + "]}", "https://shop.example");
+      const auto read = parse(R"({"homebrew":[)" + foreign + "]}", "https://server.example");
       CHECK(read.size() == 1 && read.front().forwarderTitleId.empty() && read.front().forwarderUrl.empty());
     }
     auto broken = e;
     broken.replace(broken.find("05ABCDEF01234000"), 16, "nope");
-    const auto without = parse(R"({"homebrew":[)" + broken + "]}", "https://shop.example");
+    const auto without = parse(R"({"homebrew":[)" + broken + "]}", "https://server.example");
     CHECK(without.size() == 1 && without.front().forwarderUrl.empty());
   }
   if (!apps.empty()) {
@@ -183,11 +183,11 @@ int runHomebrewTests() {
     e.insert(e.size() - 1, R"(,"install_path":"switch/ytb/ytb-player.nro","install_dir":"switch/ytb","files":[)"
                            R"({"path":"switch/ytb/ytb-player.nro","size":10,"sha256":")" + sha + R"(","url":"/f/1"},)"
                            R"({"path":"switch/ytb/data/a.bin","size":5,"sha256":")" + sha + R"(","url":"/f/2"}])");
-    const auto folder = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
+    const auto folder = parse(R"({"homebrew":[)" + e + "]}", "https://server.example");
     CHECK(folder.size() == 1);
     if (!folder.empty()) {
       CHECK(folder.front().installPath == "switch/ytb/ytb-player.nro");
-      CHECK(folder.front().files.size() == 2 && folder.front().files[1].url == "https://shop.example/f/2" &&
+      CHECK(folder.front().files.size() == 2 && folder.front().files[1].url == "https://server.example/f/2" &&
             folder.front().files[1].size == 5 && folder.front().files[1].sha256 == sha);
       const auto again = parse(R"({"homebrew":[)" + serialize(folder.front()) + "]}", "");
       CHECK(again.size() == 1 && again.front().files.size() == 2 && again.front().installPath == "switch/ytb/ytb-player.nro");
@@ -195,7 +195,7 @@ int runHomebrewTests() {
     const auto rejected = [&](const std::string &from, const std::string &to) {
       auto bad = e;
       bad.replace(bad.find(from), from.size(), to);
-      return parse(R"({"homebrew":[)" + bad + "]}", "https://shop.example").empty();
+      return parse(R"({"homebrew":[)" + bad + "]}", "https://server.example").empty();
     };
     CHECK(rejected("switch/ytb/data/a.bin", "switch/ytb/../../a.bin"));
     CHECK(rejected("switch/ytb/data/a.bin", "/switch/ytb/a.bin"));
@@ -206,33 +206,33 @@ int runHomebrewTests() {
     // kept through serialize, and read from their own reply as the list's are.
     auto lean = entry;
     lean.insert(lean.size() - 1, R"(,"install_path":"switch/ytb/ytb-player.nro","files_count":2,"files_size":15)");
-    const auto counted = parse(R"({"homebrew":[)" + lean + "]}", "https://shop.example");
+    const auto counted = parse(R"({"homebrew":[)" + lean + "]}", "https://server.example");
     CHECK(counted.size() == 1);
     if (!counted.empty()) {
       auto app = counted.front();
       CHECK(app.files.empty() && app.filesCount == 2 && app.filesSize == 15 &&
-            app.filesUrl == "https://shop.example/api/homebrew/gh-9c9ef5794087/files");
+            app.filesUrl == "https://server.example/api/homebrew/gh-9c9ef5794087/files");
       const auto again = parse(R"({"homebrew":[)" + serialize(app) + "]}", "");
       CHECK(again.size() == 1 && again.front().filesCount == 2 && again.front().filesUrl == app.filesUrl);
       const std::string list = e.substr(e.find(R"("files":[)"), e.rfind(']') - e.find(R"("files":[)") + 1);
-      CHECK(parseFiles("{" + list + "}", app, "https://shop.example") && app.files.size() == 2 &&
-            app.files[1].url == "https://shop.example/f/2");
+      CHECK(parseFiles("{" + list + "}", app, "https://server.example") && app.files.size() == 2 &&
+            app.files[1].url == "https://server.example/f/2");
       auto outside = counted.front();
       auto escaping = list;
       escaping.replace(escaping.find("switch/ytb/data/a.bin"), 21, "switch/other/a.bin");
-      CHECK(!parseFiles("{" + escaping + "}", outside, "https://shop.example") && outside.files.empty());
-      CHECK(!parseFiles(R"({"files":[]})", outside, "https://shop.example"));
+      CHECK(!parseFiles("{" + escaping + "}", outside, "https://server.example") && outside.files.empty());
+      CHECK(!parseFiles(R"({"files":[]})", outside, "https://server.example"));
     }
   }
   // Only install_dir: the nro goes inside that folder; one outside switch/ is refused.
   {
     auto e = entry;
     e.insert(e.size() - 1, R"(,"install_dir":"switch/ytb")");
-    const auto dir = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
+    const auto dir = parse(R"({"homebrew":[)" + e + "]}", "https://server.example");
     CHECK(dir.size() == 1 && !dir.empty() && dir.front().installPath == "switch/ytb/ytb-player.nro");
     auto bad = entry;
     bad.insert(bad.size() - 1, R"(,"install_dir":"atmosphere")");
-    CHECK(parse(R"({"homebrew":[)" + bad + "]}", "https://shop.example").empty());
+    CHECK(parse(R"({"homebrew":[)" + bad + "]}", "https://server.example").empty());
   }
   // Without install_path the app goes to switch/<stem>/<file>.
   if (!apps.empty()) CHECK(apps.front().installPath == "switch/ytb-player/ytb-player.nro" && apps.front().files.empty());
@@ -242,7 +242,7 @@ int runHomebrewTests() {
     const auto one = [&](const std::string &extra) {
       auto e = entry;
       e.insert(e.size() - 1, extra);
-      const auto list = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
+      const auto list = parse(R"({"homebrew":[)" + e + "]}", "https://server.example");
       return list.empty() ? App{} : list.front();
     };
     CHECK(one("").kind == Kind::Tool && one("").app == "ytb-player");
@@ -461,17 +461,17 @@ int runHomebrewTests() {
         R"("entries":[{"entry":"ytb/ytb-player.nro","path":"switch/ytb-player/ytb-player.nro","size":100}]}})";
     auto e = entry;
     e.replace(e.size() - 1, 1, zip);
-    const auto withZip = parse(R"({"homebrew":[)" + e + "]}", "https://shop.example");
+    const auto withZip = parse(R"({"homebrew":[)" + e + "]}", "https://server.example");
     CHECK(withZip.size() == 1 && withZip[0].archive.usable() && withZip[0].archive.size == 4096 &&
-          withZip[0].archive.url == "https://shop.example/api/homebrew/gh-9c9ef5794087/archive" &&
+          withZip[0].archive.url == "https://server.example/api/homebrew/gh-9c9ef5794087/archive" &&
           withZip[0].archive.entries.size() == 1 && withZip[0].archive.entries[0].size == 100);
     if (!withZip.empty()) {
-      const auto again = parse(R"({"homebrew":[)" + serialize(withZip[0]) + "]}", "https://shop.example");
+      const auto again = parse(R"({"homebrew":[)" + serialize(withZip[0]) + "]}", "https://server.example");
       CHECK(again.size() == 1 && again[0].archive.usable() && again[0].archive.entries[0].path == "switch/ytb-player/ytb-player.nro");
     }
     auto outside = e;
     outside.replace(outside.find("switch/ytb-player/ytb"), 21, "atmosphere/../../ytb");
-    const auto noZip = parse(R"({"homebrew":[)" + outside + "]}", "https://shop.example");
+    const auto noZip = parse(R"({"homebrew":[)" + outside + "]}", "https://server.example");
     CHECK(noZip.size() == 1 && !noZip[0].archive.usable());
   }
   return failures;

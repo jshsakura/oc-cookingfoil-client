@@ -535,7 +535,7 @@ void Application::dropboxTab() {
     paint_.rect(260, y, 992, RowHeight, Surface, 16);
     const auto icon = g.installed ? installedIcon(installed_.games[g.game]) : g.icon;
     cover(icon, 278, y + 10, 64, false, g.name);
-    // A game the shop does not know is named by its title id, shown once.
+    // A game the server does not know is named by its title id, shown once.
     const bool named = g.name != g.titleId;
     if (onGame && n == focus) marquee(g.name, 360, named ? y + 12 : y + 28, 21, 500);
     else paint_.fonts.text(g.name, 360, named ? y + 12 : y + 28, 21, Ink, true, 500);

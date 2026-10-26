@@ -240,7 +240,7 @@ void Application::viewPopup() {
 void Application::dialogs() {
   if (!confirmInstall_ && alert_.empty() && !serverForm_ && !confirmCancel_ && !viewPopup_ &&
       !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !tidyOpen_ && !homebrewSortAsk_ &&
-      !languagePopup_ && languageGet_ == LanguageGet::None && !retroArchAsking_ && !raModal() && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
+      !languagePopup_ && languageGet_ == LanguageGet::None && !retroArchAsking_ && !raModal() && !saveNeedsGame_ && !savePicking_ && !serverAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
       !homebrewRemoveAsk_ && !(homebrewAsk_ && homebrewExtras_) && !shortcutRemoveAsk_ && !selfShortcutAsk_ && !adminEdit_.open && unqueueAsk_ < 0 && !bugAsk_ && !serverInfo_ && !clockModal() && !resumeAsked())
     return;
@@ -250,7 +250,7 @@ void Application::dialogs() {
   // When the popup on top changed, for the double-press guard (settled()).
   const int which = confirmCancel_ * 1 + (tidyOpen_ || homebrewSortAsk_) * 2 + confirmPatchRemove_ * 4 + confirmInstall_ * 8 +
                     dropboxUnlinkAsk_ * 32 + (languageGet_ == LanguageGet::Failed) * 16 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + (homebrewAsk_ && homebrewExtras_) * 256 +
-                    (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + shopAppSaveAsk_ * 2048 +
+                    (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + serverAppSaveAsk_ * 2048 +
                     (serverForm_ && serverForm_->confirmDelete) * 4096 + shortcutRemoveAsk_ * 8192 +
                     selfShortcutAsk_ * 16384 + (unqueueAsk_ >= 0) * 32768 + bugAsk_ * 65536 +
                     clockModal() * 262144 + resumeAsked() * 524288 + raOpen_ * 1048576 + raListOpen_ * 2097152 + adminEdit_.open * 4194304 + serverInfo_ * 8388608;
@@ -273,7 +273,7 @@ void Application::dialogs() {
     // text what A does and what Later does; the popup grows to fit them.
     constexpr float Width = 720, Text = Width - 64, Gap = 10;
     const auto &name = installQueue_.front().name;
-    constexpr int NameLines = 6; // more than any name the shop has
+    constexpr int NameLines = 6; // more than any name the server has
     const std::string ask = tr("The download resumes from where it stopped.");
     const std::string later = tr("To continue later, resume it from the Downloads menu.");
     const float nameH = paint_.fonts.lineCount(name, 22, Text, NameLines, true) * 22 * 1.3f;
@@ -301,9 +301,9 @@ void Application::dialogs() {
     saveNeedsGameDialog();
   } else if (savePicking_) {
     savePickDialog();
-  } else if (shopAppSaveAsk_ && alert_.empty()) {
-    if (shopSaves_.empty()) shopAppSaveAsk_ = false;
-    else appSaveConfirm(shopSaves_[std::clamp(shopSavePick_, 0, int(shopSaves_.size()) - 1)]);
+  } else if (serverAppSaveAsk_ && alert_.empty()) {
+    if (serverSaves_.empty()) serverAppSaveAsk_ = false;
+    else appSaveConfirm(serverSaves_[std::clamp(serverSavePick_, 0, int(serverSaves_.size()) - 1)]);
   } else if (tidyOpen_ && alert_.empty()) {
     fileCleanupDialog();
   } else if (homebrewSortAsk_ && alert_.empty()) {

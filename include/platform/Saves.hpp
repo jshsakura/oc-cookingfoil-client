@@ -17,7 +17,7 @@ struct SaveJob {
 // oldest past save-keeper's limit to the trash. `rollback` marks the copy
 // made before a restore (is_auto_backup), which has its own limit.
 Parsed<saves::LocalBackup> backupSave(const SaveJob &job, bool rollback = false);
-// A backup made from elsewhere (a shop save): `fill` writes the save's files
+// A backup made from elsewhere (a server save): `fill` writes the save's files
 // into the new backup folder; the .meta records `source` and job's account.
 Parsed<saves::LocalBackup> importBackup(const SaveJob &job, const std::function<Error(const std::string &)> &fill,
                                         const std::string &source);

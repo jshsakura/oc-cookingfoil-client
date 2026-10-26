@@ -121,7 +121,7 @@ bool Application::contentAtTop() const {
            : retroView_ == RetroView::Achievements ? raPageRow_ <= 0
                                                    : selected_ <= 0;
   case Screen::Saves:
-    return savesTab_ == 0 ? selected_ <= 0 : savesTab_ == 1 ? shopSaveRow_ <= 0 : (!dropboxLinked_ || dropboxOnAccount_); // the account row is the first
+    return savesTab_ == 0 ? selected_ <= 0 : savesTab_ == 1 ? serverSaveRow_ <= 0 : (!dropboxLinked_ || dropboxOnAccount_); // the account row is the first
   default:
     return false;
   }
@@ -140,7 +140,7 @@ void Application::scrollToTop() {
 bool Application::popupOpen() const {
   return !alert_.empty() || clockModal() || unqueueAsk_ >= 0 || bugAsk_ || serverInfo_ || appUpdateAsk_ || appUpdate_ == AppUpdate::Downloading || languageGet_ != LanguageGet::None || viewPopup_ || confirmInstall_ || confirmCancel_ || languagePopup_ ||
          tidyOpen_ || homebrewSortAsk_ || confirmPatchRemove_ || managingPatch_ || pickingPatch_ || serverForm_ || homebrewRemoveAsk_ || (homebrewAsk_ && homebrewExtras_) || shortcutRemoveAsk_ || selfShortcutAsk_ || adminEdit_.open ||
-         retroArchAsking_ || raModal() || saveNeedsGame_ || savePicking_ || shopAppSaveAsk_ || applyAsking_ || managedGame_ ||
+         retroArchAsking_ || raModal() || saveNeedsGame_ || savePicking_ || serverAppSaveAsk_ || applyAsking_ || managedGame_ ||
          removal_ || galleryOpen_ || (screen_ == Screen::Saves && (dropboxModal() || dropboxSession_));
 }
 void Application::touch(float x, float y) {

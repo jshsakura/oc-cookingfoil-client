@@ -18,7 +18,7 @@ constexpr const char *Content = "https://content.dropboxapi.com/2";
 constexpr const char *Json = "Content-Type: application/json";
 // Big enough for a save on a slow line; a stall still ends it after 30 s.
 constexpr long TransferTimeout = 0;
-std::vector<std::string> shopHeaders(const Server &server, const State &state, const std::string &url) {
+std::vector<std::string> bridgeHeaders(const Server &server, const State &state, const std::string &url) {
   auto headers = authHeaders(server, state, url);
   headers.push_back(Json);
   return headers;
@@ -76,7 +76,7 @@ DropboxStart Dropbox::start(const Server &server, const State &state) {
   const auto url = db::bridgeUrl(server.url, "", "start");
   PostOptions options;
   options.body = "{\"device_id\":\"switch\"}";
-  const auto response = post(url, shopHeaders(server, state, url), options, cancel_);
+  const auto response = post(url, bridgeHeaders(server, state, url), options, cancel_);
   if (response.status == 404 && response.error.empty()) {
     result.missing = true;
     return result;
@@ -104,7 +104,7 @@ std::string Dropbox::status(const Server &server, const State &state, const db::
   const auto url = db::buildSafePollUrl(session.pollUrl, base, db::percentEncode(session.sessionId));
   PostOptions options;
   options.body = pollBody(session);
-  const auto response = post(url, shopHeaders(server, state, url), options, cancel_);
+  const auto response = post(url, bridgeHeaders(server, state, url), options, cancel_);
   retryAfter = 0;
   if (!response.error.empty()) {
     error.message = response.error;
@@ -129,7 +129,7 @@ Error Dropbox::finish(const Server &server, const State &state, const db::Bridge
   constexpr int Tries = 4;
   Response consumed;
   for (int attempt = 1; attempt <= Tries; ++attempt) {
-    consumed = post(url, shopHeaders(server, state, url), options, cancel_);
+    consumed = post(url, bridgeHeaders(server, state, url), options, cancel_);
     if (consumed.curl != 7 || attempt == Tries || (cancel_ && cancel_->load())) break;
     std::this_thread::sleep_for(std::chrono::seconds(attempt));
   }

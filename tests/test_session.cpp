@@ -22,7 +22,7 @@ int runSessionTests() {
     socklen_t length = sizeof(address); getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length);
     std::vector<std::string> requests, posts;
     std::thread mock([&] {
-        // /api/shop/info comes before each catalog request; it is answered
+        // /api/library/info comes before each catalog request; it is answered
         // on the side and not counted in the sequence below.
         for (int i = 0, accepted = 0; i < 7 && accepted < 20; ++accepted) {
             pollfd ready{listener, POLLIN, 0}; if (poll(&ready, 1, 5000) <= 0) break;
@@ -43,7 +43,7 @@ int runSessionTests() {
                 send(client, ok.data(), ok.size(), MSG_NOSIGNAL); close(client);
                 continue;
             }
-            if (request.rfind("GET /api/shop/info ", 0) == 0) {
+            if (request.rfind("GET /api/library/info ", 0) == 0) {
                 const std::string info = R"({"features":["retro"]})";
                 const auto reply = "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(info.size()) + "\r\n\r\n" + info;
                 send(client, reply.data(), reply.size(), MSG_NOSIGNAL); close(client);
@@ -132,7 +132,7 @@ int runSessionTests() {
               "STREAM /Game%20[0100].nsz status=206 curl=0");
         CHECK(withoutAddresses("GET http://127.0.0.1:38000/api/retro/games/x/icon status=404") ==
               "GET /api/retro/games/x/icon status=404");
-        CHECK(withoutAddresses("connect to https://shop.example.com failed") == "connect to / failed");
+        CHECK(withoutAddresses("connect to https://server.example.com failed") == "connect to / failed");
         CHECK(withoutAddresses("Could not resolve host: dl.example.kr") == "Could not resolve host: (server)");
         CHECK(withoutAddresses("httpd ok, nothing to hide") == "httpd ok, nothing to hide");
         // Credentials never reach a bug report.
@@ -146,7 +146,7 @@ int runSessionTests() {
         // A bug report keeps what tells the fault and nothing that tells who
         // or where: the server, the account, keys and secrets are masked.
         foil::Server server;
-        server.url = "https://shop.example.com:8443/base";
+        server.url = "https://server.example.com:8443/base";
         server.username = "alice";
         server.password = "pw-hunter2";
         server.enrollToken = "cfe_AAAA0000enroll";
@@ -161,8 +161,8 @@ int runSessionTests() {
               "CookingFoil 0.3.184 fw 21.0.0 install 0100C4E013E5E000 failed: HTTP 500");
         CHECK(report("nca 0123456789abcdef0123456789abcdef ok") == "nca 0123456789abcdef0123456789abcdef ok");
         // The server, as an address, a bare host or an IP.
-        CHECK(report("GET https://shop.example.com:8443/api/shop status=200") == "GET /api/shop status=200");
-        CHECK(report("lost shop.example.com mid-way") == "lost (server) mid-way");
+        CHECK(report("GET https://server.example.com:8443/api/library status=200") == "GET /api/library status=200");
+        CHECK(report("lost server.example.com mid-way") == "lost (server) mid-way");
         CHECK(report("direct 192.0.2.10:38000 refused") == "direct (ip):38000 refused");
         // The account, as a word only (not inside a longer one).
         CHECK(report("signed in as alice, palicex ok") == "signed in as (user), palicex ok");

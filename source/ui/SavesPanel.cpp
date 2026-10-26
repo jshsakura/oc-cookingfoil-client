@@ -73,7 +73,7 @@ void Application::pollSaveJob() {
   saveRow_ = std::clamp(saveRow_, 0, int(backups_.size()) + 1);
   if (saveResult_) logLine("saves: " + saveResult_.message);
   if (applyRunning_) {
-    // A shop save went in: the dialog closes on success, stays on failure.
+    // A server save went in: the dialog closes on success, stays on failure.
     applyRunning_ = false;
     if (saveResult_) {
       alertTitle_ = tr("Could not apply the save");

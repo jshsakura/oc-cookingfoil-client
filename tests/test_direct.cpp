@@ -97,22 +97,22 @@ int runDirectTests() {
   using namespace foil::net;
   forgetDirect();
   forgetLinks();
-  const std::string shop = "http://127.0.0.1:38000";
-  const std::string game = shop + "/api/get/Game%20One.nsz?v=3";
+  const std::string upstream = "http://127.0.0.1:38000";
+  const std::string game = upstream + "/api/get/Game%20One.nsz?v=3";
   {
     // Nothing named: the server's own address, its keys as they are.
     CHECK(routeDownload(game) == game);
     CHECK(routeName(game) == "server");
-    hear(shop, "X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
+    hear(upstream, "X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
     // Named, it is the only way even before a token comes: asked with no
     // key at all (its 401 asks for one), never the server's keys.
     CHECK(routeDownload(game) == "https://dl.example:8443/api/get/Game%20One.nsz?v=3");
     CHECK(headersFor(routeDownload(game), {"X-Access-Key: k"}).empty());
-    hear(shop, "X-CookingFoil-Download-Token: first\r\n");
+    hear(upstream, "X-CookingFoil-Download-Token: first\r\n");
     // Both: the same path and query on the direct address.
     CHECK(routeDownload(game) == "https://dl.example:8443/api/get/Game%20One.nsz?v=3");
     CHECK(routeName(game) == "direct");
-    CHECK(routeDownload(shop + "/api/patches/7/files") == "https://dl.example:8443/api/patches/7/files");
+    CHECK(routeDownload(upstream + "/api/patches/7/files") == "https://dl.example:8443/api/patches/7/files");
     // Another host's file (a mirror) stays where it is.
     CHECK(routeDownload("https://mirror.example/x.nsp") == "https://mirror.example/x.nsp");
     // The direct address gets the token alone; anywhere else the keys stay.
@@ -128,29 +128,29 @@ int runDirectTests() {
     CHECK(routeName(game) == "direct");
     // Named in another form of the same place: one place, and the keys
     // never go there.
-    hear(shop, "X-CookingFoil-Download-Origin: https://DL.Example:443\r\n");
+    hear(upstream, "X-CookingFoil-Download-Origin: https://DL.Example:443\r\n");
     CHECK(routeDownload(game) == "https://dl.example/api/get/Game%20One.nsz?v=3");
     CHECK(isDirect("https://dl.example/x") && isDirect("https://DL.EXAMPLE:443/x"));
     CHECK(headersFor("https://dl.example:443/x", keys) == std::vector<std::string>{"Authorization: Bearer first"});
-    hear(shop, "X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
+    hear(upstream, "X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
   }
   {
     // 401: a fresh token once; refused with it too, the caller's (a failure).
     forgetDirect();
     int asked = 0;
-    setTokenRenewer(shop, [&] {
+    setTokenRenewer(upstream, [&] {
       ++asked;
-      hear(shop, "X-CookingFoil-Download-Token: second\r\n");
+      hear(upstream, "X-CookingFoil-Download-Token: second\r\n");
       return 200L;
     });
     const auto direct = routeDownload(game);
     CHECK(afterDirectFailure(direct, 401, "first") == DirectStep::Again);
-    CHECK(asked == 1 && downloadToken(shop) == "second");
+    CHECK(asked == 1 && downloadToken(upstream) == "second");
     CHECK(afterDirectFailure(direct, 401, "first") == DirectStep::Again); // a part sent with the old one
     CHECK(asked == 1);
     CHECK(afterDirectFailure(direct, 401, "second") == DirectStep::Other);
     CHECK(routeDownload(game) == direct); // still the only way
-    setTokenRenewer(shop, nullptr);
+    setTokenRenewer(upstream, nullptr);
   }
   {
     // Named before its token came: asked with no key, the proxy in front
@@ -159,11 +159,11 @@ int runDirectTests() {
     // the file's own and stays a failure.
     forgetDirect();
     forgetLinks();
-    hear(shop, "X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
+    hear(upstream, "X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
     int asked = 0;
-    setTokenRenewer(shop, [&] {
+    setTokenRenewer(upstream, [&] {
       ++asked;
-      hear(shop, "X-CookingFoil-Download-Token: third\r\n");
+      hear(upstream, "X-CookingFoil-Download-Token: third\r\n");
       return 200L;
     });
     const auto direct = routeDownload(game);
@@ -172,13 +172,13 @@ int runDirectTests() {
     CHECK(asked == 1 && headersFor(direct, {}) == std::vector<std::string>{"Authorization: Bearer third"});
     CHECK(afterDirectFailure(direct, 404, "third") == DirectStep::Other);
     CHECK(afterDirectFailure(game, 404, "") == DirectStep::Other); // the server's own address: its 404
-    setTokenRenewer(shop, nullptr);
+    setTokenRenewer(upstream, nullptr);
   }
   Files files;
   files.body.resize(3 << 20);
   for (size_t i = 0; i < files.body.size(); ++i) files.body[i] = char('a' + (i * 7) % 26);
   const std::string url = "http://127.0.0.1:" + std::to_string(files.port) + "/api/get/game.nsp?k=1";
-  const std::vector<std::string> keys{"X-Access-Key: shop-key"};
+  const std::vector<std::string> keys{"X-Access-Key: upstream-key"};
   {
     // The direct address refuses the connection: it is asked again there
     // (a dead one for minutes, as any server) until it fails or is
@@ -227,13 +227,13 @@ int runDirectTests() {
     CHECK(result.ok && got == files.body);
     const auto sent = files.take();
     CHECK(!sent.empty());
-    for (const auto &request : sent) CHECK(has(request, "X-Access-Key: shop-key") && !has(request, "Bearer"));
+    for (const auto &request : sent) CHECK(has(request, "X-Access-Key: upstream-key") && !has(request, "Bearer"));
   }
   {
     // The server turned its direct address off: its next info or list reply
     // over https names none, and what was held goes (downloads go back to
     // the list's own addresses without a restart).
-    const std::string info = "https://shop.example/api/shop/info";
+    const std::string info = "https://server.example/api/library/info";
     const auto named = [&] {
       forgetLinks();
       hear(info, "X-CookingFoil-Download-Origin: https://dl.example:8443\r\n");
@@ -257,7 +257,7 @@ int runDirectTests() {
     followDirectNaming(info, reply);
     CHECK(downloadTokenOrigin(info) == "https://dl.example:8443");
     reply.status = 200; // a plain http server is never given one
-    followDirectNaming("http://shop.example/api/shop/info", reply);
+    followDirectNaming("http://server.example/api/library/info", reply);
     CHECK(downloadToken(info) == "held");
   }
   forgetDirect();

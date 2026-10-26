@@ -1,5 +1,5 @@
 #pragma once
-// /api/retro on the shop: systems, game pages, bundles and the base pack.
+// /api/retro on the server: systems, game pages, bundles and the base pack.
 #include "core/Retro.hpp"
 #include "core/State.hpp"
 #include <atomic>
@@ -7,7 +7,7 @@
 namespace foil::net {
 struct RetroReply {
   Error error;
-  bool missing = false; // 404: this shop has no retro games
+  bool missing = false; // 404: this server has no retro games
   int retryAfter = 0;   // 503: the server is still hashing; ask again then
   labels::Book labels;  // the reply's label dictionary, when it sends one
 };

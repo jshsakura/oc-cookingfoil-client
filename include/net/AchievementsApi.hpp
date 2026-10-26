@@ -1,5 +1,5 @@
 #pragma once
-// RetroAchievements through the shop (/api/retro/achievements, the id it
+// RetroAchievements through the server (/api/retro/achievements, the id it
 // keeps and a game's achievements) and the console's own sign-in with
 // RetroAchievements, whose token goes into retroarch.cfg and nowhere else.
 #include "core/Achievements.hpp"

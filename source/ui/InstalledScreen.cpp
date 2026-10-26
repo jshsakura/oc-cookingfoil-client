@@ -44,7 +44,7 @@ void Application::pollDevice() {
   installedAt_ = SDL_GetTicks();
   updatesStale_ = true;
   installed_.games = sortInstalled(std::move(installed_.games), installedSort_);
-  // The home is built from the whole shop: only when what is on the console
+  // The home is built from the whole library: only when what is on the console
   // changed, not after every finished download (an update or a DLC does not).
   if (installedMaskNow() != installedMask_) rebuildHome();
   if (screen_ == Screen::Installed)
@@ -123,13 +123,13 @@ void Application::installedAction(Action a) {
     saveAction(a);
     return;
   }
-  // A shop save picked in 세이브: the rows choose its account.
+  // A server save picked in 세이브: the rows choose its account.
   if (managedGame_ && applying_) {
     if (applyAsking_) {
       if (a == Action::Back) applyAsking_ = false;
       if (a == Action::Accept) {
         applyAsking_ = false;
-        applyShopSave();
+        applyServerSave();
       }
       return;
     }
@@ -139,7 +139,7 @@ void Application::installedAction(Action a) {
     if (a == Action::Down) manageRow_ = std::min(int(saves_.size()), manageRow_ + 1);
     if (a == Action::Accept && manageRow_ > 0 && manageRow_ <= int(saves_.size())) {
       // A save the server marks shared goes only into the shared save, and so on.
-      if (auto error = shopsaves::targetMismatch(*applying_, saves_[manageRow_ - 1].device())) {
+      if (auto error = serversaves::targetMismatch(*applying_, saves_[manageRow_ - 1].device())) {
         message(error.message);
         return;
       }

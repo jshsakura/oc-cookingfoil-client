@@ -3,7 +3,7 @@
 #include "core/Config.hpp"
 #include "core/Json.hpp"
 #include "core/SaveBackups.hpp"
-#include "core/ShopSaves.hpp"
+#include "core/ServerSaves.hpp"
 #include "ui/Application.hpp"
 #include "ui/Images.hpp"
 #include "MockServer.hpp"
@@ -709,7 +709,7 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(listed.size() == 2);
     const auto found = std::find_if(listed.begin(), listed.end(), [&](const auto &r) { return r.applicationId == elsewhere; });
     CHECK(found != listed.end() && !found->installed && found->remote == 1);
-    // Both have Dropbox backups, the newest first: the one the shop does not
+    // Both have Dropbox backups, the newest first: the one the server does not
     // know (named by its title id), and the cursor stayed on the other.
     CHECK(!listed.empty() && listed.front().applicationId == elsewhere);
     CHECK(app.dropboxFocused() == installed.applicationId);
@@ -795,7 +795,7 @@ int runUiTests(SDL_Renderer *renderer) {
       app.render();
       app.action(foil::ui::Action::Back);
       // A server save marked shared: the shared row asks, an account's refuses.
-      foil::shopsaves::ShopSave server;
+      foil::serversaves::ServerSave server;
       server.id = "s";
       server.titleId = installed.titleId;
       server.name = "Server save";
@@ -897,7 +897,7 @@ int runUiTests(SDL_Renderer *renderer) {
     // waits for the slower one, not for both in turn.
     static constexpr int SlowMs = 700;
     const auto slow = [](const std::string &request) -> Reply {
-      if (request.rfind("GET /api/shop/sections", 0) != 0) return {404, "", "{}"};
+      if (request.rfind("GET /api/library/sections", 0) != 0) return {404, "", "{}"};
       std::this_thread::sleep_for(std::chrono::milliseconds(SlowMs));
       return {200, "", R"({"sections":[]})"};
     };
@@ -951,14 +951,14 @@ int runUiTests(SDL_Renderer *renderer) {
   if (const auto adminRoot = mkdtemp(adminDirectory)) {
     // An app's cores changed from its page by an admin console: the server
     // makes its shortcut again, so closing the editor reads the app list
-    // again (before, only the shop's lists were, and the page kept the old
+    // again (before, only the server's lists were, and the page kept the old
     // shortcut until 홈브류 was left).
-    Mock shop;
+    Mock upstream;
     std::atomic<int> lists{0};
     std::string cores = "3";
-    shop.answer = [&](const std::string &request) -> Reply {
-      if (request.rfind("GET /api/shop/info", 0) == 0) return {200, "", R"({"features":["homebrew","admin-edit"]})"};
-      if (request.rfind("GET /api/shop/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
+    upstream.answer = [&](const std::string &request) -> Reply {
+      if (request.rfind("GET /api/library/info", 0) == 0) return {200, "", R"({"features":["homebrew","admin-edit"]})"};
+      if (request.rfind("GET /api/library/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
       if (request.rfind("GET /api/homebrew?", 0) == 0) {
         ++lists;
         return {200, "", R"({"homebrew":[{"id":"gh-1","name":"Demo","version":"1.0.0","file_name":"demo.nro","hash":"sha256:ab",)"
@@ -974,7 +974,7 @@ int runUiTests(SDL_Renderer *renderer) {
     };
     const auto configPath = std::string(adminRoot) + "/config.json";
     std::string error;
-    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:)" + std::to_string(shop.port) + R"("}]})", error));
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:)" + std::to_string(upstream.port) + R"("}]})", error));
     foil::ui::Application admin(renderer, configPath, std::string(adminRoot) + "/cookingfoil.db", "host/fixtures/art");
     CHECK(admin.open());
     for (int frame = 0; frame < 800 && admin.asking(); ++frame) { SDL_Delay(5); admin.render(); }
@@ -1183,7 +1183,7 @@ int runUiTests(SDL_Renderer *renderer) {
     const auto file = [](const std::string &name) {
       foil::Item item;
       item.name = name;
-      item.url = "https://shop.example/" + name + ".nsp";
+      item.url = "https://server.example/" + name + ".nsp";
       item.titleId = item.baseId = "01000000000" + std::to_string(10000 + name.size()) + "0";
       item.size = 1000;
       return item;
@@ -1209,7 +1209,7 @@ int runUiTests(SDL_Renderer *renderer) {
       tv.version = "1.0.9";
       tv.title = true;
       tv.titleId = "053F13457F6B0000";
-      tv.downloadUrl = "https://shop.example/api/homebrew/tvswiki/download";
+      tv.downloadUrl = "https://server.example/api/homebrew/tvswiki/download";
       tv.size = 63ull << 20;
       titles.previewHomebrew({tv});
       CHECK(titles.previewHomebrewStatus(tv) == foil::homebrew::Status::Available);
@@ -1238,7 +1238,7 @@ int runUiTests(SDL_Renderer *renderer) {
     foil::homebrew::App app;
     app.id = "hb";
     app.name = "HB";
-    app.downloadUrl = "https://shop.example/hb.nro";
+    app.downloadUrl = "https://server.example/hb.nro";
     app.size = 10;
     CHECK(queue.previewGetHomebrew(app));
     CHECK(!queue.otherDownloadRunning());
@@ -1286,7 +1286,7 @@ int runUiTests(SDL_Renderer *renderer) {
     foil::platform::setHostSpace(64ull << 30);
     foil::Item shortcut;
     shortcut.name = "S shortcut";
-    shortcut.url = "https://shop.example/api/homebrew/gh-1/forwarder";
+    shortcut.url = "https://server.example/api/homebrew/gh-1/forwarder";
     shortcut.titleId = shortcut.baseId = "0500000000001000";
     shortcut.size = 1000;
     shortcut.type = "shortcut";
@@ -1320,7 +1320,7 @@ int runUiTests(SDL_Renderer *renderer) {
     foil::platform::setHostSpace(64ull << 30);
     foil::Item item;
     item.name = "A";
-    item.url = "https://shop.example/A.nsp";
+    item.url = "https://server.example/A.nsp";
     item.titleId = item.baseId = "0100000000020000";
     item.size = 1000;
     foil::ui::Application starting(renderer, "", "", "host/fixtures/art");
@@ -1365,7 +1365,7 @@ int runUiTests(SDL_Renderer *renderer) {
     const auto file = [](const std::string &name) {
       foil::Item item;
       item.name = name;
-      item.url = "https://shop.example/" + name + ".nsp";
+      item.url = "https://server.example/" + name + ".nsp";
       item.titleId = item.baseId = "0100000000020000";
       item.size = 1000;
       return item;
@@ -1405,7 +1405,7 @@ int runUiTests(SDL_Renderer *renderer) {
       e.install.name = "Done " + std::to_string(i);
       e.install.target = "sd";
       foil::Item f;
-      f.url = "https://shop.example/gone" + std::to_string(i) + ".nsp";
+      f.url = "https://server.example/gone" + std::to_string(i) + ".nsp";
       e.install.files = {f};
       e.outcome = foil::history::Outcome::Done;
       rows.push_back(e);
@@ -1421,7 +1421,7 @@ int runUiTests(SDL_Renderer *renderer) {
     for (int i = 0; i < 12; ++i) {
       foil::Item f;
       f.name = "Q" + std::to_string(i);
-      f.url = "https://shop.example/q" + std::to_string(i) + ".nsp";
+      f.url = "https://server.example/q" + std::to_string(i) + ".nsp";
       f.size = 10;
       lists.previewQueued(f, f.name, "");
     }
@@ -1448,7 +1448,7 @@ int runUiTests(SDL_Renderer *renderer) {
     gone.id = 1;
     gone.install.name = "gone";
     foil::Item missing;
-    missing.url = "https://shop.example/removed.nsp";
+    missing.url = "https://server.example/removed.nsp";
     missing.titleId = missing.baseId = "01FFFFFFFFFF0000";
     gone.install.files = {missing};
     gone.outcome = foil::history::Outcome::Done;
