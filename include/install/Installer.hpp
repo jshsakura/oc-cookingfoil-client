@@ -99,8 +99,6 @@ public:
   void setPaused(bool paused);
   bool paused() const { return pause_; }
   bool cancellationRequested() const { return cancel_; }
-  // Set from 설정 when the install starts, and on for a file the server
-  // re-encrypted (its headers are no longer signed); the engine reads it per file.
   // Where cut-off files stand (EngineHooks), held here so the install
   // thread never waits on the card: the UI thread loads them from
   // 다운로드's database and writes back what changed (takeResumeChanges).

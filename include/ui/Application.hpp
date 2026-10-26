@@ -6,6 +6,7 @@
 #include "install/Installer.hpp"
 #include "net/Api.hpp"
 #include "net/ClientStringsApi.hpp"
+#include "net/VariantsApi.hpp"
 #include "net/Dropbox.hpp"
 #include "net/HomebrewApi.hpp"
 #include "net/RetroApi.hpp"
@@ -130,6 +131,27 @@ public:
   void setDetail(net::Detail detail);
   bool confirmingInstall() const { return confirmInstall_; }
   void offerFeature(const std::string &server, const std::string &feature) { serverFeatures_[server].insert(feature); }
+  // `option` for every picked file, as a server would answer (tests, the
+  // preview); one without an id takes them away.
+  void previewFileOption(const net::FileOption &option) {
+    fileOptions_.clear();
+    if (selection_ && !option.id.empty())
+      for (const auto &f : selection_->files()) fileOptions_[f.url] = {option};
+    optionsFor_ = detailGroup_ < groups_.size() ? groups_[detailGroup_].id : "";
+  }
+  // The files the confirm would install, options put on.
+  std::vector<Item> optionFiles() const { return selection_ ? withOptions(selection_->files()) : std::vector<Item>{}; }
+  bool optionConfirm() const { return confirmInstall_ && optionInstall_; }
+  // The install button's A, as pressed (the preview).
+  void previewRequestInstall() { requestInstall(); }
+  // The confirm's warning card: the width it wraps to and the most lines.
+  static constexpr float OptionNoteWidth = 780;
+  static constexpr int OptionNoteLines = 12;
+  // The card has signature patches (forwarder::signaturePatchesFound),
+  // looked at as the app starts.
+  void signaturePatchesFound(bool found) { signaturePatchesFound_ = found; }
+  // The picked files' own names, as detail.integrity[].file says them.
+  std::vector<std::string> pickedFileNames() const;
   std::string detailId() const { return detailGroup_ < groups_.size() ? groups_[detailGroup_].id : ""; }
   // Patches picked with a game install that have not started yet.
   size_t queuedPatches() const { return patchQueue_.size(); }
@@ -1367,11 +1389,27 @@ private:
   // among them the console is older than (install::missingFirmware).
   std::vector<Item> pickedNeeds() const;
   std::string pickedShortfall() const;
+  // A picked file the server found surely unsigned while the card shows no
+  // signature patches: it would not open, so it is not installed. Its help
+  // is the server's, empty when it gave none. Null when none is, or when it
+  // is not known.
+  const net::Unsigned *pickedUnsigned() const;
   // The install button's look: plain, blocked (gray; A says why) or warned
   // (butter with stripes; its confirm warns first), which a server plugin's
   // option takes.
   enum class InstallButton { Plain, Blocked, Warned };
   InstallButton installButton() const;
+  // A server plugin's options for the detail's files (feature
+  // "file-variants", ui/FileOptions), by download address, asked as the
+  // detail opens. The button follows the base file's first option.
+  void askFileOptions();
+  const net::FileOption *pickedOption() const;
+  // The picked files with their options' queries and words put on them.
+  std::vector<Item> withOptions(std::vector<Item> files) const;
+  Job optionsJob_;
+  std::string optionsFor_; // the group id the options are for
+  std::map<std::string, std::vector<net::FileOption>> fileOptions_;
+  bool optionInstall_ = false; // the confirm open is the option's
   // A row: pressed, it darkens as itself (its own corners), only the part on screen.
   void rowHit(float x, float y, float w, float h, int radius, std::function<void()> run) {
     hit(x, y, w, h, std::move(run), {}, -radius);

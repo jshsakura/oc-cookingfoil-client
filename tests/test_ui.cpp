@@ -345,12 +345,56 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(app.alert().empty());
     newer.requiredFirmware = "18.2.0";
     app.setDetail(newer);
-    app.offerFeature("", "nca-rewrap");
     app.render();
     app.action(foil::ui::Action::Accept);
     CHECK(!app.confirmingInstall() && app.alert().find("18.2.0") != std::string::npos);
     app.action(foil::ui::Action::Back);
     unsetenv("FOIL_FIRMWARE");
+    // Unsigned (integrity signature-fail) with no signature patches on the
+    // card: A says why; with patches it installs.
+    auto unsignedOne = withPatches;
+    foil::net::FileCheck failed;
+    failed.verdict = "modified";
+    failed.reason = "signature-fail";
+    app.signaturePatchesFound(false);
+    for (const auto &name : app.pickedFileNames()) {
+      failed.file = name;
+      unsignedOne.integrity.push_back(failed);
+    }
+    app.setDetail(unsignedOne);
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(!app.confirmingInstall() && app.alert() == foil::tr("This file is not signed, so it cannot be installed."));
+    app.action(foil::ui::Action::Back);
+    // The detail's signed[] gives the server's words for it.
+    for (const auto &name : app.pickedFileNames()) unsignedOne.unsignedFiles.push_back({name, "서명 없음", "서버 문구"});
+    app.setDetail(unsignedOne);
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(!app.confirmingInstall() && app.alert() == "서버 문구");
+    app.action(foil::ui::Action::Back);
+    app.signaturePatchesFound(true);
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.confirmingInstall() && !app.optionConfirm());
+    app.action(foil::ui::Action::Back);
+    // A server plugin's option: A opens its confirm, in its words, and the
+    // files carry its query.
+    foil::net::FileOption option;
+    option.id = "fw";
+    option.label = "펌웨어 버전 무시 설치";
+    option.confirmBody = "경고 문구";
+    option.query = {{"rewrap", "18.1.0"}};
+    app.previewFileOption(option);
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.optionConfirm());
+    app.render();
+    const auto planned = app.optionFiles();
+    CHECK(!planned.empty() && planned.front().variant && planned.front().url.find("rewrap=18.1.0") != std::string::npos);
+    app.action(foil::ui::Action::Back);
+    CHECK(!app.confirmingInstall() && !app.optionConfirm());
+    app.previewFileOption({});
   }
   app.action(foil::ui::Action::Back);
   CHECK(app.current() == foil::ui::Screen::Library);

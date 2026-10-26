@@ -5,6 +5,7 @@
 #include "core/Config.hpp"
 #include "core/Json.hpp"
 #include "net/Api.hpp"
+#include "net/VariantsApi.hpp"
 #include "net/Socket.hpp"
 #include <filesystem>
 #include <algorithm>
@@ -37,8 +38,8 @@ int runNetworkTests() {
               {"url": "https://h/a.nsp", "name": "A \"quoted\" {brace} [x]", "icons": {"ko": "https://h/i.jpg"},
                "categories": ["Action"], "size": 10},
               {"url": "https://h/b.nsp", "name": "B\\path", "size": 20, "required_patches": 2, "korean_patches": 1, "integrity": "damaged"},
-              {"url": "https://h/c.nsp", "name": "C", "integrity": "damaged", "integrity_detail": {"reason": "truncated", "certain": true, "present": 0.4}},
-              {"url": "https://h/d.nsp", "name": "D", "integrity": "damaged", "integrity_detail": {"reason": "hash-mismatch", "certain": false}},
+              {"url": "https://h/c.nsp", "name": "C", "integrity": "damaged", "integrity_detail": {"reason": "truncated", "certain": true, "present": 0.4}, "signed": {"nca": true, "ticket": false}},
+              {"url": "https://h/d.nsp", "name": "D", "integrity": "damaged", "integrity_detail": {"reason": "hash-mismatch", "certain": false}, "signed": {"nca": null}},
               {"url": "https://h/e.nsp", "name": "E", "integrity": "modified", "integrity_detail": {"reason": "signature-fail", "certain": false}}
             ]},
             {"id": "all", "items": [{"url": "https://h/a.nsp", "name": "again"}, {"url": "ftp://bad"}]}
@@ -58,6 +59,8 @@ int runNetworkTests() {
         CHECK(catalog.value.items[0].integrity == 0 && catalog.value.items[1].integrity == 2);
         // integrity_detail's certain makes it 손상됨; without it 손상 의심.
         CHECK(catalog.value.items[2].integrity == 3 && catalog.value.items[3].integrity == 2 && catalog.value.items[4].integrity == 1);
+        // Surely unsigned only on a false (item-signed); true, null and none are not.
+        CHECK(catalog.value.items[2].unsignedFile && !catalog.value.items[3].unsignedFile && !catalog.value.items[0].unsignedFile);
         CHECK(catalog.value.genres.count("Action") && catalog.value.genres.at("Action").at("ko") == "액션");
         // Cut short, or no sections at all: the list's format error.
         CHECK(foil::net::parseCatalog(R"({"sections":[{"items":[{"url":"https://h/a.nsp")").error);
@@ -131,6 +134,32 @@ int runNetworkTests() {
         CHECK(checked.integrity[0].file == "Game [0100].nsp" && checked.integrity[0].level() == 3 && checked.integrity[0].label == "손상됨");
         CHECK(checked.integrity[0].title == "파일이 잘려 있습니다" && checked.integrity[0].body == "40%만 있습니다.\n\n설치하면 실패합니다.");
         CHECK(checked.integrity[1].level() == 1);
+    }
+    {
+        // The files whose signatures were checked: only the surely unsigned
+        // ones stay, with the help the server words for them.
+        const auto signatures = foil::net::parseDetail(R"({"signed":[
+          {"file":"Game.nsp","kind":"base","titleId":"0100","nca":true,"ticket":true},
+          {"file":"Upd.nsp","kind":"update","nca":false,"ticket":null,"help":{"title":"서명 없음","body":"설치할 수 없습니다."}},
+          {"file":"Dlc.nsp","nca":null,"ticket":false},{"file":"","nca":false},"junk"]})").value;
+        CHECK(signatures.unsignedFiles.size() == 2);
+        CHECK(signatures.unsignedFiles[0].file == "Upd.nsp" && signatures.unsignedFiles[0].title == "서명 없음" &&
+              signatures.unsignedFiles[0].body == "설치할 수 없습니다.");
+        CHECK(signatures.unsignedFiles[1].file == "Dlc.nsp" && signatures.unsignedFiles[1].body.empty());
+    }
+    {
+        // A server plugin's options per file: an option needs an id and a
+        // label; confirm is its text.
+        const auto options = foil::net::parseVariants(R"({"variants":{
+          "https://h/a.nsp":[{"id":"fw","label":"강제","note":"N","confirm":"text","query":{"rewrap":"18.1.0","x":1}}, {"label":"no id"}],
+          "https://h/d.nsp":[]}})");
+        CHECK(options && options->size() == 2);
+        const auto &a = options->at("https://h/a.nsp");
+        CHECK(a.size() == 1 && a[0].label == "강제" && a[0].note == "N" && a[0].confirmBody == "text");
+        CHECK(a[0].query.size() == 1 && a[0].query[0].second == "18.1.0");
+        CHECK(options->at("https://h/d.nsp").empty() && !foil::net::parseVariants("{}"));
+        CHECK(foil::net::withQuery("https://h/a.nsp", {{"rewrap", "18.1.0"}}) == "https://h/a.nsp?rewrap=18.1.0");
+        CHECK(foil::net::withQuery("https://h/a.nsp?t=1", {{"k", "a b"}}) == "https://h/a.nsp?t=1&k=a%20b");
     }
     {
         const auto priced = foil::net::parseDetail(R"({"price":{"country":"KR","regular":"64,800원","discount":"45,360원"}})").value;
@@ -342,6 +371,9 @@ int runNetworkTests() {
         CHECK(!has(own, "X-CookingFoil-Console"));
         setenv("FOIL_FIRMWARE", "18.1.0", 1);
         CHECK(has(foil::net::authHeaders(shop, state, "https://shop.example/api/shop/sections"), "X-CookingFoil-Console: firmware=18.1.0"));
+        setenv("FOIL_REGION", "hkg-twn-kor", 1);
+        CHECK(has(foil::net::authHeaders(shop, state, "https://shop.example/api/shop/sections"), "X-CookingFoil-Console: firmware=18.1.0; region=hkg-twn-kor"));
+        unsetenv("FOIL_REGION");
         CHECK(!has(foil::net::authHeaders(shop, state, "https://images.example/icon.jpg"), "X-CookingFoil-Console"));
         unsetenv("FOIL_FIRMWARE");
         hear("HTTP/1.1 401 Unauthorized\r\n");

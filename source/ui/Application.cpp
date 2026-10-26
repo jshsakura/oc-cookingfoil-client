@@ -119,6 +119,7 @@ Application::~Application() {
   raGamesJob_.join();
   voteJob_.join();
   stringsJob_.join();
+  optionsJob_.join();
   languageCancel_ = true;
   languageJob_.join();
   historyPageJob_.join(); // reads and clears the store, which closes after
@@ -308,6 +309,7 @@ bool Application::open() {
 #endif
       if (!sd.empty() && !patchWorker_.joinable()) {
         openCardRecords(sd);
+        signaturePatchesFound_ = forwarder::signaturePatchesFound(sd);
         useKeptStrings();
         applyStartupLanguage(); // a language only a server has needed its text from the card
         background(tr("Reading patches and download history on the SD card"), 0.62f, 0.66f);
@@ -1063,6 +1065,7 @@ void Application::poll() {
   historyPageJob_.poll();
   voteJob_.poll();
   stringsJob_.poll();
+  optionsJob_.poll();
   languageJob_.poll();
   pollLanguageGet();
   raListJob_.poll();
@@ -1657,7 +1660,7 @@ void Application::action(Action a) {
       confirmInstall_ = false;
       installSelected();
     }
-    if (a == Action::Back) confirmInstall_ = false;
+    if (a == Action::Back) confirmInstall_ = optionInstall_ = false;
     return;
   }
   // The header's buttons: the d-pad moves along them, A presses one.
@@ -2524,7 +2527,9 @@ void Application::render() {
       using Hints = std::vector<std::pair<std::string, std::string>>;
       auto hints = descriptionFocus_ ? Hints{{"A", tr("Back to items")}, {"B", tr("Back")}}
                                        : Hints{{"A", onTheWay   ? tr("Cancel download")
-                                                     : onButton ? (pickedShortfall().empty() ? tr("Install") : tr("See why"))
+                                                     : onButton ? (installButton() == InstallButton::Plain    ? std::string(tr("Install"))
+                                                                   : installButton() == InstallButton::Warned ? pickedOption()->label
+                                                                                                              : std::string(tr("See why")))
                                                      : onStorage ? tr("Choose this")
                                                      : part_ == 0 && selection_ && selection_->baseChoices() > 1 &&
                                                                selection_->parts().front().type == "base"
@@ -2719,7 +2724,11 @@ std::vector<Item> Application::pickedNeeds() const {
 std::string Application::pickedShortfall() const {
   return install::missingFirmware(pickedNeeds(), platform::firmwareVersion());
 }
+// Unsigned where it would not open blocks first; then a plugin's option
+// decides; else only the firmware does.
 Application::InstallButton Application::installButton() const {
+  if (pickedUnsigned()) return InstallButton::Blocked;
+  if (const auto *option = pickedOption()) return option->blocked ? InstallButton::Blocked : InstallButton::Warned;
   return pickedShortfall().empty() ? InstallButton::Plain : InstallButton::Blocked;
 }
 void Application::requestInstall() {
@@ -2732,6 +2741,24 @@ void Application::requestInstall() {
   }
   if (!selection_->count()) {
     alert_ = tr("Turn on at least one item to install.");
+    return;
+  }
+  // Unsigned where it would not open: in the server's words when it gave them.
+  if (const auto *file = pickedUnsigned()) {
+    alertTitle_ = file->title;
+    alert_ = !file->body.empty() ? file->body : std::string(tr("This file is not signed, so it cannot be installed."));
+    return;
+  }
+  // A plugin's option: its own why when it cannot, else its confirm, and the
+  // files come from the server that offered it.
+  if (const auto *option = pickedOption()) {
+    if (option->blocked) {
+      alertTitle_ = option->blockedTitle;
+      alert_ = !option->blockedBody.empty() ? option->blockedBody : option->label;
+      return;
+    }
+    confirmInstall_ = optionInstall_ = true;
+    selection_->server.clear();
     return;
   }
   // Content for newer firmware than the console's is not installed: A says why.
@@ -2844,6 +2871,7 @@ void Application::installSelected() {
   // Patches alone (every file off) go in as one pick; with files they come
   // right after the game's files and go with them if the game fails.
   auto files = selection_->files();
+  if (std::exchange(optionInstall_, false)) files = withOptions(std::move(files));
   if (!files.empty()) {
     if (auto error = startInstall(files, g.representative.name, g.representative.icon, selection_->target,
                                   selection_->patchesOn())) {
@@ -3137,7 +3165,7 @@ std::vector<std::string> Application::groupServers(const Group &g) const {
 }
 void Application::stepInstallServer(int by) {
   const auto servers = selection_->servers();
-  if (servers.size() < 2) return;
+  if (optionInstall_ || servers.size() < 2) return; // an option's files come from where it was offered
   const auto at = std::find(servers.begin(), servers.end(), selection_->server);
   const int now = at == servers.end() ? 0 : int(at - servers.begin()), count = int(servers.size());
   selection_->server = servers[size_t((now + by + count) % count)];

@@ -133,9 +133,13 @@ std::vector<std::string> serverHeaders(const Server& server, const State& state,
     // What this client can do, so the server gives it what fits (download
     // links that take the token, not the tunnel's).
     headers.push_back("X-CookingFoil-Features: direct-token");
-    // The console's firmware, for the server's console facts and dashboard.
-    if (const auto firmware = platform::firmwareVersion(); !firmware.empty())
-        headers.push_back("X-CookingFoil-Console: firmware=" + firmware);
+    // The console's firmware and region, for the server's console facts and
+    // dashboard; what is unknown is left out.
+    std::string console;
+    for (const auto& [name, value] : {std::pair<const char*, std::string>{"firmware", platform::firmwareVersion()},
+                                      {"region", platform::consoleRegion()}})
+        if (!value.empty()) console += (console.empty() ? "" : "; ") + std::string(name) + "=" + value;
+    if (!console.empty()) headers.push_back("X-CookingFoil-Console: " + console);
     headers.push_back(std::string("Accept-Language: ") + languageCode());
     const auto token = session ? sessionToken(originOf(server.url)) : std::string();
     if (!token.empty()) headers.push_back("Authorization: Bearer " + token);
@@ -666,6 +670,16 @@ std::string fileTitle(const std::string& url) {
     return first == std::string::npos ? "" : result.substr(first, last - first + 1);
 }
 namespace {
+// A "signed" object (feature item-signed) that says nca or ticket is false:
+// surely unsigned. true or null (not known) is not.
+bool surelyUnsigned(json_object* object) {
+    if (!json_object_is_type(object, json_type_object)) return false;
+    const auto no = [&](const char* name) {
+        auto* value = field(object, name);
+        return json_object_is_type(value, json_type_boolean) && !json_object_get_boolean(value);
+    };
+    return no("nca") || no("ticket");
+}
 // One game of the catalog; false for one without a download link.
 bool parseItem(json_object* object, Item& item) {
     item.url = stringField(object, "url"); if (!isHttp(item.url)) return false;
@@ -703,6 +717,7 @@ bool parseItem(json_object* object, Item& item) {
         auto* certain = json_object_is_type(detail, json_type_object) ? field(detail, "certain") : nullptr;
         item.integrity = json_object_is_type(certain, json_type_boolean) && json_object_get_boolean(certain) ? 3 : 2;
     } else if (integrity == "modified") item.integrity = 1;
+    item.unsignedFile = surelyUnsigned(field(object, "signed"));
     item.icons = languageTexts(object, "icons", isHttp);
     item.names = languageTexts(object, "names");
     item.icon = stringField(object, "icon_url"); if (!isHttp(item.icon)) item.icon.clear();
@@ -960,6 +975,21 @@ Parsed<Detail> parseDetail(const std::string& json) {
         d.priceRegular = stringField(price, "regular");
         d.priceDiscount = stringField(price, "discount");
         d.priceCountry = stringField(price, "country");
+    }
+    // signed: each file of this title whose signatures the server checked;
+    // only the surely unsigned ones are kept, with the server's words.
+    auto* signatures = field(root.get(), "signed");
+    if (json_object_is_type(signatures, json_type_array)) for (size_t i = 0; i < json_object_array_length(signatures) && i < 64; ++i) {
+        auto* row = json_object_array_get_idx(signatures, i);
+        if (!json_object_is_type(row, json_type_object) || !surelyUnsigned(row)) continue;
+        Unsigned file;
+        file.file = stringField(row, "file");
+        auto* help = field(row, "help");
+        if (json_object_is_type(help, json_type_object)) {
+            file.title = stringField(help, "title");
+            file.body = tidyDescription(stringField(help, "body"));
+        }
+        if (!file.file.empty()) d.unsignedFiles.push_back(std::move(file));
     }
     // integrity: the files of this title the server's check flagged, worded
     // in the language asked (feature item-integrity-detail).

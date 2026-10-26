@@ -294,6 +294,27 @@ int main(int argc, char **argv) {
       ui.render();
       if (!app.screenshot(shot + "/02-detail.png"))
         return 1;
+      {
+        // A server plugin's option as the rewrap plugin words and colors it.
+        foil::net::FileOption option;
+        option.id = "rewrap";
+        option.label = "펌웨어 버전 무시 설치";
+        option.confirmTitle = option.label;
+        option.confirmBody = "이 게임은 펌웨어 20.0.0 이상이 필요하지만 현재 본체는 18.1.0이라 설치하실 수 없습니다.\n"
+                             "그러나 서버에는 상위 버전의 prod.keys가 있어 설치 가능한 버전으로 재암호화가 가능합니다.";
+        option.buttonColor = foil::net::parseRgb("#FFC23D");
+        option.buttonStripe = foil::net::parseRgb("#FFB52A");
+        option.cardIcon = "info";
+        ui.previewFileOption(option);
+        ui.render();
+        if (!app.screenshot(shot + "/02-detail-option.png")) return 1;
+        ui.previewRequestInstall();
+        ui.render();
+        if (!app.screenshot(shot + "/02-detail-option-confirm.png")) return 1;
+        ui.action(foil::ui::Action::Back);
+        ui.previewFileOption({});
+        ui.render();
+      }
       if (!fixture.empty()) {
         ui.action(foil::ui::Action::Preview); ui.render();
         if (!app.screenshot(shot + "/02-gallery-unavailable.png")) return 1;

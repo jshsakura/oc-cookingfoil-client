@@ -115,8 +115,7 @@ void nativeInstall(const Item &item, const std::string &target,
                    const std::vector<std::string> &headers) {
   Services services;
   inst::ui::mainApp->ResetRetries();
-  // Every NCA's signature is checked: one that fails stops the install.
-  inst::config::validateNCAs = true;
+  inst::config::hashesChange = item.hashesChange;
   // The download ring between curl and the placeholder writer, in 8MB
   // segments. CyberFoil sets this from its own menu, which is not built here;
   // left at 0 no data could ever be buffered and every download stalled.

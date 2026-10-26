@@ -453,6 +453,7 @@ bool signaturePatchesFound(const std::string &sdRoot) {
   return std::filesystem::exists(sdRoot + "/atmosphere/contents/420000000000000B", ec) || // sys-patch
          notEmpty(sdRoot + "/atmosphere/kip_patches/fs_patches") ||
          notEmpty(sdRoot + "/atmosphere/kip_patches/loader_patches") ||
+         notEmpty(sdRoot + "/atmosphere/exefs_patches/es_patches") ||
          std::filesystem::exists(sdRoot + "/bootloader/patches.ini", ec);
 }
 bool offerSelfShortcut(bool applicationMode, bool asked, const std::string &selfPath, bool shortcutPresent) {

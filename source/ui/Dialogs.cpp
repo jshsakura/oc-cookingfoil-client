@@ -327,11 +327,35 @@ void Application::dialogs() {
   } else if (confirmInstall_ && selection_ && detailGroup_ < groups_.size()) {
     const auto &g = groups_[detailGroup_];
     // More than one server has every file: a row to pick which sends them.
-    const bool pick = selection_->servers().size() > 1;
+    // A plugin's option comes from the server that offered it: no pick.
+    const auto *option = optionInstall_ ? pickedOption() : nullptr;
+    const bool pick = !option && selection_->servers().size() > 1;
     constexpr float PickRow = 64;
-    const auto body = modal(700, 24 + 96 + 24 + (pick ? PickRow : 0), tr("Install this game?"), tr("Cancel"), "",
-                            tr("Install"), 4);
+    // Its confirm's words on a warning card as 레트로 게임's (light red, the
+    // warning icon), as tall as they are; the popup is wider so each keeps
+    // to a line or two.
+    constexpr float CardPad = 18, CardIcon = 56;
+    const std::string note = option ? option->confirmBody : std::string();
+    const float cardW = CardIcon + OptionNoteWidth + CardPad;
+    const float noteH = note.empty() ? 0 : paint_.fonts.lineCount(note, 18, OptionNoteWidth, OptionNoteLines) * 18 * 1.4f;
+    const float noteBlock = note.empty() ? 0 : noteH + 2 * CardPad + 20;
+    const std::string title = !option                       ? std::string(tr("Install this game?"))
+                              : !option->confirmTitle.empty() ? option->confirmTitle
+                                                              : option->label;
+    const auto body = modal(note.empty() ? 700 : cardW + 64, 24 + 96 + 24 + (pick ? PickRow : 0) + noteBlock, title,
+                            tr("Cancel"), "", tr("Install"), 4);
     const float x = body.x + 32, y = body.y + 24;
+    if (!note.empty()) {
+      const float top = y + 96 + 20;
+      // The option's own colors and icon when it gives them.
+      const auto own = [](const net::Rgb &rgb, SDL_Color otherwise) {
+        return rgb.set ? SDL_Color{rgb.r, rgb.g, rgb.b, 255} : otherwise;
+      };
+      const SDL_Color fill = own(option->cardColor, SDL_Color{253, 226, 226, 255}), text = own(option->cardText, Bad);
+      paint_.rect(x, top, cardW, noteH + 2 * CardPad, fill, 14);
+      paint_.icon(option->cardIcon == "warning" ? 25 : 33, x + 18, top + CardPad, text, 24);
+      paint_.fonts.wrapped(note, x + CardIcon, top + CardPad, 18, text, OptionNoteWidth, OptionNoteLines, false, 1.4f);
+    }
     cover(g.representative.icon, x, y, 96, false, g.representative.name);
     paint_.fonts.text(g.representative.name, x + 116, y + 4, 22, Ink, true, body.w - 180);
     paint_.fonts.text(trf("{0} items · {1}", {std::to_string(selection_->count()),

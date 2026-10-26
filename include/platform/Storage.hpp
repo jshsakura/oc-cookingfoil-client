@@ -6,6 +6,9 @@ namespace foil::platform {
 bool applicationMode();
 // The console's system version as "18.1.0"; empty off the console.
 std::string firmwareVersion();
+// The console's region as the server names it (jpn, usa, eur, aus,
+// hkg-twn-kor, chn); empty when unknown, and off the console.
+std::string consoleRegion();
 std::optional<uint64_t> freeSpace(const std::string &target);
 std::optional<uint64_t> totalSpace(const std::string &target);
 // Whether a file of `size` bytes must be made as a split ("big") file: a

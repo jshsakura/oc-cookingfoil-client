@@ -119,6 +119,11 @@ struct FileCheck {
     // 1 modified, 2 maybe damaged, 3 damaged, as Item::integrity.
     int level() const { return verdict == "modified" ? 1 : certain ? 3 : 2; }
 };
+// A file of a title the server found surely unsigned (detail.signed[] with
+// nca or ticket false), and the help it words for the install it stops.
+struct Unsigned {
+    std::string file, title, body;
+};
 struct Detail {
     std::string name, publisher, description, category, banner;
     std::string notes; // the operator's own notes: what else to install, sizes, which build
@@ -133,6 +138,7 @@ struct Detail {
     std::string scoreLabel;
     std::vector<UserPatch> patches;
     std::vector<FileCheck> integrity;
+    std::vector<Unsigned> unsignedFiles;
 };
 std::string tidyDescription(const std::string& text);
 Parsed<Detail> parseDetail(const std::string& json);

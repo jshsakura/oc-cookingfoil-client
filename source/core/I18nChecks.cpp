@@ -80,10 +80,9 @@ const std::vector<const char *> &lockedKeys() {
     "Connects once you approve this device on the server website.",
     "This console is linked to another account. Scan the QR code to approve it.",
     "Approve this console again",
-    // Security switches and the installs that rely on them.
+    // Shortcuts, which open only with signature patches.
     "Made the {0} shortcut. No signature patches were found, so it may fail to open. Install signature patches such as sys-patch first.",
     "No signature patches were found. A shortcut opens only with signature patches installed.",
-    "Could not verify the content signature, so it was not installed.",
     // The window that gets a language only a server has: shown before that
     // language exists, so it never takes the server's wording.
     "Downloading additional language data",

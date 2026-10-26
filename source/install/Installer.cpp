@@ -1,5 +1,6 @@
 #include "core/Json.hpp"
 #include "core/Log.hpp"
+#include "core/Forwarder.hpp"
 #include "install/Installer.hpp"
 #include <utility>
 #include <cstdio>
@@ -287,6 +288,20 @@ void Installer::stagePercent(double value) {
     progress_.percent = std::clamp(value, 0., 99.);
 }
 namespace {
+constexpr const char *SdRoot = "sdmc:";
+// What a server that cannot prepare a file (409) says: "message" at the
+// top, inside an "error" object, or "error" as text; else the option's
+// own words, else the app's.
+std::string refusal(const std::string &body, const std::string &failed) {
+  Error ignored;
+  const auto root = parseJson(body, ignored);
+  auto *error = root ? field(root.get(), "error") : nullptr;
+  auto message = root ? stringField(root.get(), "message") : std::string();
+  if (message.empty() && json_object_is_type(error, json_type_object)) message = stringField(error, "message");
+  if (message.empty() && json_object_is_type(error, json_type_string)) message = json_object_get_string(error);
+  if (!message.empty()) return message;
+  return !failed.empty() ? failed : std::string(tr("The server could not prepare this file."));
+}
 // A content file by its id ("0123abcd" of "0123ABCD.nca" or of the resume
 // key "sd:0123abcd"), so the engine's reports and the saved points meet.
 std::string contentId(std::string name) {
@@ -353,6 +368,20 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
       }
       // A failed item is tried again from the start: the engine skips the
       // content files it already finished, so this picks up where it broke.
+      // Prepared on the server for a plugin's option: its first byte asked
+      // before the engine starts, so a server that cannot (409) says why in
+      // its own words instead of three failed tries.
+      if (files[i].variant) {
+        phase(files[i].variantProgress.empty() ? std::string(tr("Preparing.")) : files[i].variantProgress);
+        auto headers = net::downloadHeaders(server, state, files[i].url);
+        headers.push_back("Range: bytes=0-0");
+        const auto asked = std::chrono::steady_clock::now();
+        const auto first = net::get(files[i].url, headers, "", &cancel_);
+        logLine("variant: first byte HTTP " + std::to_string(first.status) + " after " +
+                std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - asked).count()) +
+                "ms");
+        if (first.status == 409) throw std::runtime_error(refusal(first.body, files[i].variantFailed));
+      }
       constexpr int Attempts = 3;
       int renewed = 0;
       for (int attempt = 1;; ++attempt) {
@@ -397,9 +426,13 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
       progress_.phase = tr("Installed.");
     }
   } catch (const std::exception &e) {
+    // A ticket the console does not take unsigned: said plainly.
+    std::string error = e.what();
+    if (error.find("Failed to import ticket") != std::string::npos && !forwarder::signaturePatchesFound(SdRoot))
+      error = tr("This file is not signed, so it cannot be installed.");
     std::lock_guard<std::mutex> lock(mutex_);
     progress_.status = stop_ ? Status::Stopped : cancel_ ? Status::Cancelled : Status::Failed;
-    progress_.error = e.what();
+    progress_.error = error;
     progress_.phase = cancel_ ? tr("Install canceled.") : tr("Install failed.");
   }
 }
