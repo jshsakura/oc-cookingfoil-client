@@ -255,7 +255,7 @@ void Application::dialogs() {
   const int which = confirmCancel_ * 1 + (tidyOpen_ || homebrewSortAsk_) * 2 + confirmPatchRemove_ * 4 + confirmInstall_ * 8 +
                     dropboxUnlinkAsk_ * 32 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + (homebrewAsk_ && homebrewExtras_) * 256 +
                     (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + shopAppSaveAsk_ * 2048 +
-                    (serverForm_ && (serverForm_->confirmDelete || serverForm_->confirmKeys)) * 4096 + shortcutRemoveAsk_ * 8192 +
+                    (serverForm_ && serverForm_->confirmDelete) * 4096 + shortcutRemoveAsk_ * 8192 +
                     selfShortcutAsk_ * 16384 + (unqueueAsk_ >= 0) * 32768 + bugAsk_ * 65536 +
                     clockModal() * 262144 + resumeAsked() * 524288 + raOpen_ * 1048576 + raListOpen_ * 2097152 + adminEdit_.open * 4194304 + serverInfo_ * 8388608;
   if (which != popupKind_) {

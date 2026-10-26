@@ -23,7 +23,6 @@
 #include "core/ShopSaves.hpp"
 #include "core/ClientUpdate.hpp"
 #include "core/Patches.hpp"
-#include "core/ProdKeys.hpp"
 #include "core/Votes.hpp"
 #include "core/CardPatches.hpp"
 #include "core/I18n.hpp"
@@ -273,11 +272,6 @@ public:
   void previewAdminEdit(std::vector<admin::Field> fields) {
     features_.insert("admin-edit");
     adminPreview_ = std::move(fields);
-  }
-  // prod.keys as an admin console sees it, without a server: this holding.
-  void previewKeys(prodkeys::Status status) {
-    features_.insert("keys-upload");
-    keysPreview_ = std::move(status);
   }
   bool askingSelfShortcut() const { return selfShortcutAsk_; }
   bool askingShortcutRemoval() const { return shortcutRemoveAsk_; }
@@ -1289,22 +1283,8 @@ private:
     int row = 0;    // 0 주소, 1 아이디, 2 비밀번호, 3 이름, 4 메시지
     std::string error;
     bool confirmDelete = false;
-    bool confirmKeys = false; // asked before prod.keys goes to the server
   };
-  static constexpr int ServerFields = 5; // then the colour row, then prod.keys on an admin console
-  static constexpr int KeysRow = ServerFields + 1;
-  // prod.keys for the server being edited: the row shows on the connected
-  // server when it offers keys-upload to this (admin) console.
-  bool keysRowShown() const;
-  int serverFormRows() const { return keysRowShown() ? KeysRow + 1 : KeysRow; }
-  std::optional<prodkeys::Status> keysStatus_;
-  std::string keysNote_; // what the last read or send said
-  Job keysJob_;
-  bool keysSending_ = false;
-  std::optional<prodkeys::Status> keysPreview_;
-  void readKeysStatus();
-  void sendProdKeys();
-  void keysRow(float x, float y, float w, float h, float valueX, float valueW);
+  static constexpr int ServerFields = 5; // then the colour row
   int serverFormColor() const;
   void stepServerColor(int step);
   std::optional<ServerForm> serverForm_;
