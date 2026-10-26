@@ -103,8 +103,8 @@ Application::~Application() {
     homebrewCardWorker_.join();
   if (homebrewFolderWorker_.joinable())
     homebrewFolderWorker_.join();
-  if (shopSavesWorker_.joinable())
-    shopSavesWorker_.join();
+  if (serverSavesWorker_.joinable())
+    serverSavesWorker_.join();
   if (stateWorker_.joinable())
     stateWorker_.join();
   if (reloadWorker_.joinable())
@@ -482,10 +482,10 @@ void Application::openCardRecords(const std::string &sd) {
     if (!atomicWrite(ledgerFile, homebrew::serializeLedger(homebrewLedger_), error)) logLine("homebrew ledger: " + error);
   }
   // An app that closed mid-install left that one running: it goes back in
-  // the queue, which picks up again once the shop is reachable.
+  // the queue, which picks up again once the server is reachable.
   openDownloads(sd);
   rebuildQueue();
-  // Left waiting or cut off last time: asked about once the shop is
+  // Left waiting or cut off last time: asked about once the server is
   // reachable (offerResume), so nothing is said here.
 }
 // 패치's store: its ledger, and what a cut off change left half done.
@@ -565,7 +565,7 @@ void Application::chooseLanguage(Language lang) {
 void Application::languageChanged() {
   paint_.fonts.preferLanguage(language());
   state_.language = languageCode();
-  shopSavesLoaded_ = false; // server saves come in the language picked
+  serverSavesLoaded_ = false; // server saves come in the language picked
   // A failed check's message was worded in the old language; A asks again.
   if (appUpdate_ == AppUpdate::Failed) appUpdate_ = AppUpdate::Unknown;
   saveOwnState();
@@ -612,7 +612,7 @@ void Application::setSession(std::unique_ptr<net::Session> session) {
 }
 void Application::localizeNames() {
   // The chosen language first. A Korean interface then keeps the store's own
-  // name and art (this is a Korean shop); the others go through
+  // name and art (this is a Korean server); the others go through
   // languageChain (traditional Chinese to simplified, then English) before it.
   const std::string code = languageCode();
   const auto pick = [&](const LanguageTexts &texts) { return displayText(texts, code); };
@@ -767,7 +767,7 @@ void Application::screen(Screen screen) {
     refreshInstalled();
   }
   // 레트로 게임 asks the card again which ROMs are there, and an empty list
-  // asks the shop again (its folder may have been filled since).
+  // asks the server again (its folder may have been filled since).
   if (screen == Screen::Retro) {
     retroOnCard_.clear();
     retroView_ = retroHomeMissing_ ? RetroView::List : RetroView::Home;
@@ -797,7 +797,7 @@ bool Application::hasFocusable() const {
   case Screen::Retro:
     return retroView_ != RetroView::Home || !retroShelves_.empty();
   case Screen::Saves:
-    return savesTab_ == 2 ? dropboxFocusable() : savesTab_ == 1 ? !shopSaveGroups().empty() : !deviceBusy_ && !saveGameRows().empty();
+    return savesTab_ == 2 ? dropboxFocusable() : savesTab_ == 1 ? !serverSaveGroups().empty() : !deviceBusy_ && !saveGameRows().empty();
   case Screen::Settings:
   case Screen::Detail:
   case Screen::RetroDetail:
@@ -1058,7 +1058,7 @@ void Application::poll() {
   pollDevice();
   pollSaveJob();
   pollRetro();
-  pollShopSaves();
+  pollServerSaves();
   pollBackupSummary();
   pollDropbox();
   raJob_.poll();
@@ -1217,7 +1217,7 @@ void Application::poll() {
   if (!patchWorker_.joinable() && patchQueue_.empty())
     settlePatchJob(false, "");
   // The next one starts once nothing downloads. At launch the queue waits
-  // until the shop answers (offerResume), so what was left resumes in order.
+  // until the server answers (offerResume), so what was left resumes in order.
   if (resumeOffered_ || ended)
     if (auto error = launchQueued())
       alert_ = error.message;
@@ -1316,7 +1316,7 @@ void Application::takeNetwork() {
     }
   }
   // Another server that newly fails or waits is said once, by name; the
-  // shop goes on with the rest.
+  // library goes on with the rest.
   for (const auto &[url, status] : incomingStatus_) {
     const auto before = serverStatus_.find(url);
     if (status.empty() || status == "same" || (before != serverStatus_.end() && before->second == status)) continue;
@@ -1399,7 +1399,7 @@ void Application::rebuildHome() {
       continue;
     if (pinned.empty() && session_)
       heroBanner_ = shelf.bannerUrl.empty()
-                        ? session_->server().url + "/api/shop/banner/" + groups_[row.items.front()].id +
+                        ? session_->server().url + "/api/library/banner/" + groups_[row.items.front()].id +
                               (language() == Language::Korean ? "" : std::string("?lang=") + languageCode())
                         : shelf.bannerUrl;
     pinned.push_back(std::move(row));
@@ -1490,11 +1490,11 @@ void Application::search(std::string query) {
   // 세이브, 유저 패치, 설치된 게임 and 업데이트 search their own lists.
   if (auto *own = listQuery()) {
     *own = std::move(query);
-    selected_ = shopSaveRow_ = 0;
+    selected_ = serverSaveRow_ = 0;
     sidebar_ = false;
     return;
   }
-  // In 레트로 게임 the words search the system's list instead of the shop.
+  // In 레트로 게임 the words search the system's list instead of the server.
   if (screen_ == Screen::Retro) {
     retroQuery_ = std::move(query);
     if (retroView_ != RetroView::List) {
@@ -1684,7 +1684,7 @@ void Application::action(Action a) {
     installedAction(a);
     return;
   }
-  if (screen_ == Screen::Saves && (managedGame_ || saveNeedsGame_ || savePicking_ || shopAppSaveAsk_ ||
+  if (screen_ == Screen::Saves && (managedGame_ || saveNeedsGame_ || savePicking_ || serverAppSaveAsk_ ||
                                    (savesTab_ == 2 && (dropboxModal() || dropboxSession_)) || (!sidebar_ && a != Action::Back) || a == Action::Queue ||
                                    a == Action::Previous || a == Action::Next)) {
     savesAction(a);
@@ -1821,7 +1821,7 @@ void Application::action(Action a) {
     }
     if (auto *own = listQuery(); own && !own->empty() && !sidebar_) {
       own->clear();
-      selected_ = shopSaveRow_ = 0;
+      selected_ = serverSaveRow_ = 0;
       return;
     }
     if (screen_ == Screen::Detail) {
@@ -2100,7 +2100,7 @@ void Application::cover(const std::string &url, float x, float y, int size,
   images_->draw(thumb, x, y, size, size, 14, false, exact);
 }
 // A score in a small badge ending at `right`, tinted by band like the web
-// shop: five bands so 98 and 78 do not look alike (deep green, green,
+// library: five bands so 98 and 78 do not look alike (deep green, green,
 // olive, amber, red). Nothing for 0, a game without a score.
 SDL_Color scoreColor(int score) {
   return score >= 90   ? SDL_Color{13, 110, 64, 255}
@@ -2314,7 +2314,7 @@ void Application::shell() {
     }
   }
 }
-// Shop connection (its state only) and free space, compact on the
+// Server connection (its state only) and free space, compact on the
 // footer's left.
 // Returns where it ends so the key hints can stay clear of it.
 void Application::noteSignal(int strength) {
@@ -2664,7 +2664,7 @@ void Application::render() {
   }
   else if (screen_ == Screen::Saves)
     footer(managedGame_ ? std::vector<std::pair<std::string, std::string>>{{"A", tr("Select")}, {"B", tr("Back")}}
-           : sidebar_ || savesTab_ == 2 || (savesTab_ == 1 ? shopSaves_.empty() : installed_.games.empty())
+           : sidebar_ || savesTab_ == 2 || (savesTab_ == 1 ? serverSaves_.empty() : installed_.games.empty())
                ? std::vector<std::pair<std::string, std::string>>{{"B", tr("Back")}}
                : std::vector<std::pair<std::string, std::string>>{{"A", savesTab_ != 1 ? tr("Manage saves") : tr("Choose a save")},
                                                                   {"B", tr("Back")}});
@@ -2781,7 +2781,7 @@ void Application::requestInstall() {
 
 namespace foil::ui {
 void Application::refreshAll() {
-  // Reconnects the shop (and rereads config.json), then the console's
+  // Reconnects the server (and rereads config.json), then the console's
   // games and free space; a screen with its own list reloads with it.
   cardChanged();
   images_->forgetFailures();
@@ -3584,7 +3584,7 @@ void Application::forgetInstall() {
   state_.queueJson = "[]";
   saveStateQuietly();
 }
-// Once per launch, when the shop is reachable: an install that was cut off
+// Once per launch, when the server is reachable: an install that was cut off
 // (app closed, power, a failure) can pick up again.
 void Application::offerResume() {
   if (resumeOffered_ || installer_.running() || !connected_)

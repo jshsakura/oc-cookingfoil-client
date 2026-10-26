@@ -1,7 +1,7 @@
 #include "platform/FileSystem.hpp"
 #include <cerrno>
 #include <cstring>
-#include "net/ShopSavesApi.hpp"
+#include "net/ServerSavesApi.hpp"
 #include "core/I18n.hpp"
 #include "core/Json.hpp"
 #include "core/Patches.hpp"
@@ -9,7 +9,7 @@
 #include "net/Ranged.hpp"
 #include <filesystem>
 namespace foil::net {
-Parsed<std::vector<shopsaves::ShopSave>> shopSaves(const Server &server, const State &state, ShopSavesReply &reply,
+Parsed<std::vector<serversaves::ServerSave>> serverSaves(const Server &server, const State &state, ServerSavesReply &reply,
                                                     const std::atomic<bool> *cancel) {
   // Names and descriptions come in the app's language (Korean or English).
   const auto url = server.url + "/api/saves?lang=" + languageCode();
@@ -21,15 +21,15 @@ Parsed<std::vector<shopsaves::ShopSave>> shopSaves(const Server &server, const S
     reply.error.message = tr("Could not load the server saves.");
   }
   if (reply.error) return {{}, reply.error};
-  return {shopsaves::parse(response.body, server.url), {}};
+  return {serversaves::parse(response.body, server.url), {}};
 }
-bool downloadShopSave(const Server &server, const State &state, const shopsaves::ShopSave &save,
+bool downloadServerSave(const Server &server, const State &state, const serversaves::ServerSave &save,
                       const std::string &dir, std::atomic<uint64_t> &received, Error &error,
                       const std::atomic<bool> *cancel) {
   // An app's save may only land below its switch/<app>/ folder. A drop
   // resumes at the last whole file; a restart begins with an empty folder.
   const auto allow = [&save](const std::string &path) {
-    return save.homebrewApp.empty() ? shopsaves::pathAllowed(path) : shopsaves::homebrewPathAllowed(save, path);
+    return save.homebrewApp.empty() ? serversaves::pathAllowed(path) : serversaves::homebrewPathAllowed(save, path);
   };
   std::string prepareError;
   const auto fetch = rangedTar(save.url, downloadHeaders(server, state, save.url), 0, "",

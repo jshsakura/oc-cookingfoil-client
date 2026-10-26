@@ -45,10 +45,10 @@ int runEnrollTests() {
       if (enrollStatus != 200) return {enrollStatus, "", R"({"error":"x"})"};
       return {200, "", R"({"status":"approved","accessKey":"enrolled-key","shopUrl":null})"};
     }
-    if (request.rfind("GET /api/shop/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
+    if (request.rfind("GET /api/library/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
     if (request.rfind("GET /api/pair/status", 0) == 0)
       return {200, "", R"({"status":")" + pairStatus + R"(")" + (pairLimit.empty() ? "" : R"(,"limit":")" + pairLimit + "\"") + "}"};
-    if (request.rfind("GET /api/shop/sections", 0) == 0)
+    if (request.rfind("GET /api/library/sections", 0) == 0)
       return sectionsStatus == 200 ? Reply{200, "", R"({"sections":[]})"} : Reply{sectionsStatus, "", R"({"error":"denied"})"};
     return {200, "", "{}"};
   };
@@ -64,7 +64,7 @@ int runEnrollTests() {
   const auto writeConfig = [&] {
     std::string written;
     CHECK(atomicWrite(configPath,
-                      R"({"servers":[{"title":"Shop","url":")" + url + R"(","username":"","password":"","enrollToken":")" + token +
+                      R"({"servers":[{"title":"Main","url":")" + url + R"(","username":"","password":"","enrollToken":")" + token +
                           R"(","cfClientId":"","cfClientSecret":"","enabled":true}],"language":"ko","installTarget":"sd"})",
                       written));
   };
@@ -138,7 +138,7 @@ int runEnrollTests() {
     std::string reason = "access-key-wrong";
     mock.answer = [&](const std::string &request) -> Reply {
       if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
-      if (request.rfind("GET /api/shop/sections", 0) == 0)
+      if (request.rfind("GET /api/library/sections", 0) == 0)
         return {401, reason.empty() ? "" : "X-CookingFoil-Auth: " + reason + "\r\n", "no"};
       return {200, "", "{}"};
     };
@@ -162,7 +162,7 @@ int runEnrollTests() {
       std::vector<std::string> reasons;
       mock.answer = [&](const std::string &request) -> Reply {
         if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
-        if (request.rfind("GET /api/shop/sections", 0) == 0) {
+        if (request.rfind("GET /api/library/sections", 0) == 0) {
           if (reasons.empty()) return {200, "", R"({"sections":[]})"};
           const auto why = reasons.front();
           reasons.erase(reasons.begin());
@@ -179,7 +179,7 @@ int runEnrollTests() {
         net::Session session(plain, loadState(db).value, db);
         CHECK(session.refresh(error) && !session.pairingPending());
         CHECK(loadState(db).value.accessKeys.at(url) == "stale-key");
-        CHECK(count(mock.take(), "GET /api/shop/sections") == 2);
+        CHECK(count(mock.take(), "GET /api/library/sections") == 2);
       }
       reasons = {"session-revoked", "access-key-wrong"};
       pairStatus = "pending";
@@ -192,7 +192,7 @@ int runEnrollTests() {
       }
       mock.answer = [&](const std::string &request) -> Reply {
         if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":")" + pairStatus + R"("})"};
-        if (request.rfind("GET /api/shop/sections", 0) == 0)
+        if (request.rfind("GET /api/library/sections", 0) == 0)
           return {401, reason.empty() ? "" : "X-CookingFoil-Auth: " + reason + "\r\n", "no"};
         return {200, "", "{}"};
       };
@@ -229,7 +229,7 @@ int runEnrollTests() {
     CHECK(session.refresh(error));
     const auto sent = mock.take();
     CHECK(count(sent, "POST /api/pair/enroll") == 1 && count(sent, "/api/pair/request") == 0);
-    CHECK(count(sent, "/api/shop/sections") == 1 && !session.pairingPending());
+    CHECK(count(sent, "/api/library/sections") == 1 && !session.pairingPending());
     CHECK(loadState(db).value.accessKeys.at(url) == "enrolled-key");
     CHECK(server().enrollToken.empty());
     pairStatus = "approved";
@@ -335,7 +335,7 @@ int runEnrollTests() {
     Error none;
     CHECK(session.refresh(none));
     const auto sent = mock.take();
-    CHECK(count(sent, "/api/pair/enroll") == 1 && count(sent, "/api/shop/sections") == 1);
+    CHECK(count(sent, "/api/pair/enroll") == 1 && count(sent, "/api/library/sections") == 1);
     CHECK(server().enrollToken == token);
     // Still pending there: the request carries the token, so the server
     // can approve it under the download's account.
@@ -355,7 +355,7 @@ int runEnrollTests() {
     // goes only to this console. Then the QR code shows.
     std::string written;
     CHECK(atomicWrite(configPath,
-                      R"({"servers":[{"title":"Shop","url":")" + url +
+                      R"({"servers":[{"title":"Main","url":")" + url +
                           R"(","username":"","password":"","enrollToken":"","cfClientId":"","cfClientSecret":"","enabled":true}],"language":"ko","installTarget":"sd"})",
                       written));
     auto state = loadState(db).value;
@@ -390,7 +390,7 @@ int runEnrollTests() {
     const auto withPassword = [&](bool only) {
       std::string written;
       CHECK(atomicWrite(configPath,
-                        R"({"servers":[{"title":"Shop","url":")" + url +
+                        R"({"servers":[{"title":"Main","url":")" + url +
                             R"(","username":"alice","password":"secret-pass","enrollToken":"","cfClientId":"","cfClientSecret":"","enabled":true}],"language":"ko","installTarget":"sd"})",
                         written));
       auto state = loadState(db).value;
@@ -401,9 +401,9 @@ int runEnrollTests() {
         if (request.rfind("GET /api/pair/status", 0) == 0)
           return only ? Reply{200, "", R"({"status":"approved","accessKey":"password-key","passwordOnly":true})"}
                       : Reply{404, "", "{}"};
-        if (request.rfind("GET /api/shop/info", 0) == 0)
+        if (request.rfind("GET /api/library/info", 0) == 0)
           return {200, "", only ? R"({"features":["pair-password-only"]})" : R"({"features":[]})"};
-        if (request.rfind("GET /api/shop/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
+        if (request.rfind("GET /api/library/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
         return {200, "", "{}"};
       };
     };
@@ -415,7 +415,7 @@ int runEnrollTests() {
       CHECK(session.refresh(error));
       const auto sent = mock.take();
       // The approval says passwordOnly itself: nothing after it carries
-      // the password, /api/shop/info included.
+      // the password, /api/library/info included.
       for (const auto &request : sent) {
         const bool pairing = request.find(" /api/pair/") != std::string::npos;
         CHECK(has(request, basic) == pairing);
@@ -446,12 +446,12 @@ int runEnrollTests() {
       return {401, "X-CookingFoil-Session: revoked\r\n", R"({"error":"session revoked"})"};
     };
     net::takeConsoleRevoked(url); // what tests before this one left
-    net::get(url + "/api/shop/sections", {}, "", nullptr);
+    net::get(url + "/api/library/sections", {}, "", nullptr);
     CHECK(net::takeConsoleRevoked(url) && !net::takeConsoleRevoked(url));
     mock.answer = [](const std::string &) -> Reply {
       return {401, "X-CookingFoil-Session: expired\r\n", "{}"};
     };
-    net::get(url + "/api/shop/sections", {}, "", nullptr);
+    net::get(url + "/api/library/sections", {}, "", nullptr);
     CHECK(!net::takeConsoleRevoked(url)); // expired is renewed, not a take-back
     mock.take();
   }
@@ -465,11 +465,11 @@ int runEnrollTests() {
     mock.answer = [&](const std::string &request) -> Reply {
       if (request.rfind("POST /api/pair/enroll", 0) == 0)
         return {200, "", R"({"status":"approved","accessKey":"enrolled-key","shopUrl":null})"};
-      if (request.rfind("GET /api/shop/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
+      if (request.rfind("GET /api/library/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
       if (request.rfind("GET /api/pair/status", 0) == 0)
         return keysGiven++ == 0 ? Reply{200, "", R"({"status":"approved","accessKey":"issued-key"})"}
                                 : Reply{200, "", R"({"status":"approved"})"};
-      if (request.rfind("GET /api/shop/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
+      if (request.rfind("GET /api/library/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
       return {200, "", "{}"};
     };
     const auto lockPath = db + ".lock";
@@ -488,7 +488,7 @@ int runEnrollTests() {
     const auto noToken = [&] {
       std::string written;
       CHECK(atomicWrite(configPath,
-                        R"({"servers":[{"title":"Shop","url":")" + url +
+                        R"({"servers":[{"title":"Main","url":")" + url +
                             R"(","username":"","password":"","enrollToken":"","cfClientId":"","cfClientSecret":"","enabled":true}],"language":"ko","installTarget":"sd"})",
                         written));
     };
@@ -503,7 +503,7 @@ int runEnrollTests() {
       CHECK(session.refresh(error));
       CHECK(!error);
       const auto sent = mock.take();
-      CHECK(count(sent, "GET /api/shop/sections") == 1 && count(sent, "X-Access-Key: issued-key") >= 1);
+      CHECK(count(sent, "GET /api/library/sections") == 1 && count(sent, "X-Access-Key: issued-key") >= 1);
       CHECK(!loadState(db).value.accessKeys.count(url));
       flushLog();
       CHECK(readFile(logged).find("key not saved (try 3/3)") != std::string::npos);
@@ -560,19 +560,19 @@ int runEnrollTests() {
   }
   {
     // A username still signs in with Basic, as before; none sends none.
-    Server shop;
-    shop.url = url;
+    Server upstream;
+    upstream.url = url;
     State state;
     state.deviceKey = std::string(64, 'a');
     const auto basic = [&](const Server &s) {
-      for (const auto &h : net::authHeaders(s, state, url + "/api/shop/sections"))
+      for (const auto &h : net::authHeaders(s, state, url + "/api/library/sections"))
         if (h.rfind("Authorization: Basic", 0) == 0) return true;
       return false;
     };
-    shop.password = "only-a-password";
-    CHECK(!basic(shop));
-    shop.username = "user";
-    CHECK(basic(shop));
+    upstream.password = "only-a-password";
+    CHECK(!basic(upstream));
+    upstream.username = "user";
+    CHECK(basic(upstream));
   }
   std::filesystem::remove_all(root);
   return failures;

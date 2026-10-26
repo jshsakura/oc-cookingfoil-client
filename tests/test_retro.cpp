@@ -30,13 +30,13 @@ int runRetroTests() {
       {"id":"empty","name":"Empty","games":[]},
       {"id":"genre:Simulation","name":"X","games":[{"id":"d","bundleUrl":"/b/d"}]},
       {"id":"decade:1990:genre:rpg","name":"90년대 RPG","games":[{"id":"e","bundleUrl":"/b/e"}]}]})",
-                                    "https://shop.example.com");
+                                    "https://server.example.com");
     CHECK(themes.size() == 2 && themes[0].id == "fighting" && themes[0].name == "대전 격투");
     CHECK(themes.size() == 2 && themes[1].id == "decade:1990:genre:rpg");
     CHECK(themes.size() == 2 && themes[0].games.size() == 1 && themes[0].games[0].id == "a");
     CHECK(themes.size() == 2 && themes[0].games[0].genres == std::vector<std::string>({"fighting", "board-game"}));
     CHECK(themes.size() == 2 && themes[0].games[0].players == 2 && themes[0].games[0].year == 1992);
-    CHECK(themes.size() == 2 && themes[0].games[0].bundleUrl == "https://shop.example.com/b/a");
+    CHECK(themes.size() == 2 && themes[0].games[0].bundleUrl == "https://server.example.com/b/a");
     CHECK(parseThemes("not json").empty());
     // Two servers: a theme joins by id, its games best rated first, each
     // id once naming both servers.
@@ -210,7 +210,7 @@ int runRetroTests() {
       CHECK(parseGameJson(R"({"id":"a","bundleUrl":"https://h/b"})").variants == 1);
     }
     // What the server knows of a game besides its files: pictures resolved
-    // against the shop, a date only when it is one, odd entries dropped.
+    // against the server, a date only when it is one, odd entries dropped.
     {
       const auto m = parseDetail(R"({"id":"a","bundleUrl":"/b","description":"Shoot.","publisher":"Capcom",
         "developer":"Capcom","releaseDate":19900227,"numberOfPlayers":2,"genres":["슈팅",3,""],
@@ -250,13 +250,13 @@ int runRetroTests() {
   const auto page = parseGames(R"({"total":181,"page":2,"pageSize":50,"games":[
     {"id":"g1","name":"Mother 3","file":"Mother 3.gba","system":"gba","size":33554432,
      "iconUrl":"/api/retro/games/g1/icon","bundleUrl":"/api/retro/games/g1/bundle","bezel":{"hasBezel":true},"install":{"rom":"roms/gba/Mother 3.gba","bezelPng":"retroarch/overlays/GameBezels/GBA/Mother 3.png"}},
-    {"id":"g2","file":"Only File.gba","bundleUrl":"https://shop.example/b","iconUrl":"javascript:x"},
-    {"id":"g3","name":"No bundle"}]})", "https://shop.example");
+    {"id":"g2","file":"Only File.gba","bundleUrl":"https://server.example/b","iconUrl":"javascript:x"},
+    {"id":"g3","name":"No bundle"}]})", "https://server.example");
   CHECK(page.total == 181 && page.page == 2);
   CHECK(page.games.size() == 2);
   if (page.games.size() == 2) {
-    CHECK(page.games[0].bundleUrl == "https://shop.example/api/retro/games/g1/bundle");
-    CHECK(page.games[0].iconUrl == "https://shop.example/api/retro/games/g1/icon");
+    CHECK(page.games[0].bundleUrl == "https://server.example/api/retro/games/g1/bundle");
+    CHECK(page.games[0].iconUrl == "https://server.example/api/retro/games/g1/icon");
     CHECK(page.games[0].bezel == Game::Bezel::Game && page.games[0].size == 33554432);
     CHECK(page.games[1].bezel == Game::Bezel::None);
     CHECK(page.games[0].romPath == "roms/gba/Mother 3.gba");
@@ -274,14 +274,14 @@ int runRetroTests() {
       {"id":"x1","name":"No original A","bundleUrl":"/b/x1"},
       {"id":"x2","name":"No original B","bundleUrl":"/b/x2"}]},
     {"id":"nes","name":"NES","romCount":0,"games":[]}]})j",
-                                 "https://shop.example");
+                                 "https://server.example");
   CHECK(shelves.size() == 1);
   if (shelves.size() == 1) {
     CHECK(shelves[0].games.size() == 4);
     if (shelves[0].games.size() == 4) {
       CHECK(shelves[0].games[0].id == "z1" && shelves[0].games[0].rating == 95 && shelves[0].games[0].ratingCount == 40);
       CHECK(shelves[0].games[1].id == "m1" && shelves[0].games[1].rating == 100); // clamped
-      CHECK(shelves[0].games[1].forwarderUrl == "https://shop.example/f/m1.nsp");
+      CHECK(shelves[0].games[1].forwarderUrl == "https://server.example/f/m1.nsp");
       CHECK(shelves[0].games[1].forwarderTitleId == "05D8F62C1705B000" && shelves[0].games[1].forwarderSize == 287448);
       CHECK(shelves[0].games[0].forwarderUrl.empty());
       CHECK(shelves[0].games[2].rating == 0);
@@ -323,7 +323,7 @@ int runRetroTests() {
     {"path":"switch/retroarch_switch.nro","size":10,"sha256":"a","url":"/api/retro/file/a"},
     {"path":"retroarch/retroarch.cfg","size":10,"sha256":"b","url":"/api/retro/file/b","once":true},
     {"path":"retroarch/cores/x.nro","size":10,"sha256":"c","url":"/api/retro/file/c"},
-    {"path":"atmosphere/x","size":1,"sha256":"d","url":"/api/retro/file/d"}]})", "https://shop.example");
+    {"path":"atmosphere/x","size":1,"sha256":"d","url":"/api/retro/file/d"}]})", "https://server.example");
   CHECK(pack.version == "v1" && pack.files.size() == 3);
   // Nothing on the card: everything is fetched.
   onCard.clear();
@@ -372,9 +372,9 @@ int runRetroTests() {
   kept.id = "nes-1";
   kept.name = "Zelda (KO)";
   kept.system = "nes";
-  kept.iconUrl = "https://shop.example/i.png";
-  kept.bundleUrl = "https://shop.example/b.tar";
-  kept.forwarderUrl = "https://shop.example/f.nsp";
+  kept.iconUrl = "https://server.example/i.png";
+  kept.bundleUrl = "https://server.example/b.tar";
+  kept.forwarderUrl = "https://server.example/f.nsp";
   kept.forwarderTitleId = "0500000000001000";
   kept.forwarderSize = 300;
   kept.romPath = "roms/nes/zelda.zip";

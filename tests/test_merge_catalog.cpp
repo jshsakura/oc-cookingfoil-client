@@ -1,4 +1,4 @@
-// Two servers' shop lists as one: each item names its server, a file both
+// Two servers' library lists as one: each item names its server, a file both
 // hold is listed once from the first and names the other, and different
 // versions or kinds of a title stay apart.
 #include "Test.hpp"

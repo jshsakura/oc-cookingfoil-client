@@ -573,7 +573,7 @@ int runPatchTests() {
     CHECK(again.load(error) && foil::readFile(sd + "/" + Cheat) == "[lost]");
   }
   fs::remove_all(root);
-  // The game a patch is for comes with it when the shop does not list it.
+  // The game a patch is for comes with it when the server does not list it.
   {
     const auto list = foil::net::parsePatches(std::string(R"({"patches":[
       {"id":"a-1","title_id":"01001730144DA000","name":"한글패치","required":false,
@@ -586,13 +586,13 @@ int runPatchTests() {
       CHECK(list[0].gameNames.size() == 2 && *foil::textIn(list[0].gameNames, "ko") == "한국어 이름" &&
             *foil::textIn(list[0].gameNames, "ja") == "日本語");
       CHECK(list[0].gameIcon == "/api/icon/01001730144DA000");
-      CHECK(list[1].gameIcon.empty()); // neither http(s) nor a shop path
+      CHECK(list[1].gameIcon.empty()); // neither http(s) nor a server path
       CHECK(list[2].gameName.empty() && list[2].gameNames.empty());
       // Only a real true marks a patch the game needs.
       CHECK(!list[0].required && !list[2].required);
     }
   }
-  // A patch's own pictures: full addresses or shop paths, at most 8
+  // A patch's own pictures: full addresses or server paths, at most 8
   // screenshots; anything else is left out.
   {
     const auto list = foil::net::parsePatches(std::string(R"({"patches":[

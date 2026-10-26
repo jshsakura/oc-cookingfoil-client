@@ -75,20 +75,20 @@ int runVaultTests() {
   const std::filesystem::path root(made);
   const auto db = (root / "cookingfoil.db").string();
   const auto here = deriveIdentity(0x1111222233334444ull), there = deriveIdentity(0x5555666677778888ull);
-  const std::string Shop = "https://shop.example";
+  const std::string Remote = "https://server.example";
   setDeviceIdentity(here);
   Error error;
   {
     // On the card the keys are ciphertext; this console reads them back.
     auto state = loadState(db).value;
-    state.accessKeys[Shop] = "access-key-plain-AAAA";
+    state.accessKeys[Remote] = "access-key-plain-AAAA";
     state.pairSecrets["https://other.example"] = std::string(64, 'c');
     CHECK(saveState(db, state, error));
     const auto raw = onCard(db);
     CHECK(raw.find("access-key-plain-AAAA") == std::string::npos && raw.find(std::string(64, 'c')) == std::string::npos);
     CHECK(raw.find(state.deviceKey) == std::string::npos && raw.find("enc:v1:") != std::string::npos);
     const auto back = loadState(db).value;
-    CHECK(takeRebound() == Rebound::None && back.accessKeys.at(Shop) == "access-key-plain-AAAA" && back.deviceKey == state.deviceKey);
+    CHECK(takeRebound() == Rebound::None && back.accessKeys.at(Remote) == "access-key-plain-AAAA" && back.deviceKey == state.deviceKey);
     // The Dropbox link: the same, beside them.
     CHECK(saveDropbox(db, R"({"refresh_token":"dropbox-refresh-BBBB"})", error));
     CHECK(onCard(db).find("dropbox-refresh-BBBB") == std::string::npos);
@@ -105,7 +105,7 @@ int runVaultTests() {
     auto rows = store.stateRows(failure);
     CHECK(rows.has_value());
     if (rows) {
-      auto &value = rows->credentials[{"access", Shop}];
+      auto &value = rows->credentials[{"access", Remote}];
       value[value.size() - 1] = value.back() == '0' ? '1' : '0';
       // Even with the seal made again (as only this console could), the
       // tag does not match: the value does not open.
@@ -123,7 +123,7 @@ int runVaultTests() {
     // credentials and the Dropbox link are made again (approve again, link
     // again), and the settings stay.
     auto state = loadState(db).value;
-    state.accessKeys[Shop] = "issued-here";
+    state.accessKeys[Remote] = "issued-here";
     state.language = "ja";
     CHECK(saveState(db, state, error) && saveDropbox(db, R"({"refresh_token":"here-only"})", error));
     setDeviceIdentity(there);
@@ -149,7 +149,7 @@ int runVaultTests() {
     CHECK(rows.has_value());
     if (rows) {
       rows->credentials[{"device", ""}] = here.deviceKey;
-      rows->credentials[{"access", Shop}] = "legacy-plain-CCCC";
+      rows->credentials[{"access", Remote}] = "legacy-plain-CCCC";
       rows->credentials.erase({"seal", ""});
       std::string sealedText;
       for (const auto &[at, v] : rows->credentials) sealedText += at.first + '\0' + at.second + '\0' + v + '\n';
@@ -158,10 +158,10 @@ int runVaultTests() {
     }
     CHECK(onCard(db).find("legacy-plain-CCCC") != std::string::npos); // as an earlier build left it
     const auto read = loadState(db).value;
-    CHECK(takeRebound() == Rebound::None && read.accessKeys.at(Shop) == "legacy-plain-CCCC");
+    CHECK(takeRebound() == Rebound::None && read.accessKeys.at(Remote) == "legacy-plain-CCCC");
     auto again = store.stateRows(failure);
-    CHECK(again && vault::sealed(again->credentials[{"access", Shop}]) && vault::sealed(again->credentials[{"device", ""}]));
-    CHECK(loadState(db).value.accessKeys.at(Shop) == "legacy-plain-CCCC");
+    CHECK(again && vault::sealed(again->credentials[{"access", Remote}]) && vault::sealed(again->credentials[{"device", ""}]));
+    CHECK(loadState(db).value.accessKeys.at(Remote) == "legacy-plain-CCCC");
     // And the plain text is gone from the card, not left in freed pages.
     CHECK(onCard(db).find("legacy-plain-CCCC") == std::string::npos);
   }

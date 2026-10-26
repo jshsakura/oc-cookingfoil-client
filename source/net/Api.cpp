@@ -366,7 +366,7 @@ void followDirectNaming(const std::string& url, const Response& response) {
     forgetDownloadToken(url);
 }
 long renewDownloadToken(const Server& server, const State& state) {
-    const auto url = server.url + "/api/shop/info";
+    const auto url = server.url + "/api/library/info";
     const auto response = get(url, authHeaders(server, state, url));
     followDirectNaming(url, response);
     return response.status;
@@ -584,7 +584,7 @@ std::vector<UserPatch> parsePatches(json_object* array) {
         if (auto* game = field(object, "game"); json_object_is_type(game, json_type_object)) {
             p.gameName = stringField(game, "name");
             p.gameNames = languageTexts(game, "names");
-            // A full URL, or a path on the shop (resolved against it when drawn).
+            // A full URL, or a path on the server (resolved against it when drawn).
             p.gameIcon = stringField(game, "icon");
             if (!isHttp(p.gameIcon) && p.gameIcon.rfind("/", 0) != 0) p.gameIcon.clear();
         }
@@ -1129,7 +1129,7 @@ bool Session::pair(Error& error) {
     auto root = parseJson(response.body, error); if (error) return false;
     const auto status = stringField(root.get(), "status");
     // The server takes the password for approval only: said here too, so
-    // nothing after the approval (the shop info first) carries it.
+    // nothing after the approval (the library info first) carries it.
     if (const auto* only = field(root.get(), "passwordOnly"); json_object_is_type(only, json_type_boolean) && json_object_get_boolean(only)) {
         pairPasswordOnly_ = true;
         markPairPasswordOnly(originOf(server_.url), true);
@@ -1299,7 +1299,7 @@ void Session::rebind() {
         if (!reboundTried.insert(server_.url).second) return;
     }
     // Told with the stored key, which this server knows.
-    const auto info = server_.url + "/api/shop/info";
+    const auto info = server_.url + "/api/library/info";
     const auto offered = get(info, authHeaders(server_, state_, info), "", cancel_);
     if (offered.status != 200 || !parseFeatures(offered.body).count("device-rebind")) return;
     const auto url = server_.url + "/api/pair/rebind";
@@ -1511,7 +1511,7 @@ bool Session::refresh(Error& error) {
     {
         // What the menu offers follows the server: asked on every refresh,
         // so content added on the server shows without a restart.
-        const auto info = server_.url + "/api/shop/info";
+        const auto info = server_.url + "/api/library/info";
         const auto response = get(info, authHeaders(server_, state_, info), "", cancel_);
         followDirectNaming(info, response);
         if (response.status == 200 || response.status == 404) {
@@ -1533,7 +1533,7 @@ bool Session::refresh(Error& error) {
             else withdrawSession(originOf(server_.url));
         }
     }
-    const auto url = server_.url + "/api/shop/sections";
+    const auto url = server_.url + "/api/library/sections";
     auto signIn = authHeaders(server_, state_, url);
     auto response = get(url, signIn, etag_, cancel_);
     // Twice at most: a refused session, then what the key's own try says.

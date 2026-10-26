@@ -16,9 +16,9 @@ int runClientUpdateTests() {
   const std::string sha(64, 'a');
   const auto r = parseRelease(R"({"version":"0.1.3","size":1000,"sha256":")" + sha +
                                   R"(","url":"/api/client/cookingfoil.nro"})",
-                              "https://shop.example");
+                              "https://server.example");
   CHECK(r.has_value());
-  if (r) CHECK(r->url == "https://shop.example/api/client/cookingfoil.nro" && r->size == 1000 && r->version == "0.1.3");
+  if (r) CHECK(r->url == "https://server.example/api/client/cookingfoil.nro" && r->size == 1000 && r->version == "0.1.3");
   // Anything off is no update at all.
   CHECK(!parseRelease(R"({"version":"0.1.3","size":1000,"sha256":"abc","url":"/x"})", "https://s"));
   CHECK(!parseRelease(R"({"version":"0.1.3","size":0,"sha256":")" + sha + R"(","url":"/x"})", "https://s"));

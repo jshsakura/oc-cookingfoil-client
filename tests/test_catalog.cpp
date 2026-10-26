@@ -5,9 +5,9 @@
 #include <algorithm>
 int runCatalogTests() {
   int failures = 0;
-  CHECK(foil::thumbnailUrl("https://shop/api/icon/1") == "https://shop/api/icon/1?size=sm");
-  CHECK(foil::thumbnailUrl("https://shop/i?id=1") == "https://shop/i?id=1&size=sm");
-  CHECK(foil::thumbnailUrl("https://shop/i?size=sm") == "https://shop/i?size=sm");
+  CHECK(foil::thumbnailUrl("https://srv/api/icon/1") == "https://srv/api/icon/1?size=sm");
+  CHECK(foil::thumbnailUrl("https://srv/i?id=1") == "https://srv/i?id=1&size=sm");
+  CHECK(foil::thumbnailUrl("https://srv/i?size=sm") == "https://srv/i?size=sm");
   CHECK(foil::thumbnailUrl("installed:0100") == "installed:0100");
   CHECK(foil::thumbnailUrl("").empty());
   {
@@ -87,9 +87,9 @@ int runCatalogTests() {
     // A game without a base: its first file stands for it, though the files
     // are moved apart as they are grouped.
     std::vector<foil::Item> files(2);
-    files[0].url = "https://shop/u.nsp", files[0].name = "Update", files[0].type = "update", files[0].titleId = "0100000000A00800";
+    files[0].url = "https://srv/u.nsp", files[0].name = "Update", files[0].type = "update", files[0].titleId = "0100000000A00800";
     files[0].baseId = "0100000000A00000";
-    files[1].url = "https://shop/d.nsp", files[1].name = "DLC", files[1].type = "dlc", files[1].titleId = "0100000000A01001";
+    files[1].url = "https://srv/d.nsp", files[1].name = "DLC", files[1].type = "dlc", files[1].titleId = "0100000000A01001";
     files[1].baseId = "0100000000A00000";
     const auto groups = foil::groupCatalog(files);
     CHECK(groups.size() == 1 && groups[0].representative.name == "Update" && groups[0].representative.url == files[0].url);

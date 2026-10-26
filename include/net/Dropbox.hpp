@@ -1,6 +1,6 @@
 #pragma once
 // Dropbox for 세이브 > 드롭박스, after oc-save-keeper's network/Dropbox.cpp
-// (MIT). Sign-in goes through the shop's copy of save-keeper's bridge
+// (MIT). Sign-in goes through the server's copy of save-keeper's bridge
 // (/api/dropbox), then the console trades the code with Dropbox itself
 // (PKCE, no secret) and keeps the tokens in cookingfoil.db, encrypted under
 // the console's key (core/State); a dropbox.json of earlier builds moves in

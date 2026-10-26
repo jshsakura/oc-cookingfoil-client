@@ -14,7 +14,7 @@ std::string countText(int count) {
 }
 } // namespace
 // A on a retro game, wherever it shows (the shelves, a system's list, a row
-// in 다운로드): its page, as a shop game has one.
+// in 다운로드): its page, as a library game has one.
 void Application::openRetroDetail(const retro::Game &game) {
   if (screen_ != Screen::RetroDetail) previous_ = screen_;
   notice_.clear();
@@ -35,7 +35,7 @@ void Application::openRetroDetail(const retro::Game &game) {
   descriptionFocus_ = false;
   galleryOpen_ = raListOpen_ = false;
   screenshot_ = 0;
-  retroPart_ = ButtonPart; // on the button, as a shop game's page opens
+  retroPart_ = ButtonPart; // on the button, as a library game's page opens
   retroDetailLoading_ = true;
   retroDetailServer_ = game.server;
   requestRetroDetail(game.id);
@@ -223,7 +223,7 @@ int Application::retroCoreCard(int y) {
                       X + 54, y + Height / 2, 18, Ink, true, W - 72);
   return int(y + Height + 16);
 }
-// Facts as a labeled grid, as a shop game's: what the server knows of the
+// Facts as a labeled grid, as a library game's: what the server knows of the
 // game, then where it goes on the card; genres as chips.
 float Application::retroInfoCard(float y) {
   const auto &game = retroPick_;
@@ -299,7 +299,7 @@ void Application::retroDetail() {
   const auto &game = retroPick_;
   const auto &meta = retroMeta_;
   paint_.rect(0, 0, 1280, 212, {10, 10, 14, 255});
-  // The banner: a screenshot, else the box art, else the tile, as a shop
+  // The banner: a screenshot, else the box art, else the tile, as a library
   // game falls back to its icon.
   const auto banner = !meta.screenshots.empty() ? thumbnailUrl(meta.screenshots[0], "xl")
                       : !meta.boxartUrl.empty() ? meta.boxartUrl
@@ -334,7 +334,7 @@ void Application::retroDetail() {
     if (x + paint_.fonts.measure(label, 17) + 28 > PillsRight) break;
     x += paint_.pill(label, x, Top + 100, true, 17) + 10;
   }
-  // The description column, as a shop game's: it scrolls in the band
+  // The description column, as a library game's: it scrolls in the band
   // between the header and the footer.
   constexpr int BandTop = 212, BandBottom = 660, Pad = 14;
   SDL_Rect leftClip{0, BandTop, 806, BandBottom - BandTop};
@@ -371,7 +371,7 @@ void Application::retroDetail() {
   retroDetailPanel();
   if (galleryOpen_) gallery();
 }
-// The right panel, where a shop game lists what to install: the versions,
+// The right panel, where a library game lists what to install: the versions,
 // the card it goes to and the button.
 void Application::retroDetailPanel() {
   const auto versions = retroVersionList();

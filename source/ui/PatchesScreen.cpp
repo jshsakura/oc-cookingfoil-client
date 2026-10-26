@@ -91,7 +91,7 @@ std::vector<Application::PatchRow> Application::allPatchRows() const {
       return;
     }
     if (const auto *group = findGroup(row.patch.titleId))
-      row.shopGroup = int(group - groups_.data());
+      row.libraryGroup = int(group - groups_.data());
     const auto local = std::find_if(installed_.games.begin(), installed_.games.end(),
                                     [&](const InstalledGame &g) { return g.titleId == row.patch.titleId; });
     if (local != installed_.games.end()) {
@@ -254,7 +254,7 @@ void Application::pollPatches() {
       patchesLoaded_ = true;
     } else if (screen_ == Screen::Patches && !patchRows().empty()) {
       // Patches already on the SD card still list; the toast says the
-      // shop's list is missing from 전체.
+      // server's list is missing from 전체.
       message(trf("{0} Press Y to try again.", {patchError_.message}));
     }
   } else if (incomingPatchError_) {
@@ -327,9 +327,9 @@ int patchOpIcon(PatchOp op) {
 std::vector<PatchChoice> patchChoices(const Application::PatchRow &row, bool missing) {
   std::vector<PatchChoice> out;
   const bool app = !row.patch.homebrewApp.empty();
-  // A patch is no use without its game: when the shop has it, getting the
+  // A patch is no use without its game: when the server has it, getting the
   // game comes first. An app comes from 홈브류 instead.
-  if (!app && !row.installed && row.shopGroup >= 0)
+  if (!app && !row.installed && row.libraryGroup >= 0)
     out.push_back({PatchOp::Game, tr("Download the game"), tr("The game must be installed before the patch can be applied.")});
   if (row.onCard) return out; // not this app's to change
   if (!row.record) {
@@ -468,14 +468,14 @@ void Application::patchAction(Action a) {
   pickingPatch_ = true;
   patchPickRow_ = 0;
 }
-// The game a patch is for, as the shop, the console or (for games the shop
+// The game a patch is for, as the server, the console or (for games the server
 // does not list) the server names it, and its cover.
 void Application::patchGame(const UserPatch &given, std::string &name, std::string &icon) const {
   name.clear();
   icon.clear();
   // A patch kept on the card, or found there, carries no game of its own:
   // the server's other patches for the same game do (a game not installed
-  // and not in the shop is then still named).
+  // and not in the server is then still named).
   const auto sameTitle = [](const std::string &a, const std::string &b) {
     return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
              return std::toupper(static_cast<unsigned char>(x)) == std::toupper(static_cast<unsigned char>(y));
@@ -506,7 +506,7 @@ void Application::patchGame(const UserPatch &given, std::string &name, std::stri
     if (name.empty() && !patch.gameNames.empty()) name = patch.gameNames.front().text;
   }
   if (icon.empty() && !patch.gameIcon.empty())
-    icon = shopAddress(patch.gameIcon, patch.server);
+    icon = fullAddress(patch.gameIcon, patch.server);
   if (name.empty())
     name = patch.titleId;
 }
@@ -519,7 +519,7 @@ void Application::runPatchOp(int opIndex) {
   const auto &row = *picked;
   if (op == PatchOp::Game) {
     managingPatch_ = pickingPatch_ = false;
-    openDetail(size_t(row.shopGroup));
+    openDetail(size_t(row.libraryGroup));
     return;
   }
   if (op == PatchOp::Remove) {
@@ -794,7 +794,7 @@ void Application::patchesScreen() {
     else if (!game.installed && game.app)
       warning = tr("App not installed · in Homebrew");
     else if (!game.installed)
-      warning = lead.shopGroup >= 0 ? tr("Not installed · on the server") : tr("Game not installed");
+      warning = lead.libraryGroup >= 0 ? tr("Not installed · on the server") : tr("Game not installed");
     else if (mismatch && game.rows.size() == 1 && !game.app)
       warning = trf("Game {0} only", {!lead.patch.gameVersion.empty() ? lead.patch.gameVersion
                                                                         : "v" + std::to_string(lead.patch.updateVersion)});
@@ -956,7 +956,7 @@ void Application::patchMenu(const PatchRow &row) {
   // Its screenshots, a row of three under the description; ZR or a tap
   // opens them large.
   std::vector<std::string> shots;
-  for (const auto &shot : row.patch.screenshots) shots.push_back(shopAddress(shot, row.patch.server));
+  for (const auto &shot : row.patch.screenshots) shots.push_back(fullAddress(shot, row.patch.server));
   if (detail_.screenshots != shots) {
     detail_.screenshots = shots;
     galleryOpen_ = false;
@@ -973,7 +973,7 @@ void Application::patchMenu(const PatchRow &row) {
   const float x = body.x + 32, w = body.w - 64, textX = x + Icon + 20;
   float y = body.y + 24;
   // The patch's own icon when the server has one, else its game's.
-  cover(row.patch.iconUrl.empty() ? row.icon : shopAddress(row.patch.iconUrl, row.patch.server), x, y, int(Icon), false, row.game,
+  cover(row.patch.iconUrl.empty() ? row.icon : fullAddress(row.patch.iconUrl, row.patch.server), x, y, int(Icon), false, row.game,
         !row.patch.homebrewApp.empty());
   paint_.fonts.wrapped(row.game, textX, y, 18, Ink, nameW, 2, true);
   const float nameY = y + gameH + 4;

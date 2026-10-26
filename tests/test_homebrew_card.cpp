@@ -186,7 +186,7 @@ int runHomebrewCardTests() {
     // the server's (none in the file: the name's initial); one not on the
     // card the server's.
     App listed;
-    listed.iconUrl = "https://shop.example/api/homebrew/gh-1/icon";
+    listed.iconUrl = "https://server.example/api/homebrew/gh-1/icon";
     CHECK(tileIcon(listed, true, "card:switch/a.nro") == "card:switch/a.nro");
     CHECK(tileIcon(listed, true, "").empty());
     CHECK(tileIcon(listed, false, "") == listed.iconUrl);

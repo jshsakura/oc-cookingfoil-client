@@ -8,7 +8,7 @@ Entry entry(const std::string &name) {
   e.install.name = name;
   e.install.target = "sd";
   foil::Item file;
-  file.url = "https://shop.example/f/" + name;
+  file.url = "https://server.example/f/" + name;
   file.name = name;
   file.size = 42;
   e.install.files = {file};
@@ -31,7 +31,7 @@ int runHistoryTests() {
   CHECK(back.size() == 2);
   if (back.size() == 2) {
     CHECK(back[0].id == 2 && back[0].outcome == Outcome::Failed && back[0].error == "HTTP 500");
-    CHECK(back[0].install.files.size() == 1 && back[0].install.files[0].url == "https://shop.example/f/b");
+    CHECK(back[0].install.files.size() == 1 && back[0].install.files[0].url == "https://server.example/f/b");
     CHECK(back[1].outcome == Outcome::Running);
   }
   // Left running by a closed app: an install goes back in the queue to

@@ -13,8 +13,8 @@
 int runNetworkTests() {
     int failures = 0;
     {
-        const auto resolve = foil::net::connectionError(6, "https://shop.example:8443/api");
-        CHECK(resolve.find("shop.example:8443") == 0);
+        const auto resolve = foil::net::connectionError(6, "https://server.example:8443/api");
+        CHECK(resolve.find("server.example:8443") == 0);
         CHECK(resolve.find("DNS") != std::string::npos);
         CHECK(!foil::net::connectionError(7, "http://host").empty());
     }
@@ -185,7 +185,7 @@ int runNetworkTests() {
     CHECK(foil::net::tidyDescription("한 줄").find('\n') == std::string::npos);
     foil::Server s; s.url = "https://host"; s.username = "user"; s.password = "pass"; s.cfClientId = "client"; s.cfClientSecret = "secret";
     foil::State state; state.deviceKey = std::string(64, 'a'); state.accessKeys[s.url] = "issued-key";
-    auto headers = foil::net::authHeaders(s, state, "https://host/api/shop/sections");
+    auto headers = foil::net::authHeaders(s, state, "https://host/api/library/sections");
     CHECK(std::find(headers.begin(), headers.end(), "Authorization: Basic dXNlcjpwYXNz") != headers.end());
     CHECK(std::find(headers.begin(), headers.end(), "CF-Access-Client-Secret: secret") != headers.end());
     CHECK(std::find(headers.begin(), headers.end(), "X-Access-Key: issued-key") != headers.end());
@@ -317,21 +317,21 @@ int runNetworkTests() {
         CHECK(foil::net::connectionsFor("http://127.0.0.1:38000", 0) == 2);
         CHECK(foil::net::connectionsFor("http://172.20.1.1/", 0) == 2);
         CHECK(foil::net::connectionsFor("http://172.32.1.1/", 0) == 4);
-        CHECK(foil::net::connectionsFor("https://tinfoil.example.com", 0) == 4);
-        CHECK(foil::net::connectionsFor("https://tinfoil.example.com", 4) == 4);
+        CHECK(foil::net::connectionsFor("https://other.example.com", 0) == 4);
+        CHECK(foil::net::connectionsFor("https://other.example.com", 4) == 4);
         CHECK(foil::net::connectionsFor("http://10.0.0.2", 3) == 2); // not a choice: automatic
     }
     {
         // A server restart, heard from any reply's header: downloads treat it
         // as the way being down (they wait), it counts once per id, and a
         // success without the header ends it.
-        const auto hear = [](const std::string &line) { foil::net::heardHeader("https://shop.example/api/x", line.data(), line.size()); };
+        const auto hear = [](const std::string &line) { foil::net::heardHeader("https://server.example/api/x", line.data(), line.size()); };
         const auto before = foil::net::restartSerial();
         CHECK(!foil::net::serverRestarting());
         hear("HTTP/1.1 503 Service Unavailable\r\n");
         hear("X-CookingFoil-Restarting: 20; id=r1\r\n");
         hear("\r\n");
-        CHECK(foil::net::serverRestarting() && foil::net::linkDown("https://shop.example/a"));
+        CHECK(foil::net::serverRestarting() && foil::net::linkDown("https://server.example/a"));
         CHECK(foil::net::restartSerial() == before + 1);
         // The same restart on a piece still coming (206 with the header): still on, not counted again.
         hear("HTTP/1.1 206 Partial Content\r\n");
@@ -342,7 +342,7 @@ int runNetworkTests() {
         hear("HTTP/1.1 200 OK\r\n");
         hear("Content-Length: 2\r\n");
         hear("\r\n");
-        CHECK(!foil::net::serverRestarting() && !foil::net::linkDown("https://shop.example/a"));
+        CHECK(!foil::net::serverRestarting() && !foil::net::linkDown("https://server.example/a"));
         // A later restart is a new one.
         hear("HTTP/1.1 503 Service Unavailable\r\n");
         hear("X-CookingFoil-Restarting: 20; id=r2\r\n");
@@ -358,59 +358,59 @@ int runNetworkTests() {
         // and the server's own keys never go there. A refusal is noted until
         // a new token comes. Every request to the server says what the client
         // can do.
-        const auto hear = [](const std::string &line) { foil::net::heardHeader("https://shop.example/api/x", line.data(), line.size()); };
+        const auto hear = [](const std::string &line) { foil::net::heardHeader("https://server.example/api/x", line.data(), line.size()); };
         hear("HTTP/1.1 200 OK\r\n");
         hear("X-CookingFoil-Download-Token: abc.def.ghi\r\n");
         hear("\r\n");
-        CHECK(foil::net::downloadToken("https://shop.example") == "abc.def.ghi" && !foil::net::downloadTokenRejected("https://shop.example"));
-        foil::Server shop;
-        shop.url = "https://shop.example";
-        shop.username = "user";
-        shop.password = "pass";
+        CHECK(foil::net::downloadToken("https://server.example") == "abc.def.ghi" && !foil::net::downloadTokenRejected("https://server.example"));
+        foil::Server upstream;
+        upstream.url = "https://server.example";
+        upstream.username = "user";
+        upstream.password = "pass";
         foil::State state;
         state.deviceKey = std::string(64, 'a');
         const auto has = [](const std::vector<std::string> &headers, const std::string &text) {
             return std::any_of(headers.begin(), headers.end(), [&](const std::string &h) { return h.find(text) != std::string::npos; });
         };
-        const auto dl = foil::net::downloadHeaders(shop, state, "https://dl.example:38443/games/x.nsz");
+        const auto dl = foil::net::downloadHeaders(upstream, state, "https://dl.example:38443/games/x.nsz");
         CHECK(has(dl, "Authorization: Bearer abc.def.ghi") && !has(dl, "Basic") && !has(dl, "X-Device-Key"));
-        CHECK(!has(foil::net::downloadHeaders(shop, state, "http://dl.example/games/x.nsz"), "Bearer"));
+        CHECK(!has(foil::net::downloadHeaders(upstream, state, "http://dl.example/games/x.nsz"), "Bearer"));
         // A picture on another host gets nothing: not the token, not the keys.
-        const auto picture = foil::net::authHeaders(shop, state, "https://images.example/icon.jpg");
+        const auto picture = foil::net::authHeaders(upstream, state, "https://images.example/icon.jpg");
         CHECK(!has(picture, "Authorization") && !has(picture, "X-Device-Key") && !has(picture, "X-Access-Key"));
-        CHECK(!has(foil::net::downloadHeaders(shop, state, "https://shop.example/api/x"), "Bearer"));
-        const auto own = foil::net::authHeaders(shop, state, "https://shop.example/api/shop/sections");
+        CHECK(!has(foil::net::downloadHeaders(upstream, state, "https://server.example/api/x"), "Bearer"));
+        const auto own = foil::net::authHeaders(upstream, state, "https://server.example/api/library/sections");
         CHECK(has(own, "X-CookingFoil-Features: direct-token") && has(own, "Basic") && !has(own, "Bearer"));
         // The console's firmware goes to its own server only, when known.
         CHECK(!has(own, "X-CookingFoil-Console"));
         setenv("FOIL_FIRMWARE", "18.1.0", 1);
-        CHECK(has(foil::net::authHeaders(shop, state, "https://shop.example/api/shop/sections"), "X-CookingFoil-Console: firmware=18.1.0"));
+        CHECK(has(foil::net::authHeaders(upstream, state, "https://server.example/api/library/sections"), "X-CookingFoil-Console: firmware=18.1.0"));
         setenv("FOIL_REGION", "hkg-twn-kor", 1);
-        CHECK(has(foil::net::authHeaders(shop, state, "https://shop.example/api/shop/sections"), "X-CookingFoil-Console: firmware=18.1.0; region=hkg-twn-kor"));
+        CHECK(has(foil::net::authHeaders(upstream, state, "https://server.example/api/library/sections"), "X-CookingFoil-Console: firmware=18.1.0; region=hkg-twn-kor"));
         unsetenv("FOIL_REGION");
-        CHECK(!has(foil::net::authHeaders(shop, state, "https://images.example/icon.jpg"), "X-CookingFoil-Console"));
+        CHECK(!has(foil::net::authHeaders(upstream, state, "https://images.example/icon.jpg"), "X-CookingFoil-Console"));
         unsetenv("FOIL_FIRMWARE");
         hear("HTTP/1.1 401 Unauthorized\r\n");
         hear("X-CookingFoil-Token: expired\r\n");
         hear("\r\n");
-        CHECK(foil::net::downloadTokenRejected("https://shop.example"));
+        CHECK(foil::net::downloadTokenRejected("https://server.example"));
         hear("HTTP/1.1 304 Not Modified\r\n");
         hear("X-CookingFoil-Download-Token: new.token.x\r\n");
         hear("\r\n");
-        CHECK(foil::net::downloadToken("https://shop.example") == "new.token.x" && !foil::net::downloadTokenRejected("https://shop.example"));
+        CHECK(foil::net::downloadToken("https://server.example") == "new.token.x" && !foil::net::downloadTokenRejected("https://server.example"));
         // Once the server names the direct address, the token goes there
         // only: a mirror in the list gets nothing.
         hear("HTTP/1.1 200 OK\r\n");
         hear("X-CookingFoil-Download-Origin: https://dl.example:38443\r\n");
         hear("\r\n");
-        CHECK(foil::net::downloadTokenOrigin("https://shop.example") == "https://dl.example:38443");
-        CHECK(has(foil::net::downloadHeaders(shop, state, "https://dl.example:38443/games/x.nsz"), "Bearer new.token.x"));
-        CHECK(!has(foil::net::downloadHeaders(shop, state, "https://mirror.example/games/x.nsz"), "Bearer"));
-        CHECK(!has(foil::net::downloadHeaders(shop, state, "https://dl.example/games/x.nsz"), "Bearer"));
+        CHECK(foil::net::downloadTokenOrigin("https://server.example") == "https://dl.example:38443");
+        CHECK(has(foil::net::downloadHeaders(upstream, state, "https://dl.example:38443/games/x.nsz"), "Bearer new.token.x"));
+        CHECK(!has(foil::net::downloadHeaders(upstream, state, "https://mirror.example/games/x.nsz"), "Bearer"));
+        CHECK(!has(foil::net::downloadHeaders(upstream, state, "https://dl.example/games/x.nsz"), "Bearer"));
         // Anything but a bare https origin is not taken.
         hear("X-CookingFoil-Download-Origin: http://evil.example\r\n");
         hear("X-CookingFoil-Download-Origin: https://evil.example/path\r\n");
-        CHECK(foil::net::downloadTokenOrigin("https://shop.example") == "https://dl.example:38443");
+        CHECK(foil::net::downloadTokenOrigin("https://server.example") == "https://dl.example:38443");
         foil::net::forgetLinks();
     }
     return failures;

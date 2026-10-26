@@ -328,12 +328,12 @@ int main(int argc, char **argv) {
       if (!app.screenshot(shot + "/04-downloads.png"))
         return 1;
       // The question at start about a download left unfinished, with a name
-      // as long as the shop has them.
+      // as long as the server has them.
       foil::ui::Application asked(app.renderer(), "", "", "host/fixtures/art");
       if (asked.open()) {
         foil::Item item;
         item.name = "FANTASY LIFE i : 빙글빙글 용과 시간을 훔치는 소녀 Nintendo Switch 2 Edition (FANTASY LIFE i: The Girl Who Steals Time)";
-        item.url = "https://shop.example/fantasy.nsp";
+        item.url = "https://server.example/fantasy.nsp";
         item.titleId = item.baseId = "0100000000020000";
         asked.previewQueued(item, item.name, "");
         asked.previewOfferResume();
@@ -374,20 +374,20 @@ int main(int argc, char **argv) {
       ui.previewDropbox(false, {}, "https://www.dropbox.com/oauth2/authorize?client_id=preview&state=preview");
       ui.render();
       if (!app.screenshot(shot + "/08-dropbox-sign-in.png")) return 1;
-      // Dropbox also holds a shop game that is not installed (the second;
-      // every third is installed) and one the shop does not know.
-      const auto shopGames = foil::groupCatalog(foil::net::parseSections(foil::readFile(fixture + "/sections.json")).value);
+      // Dropbox also holds a library game that is not installed (the second;
+      // every third is installed) and one the server does not know.
+      const auto libraryGames = foil::groupCatalog(foil::net::parseSections(foil::readFile(fixture + "/sections.json")).value);
       foil::net::DropboxRevisions remote = {
           {save.applicationId, {{"20260311_090000", 1773219600, 1234567}, {"20260301_120000", 1772366400, 1200000}}},
           {0x0100000000009000ULL, {{"20260302_080000", 1772438400, 900000}}}};
-      if (shopGames.size() > 1)
-        remote[std::stoull(shopGames[1].id, nullptr, 16)] = {{"20260310_210000", 1773176400, 2400000}};
+      if (libraryGames.size() > 1)
+        remote[std::stoull(libraryGames[1].id, nullptr, 16)] = {{"20260310_210000", 1773176400, 2400000}};
       ui.previewDropbox(true, std::move(remote));
       ui.render();
       if (!app.screenshot(shot + "/08-dropbox-linked.png")) return 1;
       ui.action(foil::ui::Action::Up); ui.render(); // the account row, A disconnects
       if (!app.screenshot(shot + "/08-dropbox-account.png")) return 1;
-      // Newest backup first: the installed game, then the shop game not installed.
+      // Newest backup first: the installed game, then the library game not installed.
       ui.action(foil::ui::Action::Down);
       ui.action(foil::ui::Action::Accept); ui.render();
       if (!app.screenshot(shot + "/08-dropbox-game.png")) return 1;
@@ -411,7 +411,7 @@ int main(int argc, char **argv) {
     if (!fixture.empty()) {
       ui.action(foil::ui::Action::Back);
       ui.screen(foil::ui::Screen::Home);
-      ui.previewPairing({"https://shop.example.com/admin/pair/" + std::string(32, 'a'),
+      ui.previewPairing({"https://server.example.com/admin/pair/" + std::string(32, 'a'),
                          "1234ABCD", 2000000000000LL});
       ui.render();
       if (!app.screenshot(shot + "/00-pairing.png"))

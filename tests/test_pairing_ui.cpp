@@ -198,7 +198,7 @@ int runPairingUiTests(SDL_Renderer *renderer) {
   const std::string pairUrl = server.url + "/admin/pair/" + std::string(32, 'a');
   std::vector<std::string> requests;
   std::thread mock([&] {
-    // /api/shop/info and the pair request are answered on the side, outside
+    // /api/library/info and the pair request are answered on the side, outside
     // the sequence.
     for (int i = 0, accepted = 0; i < 3 && accepted < 10; ++accepted) {
       pollfd ready{listener, POLLIN, 0};
@@ -215,7 +215,7 @@ int runPairingUiTests(SDL_Renderer *renderer) {
           break;
         request.append(buffer, size);
       }
-      if (request.rfind("GET /api/shop/info ", 0) == 0 || request.rfind("POST /api/pair/request ", 0) == 0) {
+      if (request.rfind("GET /api/library/info ", 0) == 0 || request.rfind("POST /api/pair/request ", 0) == 0) {
         const std::string info = R"({"features":[]})";
         const std::string reply = "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(info.size()) + "\r\n\r\n" + info;
         send(client, reply.data(), reply.size(), MSG_NOSIGNAL);

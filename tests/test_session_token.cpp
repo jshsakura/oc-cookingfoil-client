@@ -155,7 +155,7 @@ int runSessionTokenTests() {
   // Requests carrying these tokens are refused as expired.
   std::vector<std::string> dead;
   mock.answer = [&](const std::string &request) -> Reply {
-    if (request.rfind("GET /api/shop/info", 0) == 0)
+    if (request.rfind("GET /api/library/info", 0) == 0)
       return {200, "", offers ? R"({"features":["session-token"]})" : R"({"features":[]})"};
     if (request.rfind("GET /api/session", 0) == 0) {
       if (sessionStatus != 200) return {sessionStatus, "", "{}"};
@@ -164,12 +164,12 @@ int runSessionTokenTests() {
     for (const auto &token : dead)
       if (has(request, "Bearer " + token + "\r\n")) return {401, "X-CookingFoil-Session: expired\r\n", "{}"};
     if (request.rfind("GET /api/pair/status", 0) == 0) return {200, "", R"({"status":"approved"})"};
-    if (request.rfind("GET /api/shop/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
+    if (request.rfind("GET /api/library/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
     if (request.rfind("GET /file", 0) == 0) return {206, "Content-Range: bytes 4-9/10\r\nETag: \"f\"\r\n", "456789"};
     return {200, "", "{}"};
   };
   foil::Error error;
-  const auto list = server.url + "/api/shop/sections";
+  const auto list = server.url + "/api/library/sections";
   {
     // No "session-token": never asked, the sign-in as before.
     foil::net::forgetSessions();
@@ -177,7 +177,7 @@ int runSessionTokenTests() {
     session.refresh(error);
     const auto sent = mock.take();
     CHECK(count(sent, "/api/session") == 0);
-    const auto *sections = first(sent, "GET /api/shop/sections");
+    const auto *sections = first(sent, "GET /api/library/sections");
     CHECK(sections && has(*sections, "Authorization: Basic ") && has(*sections, "X-Access-Key: acc") && !has(*sections, "Bearer"));
   }
   {
@@ -193,9 +193,9 @@ int runSessionTokenTests() {
     CHECK(count(sent, "GET /api/session") == 1);
     const auto *asked = first(sent, "GET /api/session");
     CHECK(asked && has(*asked, "Authorization: Basic ") && has(*asked, "X-Access-Key: acc") && has(*asked, "X-Device-Key: "));
-    CHECK(count(sent, "GET /api/shop/sections") == 2);
+    CHECK(count(sent, "GET /api/library/sections") == 2);
     for (const auto &r : sent)
-      if (r.rfind("GET /api/shop/sections", 0) == 0)
+      if (r.rfind("GET /api/library/sections", 0) == 0)
         CHECK(has(r, "Authorization: Bearer cfs_t1\r\n") && !has(r, "Basic") && !has(r, "X-Access-Key") &&
               has(r, "X-Device-Key: ") && has(r, "X-CookingFoil-Features: "));
     // A picture on another host still gets nothing.
@@ -208,7 +208,7 @@ int runSessionTokenTests() {
     const auto reply = foil::net::get(list, foil::net::authHeaders(server, state, list));
     CHECK(reply.status == 200);
     const auto sent = mock.take();
-    CHECK(count(sent, "GET /api/session") == 1 && count(sent, "GET /api/shop/sections") == 2);
+    CHECK(count(sent, "GET /api/session") == 1 && count(sent, "GET /api/library/sections") == 2);
     if (sent.size() == 3) CHECK(has(sent[2], "Bearer cfs_t2\r\n") && !has(sent[2], "Basic"));
     // Refused again and the new ask refused too (401): no more tries, the
     // 401 goes to the caller (the login refused), and the requests after it
@@ -218,7 +218,7 @@ int runSessionTokenTests() {
     const auto refused = foil::net::get(list, foil::net::authHeaders(server, state, list));
     CHECK(refused.status == 401);
     const auto again = mock.take();
-    CHECK(count(again, "GET /api/session") == 1 && count(again, "GET /api/shop/sections") == 1);
+    CHECK(count(again, "GET /api/session") == 1 && count(again, "GET /api/library/sections") == 1);
     const auto after = foil::net::authHeaders(server, state, list);
     CHECK(std::any_of(after.begin(), after.end(), [](const std::string &h) { return has(h, "Basic"); }));
     CHECK(mock.take().empty()); // not asked again for this sign-in
@@ -282,7 +282,7 @@ int runSessionTokenTests() {
     none.body = "{}";
     const auto refused = foil::net::post("http://127.0.0.1:9/api/x", {}, none);
     CHECK(refused.curl == 7 && refused.status == 0 && !refused.error.empty());
-    CHECK(foil::net::get(server.url + "/api/shop/info", {}).curl == 0);
+    CHECK(foil::net::get(server.url + "/api/library/info", {}).curl == 0);
   }
   {
     // The token never reaches the log.

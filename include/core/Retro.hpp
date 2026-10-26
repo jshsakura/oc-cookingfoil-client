@@ -1,5 +1,5 @@
 #pragma once
-// Retro games served by the shop (/api/retro): systems, paged game lists,
+// Retro games served by the server (/api/retro): systems, paged game lists,
 // per-game bundles (a tar from the SD root) and the RetroArch base pack.
 #include "core/Achievements.hpp"
 #include "core/Types.hpp"
@@ -151,8 +151,8 @@ struct Pack {
   std::string bundleUrl; // the whole pack as one tar, when the server has it
   uint64_t bundleSize = 0;
 };
-// URLs come as shop paths ("/api/...") or full http(s) addresses; `base`
-// is the shop address used for the former. Anything else is dropped.
+// URLs come as server paths ("/api/...") or full http(s) addresses; `base`
+// is the server address used for the former. Anything else is dropped.
 std::vector<System> parseSystems(const std::string &json, const std::string &base = "");
 // `book`, when given, takes the reply's label dictionary.
 Page parseGames(const std::string &json, const std::string &base, labels::Book *book = nullptr);

@@ -6,7 +6,7 @@
 #include "core/I18n.hpp"
 #include "core/Json.hpp"
 #include "core/Log.hpp"
-#include "net/ShopSavesApi.hpp"
+#include "net/ServerSavesApi.hpp"
 #include <algorithm>
 #include <ctime>
 #include <filesystem>
@@ -201,7 +201,7 @@ void Application::homebrewSaveDialog() {
   appSaveConfirm(homebrewSaves_[rows[std::clamp(homebrewExtraRow_, 0, int(rows.size()) - 1)]]);
 }
 // The same question from 세이브 > 공유 and from the app's popup.
-void Application::appSaveConfirm(const shopsaves::ShopSave &save) {
+void Application::appSaveConfirm(const serversaves::ServerSave &save) {
   const auto body = modal(700, 20 + 30 + 84 + 16, tr("Apply this save?"), tr("Cancel"), "", tr("Apply|confirm"), 36);
   paint_.fonts.text(save.name, body.x + 32, body.y + 20, 21, Ink, true, body.w - 64);
   paint_.fonts.wrapped(trf("Puts the save files in {0}. Files with the same name are moved to {1} first.",
@@ -210,7 +210,7 @@ void Application::appSaveConfirm(const shopsaves::ShopSave &save) {
 }
 // Through the patch worker: unpacked beside the card's own files first, so
 // a cut download leaves the app's folder as it was.
-void Application::applyHomebrewSave(const shopsaves::ShopSave &save) {
+void Application::applyHomebrewSave(const serversaves::ServerSave &save) {
   if (sdFree_ && *sdFree_ < save.size * 2 + (16u << 20)) {
     alertTitle_ = tr("Cannot apply the save");
     alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(save.size * 2)});
@@ -226,8 +226,8 @@ void Application::applyHomebrewSave(const shopsaves::ShopSave &save) {
                 const auto staging = root + "/" + save.id + ".part";
                 std::error_code ec;
                 std::string failed;
-                if (!net::downloadShopSave(server, state, save, staging, patchReceived_, error, &stop_) ||
-                    !shopsaves::placeFiles(staging, sd + "/" + save.installRoot,
+                if (!net::downloadServerSave(server, state, save, staging, patchReceived_, error, &stop_) ||
+                    !serversaves::placeFiles(staging, sd + "/" + save.installRoot,
                                            root + "/" + save.homebrewApp + "/" + std::to_string(std::time(nullptr)),
                                            failed)) {
                   if (!failed.empty()) error.message = failed;

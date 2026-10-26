@@ -14,10 +14,10 @@ int runConfigTests() {
         // A plain http address on the internet is warned about; https, and
         // http at home (LAN, loopback, CGNAT/Tailscale, .local, one word), not.
         using foil::plainHttpOverInternet;
-        CHECK(plainHttpOverInternet("http://shop.example.com"));
+        CHECK(plainHttpOverInternet("http://server.example.com"));
         CHECK(plainHttpOverInternet("http://203.0.113.5:8000"));
         CHECK(plainHttpOverInternet("http://[2001:db8::1]:8000"));
-        CHECK(!plainHttpOverInternet("https://shop.example.com"));
+        CHECK(!plainHttpOverInternet("https://server.example.com"));
         CHECK(!plainHttpOverInternet("https://203.0.113.5"));
         for (const char* home : {"http://192.168.1.10:8000", "http://10.0.0.2", "http://172.20.0.3", // privacy-ok: private ranges
                                  "http://127.0.0.1:8000", "http://100.100.1.1", "http://169.254.1.1", // privacy-ok: private ranges
@@ -28,12 +28,12 @@ int runConfigTests() {
         CHECK(plainHttpOverInternet("http://100.128.0.1")); // privacy-ok: just past 100.64/10
         CHECK(!plainHttpOverInternet("not a url"));
     }
-    CHECK(foil::normalizeUrl("shop.example.com/SHOP.TFL/") == "https://shop.example.com");
-    CHECK(foil::normalizeUrl("http://host:9080/prefix/shop.json") == "http://host:9080/prefix");
+    CHECK(foil::normalizeUrl("server.example.com//") == "https://server.example.com");
+    CHECK(foil::normalizeUrl("http://host:9080/prefix/") == "http://host:9080/prefix");
     CHECK(foil::normalizeUrl("ftp://host").empty());
     CHECK(foil::normalizeUrl("https://host\r\nX-Key: secret").empty());
     CHECK(foil::normalizeUrl("https://user:pass@host").empty());
-    auto valid = foil::parseConfig(R"({"servers":[{"url":"host/shop.tfl","unknown":42}],"future":true})");
+    auto valid = foil::parseConfig(R"({"servers":[{"url":"host/","unknown":42}],"future":true})");
     CHECK(!valid.error);
     CHECK(valid.value.servers.size() == 1);
     CHECK(valid.value.servers[0].url == "https://host");
@@ -57,7 +57,7 @@ int runConfigTests() {
         foil::Config config;
         config.language = "ja";
         config.installTarget = "nand";
-        config.servers.push_back({"원격 서버 日本 中文", "https://shop.example.com:8443/prefix", "user",
+        config.servers.push_back({"원격 서버 日本 中文", "https://server.example.com:8443/prefix", "user",
                                   "p\"a\\ss/word", "id.access", "secret", true});
         config.servers.push_back({"빈 칸", "http://192.168.0.2:9080", "", "", "", "", false});
         const auto same = [](const foil::Config &a, const foil::Config &b) {
@@ -96,7 +96,7 @@ int runConfigTests() {
         // saveConfig replaces the file with what parseConfig reads back.
         foil::Config saved;
         saved.language = "en";
-        saved.servers.push_back({"내 서버", "https://shop.example.com", "player", "pass word", "", "", true});
+        saved.servers.push_back({"내 서버", "https://server.example.com", "player", "pass word", "", "", true});
         std::string error;
         CHECK(foil::saveConfig(path, saved, error));
         const auto loaded = foil::loadConfig(path);

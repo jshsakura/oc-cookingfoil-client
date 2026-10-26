@@ -30,7 +30,7 @@ int count(const std::string &path, const char *query) {
   sqlite3_close(db);
   return n;
 }
-const std::string KeyA(64, 'a'), Shop = "https://shop.example.com";
+const std::string KeyA(64, 'a'), Remote = "https://server.example.com";
 } // namespace
 int runStateTests() {
   int failures = 0;
@@ -72,22 +72,22 @@ int runStateTests() {
     // its server keys, settings and note too, and the file goes.
     foil::PendingInstall pending{"Paper Moon", "", "sd", {}};
     foil::Item file;
-    file.url = Shop + "/a.nsp";
+    file.url = Remote + "/a.nsp";
     pending.files.push_back(file);
     std::string written;
     CHECK(foil::atomicWrite(legacy,
                             "{\"deviceKey\":\"" + KeyA + "\",\"language\":\"ja\",\"installTarget\":\"nand\","
-                            "\"ignoreFirmware\":false,\"makeShortcuts\":false,\"lastServer\":\"" + Shop + "\","
-                            "\"accessKeys\":{\"" + Shop + "\":\"issued\"},\"pairSecrets\":{\"" + Shop + "\":\"" +
-                            std::string(64, 'c') + "\"},\"pairMessages\":{\"" + Shop + "\":\"거실\"},\"queue\":" +
+                            "\"ignoreFirmware\":false,\"makeShortcuts\":false,\"lastServer\":\"" + Remote + "\","
+                            "\"accessKeys\":{\"" + Remote + "\":\"issued\"},\"pairSecrets\":{\"" + Remote + "\":\"" +
+                            std::string(64, 'c') + "\"},\"pairMessages\":{\"" + Remote + "\":\"거실\"},\"queue\":" +
                             foil::serializePending(pending) + "}",
                             written));
     const auto moved = foil::loadState(db);
     CHECK(!moved.error && foil::takeRebound() == foil::Rebound::None);
-    CHECK(moved.value.deviceKey == KeyA && moved.value.accessKeys.at(Shop) == "issued");
-    CHECK(moved.value.pairSecrets.at(Shop) == std::string(64, 'c') && moved.value.pairMessages.at(Shop) == "거실");
+    CHECK(moved.value.deviceKey == KeyA && moved.value.accessKeys.at(Remote) == "issued");
+    CHECK(moved.value.pairSecrets.at(Remote) == std::string(64, 'c') && moved.value.pairMessages.at(Remote) == "거실");
     CHECK(moved.value.language == "ja" && moved.value.installTarget == "nand" &&
-          !moved.value.makeShortcuts && moved.value.lastServer == Shop);
+          !moved.value.makeShortcuts && moved.value.lastServer == Remote);
     CHECK(!std::filesystem::exists(legacy));
     // The install it held is there until it goes into the queue, once.
     CHECK(foil::parsePending(moved.value.queueJson).has_value());
@@ -119,7 +119,7 @@ int runStateTests() {
     CHECK(foil::takeRebound() == foil::Rebound::Moved && foil::takeRebound() == foil::Rebound::None);
     CHECK(elsewhere.deviceKey.size() == 64 && elsewhere.deviceKey != KeyA);
     CHECK(elsewhere.accessKeys.empty() && elsewhere.pairSecrets.empty());
-    CHECK(elsewhere.language == "ja" && elsewhere.pairMessages.at(Shop) == "거실");
+    CHECK(elsewhere.language == "ja" && elsewhere.pairMessages.at(Remote) == "거실");
     // Bound to this console now: the next start keeps it.
     CHECK(foil::loadState(db).value.deviceKey == elsewhere.deviceKey && foil::takeRebound() == foil::Rebound::None);
     // Back in the first console: another new key, not the old one.
@@ -130,9 +130,9 @@ int runStateTests() {
     // Credentials edited on a PC (a key put in, the fingerprint copied):
     // the seal no longer matches, so they all go.
     auto mine = foil::loadState(db).value;
-    mine.accessKeys[Shop] = "issued";
+    mine.accessKeys[Remote] = "issued";
     CHECK(foil::saveState(db, mine, error));
-    CHECK(foil::loadState(db).value.accessKeys.at(Shop) == "issued" && foil::takeRebound() == foil::Rebound::None);
+    CHECK(foil::loadState(db).value.accessKeys.at(Remote) == "issued" && foil::takeRebound() == foil::Rebound::None);
     CHECK(sql(db, "UPDATE credentials SET value='forged' WHERE kind='access'"));
     const auto edited = foil::loadState(db).value;
     CHECK(foil::takeRebound() == foil::Rebound::Changed);
@@ -151,20 +151,20 @@ int runStateTests() {
     // for another console's, nothing made again), and a save leaves them as
     // bound.
     auto bound = foil::loadState(db).value;
-    bound.accessKeys[Shop] = "issued";
+    bound.accessKeys[Remote] = "issued";
     CHECK(foil::saveState(db, bound, error));
     foil::setDeviceIdentity({});
     auto unread = foil::loadState(db).value;
     CHECK(foil::takeRebound() == foil::Rebound::None);
     CHECK(unread.deviceKey.empty() && unread.accessKeys.empty() && unread.language == bound.language);
-    unread.accessKeys[Shop] = "other";
+    unread.accessKeys[Remote] = "other";
     unread.language = "en";
     CHECK(foil::saveState(db, unread, error));
     // Read again next start: the same console, the same key.
     foil::setDeviceIdentity(one);
     const auto back = foil::loadState(db).value;
     CHECK(foil::takeRebound() == foil::Rebound::None);
-    CHECK(back.deviceKey == bound.deviceKey && back.accessKeys.at(Shop) == "issued" && back.language == "en");
+    CHECK(back.deviceKey == bound.deviceKey && back.accessKeys.at(Remote) == "issued" && back.language == "en");
     // A source that failed once is asked again on the next load.
     int asked = 0;
     foil::setIdentitySource([&] { return ++asked == 1 ? foil::DeviceIdentity{} : one; });
@@ -180,15 +180,15 @@ int runStateTests() {
     foil::setDeviceIdentity({});
     auto first = foil::loadState(db).value;
     CHECK(first.deviceKey.size() == 64 && foil::loadState(db).value.deviceKey == first.deviceKey);
-    first.accessKeys[Shop] = "issued";
+    first.accessKeys[Remote] = "issued";
     first.language = "zh";
     CHECK(foil::saveState(db, first, error));
-    CHECK(foil::loadState(db).value.accessKeys.at(Shop) == "issued");
+    CHECK(foil::loadState(db).value.accessKeys.at(Remote) == "issued");
     CHECK(count(db, "SELECT COUNT(*) FROM credentials") == 0 && count(db, "SELECT COUNT(*) FROM settings") > 0);
     foil::setDeviceIdentity(one);
     const auto boundNow = foil::loadState(db).value;
     CHECK(foil::takeRebound() == foil::Rebound::None);
-    CHECK(boundNow.deviceKey == first.deviceKey && boundNow.accessKeys.at(Shop) == "issued" && boundNow.language == "zh");
+    CHECK(boundNow.deviceKey == first.deviceKey && boundNow.accessKeys.at(Remote) == "issued" && boundNow.language == "zh");
     CHECK(foil::loadState(db).value.deviceKey == first.deviceKey && foil::takeRebound() == foil::Rebound::None);
     // Bound to this console: another reads it as moved.
     foil::setDeviceIdentity(other);
@@ -197,13 +197,13 @@ int runStateTests() {
     // until a start that reads the ID moves it in for good.
     std::filesystem::remove(db);
     std::string written;
-    CHECK(foil::atomicWrite(legacy, "{\"deviceKey\":\"" + KeyA + "\",\"accessKeys\":{\"" + Shop + "\":\"issued\"}}", written));
+    CHECK(foil::atomicWrite(legacy, "{\"deviceKey\":\"" + KeyA + "\",\"accessKeys\":{\"" + Remote + "\":\"issued\"}}", written));
     foil::setDeviceIdentity({});
     CHECK(foil::loadState(db).value.deviceKey == KeyA && std::filesystem::exists(legacy));
-    CHECK(foil::loadState(db).value.accessKeys.at(Shop) == "issued");
+    CHECK(foil::loadState(db).value.accessKeys.at(Remote) == "issued");
     foil::setDeviceIdentity(one);
     const auto movedNow = foil::loadState(db).value;
-    CHECK(movedNow.deviceKey == KeyA && movedNow.accessKeys.at(Shop) == "issued" && !std::filesystem::exists(legacy));
+    CHECK(movedNow.deviceKey == KeyA && movedNow.accessKeys.at(Remote) == "issued" && !std::filesystem::exists(legacy));
     CHECK(foil::takeRebound() == foil::Rebound::None);
   }
   {

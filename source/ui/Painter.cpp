@@ -560,7 +560,7 @@ float Painter::keyChip(const std::string &name, const std::string &label, float 
   return w;
 }
 float Painter::verifiedPill(float x, float y, bool dark, int size) {
-  // The shop's green: #3fbf83 on dark, #1e8e5a on light, filled at 14% and
+  // The library's green: #3fbf83 on dark, #1e8e5a on light, filled at 14% and
   // edged at 45% of it. On the page the two are mixed into its ground; on
   // the detail's picture band only the fill, see-through like its pills.
   const SDL_Color green = dark ? SDL_Color{63, 191, 131, 255} : Good;

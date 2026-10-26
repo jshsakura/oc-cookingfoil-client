@@ -68,14 +68,14 @@ struct Mock {
       }
       int status = 200;
       std::string body = "{}";
-      if (request.rfind("GET /api/shop/info", 0) == 0)
+      if (request.rfind("GET /api/library/info", 0) == 0)
         body = offers ? R"({"features":["device-rebind"]})" : R"({"features":[]})";
       else if (request.rfind("POST /api/pair/rebind", 0) == 0) {
         status = rebindStatus;
         body = rebindBody;
       } else if (request.rfind("GET /api/pair/status", 0) == 0)
         body = R"({"status":"approved"})";
-      else if (request.rfind("GET /api/shop/sections", 0) == 0)
+      else if (request.rfind("GET /api/library/sections", 0) == 0)
         body = R"({"sections":[]})";
       {
         std::lock_guard<std::mutex> held(lock);
