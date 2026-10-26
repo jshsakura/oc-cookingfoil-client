@@ -851,7 +851,8 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
   const float x = body.x + 32, w = body.w - 64;
   cover(game.icon, x, body.y + 24, int(Icon), false, game.game, game.app);
   paint_.fonts.wrapped(game.game, x + Icon + 20, body.y + 24, 18, Ink, textW, 2, true);
-  paint_.fonts.text(trf("{0} patches", {std::to_string(count)}), x + Icon + 20, body.y + 24 + gameH + 4, 16, Secondary);
+  paint_.fonts.text(trf("{0} patches", {std::to_string(count)}), x + Icon + 20, body.y + 24 + gameH + 4, 16, Secondary, false,
+                    textW);
   const float listTop = body.y + 24 + head + 16;
   // The row at the top follows the cursor, or the finger while it glides.
   const float pickTop = glide("patchPick", x, listTop, w, shown * (Row + Gap), float(std::clamp(patchPickRow_ - Visible / 2, 0, std::max(0, count - Visible))),

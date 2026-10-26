@@ -219,13 +219,13 @@ void Application::bugReportDialog() {
   rowHit(x, y, textW, Note, 12, [this] { action(Action::Queue); });
   paint_.rect(x, y, textW, Note, Ground, 12);
   if (bugMessage_.empty())
-    paint_.fonts.text(tr("Tap to write (optional)"), x + 20, y + 16, 19, Secondary);
+    paint_.fonts.text(tr("Tap to write (optional)"), x + 20, y + 16, 19, Secondary, false, textW - 40);
   else
     paint_.fonts.wrapped(bugMessage_, x + 20, y + 14, 19, Ink, textW - 40, 3);
   y += Note;
   if (pick) {
     y += 24;
-    paint_.fonts.middle(tr("Send to"), x, y + 11, 17, Ink, true);
+    paint_.fonts.middle(tr("Send to"), x, y + 11, 17, Ink, true, textW);
     y += 30;
     bugServer_ = std::clamp(bugServer_, 0, count - 1);
     // Rows of 설정's servers: its dot, its name and address; the cursor's

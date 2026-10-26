@@ -104,7 +104,7 @@ void Application::homebrewDetail() {
   paint_.icon(7, 32, BackLine - 10, Surface, 20);
   const float admin = adminChip();
   voteChips(admin < BandRight ? admin - 10 : admin);
-  paint_.fonts.middle(homebrewReturn_ == Screen::Downloads ? tr("Downloads") : tr("Homebrew"), 56, BackLine, 17, Surface);
+  paint_.fonts.middle(homebrewReturn_ == Screen::Downloads ? tr("Downloads") : tr("Homebrew"), 56, BackLine, 17, Surface, false, 360);
   hit(24, BackLine - 20, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
   cover(icon, 40, Top, 140, false, app.name, true, true);
@@ -188,8 +188,8 @@ void Application::homebrewDetail() {
     const float top = y + 16 + rows * RowHeight;
     paint_.rect(Left + 20, top - 6, Width - 40, 1, Line);
     paint_.icon(26, Left + 20, top + 9, Secondary, 16);
-    paint_.fonts.middle(tr("Install location"), Left + 42, top + 17, 15, Secondary);
-    const float labelW = paint_.fonts.measure(tr("Install location"), 15) + 18;
+    const float labelW = std::min(paint_.fonts.measure(tr("Install location"), 15), (Width - 82) / 2) + 18;
+    paint_.fonts.middle(tr("Install location"), Left + 42, top + 17, 15, Secondary, false, labelW - 18);
     paint_.fonts.middle(file, Left + 42 + labelW, top + 17, 16, Ink, false, Width - 82 - labelW);
   }
   y += int(rows * RowHeight + 24 + pathRow + 22);
@@ -205,7 +205,7 @@ void Application::homebrewDetail() {
     homebrewNotes_ = homebrew::plainNotes(app.releaseNotes);
   }
   if (!homebrewNotes_.empty()) {
-    paint_.fonts.text(tr("Release notes"), 40, y, 20, Ink, true);
+    paint_.fonts.text(tr("Release notes"), 40, y, 20, Ink, true, 750);
     y += 40;
     y += int(paint_.fonts.wrapped(homebrewNotes_, 40, y, 17, Secondary, 750, 40, false, 1.5f)) + 24;
   }
@@ -227,7 +227,7 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
   const bool panelFocus = !descriptionFocus_ && !homebrewExtras_ && !adminFocused() && !voteFocus_;
   constexpr float X = 840, W = 386, Row = 56, Gap = 8, RowTop = 226;
   paint_.rect(818, 172, 430, 484, Surface, 20);
-  paint_.fonts.middle(tr("Manage|app"), X, 194, 22, Ink, true);
+  paint_.fonts.middle(tr("Manage|app"), X, 194, 22, Ink, true, W);
   paint_.rect(818, 216, 430, 1, Line);
   if (extras.empty())
     paint_.fonts.wrapped(app.title ? tr("Opens from the HOME Menu once installed.")
@@ -263,12 +263,12 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
     }
     if (extras[i] == Remove) {
       paint_.icon(37, X + 16, mid - 12, Bad, 24);
-      paint_.fonts.middle(tr("Delete"), X + 52, mid, 18, Bad, true);
+      paint_.fonts.middle(tr("Delete"), X + 52, mid, 18, Bad, true, W - 68);
       continue;
     }
     const bool patches = extras[i] == Patches;
     paint_.icon(patches ? 32 : 36, X + 16, mid - 12, Ink, 24);
-    const float labelEnd = paint_.fonts.middle(patches ? tr("Mods") : tr("Saves"), X + 52, mid, 18, Ink, true);
+    const float labelEnd = paint_.fonts.middle(patches ? tr("Mods") : tr("Saves"), X + 52, mid, 18, Ink, true, W - 160);
     int count = 0, on = 0;
     if (patches)
       for (const auto &row : homebrewPatchRows(app)) ++count, on += row.record && row.record->on;
@@ -281,9 +281,10 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
     }
   }
   paint_.rect(X, 494, W, 1, Line);
-  paint_.fonts.middle(tr("Size|info"), X + 12, 530, 18, Secondary);
   const auto size = app.size ? formatBytes(app.size) : std::string("-");
-  paint_.fonts.middle(size, X + W - 12 - paint_.fonts.measure(size, 24, true), 530, 24, Ink, true);
+  const float sizeW = paint_.fonts.measure(size, 24, true);
+  paint_.fonts.middle(tr("Size|info"), X + 12, 530, 18, Secondary, false, W - 40 - sizeW);
+  paint_.fonts.middle(size, X + W - 12 - sizeW, 530, 24, Ink, true);
   buttonHit({X, 568, W, 60}, 14, [this, app] {
     descriptionFocus_ = false;
     homebrewAskRow_ = -1;

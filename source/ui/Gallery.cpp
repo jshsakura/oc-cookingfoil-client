@@ -5,8 +5,8 @@ namespace foil::ui {
 int Application::screenshotStrip(int y) {
   const auto &shots = detail_.screenshots;
   if (shots.empty()) return y;
-  paint_.fonts.text(tr("Screenshots"), 40, y, 20, Ink, true);
-  paint_.keyLabel("ZR", tr("Enlarge · or tap a picture"), 150, y + 14, 17, Secondary);
+  const float after = paint_.fonts.text(tr("Screenshots"), 40, y, 20, Ink, true, 300);
+  paint_.keyLabel("ZR", tr("Enlarge · or tap a picture"), std::max(150.f, after + 16), y + 14, 17, Secondary);
   y += 40;
   for (size_t i = 0; i < shots.size() && i < 3; ++i) {
     const int x = 40 + int(i) * 214;
@@ -55,12 +55,12 @@ void Application::gallery() {
   const auto name = galleryName();
   // B 닫기 at the top right, a small white chip; a tap on it closes too.
   const float close = paint_.keyChip("B", tr("Close"), 1240, 40);
-  const float after = paint_.fonts.middle(tr("Screenshots"), 40, 40, 26, Surface, true);
+  const float after = paint_.fonts.middle(tr("Screenshots"), 40, 40, 26, Surface, true, 560);
   paint_.fonts.middle(name, after + 16, 40, 19, {170, 170, 178, 255}, false, 1240 - close - 24 - after - 16);
   // The full-screen photo at the screen's width, not the original.
   const auto url = thumbnailUrl(detail_.screenshots[screenshot_], "xl");
   if (images_->failed(url)) {
-    paint_.fonts.text(tr("Could not load the photo. Try again shortly."), 40, 330, 22, Surface);
+    paint_.fonts.text(tr("Could not load the photo. Try again shortly."), 40, 330, 22, Surface, false, 1200);
   } else if (!images_->loaded(url)) {
     // Until the large photo arrives, the small one the detail page already
     // holds stands in, so a turn never flashes a light loading box over

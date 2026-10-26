@@ -164,16 +164,16 @@ void Application::savePanel() {
   if (deviceBusy_ && !removalOperation_) {
     const auto copied = formatBytes(saveCopied_.load());
     paint_.fonts.text(saveRestoring_ ? trf("Restoring · {0}", {copied}) : trf("Backing up · {0}", {copied}),
-                      x + 62, y + 8, 21, Ink, true);
-    paint_.fonts.text(tr("Keep the console on until it finishes."), x + 62, y + 37, 16, Secondary);
+                      x + 62, y + 8, 21, Ink, true, w - 82);
+    paint_.fonts.text(tr("Keep the console on until it finishes."), x + 62, y + 37, 16, Secondary, false, w - 82);
   } else {
     if (save.missing) {
-      paint_.fonts.text(tr("No save to back up"), x + 62, y + 8, 21, Secondary, true);
+      paint_.fonts.text(tr("No save to back up"), x + 62, y + 8, 21, Secondary, true, w - 82);
       paint_.fonts.text(save.device() ? tr("Restoring a backup below creates the shared save.")
                                       : tr("Restoring a backup below creates a save for this account."),
                         x + 62, y + 37, 16, Secondary, false, w - 82);
     } else {
-      paint_.fonts.text(tr("Back up the current save"), x + 62, y + 8, 21, Ink, true);
+      paint_.fonts.text(tr("Back up the current save"), x + 62, y + 8, 21, Ink, true, w - 82);
       paint_.fonts.text(tr("Saved in the oc-save-keeper folder on the SD card, shared by both apps."), x + 62, y + 37, 16, Secondary,
                         false, w - 82);
     }
@@ -181,7 +181,7 @@ void Application::savePanel() {
   y += Row + 16;
   // What the rows below are for: each one is a backup to put back.
   paint_.fonts.text(backups_.empty() ? std::string(tr("No backups yet.")) : trf("Restore a backup · {0}", {std::to_string(backups_.size())}),
-                    x, y + 4, 19, Secondary, true);
+                    x, y + 4, 19, Secondary, true, w);
   y += Label;
   // Backups, then "delete this save".
   // Rows 1..last (the backups, then "delete"); the one at the top follows the
@@ -200,9 +200,9 @@ void Application::savePanel() {
     else paint_.rect(x, y, w, Row, Ground, 12);
     if (row == last) {
       paint_.icon(37, x + 20, y + Row / 2 - 13, Bad, 26);
-      paint_.fonts.text(tr("Delete save"), x + 62, y + 8, 21, Bad, true);
+      paint_.fonts.text(tr("Delete save"), x + 62, y + 8, 21, Bad, true, w - 82);
       paint_.fonts.text(save.device() ? tr("Deletes play data shared by all users.") : tr("Deletes this user's play data."),
-                        x + 62, y + 37, 16, Secondary);
+                        x + 62, y + 37, 16, Secondary, false, w - 82);
       continue;
     }
     const auto &b = backups_[row - 1];

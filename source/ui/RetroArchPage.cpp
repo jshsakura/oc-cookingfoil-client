@@ -76,7 +76,7 @@ void Application::retroArchPage() {
   }
   paint_.rect(0, 0, 1280, 212, {10, 10, 14, 255});
   paint_.icon(7, 32, BackLine - 10, Surface, 20);
-  paint_.fonts.middle(previous_ == Screen::Downloads ? tr("Downloads") : tr("Retro games"), 56, BackLine, 17, Surface);
+  paint_.fonts.middle(previous_ == Screen::Downloads ? tr("Downloads") : tr("Retro games"), 56, BackLine, 17, Surface, false, 360);
   hit(24, BackLine - 20, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
   cover("", 40, Top, 140, false, "RetroArch", true, true);
@@ -118,14 +118,14 @@ void Application::retroArchPage() {
     const float top = y + 16 + rows * RowHeight;
     paint_.rect(Left + 20, top - 6, Width - 40, 1, Line);
     paint_.icon(26, Left + 20, top + 9, Secondary, 16);
-    paint_.fonts.middle(tr("Install location"), Left + 42, top + 17, 15, Secondary);
-    const float labelW = paint_.fonts.measure(tr("Install location"), 15) + 18;
+    const float labelW = std::min(paint_.fonts.measure(tr("Install location"), 15), (Width - 82) / 2) + 18;
+    paint_.fonts.middle(tr("Install location"), Left + 42, top + 17, 15, Secondary, false, labelW - 18);
     paint_.fonts.middle(std::string("/") + retro::RetroArchApp, Left + 42 + labelW, top + 17, 16, Ink, false, Width - 82 - labelW);
   }
   // The right panel: 전체 다시 받기 once it is there, then the button.
   constexpr float X = 840, W = 386, Row = 56, RowTop = 226;
   paint_.rect(818, 172, 430, 484, Surface, 20);
-  paint_.fonts.text(tr("Manage|app"), X, 192, 22, Ink, true);
+  paint_.fonts.text(tr("Manage|app"), X, 192, 22, Ink, true, W);
   if (present) {
     rowHit(X, RowTop, W, Row, 12, [this] {
       retroArchPart_ = FullRow;
@@ -141,9 +141,10 @@ void Application::retroArchPage() {
     paint_.fonts.wrapped(tr("RetroArch is not installed. Install it to play retro games."), X, RowTop + 6, 17, Secondary, W, 3);
   }
   paint_.rect(X, 494, W, 1, Line);
-  paint_.fonts.middle(tr("Size|info"), X + 12, 530, 18, Secondary);
   const auto sizeText = size ? formatBytes(size) : std::string("-");
-  paint_.fonts.middle(sizeText, X + W - 12 - paint_.fonts.measure(sizeText, 24, true), 530, 24, Ink, true);
+  const float sizeW = paint_.fonts.measure(sizeText, 24, true);
+  paint_.fonts.middle(tr("Size|info"), X + 12, 530, 18, Secondary, false, W - 40 - sizeW);
+  paint_.fonts.middle(sizeText, X + W - 12 - sizeW, 530, 24, Ink, true);
   buttonHit({X, 568, W, 60}, 14, [this] {
     retroArchPart_ = Button;
     action(Action::Accept);

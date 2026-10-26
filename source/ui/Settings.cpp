@@ -39,7 +39,7 @@ void Application::settings() {
   // Servers: a card each, or one with the empty line.
   if (!count) {
     paint_.rect(Left, ViewTop + oy, Width, ServerCard, Surface, 12);
-    paint_.fonts.middle(tr("No servers added."), Inner, ViewTop + oy + ServerCard / 2, 20, Secondary);
+    paint_.fonts.middle(tr("No servers added."), Inner, ViewTop + oy + ServerCard / 2, 20, Secondary, false, Width - 44);
   }
   for (int i = 0; i < count; ++i) {
     const float top = ViewTop + i * ServerStep + oy, mid = top + ServerCard / 2;
@@ -61,7 +61,7 @@ void Application::settings() {
   // "+ 서버 추가" opens the server form, empty.
   if (selected_ == count && !sidebar_) paint_.ring(Left, addTop + oy, Width, 52, 12);
   paint_.rect(Left, addTop + oy, Width, 52, Surface, 12);
-  paint_.fonts.middle(tr("+ Add server"), Inner, addTop + oy + 26, 21, Ink, true);
+  paint_.fonts.middle(tr("+ Add server"), Inner, addTop + oy + 26, 21, Ink, true, Width - 44);
   if (shown(addTop + oy, 52))
     rowHit(Left, addTop + oy, Width, 52, 12, [this, count] {
       sidebar_ = false;

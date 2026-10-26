@@ -862,7 +862,7 @@ void Application::retroBanner(float y) {
     const float ratio = retroBytes_ ? std::min(1.f, float(retroReceived_.load()) / float(retroBytes_)) : 0.f;
     paint_.icon(4, 282, y + 19, Ink, 26);
     paint_.fonts.middle(trf("Installing RetroArch · {0} / {1}", {formatBytes(retroReceived_.load()), formatBytes(retroBytes_)}),
-                        322, y + Height / 2, 19, Ink, true);
+                        322, y + Height / 2, 19, Ink, true, 910 - 16 - 322);
     paint_.rect(910, y + 28, 316, 8, Line, 4);
     paint_.rect(910, y + 28, std::max(8.f, 316 * ratio), 8, Butter, 4);
     return;

@@ -2173,11 +2173,17 @@ void Application::footer(
   all.push_back({"-", tr("Refresh")});
   all.push_back({"+", tr("Exit")});
   if (1248 - width(all) > left) hints = std::move(all);
+  // Hints wider than the room left of the status take the same share off
+  // every label, which then ends in "…", rather than running over it.
+  float words = 0;
+  for (const auto &hint : hints) words += paint_.fonts.measure(hint.second, 19);
+  const float over = width(hints) - (1248 - left - 16);
+  const float keep = over > 0 && words > 0 ? std::max(0.f, (words - over) / words) : 1.f;
   float x = 1248;
   for (auto it = hints.rbegin(); it != hints.rend(); ++it) {
-    const auto label = paint_.fonts.measure(it->second, 19), key = paint_.keyWidth(it->first);
+    const auto label = paint_.fonts.measure(it->second, 19) * keep, key = paint_.keyWidth(it->first);
     x -= label;
-    paint_.fonts.middle(it->second, x, 691, 19, Ink);
+    paint_.fonts.middle(it->second, x, 691, 19, Ink, false, keep < 1 ? label : 0);
     x -= key + 10;
     // The whole bar's height answers; pressed, only the key and its label
     // darken, as a pill around them.
@@ -2321,7 +2327,7 @@ float Application::statusBar() {
   const float linkLeft = x;
   paint_.icon(cut ? 20 : 39, x, Mid - 10, cut ? Bad : signal_ >= 0 && signal_ <= 1 ? Pending : Ink, 20);
   x += 30;
-  x = paint_.fonts.middle(tr(status), x, Mid, 17, statusColor(status), true) + 30;
+  x = paint_.fonts.middle(tr(status), x, Mid, 17, statusColor(status), true, 200) + 30;
   // The finger gets the band's height; the pressed look hugs the icon and
   // the word, as a chip.
   const float linkRight = x - 30;

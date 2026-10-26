@@ -209,7 +209,7 @@ void Application::detail() {
   y = screenshotStrip(y);
   // The base game's files not chosen (A on its row in 설치할 항목 picks one).
   if (selection_ && selection_->baseChoices() > 1) {
-    paint_.fonts.text(tr("Other files"), 40, y, 20, Ink, true);
+    paint_.fonts.text(tr("Other files"), 40, y, 20, Ink, true, 750);
     y += 38;
     const auto &files = selection_->baseFiles();
     for (size_t i = 0; i < files.size(); ++i) {
@@ -236,7 +236,7 @@ void Application::detail() {
   SDL_RenderSetClipRect(paint_.renderer, &full);
   paint_.rect(818, 172, 430, 484, Surface, 20);
   // The heading in a band of its own, ruled off edge to edge.
-  paint_.fonts.middle(tr("To install"), 840, 194, 22, Ink, true);
+  paint_.fonts.middle(tr("To install"), 840, 194, 22, Ink, true, 300); // the "n / m" count sits at the right
   paint_.rect(818, 216, 430, 1, Line);
   const auto &parts = selection_->parts();
   // Files, then the game's patches; the storage cards and the button follow.
@@ -304,10 +304,10 @@ void Application::detail() {
     paint_.scrollbar(1232, RowTop, 4 * RowPitch - 4, float(first), 4, float(rows));
   }
   paint_.rect(818, 454, 430, 1, Line); // edge to edge, as under the heading
-  paint_.fonts.middle(tr("Total"), 852, 476, 18, Secondary);
   const auto total = formatBytes(selection_->total());
-  paint_.fonts.middle(total, 1214 - paint_.fonts.measure(total, 24, true), 476,
-                      24, Ink, true);
+  const float totalW = paint_.fonts.measure(total, 24, true);
+  paint_.fonts.middle(tr("Total"), 852, 476, 18, Secondary, false, 1214 - 16 - totalW - 852);
+  paint_.fonts.middle(total, 1214 - totalW, 476, 24, Ink, true);
   // Two half-width cards, matching L/R: name on top, free space below, each
   // truncated to its card so longer labels cannot collide.
   struct Target {

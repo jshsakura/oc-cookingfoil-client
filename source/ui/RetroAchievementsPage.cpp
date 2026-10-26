@@ -105,7 +105,8 @@ void Application::raConnectCard(float y) {
   // answers its own tap.
   const float buttonY = y + 244;
   constexpr float ButtonH = 56;
-  const float phoneW = paint_.fonts.measure(tr("Connect with a phone"), 20, true) + 60;
+  // Sized by their words, up to what keeps both on the row.
+  const float phoneW = std::min(paint_.fonts.measure(tr("Connect with a phone"), 20, true), 360.f) + 60;
   buttonHit({Left, buttonY, phoneW, ButtonH}, 14, [this] {
     sidebar_ = false;
     raPageRow_ = raConnectButton_ = 0;
@@ -113,9 +114,10 @@ void Application::raConnectCard(float y) {
   });
   if (focusable && raConnectButton_ == 0) paint_.ring(Left, buttonY, phoneW, ButtonH, 14);
   paint_.rect(Left, buttonY, phoneW, ButtonH, making ? Line : Butter, 14);
-  paint_.fonts.middle(tr("Connect with a phone"), Left + 30, buttonY + ButtonH / 2, 20, making ? Secondary : Ink, true);
+  paint_.fonts.middle(tr("Connect with a phone"), Left + 30, buttonY + ButtonH / 2, 20, making ? Secondary : Ink, true,
+                      phoneW - 60);
   const float handX = Left + phoneW + 16;
-  const float handW = paint_.fonts.measure(tr("Enter here"), 20, true) + 60;
+  const float handW = std::min(paint_.fonts.measure(tr("Enter here"), 20, true), 240.f) + 60;
   buttonHit({handX, buttonY, handW, ButtonH}, 14, [this] {
     sidebar_ = false;
     raPageRow_ = 0;
@@ -124,7 +126,7 @@ void Application::raConnectCard(float y) {
   });
   if (focusable && raConnectButton_ == 1) paint_.ring(handX, buttonY, handW, ButtonH, 14);
   paint_.rect(handX, buttonY, handW, ButtonH, Ground, 14);
-  paint_.fonts.middle(tr("Enter here"), handX + 30, buttonY + ButtonH / 2, 20, making ? Secondary : Ink, true);
+  paint_.fonts.middle(tr("Enter here"), handX + 30, buttonY + ButtonH / 2, 20, making ? Secondary : Ink, true, handW - 60);
   const float noteX = handX + handW + 28;
   if (raJob_.is("link"))
     paint_.fonts.middle(tr("Making the QR code"), noteX, buttonY + ButtonH / 2, 19, Secondary, true, 1220 - noteX);
@@ -161,7 +163,8 @@ void Application::raLinkCard() {
   });
   paint_.rect(290, cancelY, cancelW, CancelH, Ground, 12);
   paint_.keyLabel("B", tr("Cancel"), 290 + 24, cancelY + CancelH / 2, 19, Ink, true);
-  paint_.fonts.middle(trf("Expires in {0}", {clock}), 290 + cancelW + 20, cancelY + CancelH / 2, 18, Secondary);
+  paint_.fonts.middle(trf("Expires in {0}", {clock}), 290 + cancelW + 20, cancelY + CancelH / 2, 18, Secondary, false,
+                      870 - (290 + cancelW + 20));
   if (raQr_.encode(raLink_->url)) raQr_.draw(paint_.renderer, 908, int(Top + 75), 300);
 }
 // Signed in: the account row at `y`, the games' height; A on it signs out
@@ -233,7 +236,7 @@ void Application::raGamesPage() {
   }
   if (heading) {
     const float mid = under + HeadingRoom / 2 - GuideGap;
-    const float end = paint_.fonts.middle(tr("Games with achievements on this server"), 270, mid, 20, Ink, true);
+    const float end = paint_.fonts.middle(tr("Games with achievements on this server"), 270, mid, 20, Ink, true, 860);
     paint_.pill(std::to_string(rows.size()), end + 12, mid - 13);
   }
   const float listTop = y + head;

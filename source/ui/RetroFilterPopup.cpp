@@ -88,8 +88,8 @@ void Application::retroFilterPopup() {
   const auto body = modal(PopupWidth, visible, tr("Filter and sort"), tr("Cancel"), tr("Apply"), "", 10);
   const float left = body.x + 32, area = ChipArea;
   const float sortLeft = body.x + PopupWidth - 32 - SortWidth, top = body.y + 44, view = visible - 44 - 8;
-  paint_.fonts.middle(tr("Filter"), left, body.y + 26, 16, Secondary, true);
-  paint_.fonts.middle(tr("Sort"), sortLeft, body.y + 26, 16, Secondary, true);
+  paint_.fonts.middle(tr("Filter"), left, body.y + 26, 16, Secondary, true, area);
+  paint_.fonts.middle(tr("Sort"), sortLeft, body.y + 26, 16, Secondary, true, SortWidth);
   paint_.rect(sortLeft - 18, body.y + 16, 1, visible - 24, Line);
   // The cursor's chip stays in view, its group's name with it.
   filterFocus_ = std::clamp(filterFocus_, 0, int(layout.chips.size()) - 1);
