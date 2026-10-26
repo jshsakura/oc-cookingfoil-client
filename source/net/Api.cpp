@@ -8,6 +8,7 @@
 #include "core/Version.hpp"
 #include "core/Json.hpp"
 #include "core/I18n.hpp"
+#include "core/I18nChecks.hpp"
 #include "core/Config.hpp"
 #include "core/Log.hpp"
 #include "core/Homebrew.hpp"
@@ -1193,6 +1194,27 @@ std::set<std::string> parseFeatures(const std::string& json) {
     }
     return out;
 }
+std::vector<ExtraLanguage> parseClientLanguages(const std::string& json) {
+    std::vector<ExtraLanguage> out;
+    Error ignored;
+    auto root = parseJson(json, ignored);
+    auto* strings = root ? field(root.get(), "client_strings") : nullptr;
+    auto* list = json_object_is_type(strings, json_type_object) ? field(strings, "languages") : nullptr;
+    if (!json_object_is_type(list, json_type_array)) return out;
+    for (size_t i = 0; i < json_object_array_length(list); ++i) {
+        auto* row = json_object_array_get_idx(list, i);
+        if (!json_object_is_type(row, json_type_object)) continue;
+        ExtraLanguage language{stringField(row, "code"), stringField(row, "name"), stringField(row, "base")};
+        const auto points = i18n::codePoints(language.name);
+        const bool plainCode = std::all_of(language.code.begin(), language.code.end(),
+                                           [](unsigned char c) { return std::isalnum(c) || c == '-'; });
+        if (language.code.empty() || !plainCode || language.name.empty() || language.code.size() > 16 ||
+            std::any_of(points.begin(), points.end(), [](uint32_t p) { return p < 0x20 || i18n::undrawable(p); }))
+            continue;
+        out.push_back(std::move(language));
+    }
+    return out;
+}
 int parseMaxConnections(const std::string& json) {
     Error ignored;
     auto root = parseJson(json, ignored);
@@ -1440,6 +1462,7 @@ bool Session::refresh(Error& error) {
         if (response.status == 200 || response.status == 404) {
             if (response.status == 404) features_.clear();
             else features_ = parseFeatures(response.body);
+            clientLanguages_ = response.status == 200 ? parseClientLanguages(response.body) : std::vector<ExtraLanguage>{};
             markPairPasswordOnly(originOf(server_.url), pairPasswordOnly_ || features_.count("pair-password-only") > 0);
             forgetPasswordOnceKeyed();
         }

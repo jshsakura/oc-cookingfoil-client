@@ -22,13 +22,34 @@ enum class Language {
   Russian,
 };
 constexpr int LanguageCount = 12;
+// Also leaves an ExtraLanguage in use.
 void setLanguage(Language language);
+// The language shown; with an ExtraLanguage in use, its base when the app
+// ships that, else English (fonts, prices).
 Language language();
 // "ko", "en", "zh-Hant", ...: what the server's ?lang= and name tables use.
 const char *languageCode(Language language);
-inline const char *languageCode() { return languageCode(language()); }
+// The current one's, an ExtraLanguage's own code while it is in use.
+const char *languageCode();
+// A language the app does not ship, only a server's dictionary has (feature
+// "client-strings"): its code, its own name, and the one language whose text
+// fills its gaps (empty for English).
+struct ExtraLanguage {
+  std::string code, name, base;
+};
+// Shows `extra` from now on, by key: its server text, then its base's (the
+// built-in table, or `baseTexts` when the app does not ship the base), then
+// English. Locked keys (i18n::locked) show English. Texts are checked as in
+// setServerTexts. False, and nothing changes, when `texts` has none to use.
+bool useExtraLanguage(const ExtraLanguage &extra, const std::map<std::string, std::string> &texts,
+                      const std::map<std::string, std::string> &baseTexts = {});
+// The ExtraLanguage in use, or null.
+const ExtraLanguage *extraLanguage();
+// The current language's own name (한국어, Tiếng Việt, ...).
+const char *languageName();
 // The codes to try, in order, for text the server gives in several
-// languages: the asked one, simplified Chinese for traditional, then English.
+// languages: the asked one, simplified Chinese for traditional (an
+// ExtraLanguage in use: its base), then English.
 std::vector<std::string> languageChain(const std::string &code);
 // Text the server sends in several languages, only the ones it sent.
 struct LanguageText {

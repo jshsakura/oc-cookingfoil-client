@@ -5,6 +5,7 @@
 #include "core/Selection.hpp"
 #include "install/Installer.hpp"
 #include "net/Api.hpp"
+#include "net/ClientStringsApi.hpp"
 #include "net/Dropbox.hpp"
 #include "net/HomebrewApi.hpp"
 #include "net/RetroApi.hpp"
@@ -251,6 +252,21 @@ public:
     sdTotal_ = sdTotal;
     nandTotal_ = nandTotal;
   }
+  // 설정 > 언어 with languages only a server has, and the window that gets one.
+  void previewServerLanguages(std::vector<ExtraLanguage> languages) { serverLanguages_ = std::move(languages); }
+  void previewLanguagePopup(int row) {
+    languagePopup_ = true;
+    languageRow_ = row;
+  }
+  void previewLanguageGet(ExtraLanguage extra, uint64_t received, uint64_t total, std::string failure = "") {
+    languagePopup_ = false;
+    languageGetting_ = std::move(extra);
+    languageProgress_.received = received;
+    languageProgress_.total = total;
+    languageGet_ = failure.empty() ? LanguageGet::Getting : LanguageGet::Failed;
+    languageGetError_ = std::move(failure);
+  }
+  void previewLanguageDone() { languageGet_ = LanguageGet::None; }
   void previewPairing(net::PairingInfo info) {
     pairingInfo_ = std::move(info);
     pairingPending_ = true;
@@ -608,7 +624,36 @@ private:
   Job stringsJob_;
   std::set<std::string> stringsAsked_; // "lang server" asked this run
   bool stringsAgain_ = false;          // asked while the job ran
-  std::optional<std::pair<Language, std::map<std::string, std::string>>> pendingStrings_;
+  std::optional<std::pair<std::string, std::map<std::string, std::string>>> pendingStrings_; // by code
+  // The first server, in the settings' order, offering "client-strings".
+  std::optional<Server> stringsSource() const;
+  // 설정 > 언어 also lists the languages only a server's dictionary has: the
+  // source server's list, or the one kept on the card until it answers.
+  std::vector<ExtraLanguage> serverLanguages_;
+  std::vector<ExtraLanguage> pickerExtras() const; // the ones the app does not ship
+  int languageCount() const { return LanguageCount + int(pickerExtras().size()); }
+  int languageRows() const;
+  std::map<std::string, std::map<std::string, std::string>> extraKept_; // their texts, by code
+  bool useKeptExtra(const ExtraLanguage &extra);
+  void pickLanguage(int row);
+  void languageChanged(); // after the language in use changed: names, lists and the saved choice
+  // Picked without its text on the card: a window gets it, then switches.
+  // Until then the language in use stays, and a failure (or 취소) says why
+  // there with 다시 시도. Five seconds with nothing arriving is a failure.
+  enum class LanguageGet { None, Getting, Failed };
+  LanguageGet languageGet_ = LanguageGet::None;
+  ExtraLanguage languageGetting_;
+  std::string languageGetError_;
+  net::StringsDownload languageProgress_;
+  std::atomic<bool> languageCancel_{false};
+  bool languageStalled_ = false;
+  uint64_t languageSeen_ = 0;
+  uint32_t languageSeenAt_ = 0;
+  Job languageJob_;
+  void startLanguageGet();
+  void pollLanguageGet();
+  void languageGetDialog();
+  void languageGetAction(Action a);
   Job adminJob_;
   std::optional<std::vector<admin::Field>> adminPreview_;
   // HOME Menu shortcuts (platform/Shortcut): the ids the console has, as the
@@ -1222,7 +1267,6 @@ private:
   // 설정 > 언어: every language at once, with its flag.
   void languageDialog();
   bool languagePopup_ = false;
-  static constexpr int LanguageRows = (LanguageCount + 1) / 2; // the picker's two columns
   int languageRow_ = 0;
   void patchMenu(const PatchRow &row);
   void runPatchOp(int op);

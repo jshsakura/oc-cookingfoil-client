@@ -23,6 +23,16 @@ std::optional<StringsReply> parseStringsReply(const std::string &json);
 // that language takes its place). Empty when there are none.
 std::map<std::string, std::string> serverStrings(DownloadStore &store, const Server *server, const State &state,
                                                  const std::string &lang, const std::atomic<bool> *cancel);
+// A language the app does not ship, got whole while a window shows how far
+// it is (received of total bytes; total 0 until the server says). On a 200
+// for that language the row is kept and `reply` filled; else `error` says
+// why, in the current language. A body over a few MB is refused.
+struct StringsDownload {
+  std::atomic<uint64_t> received{0}, total{0};
+};
+bool downloadStrings(DownloadStore &store, const Server &server, const State &state, const std::string &lang,
+                     StringsDownload &progress, StringsReply &reply, std::string &error,
+                     const std::atomic<bool> *cancel);
 // Every row kept for this version of the app, by language code: read once
 // while the app loads, so a language picked later has its text at once.
 std::map<std::string, std::map<std::string, std::string>> keptStrings(DownloadStore &store);

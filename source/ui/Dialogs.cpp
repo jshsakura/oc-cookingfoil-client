@@ -244,7 +244,7 @@ void Application::viewPopup() {
 void Application::dialogs() {
   if (!confirmInstall_ && alert_.empty() && !serverForm_ && !confirmCancel_ && !viewPopup_ &&
       !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !tidyOpen_ && !homebrewSortAsk_ &&
-      !languagePopup_ && !retroArchAsking_ && !raModal() && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
+      !languagePopup_ && languageGet_ == LanguageGet::None && !retroArchAsking_ && !raModal() && !saveNeedsGame_ && !savePicking_ && !shopAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
       !homebrewRemoveAsk_ && !(homebrewAsk_ && homebrewExtras_) && !shortcutRemoveAsk_ && !selfShortcutAsk_ && !adminEdit_.open && unqueueAsk_ < 0 && !bugAsk_ && !serverInfo_ && !clockModal() && !resumeAsked())
     return;
@@ -253,7 +253,7 @@ void Application::dialogs() {
   blockTouch();
   // When the popup on top changed, for the double-press guard (settled()).
   const int which = confirmCancel_ * 1 + (tidyOpen_ || homebrewSortAsk_) * 2 + confirmPatchRemove_ * 4 + confirmInstall_ * 8 +
-                    dropboxUnlinkAsk_ * 32 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + (homebrewAsk_ && homebrewExtras_) * 256 +
+                    dropboxUnlinkAsk_ * 32 + (languageGet_ == LanguageGet::Failed) * 16 + appUpdateAsk_ * 64 + homebrewRemoveAsk_ * 128 + (homebrewAsk_ && homebrewExtras_) * 256 +
                     (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + shopAppSaveAsk_ * 2048 +
                     (serverForm_ && serverForm_->confirmDelete) * 4096 + shortcutRemoveAsk_ * 8192 +
                     selfShortcutAsk_ * 16384 + (unqueueAsk_ >= 0) * 32768 + bugAsk_ * 65536 +
@@ -264,6 +264,8 @@ void Application::dialogs() {
   }
   if (alert_.empty() && (appUpdateAsk_ || appUpdate_ == AppUpdate::Downloading)) {
     appUpdateDialog();
+  } else if (alert_.empty() && languageGet_ != LanguageGet::None) {
+    languageGetDialog();
   } else if (alert_.empty() && clockModal()) {
     clockDialog();
   } else if (selfShortcutAsk_ && alert_.empty()) {

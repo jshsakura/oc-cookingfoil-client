@@ -2,6 +2,7 @@
 #include "core/Config.hpp"
 #include "platform/Shortcut.hpp"
 #include <algorithm>
+#include <cstring>
 namespace foil::ui {
 void Application::settings() {
   // Full-width cards that scroll as one page between the header and the
@@ -108,11 +109,12 @@ void Application::settings() {
   // Interface language, kept in state.json (never in the user's
   // config.json). " · Language" stays in English so someone who cannot
   // read the current language still finds it.
-  option(0, 17, std::string(tr("Language")) + (language() == Language::English ? "" : " · Language"),
-         languageName(language()), Ink, true);
+  option(0, 17, std::string(tr("Language")) + (std::strcmp(languageCode(), "en") == 0 ? "" : " · Language"),
+         languageName(), Ink, true);
   {
-    const float y = optionsTop + 8 + oy, nameWidth = paint_.fonts.measure(languageName(language()), 20, true);
-    paint_.flag(int(language()), Right - nameWidth - 42, y + (Row - 2) / 2 - 11, 33, 22);
+    const float y = optionsTop + 8 + oy, nameWidth = paint_.fonts.measure(languageName(), 20, true);
+    if (const auto *extra = extraLanguage()) paint_.languageChip(extra->code, Right - nameWidth - 42, y + (Row - 2) / 2 - 11, 33, 22);
+    else paint_.flag(int(language()), Right - nameWidth - 42, y + (Row - 2) / 2 - 11, 33, 22);
   }
   // Where installs go; A switches between the SD card and the console.
   option(1, 26, tr("Default location"), installTarget() == "nand" ? tr("Console") : tr("SD card"), Ink, true);

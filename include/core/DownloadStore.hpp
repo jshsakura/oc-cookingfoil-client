@@ -21,6 +21,7 @@
 // write is one transaction that rolls back whole on any error; a file from a
 // newer build is read but never written.
 #include "core/DownloadHistory.hpp"
+#include "core/I18n.hpp"
 #include <functional>
 #include <map>
 #include <mutex>
@@ -98,6 +99,10 @@ public:
   std::optional<ClientStrings> clientStrings(const std::string &lang);
   // Every language's row, by code, in one read.
   std::map<std::string, ClientStrings> allClientStrings();
+  // The languages a server's dictionary has, in its order, as last told.
+  std::vector<ExtraLanguage> clientLanguages();
+  // In place of all of them.
+  bool saveClientLanguages(const std::vector<ExtraLanguage> &languages, std::string &error);
   // In place of the language's row.
   bool saveClientStrings(const std::string &lang, const ClientStrings &row, std::string &error);
   // A damaged file was set aside and a fresh one made since the last call,

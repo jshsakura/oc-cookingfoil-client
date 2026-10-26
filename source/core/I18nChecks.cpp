@@ -89,6 +89,12 @@ const std::vector<const char *> &lockedKeys() {
     "Install ignoring firmware version",
     "The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.",
     "This game needs firmware {1} or later, but the console has {0}, so it cannot be installed as is.\nThe server has newer prod.keys and can re-encrypt it into a version this console can install.\nThe console must have signature patches: the install relies on them to go ahead.\nIf the game needs features of the newer firmware, it may stop while playing.",
+    // The window that gets a language only a server has: shown before that
+    // language exists, so it never takes the server's wording.
+    "Downloading additional language data",
+    "Getting additional language data.",
+    "Could not get the additional language data.",
+    "Nothing arrived for 5 seconds. Check the connection and try again.",
   };
   return keys;
 }
