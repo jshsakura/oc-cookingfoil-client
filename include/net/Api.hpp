@@ -109,6 +109,16 @@ std::map<std::string, std::string> namesIn(const NameTable& table, const std::st
 inline std::map<std::string, std::string> parseGenres(const std::string& json, const std::string& lang = "ko") {
     return parseNames(json, "genres", lang);
 }
+// One file of a title the server's check flagged (detail.integrity[]): its
+// name, "modified" or "damaged" and why, whether an install surely fails,
+// and the label and help the server words in the language asked. The help
+// body is paragraphs split by blank lines.
+struct FileCheck {
+    std::string file, verdict, reason, label, title, body;
+    bool certain = false;
+    // 1 modified, 2 maybe damaged, 3 damaged, as Item::integrity.
+    int level() const { return verdict == "modified" ? 1 : certain ? 3 : 2; }
+};
 struct Detail {
     std::string name, publisher, description, category, banner;
     std::string notes; // the operator's own notes: what else to install, sizes, which build
@@ -122,6 +132,7 @@ struct Detail {
     int score = 0, scoreCount = 0; // review score 0-100 and its vote count
     std::string scoreLabel;
     std::vector<UserPatch> patches;
+    std::vector<FileCheck> integrity;
 };
 std::string tidyDescription(const std::string& text);
 Parsed<Detail> parseDetail(const std::string& json);

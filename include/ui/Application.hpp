@@ -1078,6 +1078,7 @@ private:
   void detail();
   int requiredPatchesCard(int y); // returns the y below it
   int notesCard(int y);           // the operator's notes; returns the y below it
+  int fileChecksCard(int y);      // 파일 상태: the server's help on flagged files, open
   // The detail's patches for its game, as rows of the selection.
   void syncDetailPatches();
   // The patch whose turn came in the queue goes to the patch worker.

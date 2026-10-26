@@ -2164,7 +2164,8 @@ void Application::card(const Group &g, float x, float y, bool selected,
       using L = CardLabel;
       const std::string label = kind == L::KoreanPatch     ? tr("Korean patch|badge")
                                 : kind == L::RequiredPatch ? tr("Required patch")
-                                : kind == L::Damaged       ? tr("May be damaged")
+                                : kind == L::Damaged       ? tr("Damaged|file")
+                                : kind == L::MaybeDamaged  ? tr("May be damaged")
                                 : kind == L::Modified      ? tr("Modified|file")
                                 : kind == L::Latest        ? tr("Latest version")
                                 : kind == L::Update        ? tr("Update|item")
