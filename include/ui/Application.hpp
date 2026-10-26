@@ -147,9 +147,6 @@ public:
   // The confirm's warning card: the width it wraps to and the most lines.
   static constexpr float OptionNoteWidth = 780;
   static constexpr int OptionNoteLines = 12;
-  // The card has signature patches (forwarder::signaturePatchesFound),
-  // looked at as the app starts.
-  void signaturePatchesFound(bool found) { signaturePatchesFound_ = found; }
   // The picked files' own names, as detail.integrity[].file says them.
   std::vector<std::string> pickedFileNames() const;
   std::string detailId() const { return detailGroup_ < groups_.size() ? groups_[detailGroup_].id : ""; }
@@ -675,8 +672,6 @@ private:
   std::set<uint64_t> homebrewShortcutsFound_; // the card worker's result
   std::vector<uint64_t> homebrewShortcutsAsked_; // the ids it looked for
   bool shortcutsUnasked() const;
-  std::atomic<bool> signaturePatchesFound_{true};
-  bool signaturePatches_ = true; // seen on the card at the last scan; a shortcut needs them to open
   bool shortcutRemoveAsk_ = false; // X on the app popup's shortcut row, asked first
   bool selfShortcutAsk_ = false;   // this app's own, offered with the applet mode notice
   bool selfShortcutClosed_ = false; // closed this run
@@ -1389,14 +1384,13 @@ private:
   // among them the console is older than (install::missingFirmware).
   std::vector<Item> pickedNeeds() const;
   std::string pickedShortfall() const;
-  // A picked file the server found surely unsigned while the card shows no
-  // signature patches: it would not open, so it is not installed. Its help
-  // is the server's, empty when it gave none. Null when none is, or when it
-  // is not known.
+  // A picked file the server found surely unsigned: the console may refuse
+  // it, so its button warns and its confirm says so, in the server's words
+  // (empty when it gave none). Null when none is, or when it is not known.
   const net::Unsigned *pickedUnsigned() const;
   // The install button's look: plain, blocked (gray; A says why) or warned
   // (butter with stripes; its confirm warns first), which a server plugin's
-  // option takes.
+  // option or an unsigned file takes.
   enum class InstallButton { Plain, Blocked, Warned };
   InstallButton installButton() const;
   // A server plugin's options for the detail's files (feature
@@ -1653,7 +1647,6 @@ private:
   bool confirmCancel_ = false, confirmExit_ = false, exitAfterCancel_ = false,
        exitRequested_ = false;
   bool searchRequested_ = false, confirmInstall_ = false;
-  // The confirm asks to install past the firmware: the server re-encrypts it.
   void dialogHints(float right, float y, const std::string &close,
                    const std::string &apply = "", const std::string &accept = "", const std::string &remove = "");
   static inline const std::string NoAccept = "\x1f"; // `accept` for a popup A does nothing in

@@ -115,7 +115,6 @@ void Application::pollHomebrew() {
     // Only those: a list that came while it looked was not asked about.
     for (const auto id : homebrewShortcutsAsked_) shortcuts_.erase(id);
     shortcuts_.insert(homebrewShortcutsFound_.begin(), homebrewShortcutsFound_.end());
-    signaturePatches_ = signaturePatchesFound_;
     matchHomebrewCard();
     if (shortcutsUnasked()) scanHomebrewCard(); // the list came while it looked
     if (screen_ == Screen::Homebrew && sidebar_ && autoSidebar_ && hasFocusable()) sidebar_ = autoSidebar_ = false;
@@ -173,7 +172,6 @@ void Application::scanHomebrewCard() {
               });
           for (const auto &nro : found) ids.push_back(forwarder::titleId(forwarder::loaderPath(nro.path)));
           shortcuts = platform::presentShortcuts(ids);
-          signaturePatchesFound_ = forwarder::signaturePatchesFound(sd);
         }))
       found.clear();
     homebrewCardFound_ = std::move(found);

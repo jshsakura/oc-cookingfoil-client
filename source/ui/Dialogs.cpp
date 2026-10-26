@@ -335,13 +335,18 @@ void Application::dialogs() {
     // warning icon), as tall as they are; the popup is wider so each keeps
     // to a line or two.
     constexpr float CardPad = 18, CardIcon = 56;
-    const std::string note = option ? option->confirmBody : std::string();
+    // An unsigned file says so on the same card, in the server's words.
+    const auto *unsignedFile = option ? nullptr : pickedUnsigned();
+    const std::string note = option         ? option->confirmBody
+                             : unsignedFile ? (!unsignedFile->body.empty() ? unsignedFile->body
+                                                                           : std::string(tr("This file is not signed, so the console may refuse to install it.")))
+                                            : std::string();
     const float cardW = CardIcon + OptionNoteWidth + CardPad;
     const float noteH = note.empty() ? 0 : paint_.fonts.lineCount(note, 18, OptionNoteWidth, OptionNoteLines) * 18 * 1.4f;
     const float noteBlock = note.empty() ? 0 : noteH + 2 * CardPad + 20;
-    const std::string title = !option                       ? std::string(tr("Install this game?"))
-                              : !option->confirmTitle.empty() ? option->confirmTitle
-                                                              : option->label;
+    const std::string title = option ? (!option->confirmTitle.empty() ? option->confirmTitle : option->label)
+                              : unsignedFile && !unsignedFile->title.empty() ? unsignedFile->title
+                                                                             : std::string(tr("Install this game?"));
     const auto body = modal(note.empty() ? 700 : cardW + 64, 24 + 96 + 24 + (pick ? PickRow : 0) + noteBlock, title,
                             tr("Cancel"), "", tr("Install"), 4);
     const float x = body.x + 32, y = body.y + 24;
@@ -351,9 +356,11 @@ void Application::dialogs() {
       const auto own = [](const net::Rgb &rgb, SDL_Color otherwise) {
         return rgb.set ? SDL_Color{rgb.r, rgb.g, rgb.b, 255} : otherwise;
       };
-      const SDL_Color fill = own(option->cardColor, SDL_Color{253, 226, 226, 255}), text = own(option->cardText, Bad);
+      const net::Rgb unset;
+      const SDL_Color fill = own(option ? option->cardColor : unset, SDL_Color{253, 226, 226, 255}),
+                      text = own(option ? option->cardText : unset, Bad);
       paint_.rect(x, top, cardW, noteH + 2 * CardPad, fill, 14);
-      paint_.icon(option->cardIcon == "warning" ? 25 : 33, x + 18, top + CardPad, text, 24);
+      paint_.icon(!option || option->cardIcon == "warning" ? 25 : 33, x + 18, top + CardPad, text, 24);
       paint_.fonts.wrapped(note, x + CardIcon, top + CardPad, 18, text, OptionNoteWidth, OptionNoteLines, false, 1.4f);
     }
     cover(g.representative.icon, x, y, 96, false, g.representative.name);

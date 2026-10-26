@@ -151,14 +151,14 @@ int runNetworkTests() {
         // A server plugin's options per file: an option needs an id and a
         // label; confirm is its text.
         const auto options = foil::net::parseVariants(R"({"variants":{
-          "https://h/a.nsp":[{"id":"fw","label":"강제","note":"N","confirm":"text","query":{"rewrap":"18.1.0","x":1}}, {"label":"no id"}],
+          "https://h/a.nsp":[{"id":"fw","label":"강제","note":"N","confirm":"text","query":{"fw":"18.1.0","x":1}}, {"label":"no id"}],
           "https://h/d.nsp":[]}})");
         CHECK(options && options->size() == 2);
         const auto &a = options->at("https://h/a.nsp");
         CHECK(a.size() == 1 && a[0].label == "강제" && a[0].note == "N" && a[0].confirmBody == "text");
         CHECK(a[0].query.size() == 1 && a[0].query[0].second == "18.1.0");
         CHECK(options->at("https://h/d.nsp").empty() && !foil::net::parseVariants("{}"));
-        CHECK(foil::net::withQuery("https://h/a.nsp", {{"rewrap", "18.1.0"}}) == "https://h/a.nsp?rewrap=18.1.0");
+        CHECK(foil::net::withQuery("https://h/a.nsp", {{"fw", "18.1.0"}}) == "https://h/a.nsp?fw=18.1.0");
         CHECK(foil::net::withQuery("https://h/a.nsp?t=1", {{"k", "a b"}}) == "https://h/a.nsp?t=1&k=a%20b");
         // The rest of an option: a titled confirm, the words while it prepares
         // and when it refuses, the hash flag, a block, and how it looks.

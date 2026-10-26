@@ -445,17 +445,6 @@ bool build(const Input &in, const HeaderCipher &cipher, Package &out, std::strin
   out.metaData += contentInfo(out.ncas[1].hash, out.ncas[1].bytes.size(), ContentType::Control);
   return true;
 }
-bool signaturePatchesFound(const std::string &sdRoot) {
-  std::error_code ec;
-  const auto notEmpty = [&](const std::string &path) {
-    return std::filesystem::is_directory(path, ec) && !std::filesystem::is_empty(path, ec);
-  };
-  return std::filesystem::exists(sdRoot + "/atmosphere/contents/420000000000000B", ec) || // sys-patch
-         notEmpty(sdRoot + "/atmosphere/kip_patches/fs_patches") ||
-         notEmpty(sdRoot + "/atmosphere/kip_patches/loader_patches") ||
-         notEmpty(sdRoot + "/atmosphere/exefs_patches/es_patches") ||
-         std::filesystem::exists(sdRoot + "/bootloader/patches.ini", ec);
-}
 bool offerSelfShortcut(bool applicationMode, bool asked, const std::string &selfPath, bool shortcutPresent) {
   const bool nro = selfPath.size() > 4 && selfPath.compare(selfPath.size() - 4, 4, ".nro") == 0;
   return !applicationMode && !asked && nro && !shortcutPresent;

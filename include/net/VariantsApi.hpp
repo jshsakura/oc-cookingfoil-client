@@ -30,7 +30,7 @@ struct FileOption {
   // Not installable this way: gray, and A shows why.
   bool blocked = false;
   std::string blockedTitle, blockedBody;
-  // The file comes changed (re-encrypted): its NCAs no longer hash to their ids.
+  // The server changes the file as it prepares it: its NCAs no longer hash to their ids.
   bool hashesChange = false;
   // How its button and its confirm's card look: the button's fill, stripes
   // (noStripes: plain) and text; the card's fill, text and icon ("warning"

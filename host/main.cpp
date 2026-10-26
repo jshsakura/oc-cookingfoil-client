@@ -295,13 +295,13 @@ int main(int argc, char **argv) {
       if (!app.screenshot(shot + "/02-detail.png"))
         return 1;
       {
-        // A server plugin's option as the rewrap plugin words and colors it.
+        // A server plugin's option, worded and colored by the plugin.
         foil::net::FileOption option;
-        option.id = "rewrap";
-        option.label = "펌웨어 버전 무시 설치";
+        option.id = "prepared";
+        option.label = "이 본체에 맞춰 설치";
         option.confirmTitle = option.label;
-        option.confirmBody = "이 게임은 펌웨어 20.0.0 이상이 필요하지만 현재 본체는 18.1.0이라 설치하실 수 없습니다.\n"
-                             "그러나 서버에는 상위 버전의 prod.keys가 있어 설치 가능한 버전으로 재암호화가 가능합니다.";
+        option.confirmBody = "서버가 이 본체에 맞게 파일을 준비한 뒤 설치합니다.\n"
+                             "준비하는 동안 시간이 조금 더 걸릴 수 있습니다.";
         option.buttonColor = foil::net::parseRgb("#FFC23D");
         option.buttonStripe = foil::net::parseRgb("#FFB52A");
         option.cardIcon = "info";

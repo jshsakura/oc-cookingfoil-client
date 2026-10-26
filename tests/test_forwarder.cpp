@@ -327,23 +327,7 @@ int runForwarderTests() {
     CHECK(!build(noLoader, nullptr, pkg, error) && error == "loader");
   }
   {
-    // Signature patches, guessed from the card; the offer to make this
-    // app's own shortcut.
-    const auto sd = tempDir("sig");
-    CHECK(!signaturePatchesFound(sd));
-    std::filesystem::create_directories(sd + "/atmosphere/kip_patches/fs_patches");
-    CHECK(!signaturePatchesFound(sd)); // an empty folder is no patch
-    write(sd + "/atmosphere/kip_patches/fs_patches/x.ips", "PATCH");
-    CHECK(signaturePatchesFound(sd));
-    std::filesystem::remove_all(sd);
-    std::filesystem::create_directories(sd + "/atmosphere/contents/420000000000000B");
-    CHECK(signaturePatchesFound(sd));
-    std::filesystem::remove_all(sd);
-    // ES patches alone let a ticket that is not Nintendo's go in.
-    std::filesystem::create_directories(sd + "/atmosphere/exefs_patches/es_patches");
-    write(sd + "/atmosphere/exefs_patches/es_patches/x.ips", "PATCH");
-    CHECK(signaturePatchesFound(sd));
-    std::filesystem::remove_all(sd);
+    // The offer to make this app's own shortcut.
     const std::string self = "sdmc:/switch/cookingfoil/cookingfoil.nro";
     CHECK(offerSelfShortcut(false, false, self, false));
     CHECK(!offerSelfShortcut(true, false, self, false));  // started from a shortcut already

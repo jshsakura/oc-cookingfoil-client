@@ -1,7 +1,7 @@
 // Writes the shortcuts core/Forwarder builds, the way sphaira's owo.cpp
 // installs them (https://github.com/ITotalJustice/sphaira, GPL-3.0, by
 // ITotalJustice): the NCAs straight into NCM content storage, the content
-// meta into its database, then an application record with NS. No prod.keys
+// meta into its database, then an application record with NS. No key files
 // and no ticket: the only key is the NCA header key, derived by the
 // console's own crypto service from fixed sources (as sphaira and CyberFoil
 // do), and the sections are not encrypted.

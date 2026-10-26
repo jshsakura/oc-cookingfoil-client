@@ -248,17 +248,15 @@ void Application::homebrewDetailPanel(const homebrew::App &app) {
       const auto ink = blocked ? Secondary : Ink;
       paint_.icon(0, X + 16, mid - 12, ink, 24);
       paint_.fonts.middle(tr("HOME Menu shortcut"), X + 52, mid, 18, ink, true, W - 160);
-      const bool local = platform::canMakeShortcuts() && homebrew::cardNroPath(homebrewFile(app));
-      const bool unsigned_ = !hasShortcut && !blocked && local && !signaturePatches_;
       const bool queued = std::any_of(installQueue_.begin(), installQueue_.end(), [&](const QueuedInstall &q) {
         return (q.kind == "shortcut" && q.name == trf("{0} shortcut", {app.name})) ||
                (!app.forwarderUrl.empty() && q.file.url == app.forwarderUrl);
       });
       const bool stale = !queued && homebrewShortcutStale(app);
       const std::string state = queued ? tr("Queued") : stale ? tr("Update|item") : hasShortcut ? tr("Installed")
-                                : blocked ? tr("Unavailable") : unsigned_ ? tr("Needs sig patches") : tr("Not installed");
+                                : blocked ? tr("Unavailable") : tr("Not installed");
       paint_.fonts.middle(state, X + W - 16 - paint_.fonts.measure(state, 16, true), mid, 16,
-                          stale || unsigned_ ? Pending : hasShortcut ? Good : Secondary, true);
+                          stale ? Pending : hasShortcut ? Good : Secondary, true);
       continue;
     }
     if (extras[i] == Remove) {
