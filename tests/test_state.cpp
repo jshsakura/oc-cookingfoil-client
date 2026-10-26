@@ -87,7 +87,7 @@ int runStateTests() {
     CHECK(moved.value.deviceKey == KeyA && moved.value.accessKeys.at(Shop) == "issued");
     CHECK(moved.value.pairSecrets.at(Shop) == std::string(64, 'c') && moved.value.pairMessages.at(Shop) == "거실");
     CHECK(moved.value.language == "ja" && moved.value.installTarget == "nand" &&
-          !moved.value.makeShortcuts && moved.value.skipSignatureCheck && moved.value.lastServer == Shop);
+          !moved.value.makeShortcuts && moved.value.lastServer == Shop);
     CHECK(!std::filesystem::exists(legacy));
     // The install it held is there until it goes into the queue, once.
     CHECK(foil::parsePending(moved.value.queueJson).has_value());

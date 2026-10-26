@@ -4,10 +4,6 @@
 #include <algorithm>
 namespace foil::ui {
 // Key hints ending at `right`, like the screen footer; each one is tappable.
-std::string Application::forceInstallNote(const std::string &console, const std::string &need) {
-  return trf("This game needs firmware {1} or later, but the console has {0}, so it cannot be installed as is.\nThe server has newer prod.keys and can re-encrypt it into a version this console can install.\nThe console must have signature patches: the install relies on them to go ahead.\nIf the game needs features of the newer firmware, it may stop while playing.",
-             {console, need});
-}
 void Application::dialogHints(float right, float y, const std::string &close,
                               const std::string &apply, const std::string &accept, const std::string &remove) {
   // `accept` names what A does when the popup is one decision (다운로드);
@@ -331,30 +327,34 @@ void Application::dialogs() {
   } else if (confirmInstall_ && selection_ && detailGroup_ < groups_.size()) {
     const auto &g = groups_[detailGroup_];
     // More than one server has every file: a row to pick which sends them.
-    const auto servers = forceInstall_ ? rewrapServers() : selection_->servers();
-    const bool pick = servers.size() > 1;
+    // A plugin's option comes from the server that offered it: no pick.
+    const auto *option = optionInstall_ ? pickedOption() : nullptr;
+    const bool pick = !option && selection_->servers().size() > 1;
     constexpr float PickRow = 64;
-    // Past the firmware: why it cannot install as is, how the server gets
-    // round it, that it takes signature patches and may stop while playing.
-    const auto console = platform::firmwareVersion();
-    // A warning card as 레트로 게임's (light red, the warning icon), as tall
-    // as its sentences; the popup is wider than the plain confirm so each
-    // keeps to a line or two and none leaves a word alone.
+    // Its confirm's words on a warning card as 레트로 게임's (light red, the
+    // warning icon), as tall as they are; the popup is wider so each keeps
+    // to a line or two.
     constexpr float CardPad = 18, CardIcon = 56;
-    const std::string past = forceInstall_ ? forceInstallNote(console, install::missingFirmware(pickedNeeds(), console)) : std::string();
-    const float cardW = CardIcon + ForceNoteWidth + CardPad;
-    const float width = forceInstall_ ? cardW + 64 : 700;
-    const float noteH = past.empty() ? 0 : paint_.fonts.lineCount(past, 18, ForceNoteWidth, ForceNoteLines) * 18 * 1.4f;
-    const float pastH = past.empty() ? 0 : noteH + 2 * CardPad + 20;
-    const auto body = modal(width, 24 + 96 + 24 + (pick ? PickRow : 0) + pastH,
-                            forceInstall_ ? tr("Install ignoring firmware version") : tr("Install this game?"), tr("Cancel"), "",
-                            tr("Install"), 4);
+    const std::string note = option ? option->confirmBody : std::string();
+    const float cardW = CardIcon + OptionNoteWidth + CardPad;
+    const float noteH = note.empty() ? 0 : paint_.fonts.lineCount(note, 18, OptionNoteWidth, OptionNoteLines) * 18 * 1.4f;
+    const float noteBlock = note.empty() ? 0 : noteH + 2 * CardPad + 20;
+    const std::string title = !option                       ? std::string(tr("Install this game?"))
+                              : !option->confirmTitle.empty() ? option->confirmTitle
+                                                              : option->label;
+    const auto body = modal(note.empty() ? 700 : cardW + 64, 24 + 96 + 24 + (pick ? PickRow : 0) + noteBlock, title,
+                            tr("Cancel"), "", tr("Install"), 4);
     const float x = body.x + 32, y = body.y + 24;
-    if (!past.empty()) {
-      const float top = y + 96 + 20 + (pick ? PickRow : 0);
-      paint_.rect(x, top, cardW, noteH + 2 * CardPad, SDL_Color{253, 226, 226, 255}, 14);
-      paint_.icon(33, x + 18, top + CardPad, Bad, 24);
-      paint_.fonts.wrapped(past, x + CardIcon, top + CardPad, 18, Bad, ForceNoteWidth, ForceNoteLines, false, 1.4f);
+    if (!note.empty()) {
+      const float top = y + 96 + 20;
+      // The option's own colors and icon when it gives them.
+      const auto own = [](const net::Rgb &rgb, SDL_Color otherwise) {
+        return rgb.set ? SDL_Color{rgb.r, rgb.g, rgb.b, 255} : otherwise;
+      };
+      const SDL_Color fill = own(option->cardColor, SDL_Color{253, 226, 226, 255}), text = own(option->cardText, Bad);
+      paint_.rect(x, top, cardW, noteH + 2 * CardPad, fill, 14);
+      paint_.icon(option->cardIcon == "warning" ? 25 : 33, x + 18, top + CardPad, text, 24);
+      paint_.fonts.wrapped(note, x + CardIcon, top + CardPad, 18, text, OptionNoteWidth, OptionNoteLines, false, 1.4f);
     }
     cover(g.representative.icon, x, y, 96, false, g.representative.name);
     paint_.fonts.text(g.representative.name, x + 116, y + 4, 22, Ink, true, body.w - 180);

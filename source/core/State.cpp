@@ -130,10 +130,6 @@ std::optional<State> parseLegacy(const std::string& text) {
     state.lastServer = stringField(root.get(), "lastServer");
     state.lastScreen = stringField(root.get(), "lastScreen", "home");
     state.language = stringField(root.get(), "language");
-    // Earlier builds saved "skipSignatureCheck": false on every save, not as
-    // a choice, so only the newer keys count.
-    auto* skip = field(root.get(), "ignoreSignature");
-    if (json_object_is_type(skip, json_type_boolean)) state.skipSignatureCheck = json_object_get_boolean(skip);
     auto* shortcuts = field(root.get(), "makeShortcuts");
     if (json_object_is_type(shortcuts, json_type_boolean)) state.makeShortcuts = json_object_get_boolean(shortcuts);
     state.installTarget = stringField(root.get(), "installTarget");
@@ -175,7 +171,6 @@ State fromRows(const DownloadStore::StateRows& rows) {
     state.installTarget = setting("installTarget");
     state.lastServer = setting("lastServer");
     state.lastScreen = setting("lastScreen", "home");
-    state.skipSignatureCheck = setting("ignoreSignature", "1") == "1";
     state.makeShortcuts = setting("makeShortcuts", "1") == "1";
     state.sounds = setting("sounds", "1") == "1";
     state.queueJson = setting(PendingSetting, "[]");
@@ -194,7 +189,6 @@ DownloadStore::StateRows toRows(const State& given, const DeviceIdentity& id) {
                      {"installTarget", state.installTarget},
                      {"lastServer", state.lastServer},
                      {"lastScreen", state.lastScreen},
-                     {"ignoreSignature", flag(state.skipSignatureCheck)},
                      {"makeShortcuts", flag(state.makeShortcuts)},
                      {"sounds", flag(state.sounds)}};
     if (state.queueJson != "[]") rows.settings[PendingSetting] = state.queueJson;

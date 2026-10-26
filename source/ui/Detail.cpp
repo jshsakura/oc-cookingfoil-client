@@ -25,6 +25,27 @@ std::string fileNameOf(const std::string &url) {
   return net::dropbox::percentDecode(path.substr(path.rfind('/') + 1));
 }
 } // namespace
+std::vector<std::string> Application::pickedFileNames() const {
+  std::vector<std::string> names;
+  if (selection_)
+    for (const auto &f : selection_->files()) names.push_back(fileNameOf(f.url));
+  return names;
+}
+// Surely unsigned by the list item, the detail's signed[], or (before a
+// server sends those) a failed NCA signature in integrity[].
+const net::Unsigned *Application::pickedUnsigned() const {
+  static const net::Unsigned unworded;
+  if (!selection_ || signaturePatchesFound_) return nullptr;
+  for (const auto &f : selection_->files()) {
+    const auto name = fileNameOf(f.url);
+    for (const auto &file : detail_.unsignedFiles)
+      if (file.file == name) return &file;
+    if (f.unsignedFile) return &unworded;
+    for (const auto &check : detail_.integrity)
+      if (check.reason == "signature-fail" && check.file == name) return &unworded;
+  }
+  return nullptr;
+}
 // Only that the game needs a patch to run, ahead of its description; what
 // it is shows in the install list, and the story belongs in the description.
 int Application::requiredPatchesCard(int y) {
@@ -115,6 +136,7 @@ void Application::openDetail(size_t group) {
   // Start on the install button; Up reaches the storage cards, then the items.
   part_ = int(selection_->rows()) + 1;
   fetchDetail();
+  askFileOptions();
 }
 void Application::fetchDetail() {
   if (!session_)
@@ -401,15 +423,20 @@ void Application::detail() {
   if (const int onTheWay = pickedOnTheWay(percent)) {
     onTheWayButton(840, 386, onTheWay == 2, percent);
   } else {
-    // Content the console cannot open: gray, and A says why; one a server
-    // re-encrypts for this console offers to install it anyway.
-    const bool past = !pickedUnreachable().empty(), blocked = past && rewrapServers().empty();
-    // Past the firmware it is butter with stripes: its confirm warns.
-    paint_.rect(840, 568, 386, 60, blocked ? Line : Butter, 14);
-    if (past && !blocked) paint_.stripes(840, 568, 386, 60, ButterStripe, 14);
-    const auto install = blocked ? tr("Can't install|button") : past ? tr("Force install|button") : tr("Install|action");
+    // Warned: butter with stripes unless the option colors it its own way.
+    const auto kind = installButton();
+    const bool blocked = kind == InstallButton::Blocked;
+    const auto *option = kind == InstallButton::Warned ? pickedOption() : nullptr;
+    const auto own = [](const net::Rgb &rgb, SDL_Color otherwise) {
+      return rgb.set ? SDL_Color{rgb.r, rgb.g, rgb.b, 255} : otherwise;
+    };
+    paint_.rect(840, 568, 386, 60, blocked ? Line : option ? own(option->buttonColor, Butter) : Butter, 14);
+    if (option && !option->noStripes) paint_.stripes(840, 568, 386, 60, own(option->buttonStripe, ButterStripe), 14);
+    const std::string install = blocked  ? tr("Can't install|button")
+                                : option ? option->label
+                                         : tr("Install|action");
     paint_.keyLabel("A", install, 840 + (386 - paint_.keyLabelWidth("A", install, 22, true)) / 2, 598, 22,
-                    blocked ? Secondary : Ink, true);
+                    blocked ? Secondary : option ? own(option->buttonText, Ink) : Ink, true);
   }
   if (galleryOpen_) gallery();
 }

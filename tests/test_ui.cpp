@@ -34,19 +34,13 @@ static void settle(foil::ui::Application &app) {
 int runUiTests(SDL_Renderer *renderer) {
   int failures = 0;
   {
-    // 펌웨어 버전 무시 설치 in every language: the full name heads the
-    // confirm, and the install button (386 wide) keeps a margin; a language
-    // whose name does not fit there says Force install instead.
+    // 설치 불가 in every language: the install button (386 wide) keeps a margin.
     foil::ui::Painter painter(renderer);
     CHECK(painter.fonts.open());
     const auto before = foil::language();
     for (int n = 0; n < foil::LanguageCount; ++n) {
       foil::setLanguage(foil::Language(n));
-      CHECK(painter.fonts.measure(foil::tr("Install ignoring firmware version"), 22, true) <= 700 - 64 - 34);
-      CHECK(painter.keyLabelWidth("A", foil::tr("Force install|button"), 22, true) <= 386 - 32);
-      // Its confirm's note is read whole in every language, never cut.
-      const auto note = foil::ui::Application::forceInstallNote("18.1.0", "20.0.0");
-      CHECK(painter.fonts.lineCount(note, 18, foil::ui::Application::ForceNoteWidth, 99) <= foil::ui::Application::ForceNoteLines);
+      CHECK(painter.keyLabelWidth("A", foil::tr("Can't install|button"), 22, true) <= 386 - 32);
     }
     foil::setLanguage(before);
   }
@@ -338,33 +332,89 @@ int runUiTests(SDL_Renderer *renderer) {
     app.action(foil::ui::Action::Back);
     CHECK(!app.confirmingInstall());
     CHECK(app.queuedPatches() == 0);
-    // Made for a newer master key than the console's: A says why, unless
-    // the server re-encrypts it, when the confirm offers to install anyway.
+    // Made for newer firmware than the console's: A says why and nothing
+    // installs, a point release past it too, whatever the server offers.
     setenv("FOIL_FIRMWARE", "18.1.0", 1);
     auto newer = withPatches;
     newer.requiredFirmware = "20.0.0";
     app.setDetail(newer);
     app.render();
     app.action(foil::ui::Action::Accept);
-    CHECK(!app.confirmingInstall() && !app.alert().empty());
+    CHECK(!app.confirmingInstall() && app.alert().find("20.0.0") != std::string::npos);
     app.action(foil::ui::Action::Back);
     CHECK(app.alert().empty());
-    // The server's keys stop short of the game's: it says to replace them.
-    newer.keyFirmware = "20.0.0";
+    newer.requiredFirmware = "18.2.0";
     app.setDetail(newer);
-    app.offerFeature("", "nca-rewrap", "19.0.0");
     app.render();
     app.action(foil::ui::Action::Accept);
-    CHECK(!app.confirmingInstall() && app.alert().find("prod.keys") != std::string::npos);
+    CHECK(!app.confirmingInstall() && app.alert().find("18.2.0") != std::string::npos);
     app.action(foil::ui::Action::Back);
-    app.offerFeature("", "nca-rewrap", "22.0.0");
-    app.render();
-    app.action(foil::ui::Action::Accept);
-    CHECK(app.forcingInstall() && app.alert().empty());
-    app.render();
-    app.action(foil::ui::Action::Back);
-    CHECK(!app.confirmingInstall() && !app.forcingInstall());
     unsetenv("FOIL_FIRMWARE");
+    // Unsigned (integrity signature-fail) with no signature patches on the
+    // card: A says why; with patches it installs.
+    auto unsignedOne = withPatches;
+    foil::net::FileCheck failed;
+    failed.verdict = "modified";
+    failed.reason = "signature-fail";
+    app.signaturePatchesFound(false);
+    for (const auto &name : app.pickedFileNames()) {
+      failed.file = name;
+      unsignedOne.integrity.push_back(failed);
+    }
+    app.setDetail(unsignedOne);
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(!app.confirmingInstall() && app.alert() == foil::tr("This file is not signed, so it cannot be installed."));
+    app.action(foil::ui::Action::Back);
+    // The detail's signed[] gives the server's words for it.
+    for (const auto &name : app.pickedFileNames()) unsignedOne.unsignedFiles.push_back({name, "서명 없음", "서버 문구"});
+    app.setDetail(unsignedOne);
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(!app.confirmingInstall() && app.alert() == "서버 문구");
+    app.action(foil::ui::Action::Back);
+    app.signaturePatchesFound(true);
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.confirmingInstall() && !app.optionConfirm());
+    app.action(foil::ui::Action::Back);
+    // A server plugin's option: A opens its confirm, in its words, and the
+    // files carry its query.
+    foil::net::FileOption option;
+    option.id = "fw";
+    option.label = "펌웨어 버전 무시 설치";
+    option.confirmBody = "경고 문구";
+    option.query = {{"rewrap", "18.1.0"}};
+    app.previewFileOption(option);
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.optionConfirm());
+    app.render();
+    const auto planned = app.optionFiles();
+    CHECK(!planned.empty() && planned.front().variant && planned.front().url.find("rewrap=18.1.0") != std::string::npos);
+    app.action(foil::ui::Action::Back);
+    CHECK(!app.confirmingInstall() && !app.optionConfirm());
+    // Its words while the server prepares and when it refuses go with the
+    // files, and so does a changed file's hash.
+    option.progress = "준비 중";
+    option.failed = "거절";
+    option.hashesChange = true;
+    app.previewFileOption(option);
+    app.render();
+    const auto changed = app.optionFiles();
+    CHECK(!changed.empty() && changed.front().hashesChange && changed.front().variantProgress == "준비 중" &&
+          changed.front().variantFailed == "거절");
+    // A blocked option says why and installs nothing.
+    option.blocked = true;
+    option.blockedTitle = "막힘";
+    option.blockedBody = "이유";
+    app.previewFileOption(option);
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(!app.confirmingInstall() && !app.optionConfirm() && app.alert() == "이유");
+    CHECK(!app.optionFiles().empty() && !app.optionFiles().front().variant);
+    app.action(foil::ui::Action::Back);
+    app.previewFileOption({});
   }
   app.action(foil::ui::Action::Back);
   CHECK(app.current() == foil::ui::Screen::Library);

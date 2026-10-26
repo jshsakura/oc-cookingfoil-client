@@ -38,6 +38,17 @@ struct Item {
     // damaged, 3 damaged (item-integrity-detail's certain: the install
     // surely fails). Said only; installs go ahead either way.
     uint8_t integrity = 0;
+    // The server found it surely unsigned (feature item-signed, signed.nca or
+    // signed.ticket false): it opens only with signature patches. Not known
+    // is false.
+    bool unsignedFile = false;
+    // Installed through a server plugin's option (net/VariantsApi): its
+    // address carries the option's query, the server prepares the file
+    // first (progress says so; failed when it refuses without words), and
+    // hashesChange when it comes changed, its NCAs no longer hashing to
+    // their ids.
+    bool variant = false, hashesChange = false;
+    std::string variantProgress, variantFailed;
     // The server's labels for its card, in order (core/Labels.hpp);
     // hasLabels false: an older server, the client words them itself.
     bool hasLabels = false;

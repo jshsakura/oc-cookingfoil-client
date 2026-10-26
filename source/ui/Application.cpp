@@ -119,6 +119,7 @@ Application::~Application() {
   raGamesJob_.join();
   voteJob_.join();
   stringsJob_.join();
+  optionsJob_.join();
   languageCancel_ = true;
   languageJob_.join();
   historyPageJob_.join(); // reads and clears the store, which closes after
@@ -308,6 +309,7 @@ bool Application::open() {
 #endif
       if (!sd.empty() && !patchWorker_.joinable()) {
         openCardRecords(sd);
+        signaturePatchesFound_ = forwarder::signaturePatchesFound(sd);
         useKeptStrings();
         applyStartupLanguage(); // a language only a server has needed its text from the card
         background(tr("Reading patches and download history on the SD card"), 0.62f, 0.66f);
@@ -1063,6 +1065,7 @@ void Application::poll() {
   historyPageJob_.poll();
   voteJob_.poll();
   stringsJob_.poll();
+  optionsJob_.poll();
   languageJob_.poll();
   pollLanguageGet();
   raListJob_.poll();
@@ -1298,7 +1301,6 @@ void Application::takeNetwork() {
     state_ = session_->state();
     state_.queueJson = mine.queueJson;
     state_.language = mine.language;
-    state_.skipSignatureCheck = mine.skipSignatureCheck;
     state_.makeShortcuts = mine.makeShortcuts;
     state_.sounds = mine.sounds;
     state_.installTarget = mine.installTarget;
@@ -1327,13 +1329,9 @@ void Application::takeNetwork() {
   features_ = session_->features();
   serverFeatures_.clear();
   serverFeatures_[session_->server().url] = features_;
-  serverRewrapMax_.clear();
-  serverRewrapMax_[session_->server().url] = session_->rewrapMaxFirmware();
   for (const auto &other : others_)
-    if (const auto status = serverStatus_.find(other->server().url); status != serverStatus_.end() && status->second.empty()) {
+    if (const auto status = serverStatus_.find(other->server().url); status != serverStatus_.end() && status->second.empty())
       serverFeatures_[other->server().url] = other->features();
-      serverRewrapMax_[other->server().url] = other->rewrapMaxFirmware();
-    }
   askServerStrings();
   // Same server: keep decoded covers; only the access keys may have changed.
   images_->updateState(state_);
@@ -1662,10 +1660,7 @@ void Application::action(Action a) {
       confirmInstall_ = false;
       installSelected();
     }
-    if (a == Action::Back) {
-      confirmInstall_ = false;
-      forceInstall_ = false;
-    }
+    if (a == Action::Back) confirmInstall_ = optionInstall_ = false;
     return;
   }
   // The header's buttons: the d-pad moves along them, A presses one.
@@ -2041,14 +2036,13 @@ void Application::action(Action a) {
       // What each leftover takes, in a popup; the picked ones go.
       case 3: openFileCleanup(); break;
       // The switches, together.
-      case 4: toggleInstallCheck(state_.skipSignatureCheck); break;
-      case 5: toggleInstallCheck(state_.makeShortcuts); break;
-      case 6:
+      case 4: toggleInstallCheck(state_.makeShortcuts); break;
+      case 5:
         toggleInstallCheck(state_.sounds);
         sounds_.setOn(state_.sounds);
         sounds_.play(Cue::Add); // turned on: heard at once
         break;
-      case 7: openBugReport(""); break;
+      case 6: openBugReport(""); break;
       default:
         // A server opens its form; "+ 서버 추가" an empty one.
         openServerForm(selected_ < int(config_.servers.size()) ? std::max(0, selected_) : -1);
@@ -2123,6 +2117,10 @@ void Application::card(const Group &g, float x, float y, bool selected,
   if (index < groups_.size())
     hit(x, y, 150, 220, [this, index] { openDetail(index); });
   cover(g.representative.icon, x, y, 150, selected, g.representative.name);
+  // Surely unsigned where it would not open (no signature patches on the
+  // card): grayed, as its detail's button is.
+  if ((g.base ? *g.base : g.representative).unsignedFile && !signaturePatchesFound_)
+    paint_.rect(x, y, 150, 150, {242, 241, 238, 170}, 14);
   // Download size on the top left, in the same small badge as the score:
   // the base with its update, as a player installs them.
   if (const auto bytes = groupBytes(g); bytes > 0) {
@@ -2533,9 +2531,9 @@ void Application::render() {
       using Hints = std::vector<std::pair<std::string, std::string>>;
       auto hints = descriptionFocus_ ? Hints{{"A", tr("Back to items")}, {"B", tr("Back")}}
                                        : Hints{{"A", onTheWay   ? tr("Cancel download")
-                                                     : onButton ? (pickedUnreachable().empty() ? tr("Install")
-                                                                 : rewrapServers().empty() ? tr("See why")
-                                                                                           : tr("Force install|button"))
+                                                     : onButton ? (installButton() == InstallButton::Plain    ? std::string(tr("Install"))
+                                                                   : installButton() == InstallButton::Warned ? pickedOption()->label
+                                                                                                              : std::string(tr("See why")))
                                                      : onStorage ? tr("Choose this")
                                                      : part_ == 0 && selection_ && selection_->baseChoices() > 1 &&
                                                                selection_->parts().front().type == "base"
@@ -2727,35 +2725,15 @@ std::vector<Item> Application::pickedNeeds() const {
   }
   return needs;
 }
-std::string Application::pickedUnreachable() const {
-  return install::unreachableFirmware(pickedNeeds(), platform::firmwareVersion());
+std::string Application::pickedShortfall() const {
+  return install::missingFirmware(pickedNeeds(), platform::firmwareVersion());
 }
-std::vector<std::string> Application::rewrapServers() const {
-  std::vector<std::string> servers;
-  if (!selection_) return servers;
-  // The key the content needs, against the newest each server's keys reach.
-  const auto need = install::keyFirmwareOf(pickedNeeds());
-  for (const auto &url : selection_->servers()) {
-    const auto at = url.empty() ? serverInUse() : url;
-    const auto f = serverFeatures_.find(at);
-    if (f == serverFeatures_.end() || !f->second.count("nca-rewrap")) continue;
-    const auto most = serverRewrapMax_.find(at);
-    if (most == serverRewrapMax_.end() || most->second.empty() || need.empty() ||
-        install::masterKeyOf(need) <= install::masterKeyOf(most->second))
-      servers.push_back(url);
-  }
-  return servers;
-}
-std::string Application::rewrapKeysTooOld() const {
-  if (!selection_ || pickedUnreachable().empty() || !rewrapServers().empty()) return "";
-  const auto servers = selection_->servers();
-  const bool offered = std::any_of(servers.begin(), servers.end(), [&](const std::string &url) {
-    const auto f = serverFeatures_.find(url.empty() ? serverInUse() : url);
-    return f != serverFeatures_.end() && f->second.count("nca-rewrap");
-  });
-  return offered ? trf("The server's prod.keys are too old to go on. Replace them with prod.keys for {0} or later.",
-                       {install::keyFirmwareOf(pickedNeeds())})
-                 : "";
+// Unsigned where it would not open blocks first; then a plugin's option
+// decides; else only the firmware does.
+Application::InstallButton Application::installButton() const {
+  if (pickedUnsigned()) return InstallButton::Blocked;
+  if (const auto *option = pickedOption()) return option->blocked ? InstallButton::Blocked : InstallButton::Warned;
+  return pickedShortfall().empty() ? InstallButton::Plain : InstallButton::Blocked;
 }
 void Application::requestInstall() {
   if (!selection_ || detailGroup_ >= groups_.size())
@@ -2769,18 +2747,32 @@ void Application::requestInstall() {
     alert_ = tr("Turn on at least one item to install.");
     return;
   }
-  // Content for a newer master key than the console's: not tried as it is.
-  // A server that re-encrypts it for this console's key offers it anyway.
-  const auto need = pickedUnreachable();
-  forceInstall_ = !need.empty() && !rewrapServers().empty();
-  if (!need.empty() && !forceInstall_) {
-    const auto keys = rewrapKeysTooOld();
-    alert_ = keys.empty() ? install::firmwareShortfall(need, platform::firmwareVersion()) : keys;
+  // Unsigned where it would not open: in the server's words when it gave them.
+  if (const auto *file = pickedUnsigned()) {
+    alertTitle_ = file->title;
+    alert_ = !file->body.empty() ? file->body : std::string(tr("This file is not signed, so it cannot be installed."));
+    return;
+  }
+  // A plugin's option: its own why when it cannot, else its confirm, and the
+  // files come from the server that offered it.
+  if (const auto *option = pickedOption()) {
+    if (option->blocked) {
+      alertTitle_ = option->blockedTitle;
+      alert_ = !option->blockedBody.empty() ? option->blockedBody : option->label;
+      return;
+    }
+    confirmInstall_ = optionInstall_ = true;
+    selection_->server.clear();
+    return;
+  }
+  // Content for newer firmware than the console's is not installed: A says why.
+  if (const auto need = pickedShortfall(); !need.empty()) {
+    alert_ = install::firmwareShortfall(need, platform::firmwareVersion());
     return;
   }
   confirmInstall_ = true;
   // From several servers it comes from the game's own unless picked.
-  const auto servers = forceInstall_ ? rewrapServers() : selection_->servers();
+  const auto servers = selection_->servers();
   if (std::find(servers.begin(), servers.end(), selection_->server) == servers.end())
     selection_->server = servers.empty() ? std::string() : servers.front();
 }
@@ -2848,7 +2840,7 @@ int Application::pickedOnTheWay(double &percent) const {
     return 0;
   const auto row = [&](const Item &f, history::Outcome outcome) {
     return std::any_of(history_.begin(), history_.end(), [&](const history::Entry &e) {
-      return e.outcome == outcome && e.kind.empty() && e.install.files.size() == 1 && install::sameFile(e.install.files[0].url, f.url);
+      return e.outcome == outcome && e.kind.empty() && e.install.files.size() == 1 && e.install.files[0].url == f.url;
     });
   };
   // Every picked file waits, runs or came in already (the base before its
@@ -2856,7 +2848,7 @@ int Application::pickedOnTheWay(double &percent) const {
   bool running = false, waiting = false;
   for (const auto &f : files) {
     const bool queued = std::any_of(installQueue_.begin(), installQueue_.end(),
-                                    [&](const QueuedInstall &q) { return install::sameFile(q.file.url, f.url); });
+                                    [&](const QueuedInstall &q) { return q.file.url == f.url; });
     const bool now = installer_.running() && row(f, history::Outcome::Running);
     if (!queued && !now && !row(f, history::Outcome::Done))
       return 0;
@@ -2883,10 +2875,7 @@ void Application::installSelected() {
   // Patches alone (every file off) go in as one pick; with files they come
   // right after the game's files and go with them if the game fails.
   auto files = selection_->files();
-  // Past the firmware: each file's server sends it re-encrypted for this
-  // console's own master key.
-  if (std::exchange(forceInstall_, false))
-    for (auto &file : files) file.url = install::rewrapUrl(file.url, platform::firmwareVersion());
+  if (std::exchange(optionInstall_, false)) files = withOptions(std::move(files));
   if (!files.empty()) {
     if (auto error = startInstall(files, g.representative.name, g.representative.icon, selection_->target,
                                   selection_->patchesOn())) {
@@ -2950,10 +2939,10 @@ Error Application::enqueueInstall(const std::vector<Item> &files, const std::str
   std::vector<Item> fresh;
   for (const auto &f : files) {
     const bool waiting = std::any_of(installQueue_.begin(), installQueue_.end(),
-                                     [&](const QueuedInstall &q) { return install::sameFile(q.file.url, f.url); }) ||
+                                     [&](const QueuedInstall &q) { return q.file.url == f.url; }) ||
                          (installer_.running() && std::any_of(history_.begin(), history_.end(), [&](const history::Entry &e) {
                             return e.outcome == history::Outcome::Running && e.kind.empty() && e.install.files.size() == 1 &&
-                                   install::sameFile(e.install.files[0].url, f.url);
+                                   e.install.files[0].url == f.url;
                           }));
     if (!waiting)
       fresh.push_back(f);
@@ -2966,7 +2955,7 @@ Error Application::enqueueInstall(const std::vector<Item> &files, const std::str
                                          (e.outcome == history::Outcome::Failed || e.outcome == history::Outcome::Cancelled) &&
                                          std::any_of(e.install.files.begin(), e.install.files.end(), [&](const Item &old) {
                                            return std::any_of(fresh.begin(), fresh.end(),
-                                                              [&](const Item &f) { return install::sameFile(f.url, old.url); });
+                                                              [&](const Item &f) { return f.url == old.url; });
                                          });
                                 }),
                  history_.end());
@@ -3141,7 +3130,7 @@ void Application::askCancelPick(bool running) {
   }
   const auto files = selection_ ? selection_->files() : std::vector<Item>{};
   for (size_t i = 0; i < installQueue_.size(); ++i)
-    if (std::any_of(files.begin(), files.end(), [&](const Item &f) { return install::sameFile(f.url, installQueue_[i].file.url); })) {
+    if (std::any_of(files.begin(), files.end(), [&](const Item &f) { return f.url == installQueue_[i].file.url; })) {
       unqueueAsk_ = int(i);
       unqueuePick_ = true;
       return;
@@ -3179,8 +3168,8 @@ std::vector<std::string> Application::groupServers(const Group &g) const {
   return servers;
 }
 void Application::stepInstallServer(int by) {
-  const auto servers = forceInstall_ ? rewrapServers() : selection_->servers();
-  if (servers.size() < 2) return;
+  const auto servers = selection_->servers();
+  if (optionInstall_ || servers.size() < 2) return; // an option's files come from where it was offered
   const auto at = std::find(servers.begin(), servers.end(), selection_->server);
   const int now = at == servers.end() ? 0 : int(at - servers.begin()), count = int(servers.size());
   selection_->server = servers[size_t((now + by + count) % count)];

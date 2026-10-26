@@ -115,11 +115,7 @@ void nativeInstall(const Item &item, const std::string &target,
                    const std::vector<std::string> &headers) {
   Services services;
   inst::ui::mainApp->ResetRetries();
-  // With the check on, an NCA whose signature fails stops the install; with
-  // it off (설정), the engine installs it as is and sigpatches let it run.
-  auto *sink = foil::install::engineSink();
-  inst::config::validateNCAs = !(sink && sink->skipSignatureCheck());
-  inst::config::rewrapped = rewrapped(item.url);
+  inst::config::hashesChange = item.hashesChange;
   // The download ring between curl and the placeholder writer, in 8MB
   // segments. CyberFoil sets this from its own menu, which is not built here;
   // left at 0 no data could ever be buffered and every download stalled.
@@ -146,9 +142,9 @@ void nativeInstall(const Item &item, const std::string &target,
   // connection (8 x 2 x 8 MB = 128 MB at most), the album one (16 MB).
   tin::network::SetParallelDownload(current.connections, current.application ? 0x800000 : 0x400000,
                                     current.application ? 2 : 1);
-  // The required system version is always cleared so the console launches
-  // the game anyway; on firmware too old the queue warned it may fail.
-  constexpr bool ignoreFirmware = true;
+  // The required system version stays as the game says: a console too old
+  // for it never gets this far (install::missingFirmware).
+  constexpr bool ignoreFirmware = false;
   tin::network::ClearBasicAuth();
   tin::network::SetExtraHeaders(headers, originOf(from));
   struct Headers {

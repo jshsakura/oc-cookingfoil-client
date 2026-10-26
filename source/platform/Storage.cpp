@@ -29,6 +29,29 @@ std::string firmwareVersion() {
   return named ? named : "";
 #endif
 }
+std::string consoleRegion() {
+#ifdef __SWITCH__
+  // Read once: it never changes while the app runs, and every request to a
+  // server says it.
+  static const std::string region = [] {
+    SetRegion code{};
+    if (R_FAILED(setInitialize()) || R_FAILED(setGetRegionCode(&code))) return std::string();
+    switch (code) {
+    case SetRegion_JPN: return std::string("jpn");
+    case SetRegion_USA: return std::string("usa");
+    case SetRegion_EUR: return std::string("eur");
+    case SetRegion_AUS: return std::string("aus");
+    case SetRegion_HTK: return std::string("hkg-twn-kor");
+    case SetRegion_CHN: return std::string("chn");
+    default: return std::string();
+    }
+  }();
+  return region;
+#else
+  const char *named = std::getenv("FOIL_REGION");
+  return named ? named : "";
+#endif
+}
 #ifndef __SWITCH__
 namespace {
 std::atomic<uint64_t> hostSpace{0};

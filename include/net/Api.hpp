@@ -119,6 +119,11 @@ struct FileCheck {
     // 1 modified, 2 maybe damaged, 3 damaged, as Item::integrity.
     int level() const { return verdict == "modified" ? 1 : certain ? 3 : 2; }
 };
+// A file of a title the server found surely unsigned (detail.signed[] with
+// nca or ticket false), and the help it words for the install it stops.
+struct Unsigned {
+    std::string file, title, body;
+};
 struct Detail {
     std::string name, publisher, description, category, banner;
     std::string notes; // the operator's own notes: what else to install, sizes, which build
@@ -133,6 +138,7 @@ struct Detail {
     std::string scoreLabel;
     std::vector<UserPatch> patches;
     std::vector<FileCheck> integrity;
+    std::vector<Unsigned> unsignedFiles;
 };
 std::string tidyDescription(const std::string& text);
 Parsed<Detail> parseDetail(const std::string& json);
@@ -206,8 +212,6 @@ public:
     // The server's own id (/api/shop/info server_id): two addresses of one
     // server give the same. Empty until it answers, or from a server without one.
     const std::string& serverId() const { return serverId_; }
-    // The newest firmware whose content the server can re-encrypt (nca-rewrap); empty: not said.
-    const std::string& rewrapMaxFirmware() const { return rewrapMaxFirmware_; }
     bool pairingPending() const { return pairingPending_; }
     const PairingInfo& pairingInfo() const { return pairingInfo_; }
     // The note for this server's approval request, from the app; a changed
@@ -251,7 +255,7 @@ private:
     std::string pairSecret();
     Server server_;
     State state_;
-    std::string path_, etag_, patchesEtag_, configPath_, serverId_, rewrapMaxFirmware_;
+    std::string path_, etag_, patchesEtag_, configPath_, serverId_;
     int patchesRetryAfter_ = 0;
     std::vector<UserPatch> patches_;
     std::vector<Item> items_;

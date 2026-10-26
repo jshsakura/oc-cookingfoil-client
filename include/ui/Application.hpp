@@ -6,6 +6,7 @@
 #include "install/Installer.hpp"
 #include "net/Api.hpp"
 #include "net/ClientStringsApi.hpp"
+#include "net/VariantsApi.hpp"
 #include "net/Dropbox.hpp"
 #include "net/HomebrewApi.hpp"
 #include "net/RetroApi.hpp"
@@ -129,16 +130,28 @@ public:
   std::string selectedName() const;
   void setDetail(net::Detail detail);
   bool confirmingInstall() const { return confirmInstall_; }
-  bool forcingInstall() const { return confirmInstall_ && forceInstall_; }
-  // The confirm past the firmware: its note, the width it wraps to and the
-  // most lines it may take (a test holds every language to them).
-  static std::string forceInstallNote(const std::string &console, const std::string &need);
-  static constexpr float ForceNoteWidth = 780;
-  static constexpr int ForceNoteLines = 12;
-  void offerFeature(const std::string &server, const std::string &feature, const std::string &rewrapMax = "") {
-    serverFeatures_[server].insert(feature);
-    serverRewrapMax_[server] = rewrapMax;
+  void offerFeature(const std::string &server, const std::string &feature) { serverFeatures_[server].insert(feature); }
+  // `option` for every picked file, as a server would answer (tests, the
+  // preview); one without an id takes them away.
+  void previewFileOption(const net::FileOption &option) {
+    fileOptions_.clear();
+    if (selection_ && !option.id.empty())
+      for (const auto &f : selection_->files()) fileOptions_[f.url] = {option};
+    optionsFor_ = detailGroup_ < groups_.size() ? groups_[detailGroup_].id : "";
   }
+  // The files the confirm would install, options put on.
+  std::vector<Item> optionFiles() const { return selection_ ? withOptions(selection_->files()) : std::vector<Item>{}; }
+  bool optionConfirm() const { return confirmInstall_ && optionInstall_; }
+  // The install button's A, as pressed (the preview).
+  void previewRequestInstall() { requestInstall(); }
+  // The confirm's warning card: the width it wraps to and the most lines.
+  static constexpr float OptionNoteWidth = 780;
+  static constexpr int OptionNoteLines = 12;
+  // The card has signature patches (forwarder::signaturePatchesFound),
+  // looked at as the app starts.
+  void signaturePatchesFound(bool found) { signaturePatchesFound_ = found; }
+  // The picked files' own names, as detail.integrity[].file says them.
+  std::vector<std::string> pickedFileNames() const;
   std::string detailId() const { return detailGroup_ < groups_.size() ? groups_[detailGroup_].id : ""; }
   // Patches picked with a game install that have not started yet.
   size_t queuedPatches() const { return patchQueue_.size(); }
@@ -392,8 +405,8 @@ public:
   void toggleInstallCheck(bool &skip);
   void saveOwnState();
   // 설정's options card: 언어, 기본 저장 위치, 앱 업데이트, 남은 파일 정리,
-  // then the switches: 서명 검사, 펌웨어 검사, 홈 메뉴 바로가기, 오류 로그 전송.
-  static constexpr int SettingsOptions = 8;
+  // then the switches: 홈 메뉴 바로가기, 효과음, then 버그 보고 보내기.
+  static constexpr int SettingsOptions = 7;
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).
@@ -1373,15 +1386,30 @@ private:
   // above and below it, and shows pressed as itself, not as a larger card.
   void buttonHit(SDL_FRect look, int radius, std::function<void()> run);
   // The picked files with the title's own firmware need, and the firmware
-  // among them the console cannot reach (install::unreachableFirmware).
+  // among them the console is older than (install::missingFirmware).
   std::vector<Item> pickedNeeds() const;
-  std::string pickedUnreachable() const;
-  // Of the servers with every picked file, the ones that re-encrypt content
-  // for this console's older master key (feature nca-rewrap).
-  std::vector<std::string> rewrapServers() const;
-  // The picked content's key is past every rewrap server's prod.keys: what
-  // to say instead of offering it (empty: not so).
-  std::string rewrapKeysTooOld() const;
+  std::string pickedShortfall() const;
+  // A picked file the server found surely unsigned while the card shows no
+  // signature patches: it would not open, so it is not installed. Its help
+  // is the server's, empty when it gave none. Null when none is, or when it
+  // is not known.
+  const net::Unsigned *pickedUnsigned() const;
+  // The install button's look: plain, blocked (gray; A says why) or warned
+  // (butter with stripes; its confirm warns first), which a server plugin's
+  // option takes.
+  enum class InstallButton { Plain, Blocked, Warned };
+  InstallButton installButton() const;
+  // A server plugin's options for the detail's files (feature
+  // "file-variants", ui/FileOptions), by download address, asked as the
+  // detail opens. The button follows the base file's first option.
+  void askFileOptions();
+  const net::FileOption *pickedOption() const;
+  // The picked files with their options' queries and words put on them.
+  std::vector<Item> withOptions(std::vector<Item> files) const;
+  Job optionsJob_;
+  std::string optionsFor_; // the group id the options are for
+  std::map<std::string, std::vector<net::FileOption>> fileOptions_;
+  bool optionInstall_ = false; // the confirm open is the option's
   // A row: pressed, it darkens as itself (its own corners), only the part on screen.
   void rowHit(float x, float y, float w, float h, int radius, std::function<void()> run) {
     hit(x, y, w, h, std::move(run), {}, -radius);
@@ -1540,8 +1568,6 @@ private:
   bool incomingCatalog_ = false; // the network thread brought a list (incomingGroups_)
   // What each server read now offers (/api/shop/info features), by url.
   std::map<std::string, std::set<std::string>> serverFeatures_;
-  // Each server's rewrapMaxFirmware: past it its prod.keys cannot re-encrypt.
-  std::map<std::string, std::string> serverRewrapMax_;
   // The servers read now that offer `feature` (empty: all of them): the one
   // in use first, then the others in config.json's order.
   std::vector<Server> serversWith(const std::string &feature) const;
@@ -1628,7 +1654,6 @@ private:
        exitRequested_ = false;
   bool searchRequested_ = false, confirmInstall_ = false;
   // The confirm asks to install past the firmware: the server re-encrypts it.
-  bool forceInstall_ = false;
   void dialogHints(float right, float y, const std::string &close,
                    const std::string &apply = "", const std::string &accept = "", const std::string &remove = "");
   static inline const std::string NoAccept = "\x1f"; // `accept` for a popup A does nothing in
