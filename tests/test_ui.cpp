@@ -193,11 +193,13 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(app.usbAppletShown());
     app.action(foil::ui::Action::Back);
     CHECK(!app.usbAppletShown());
-    // Without touch (docked): 설정's last row opens it too.
+    // Without touch (docked): its row in 설정 opens it too.
     app.screen(foil::ui::Screen::Settings);
     app.render();
     app.action(foil::ui::Action::Right);
     for (int step = 0; step < 40; ++step) app.action(foil::ui::Action::Down);
+    // The bug report is last; Connect to PC sits three rows above it.
+    for (int step = 0; step < 3; ++step) app.action(foil::ui::Action::Up);
     app.render();
     app.action(foil::ui::Action::Accept);
     CHECK(app.usbAppletShown());

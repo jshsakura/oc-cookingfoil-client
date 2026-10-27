@@ -2088,15 +2088,16 @@ void Application::action(Action a) {
       case 3: appUpdateAction(a); break;
       // What each leftover takes, in a popup; the picked ones go.
       case 4: openFileCleanup(); break;
+      // The card to a PC, next to the card's cleanup.
+      case 5: openUsbDrive(); break;
       // The switches, together.
-      case 5: toggleInstallCheck(state_.makeShortcuts); break;
-      case 6:
+      case 6: toggleInstallCheck(state_.makeShortcuts); break;
+      case 7:
         toggleInstallCheck(state_.sounds);
         sounds_.setOn(state_.sounds);
         sounds_.play(Cue::Add); // turned on: heard at once
         break;
-      case 7: openBugReport(""); break;
-      case 8: openUsbDrive(); break;
+      case 8: openBugReport(""); break;
       default:
         // A server opens its form; "+ 서버 추가" an empty one.
         openServerForm(selected_ < int(config_.servers.size()) ? std::max(0, selected_) : -1);
