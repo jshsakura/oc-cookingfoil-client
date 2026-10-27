@@ -484,6 +484,36 @@ int main(int argc, char **argv) {
       ui.previewThemePopup(0);
       ui.previewThemeClosed();
     }
+    // 내 기기로 보내기: the card at the top right, on every theme.
+    {
+      const auto art = [](const char *id) { return std::string("https://fixture.invalid/icons/") + id + ".jpg"; };
+      const std::vector<std::pair<std::string, std::string>> one{{"Lantern Road", art("01000EA014150000")}};
+      const std::vector<std::pair<std::string, std::string>> three{
+          {"Lantern Road", art("01000EA014150000")}, {"Pixel Harbor", art("010020B016EF4000")},
+          {"Moss Kingdom", art("01002FC00412C000")}};
+      ui.screen(foil::ui::Screen::Home);
+      const std::pair<const char *, std::vector<std::pair<std::string, std::string>>> cards[] = {
+          {"10-arrival-one", one}};
+      for (const auto &[name, games] : cards) {
+        ui.previewArrivals(games);
+        for (int frame = 0; frame < 3; ++frame) ui.render(); // the covers load
+        SDL_Delay(300);
+        ui.render();
+        if (!app.screenshot(shot + "/" + name + ".png")) return 1;
+      }
+      for (int row = 1; row < 7; ++row) {
+        ui.previewThemePopup(row);
+        ui.previewThemeClosed();
+        ui.previewArrivals(three);
+        ui.render();
+        SDL_Delay(200);
+        ui.render();
+        if (!app.screenshot(shot + "/10-arrival-theme-0" + std::to_string(row) + ".png")) return 1;
+      }
+      ui.previewArrivals({});
+      ui.previewThemePopup(0);
+      ui.previewThemeClosed();
+    }
     // 설정 > 테마 on each palette, and the home screen in it.
     for (int row = 0; row < 7; ++row) {
       const auto name = std::string(row < 10 ? "0" : "") + std::to_string(row);
