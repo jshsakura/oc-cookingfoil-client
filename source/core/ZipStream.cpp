@@ -33,7 +33,8 @@ bool zipDirectory(const std::string &tail, uint64_t tailStart, uint64_t zipSize,
       if ((size == 0xFFFFFFFF || offset == 0xFFFFFFFF || le16(tail, at + 10) == 0xFFFF) && at >= 20 &&
           le32(tail, at - 20) == Zip64Locator) {
         const uint64_t end64 = le64(tail, at - 20 + 8);
-        if (end64 < tailStart || end64 - tailStart + 56 > tail.size())
+        // Subtracted, never added: an offset near 2^64 would wrap past the check.
+        if (end64 < tailStart || tail.size() < 56 || end64 - tailStart > tail.size() - 56)
           return false;
         const size_t z = size_t(end64 - tailStart);
         if (le32(tail, z) != Zip64End)
