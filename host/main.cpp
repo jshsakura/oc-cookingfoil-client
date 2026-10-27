@@ -434,6 +434,12 @@ int main(int argc, char **argv) {
     ui.render();
     if (!app.screenshot(shot + "/06-language-failed.png")) return 1;
     ui.previewLanguageDone();
+    // A first shortcut offered to start, with a download still waiting.
+    ui.screen(foil::ui::Screen::Home);
+    ui.previewLaunchOffer("Super Mario World · USA");
+    ui.render();
+    if (!app.screenshot(shot + "/08-launch-offer.png")) return 1;
+    ui.previewLaunchOfferDone();
     // 설정 > 테마 on each palette, and the home screen in it.
     for (int row = 0; row < 7; ++row) {
       const auto name = std::string(row < 10 ? "0" : "") + std::to_string(row);

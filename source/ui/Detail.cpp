@@ -31,21 +31,6 @@ std::vector<std::string> Application::pickedFileNames() const {
     for (const auto &f : selection_->files()) names.push_back(fileNameOf(f.url));
   return names;
 }
-// Surely unsigned by the list item, the detail's signed[], or (before a
-// server sends those) a failed NCA signature in integrity[].
-const net::Unsigned *Application::pickedUnsigned() const {
-  static const net::Unsigned unworded;
-  if (!selection_) return nullptr;
-  for (const auto &f : selection_->files()) {
-    const auto name = fileNameOf(f.url);
-    for (const auto &file : detail_.unsignedFiles)
-      if (file.file == name) return &file;
-    if (f.unsignedFile) return &unworded;
-    for (const auto &check : detail_.integrity)
-      if (check.reason == "signature-fail" && check.file == name) return &unworded;
-  }
-  return nullptr;
-}
 // Only that the game needs a patch to run, ahead of its description; what
 // it is shows in the install list, and the story belongs in the description.
 int Application::requiredPatchesCard(int y) {
@@ -71,35 +56,64 @@ int Application::notesCard(int y) {
   paint_.fonts.wrapped(detail_.notes, Inner, y + 18 + 28, 18, Ink, InnerW, 12, false, 1.5f);
   return int(y + height + 16);
 }
-// 파일 상태: each file the server's check flagged, with its label and the
-// server's help open below it (what was found, what it means, what an
-// install does, what to do). Long help scrolls with the page.
+// 파일 상태: what the server's check flagged, with its label and the server's
+// help open below it (what was found, what it means, what an install does,
+// what to do). Files told the same (a base, its update and DLC often are)
+// share one entry with their names listed together. Long help scrolls with
+// the page.
 int Application::fileChecksCard(int y) {
   if (detail_.integrity.empty()) return y;
   constexpr float X = 40, W = 750, Inner = X + 24, InnerW = W - 48, Gap = 18;
-  constexpr int MostLines = 40;
-  const auto height = [&](const net::FileCheck &check) {
-    float h = 26 + 12; // the label and the file's name
-    if (!check.title.empty()) h += paint_.fonts.wrapped(check.title, Inner, -10000, 18, Ink, InnerW, 3, true, 1.4f) + 8;
-    if (!check.body.empty()) h += paint_.fonts.wrapped(check.body, Inner, -10000, 17, Ink, InnerW, MostLines, false, 1.5f);
+  constexpr int MostLines = 40, NameLines = 2;
+  struct Entry {
+    const net::FileCheck *check;
+    std::vector<std::string> files;
+  };
+  std::vector<Entry> entries;
+  for (const auto &check : detail_.integrity) {
+    const auto same = std::find_if(entries.begin(), entries.end(), [&](const Entry &e) {
+      return e.check->level() == check.level() && e.check->label == check.label && e.check->title == check.title &&
+             e.check->body == check.body;
+    });
+    if (same == entries.end()) entries.push_back({&check, {check.file}});
+    else same->files.push_back(check.file);
+  }
+  // One file beside its label; several as a count there and their names in
+  // two lines at most below it.
+  const auto names = [](const Entry &entry) {
+    std::string out;
+    for (const auto &file : entry.files) out += (out.empty() ? "" : ", ") + file;
+    return out;
+  };
+  const auto height = [&](const Entry &entry) {
+    float h = 26 + 10;
+    if (entry.files.size() > 1) h += paint_.fonts.wrapped(names(entry), Inner, -10000, 15, Secondary, InnerW, NameLines) + 8;
+    if (!entry.check->title.empty())
+      h += paint_.fonts.wrapped(entry.check->title, Inner, -10000, 18, Ink, InnerW, 3, true, 1.4f) + 8;
+    if (!entry.check->body.empty())
+      h += paint_.fonts.wrapped(entry.check->body, Inner, -10000, 17, Ink, InnerW, MostLines, false, 1.5f);
     return h;
   };
   float total = 18 + 28;
-  for (const auto &check : detail_.integrity) total += height(check) + Gap;
+  for (const auto &entry : entries) total += height(entry) + Gap;
   paint_.rect(X, y, W, total, Surface, 14);
   paint_.fonts.text(tr("File status"), Inner, y + 18, 18, Ink, true, InnerW);
   float at = y + 18 + 28;
-  for (const auto &check : detail_.integrity) {
+  for (const auto &entry : entries) {
+    const auto &check = *entry.check;
     const auto label = !check.label.empty()     ? check.label
                        : check.level() == 3     ? std::string(tr("Damaged|file"))
                        : check.level() == 2     ? std::string(tr("May be damaged"))
                                                 : std::string(tr("Modified|file"));
     const float labelW = paint_.pill(label, Inner, at);
-    paint_.fonts.middle(check.file, Inner + labelW + 10, at + 13, 15, Secondary, false, InnerW - labelW - 10);
-    float line = at + 26 + 12;
+    const bool several = entry.files.size() > 1;
+    paint_.fonts.middle(several ? trf("{0} files", {std::to_string(entry.files.size())}) : entry.files.front(),
+                        Inner + labelW + 10, at + 13, 15, Secondary, several, InnerW - labelW - 10);
+    float line = at + 26 + 10;
+    if (several) line += paint_.fonts.wrapped(names(entry), Inner, line, 15, Secondary, InnerW, NameLines) + 8;
     if (!check.title.empty()) line += paint_.fonts.wrapped(check.title, Inner, line, 18, Ink, InnerW, 3, true, 1.4f) + 8;
     if (!check.body.empty()) paint_.fonts.wrapped(check.body, Inner, line, 17, Ink, InnerW, MostLines, false, 1.5f);
-    at += height(check) + Gap;
+    at += height(entry) + Gap;
   }
   return int(y + total + 16);
 }
@@ -205,8 +219,10 @@ void Application::detail() {
   };
   if (item.requiredPatches || (g.base && g.base->requiredPatches))
     pill(tr("Required patch"));
-  if (const int integrity = groupIntegrity(g))
-    pill(integrity == 3 ? tr("Damaged|file") : integrity == 2 ? tr("May be damaged") : tr("Modified file"));
+  // A damaged file up here; a modified one is common (most dumps are) and
+  // only the file status card below says so.
+  if (const int integrity = groupIntegrity(g); integrity >= 2)
+    pill(integrity == 3 ? tr("Damaged|file") : tr("May be damaged"));
   // With several servers, the ones it is on by name, its own first.
   if (manyServers()) {
     std::string on;
@@ -235,8 +251,8 @@ void Application::detail() {
                                            float(descriptionScroll_ * ScrollStep), float(descriptionHeight_), 1)));
   int y = BandTop + Pad - offset;
   y = requiredPatchesCard(y);
-  y = notesCard(y);
   y = fileChecksCard(y);
+  y = notesCard(y);
   if (!detail_.description.empty()) {
     y += paint_.fonts.wrapped(detail_.description, 40, y, 20, Ink, 750, 20, false, 1.6f) + 24;
   } else if (detailLoading_) {

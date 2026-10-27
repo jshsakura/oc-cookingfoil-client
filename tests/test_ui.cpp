@@ -366,14 +366,17 @@ int runUiTests(SDL_Renderer *renderer) {
     }
     app.setDetail(unsignedOne);
     app.render();
+    // Unsigned is the usual case (faked ticket signatures): a plain button.
+    CHECK(!app.installWarned());
     app.action(foil::ui::Action::Accept);
     CHECK(app.confirmingInstall() && !app.optionConfirm() && app.alert().empty());
     app.render();
     app.action(foil::ui::Action::Back);
-    // The detail's signed[] words it; still only a warning.
+    // The detail's signed[] words it; still plain.
     for (const auto &name : app.pickedFileNames()) unsignedOne.unsignedFiles.push_back({name, "서명 없음", "서버 문구"});
     app.setDetail(unsignedOne);
     app.render();
+    CHECK(!app.installWarned());
     app.action(foil::ui::Action::Accept);
     CHECK(app.confirmingInstall() && app.alert().empty());
     app.render();
@@ -387,6 +390,7 @@ int runUiTests(SDL_Renderer *renderer) {
     option.query = {{"fw", "18.1.0"}};
     app.previewFileOption(option);
     app.render();
+    CHECK(app.installWarned());
     app.action(foil::ui::Action::Accept);
     CHECK(app.optionConfirm());
     app.render();

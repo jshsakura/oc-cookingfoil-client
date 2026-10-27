@@ -115,7 +115,7 @@ float Application::pageTitle(const std::string &title, const std::string &meta, 
   return x;
 }
 void Application::backLink(const std::string &label) {
-  paint_.icon(7, 32, BackLine - 10, Surface, 20);
+  paint_.icon(7, 32, BackLine - 10, White, 20);
   const float right = paint_.fonts.middle(label, 56, BackLine, 17, White, false, 360);
   // Pressed, a pill just round the arrow and the label, not a card over the band.
   const float w = right + 12 - 24;
@@ -249,7 +249,7 @@ void Application::dialogs() {
       !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !tidyOpen_ && !homebrewSortAsk_ &&
       !languagePopup_ && !themePopup_ && languageGet_ == LanguageGet::None && !retroArchAsking_ && !raModal() && !saveNeedsGame_ && !savePicking_ && !serverAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
-      !homebrewRemoveAsk_ && !(homebrewAsk_ && homebrewExtras_) && !shortcutRemoveAsk_ && !selfShortcutAsk_ && !adminEdit_.open && unqueueAsk_ < 0 && !bugAsk_ && !serverInfo_ && !clockModal() && !resumeAsked())
+      !homebrewRemoveAsk_ && !(homebrewAsk_ && homebrewExtras_) && !shortcutRemoveAsk_ && !selfShortcutAsk_ && !launchOffer_ && !adminEdit_.open && unqueueAsk_ < 0 && !bugAsk_ && !serverInfo_ && !clockModal() && !resumeAsked())
     return;
   SDL_RenderSetClipRect(paint_.renderer, nullptr);
   paint_.rect(0, 0, 1280, 720, {0, 0, 0, 150});
@@ -260,7 +260,7 @@ void Application::dialogs() {
                     (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + serverAppSaveAsk_ * 2048 +
                     (serverForm_ && serverForm_->confirmDelete) * 4096 + shortcutRemoveAsk_ * 8192 +
                     selfShortcutAsk_ * 16384 + (unqueueAsk_ >= 0) * 32768 + bugAsk_ * 65536 +
-                    clockModal() * 262144 + resumeAsked() * 524288 + raOpen_ * 1048576 + raListOpen_ * 2097152 + adminEdit_.open * 4194304 + serverInfo_ * 8388608;
+                    clockModal() * 262144 + resumeAsked() * 524288 + raOpen_ * 1048576 + raListOpen_ * 2097152 + adminEdit_.open * 4194304 + serverInfo_ * 8388608 + bool(launchOffer_) * 16777216;
   if (which != popupKind_) {
     popupKind_ = which;
     popupAt_ = SDL_GetTicks();
@@ -273,6 +273,8 @@ void Application::dialogs() {
     clockDialog();
   } else if (selfShortcutAsk_ && alert_.empty()) {
     selfShortcutDialog();
+  } else if (launchOffer_ && alert_.empty()) {
+    launchOfferDialog();
   } else if (adminEdit_.open && alert_.empty()) {
     adminEditDialog();
   } else if (resumeAsked() && alert_.empty()) {
@@ -344,18 +346,12 @@ void Application::dialogs() {
     // warning icon), as tall as they are; the popup is wider so each keeps
     // to a line or two.
     constexpr float CardPad = 18, CardIcon = 56;
-    // An unsigned file says so on the same card, in the server's words.
-    const auto *unsignedFile = option ? nullptr : pickedUnsigned();
-    const std::string note = option         ? option->confirmBody
-                             : unsignedFile ? (!unsignedFile->body.empty() ? unsignedFile->body
-                                                                           : std::string(tr("This file is not signed, so the console may refuse to install it.")))
-                                            : std::string();
+    const std::string note = option ? option->confirmBody : std::string();
     const float cardW = CardIcon + OptionNoteWidth + CardPad;
     const float noteH = note.empty() ? 0 : paint_.fonts.lineCount(note, 18, OptionNoteWidth, OptionNoteLines) * 18 * 1.4f;
     const float noteBlock = note.empty() ? 0 : noteH + 2 * CardPad + 20;
     const std::string title = option ? (!option->confirmTitle.empty() ? option->confirmTitle : option->label)
-                              : unsignedFile && !unsignedFile->title.empty() ? unsignedFile->title
-                                                                             : std::string(tr("Install this game?"));
+                                     : std::string(tr("Install this game?"));
     const auto body = modal(note.empty() ? 700 : cardW + 64, 24 + 96 + 24 + (pick ? PickRow : 0) + noteBlock, title,
                             tr("Cancel"), "", tr("Install"), 4);
     const float x = body.x + 32, y = body.y + 24;
