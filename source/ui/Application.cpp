@@ -2158,9 +2158,6 @@ void Application::card(const Group &g, float x, float y, bool selected,
   if (index < groups_.size())
     hit(x, y, 150, 220, [this, index] { openDetail(index); });
   cover(g.representative.icon, x, y, 150, selected, g.representative.name);
-  // Surely unsigned: dimmed, as the console may refuse it.
-  if ((g.base ? *g.base : g.representative).unsignedFile)
-    paint_.rect(x, y, 150, 150, {Ground.r, Ground.g, Ground.b, 170}, 14);
   // Download size on the top left, in the same small badge as the score:
   // the base with its update, as a player installs them.
   if (const auto bytes = groupBytes(g); bytes > 0) {
@@ -2770,12 +2767,13 @@ std::vector<Item> Application::pickedNeeds() const {
 std::string Application::pickedShortfall() const {
   return install::missingFirmware(pickedNeeds(), platform::firmwareVersion());
 }
-// A plugin's option decides first; then the firmware blocks; an unsigned
-// file warns but can be tried.
+// A plugin's option decides first (its warned, striped button); then the
+// firmware blocks. An unsigned file is the usual case (dumps carry a faked
+// ticket signature and expect sigpatches), so it changes nothing here.
 Application::InstallButton Application::installButton() const {
   if (const auto *option = pickedOption()) return option->blocked ? InstallButton::Blocked : InstallButton::Warned;
   if (!pickedShortfall().empty()) return InstallButton::Blocked;
-  return pickedUnsigned() ? InstallButton::Warned : InstallButton::Plain;
+  return InstallButton::Plain;
 }
 void Application::requestInstall() {
   if (!selection_ || detailGroup_ >= groups_.size())

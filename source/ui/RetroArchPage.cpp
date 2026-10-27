@@ -75,7 +75,7 @@ void Application::retroArchPage() {
     if (!size) size = last->bytes;
   }
   paint_.rect(0, 0, 1280, 212, {10, 10, 14, 255});
-  paint_.icon(7, 32, BackLine - 10, Surface, 20);
+  paint_.icon(7, 32, BackLine - 10, White, 20);
   paint_.fonts.middle(previous_ == Screen::Downloads ? tr("Downloads") : tr("Retro games"), 56, BackLine, 17, White, false, 360);
   hit(24, BackLine - 20, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;

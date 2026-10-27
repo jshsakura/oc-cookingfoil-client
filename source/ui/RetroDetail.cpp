@@ -308,7 +308,7 @@ void Application::retroDetail() {
     paint_.skeleton(0, 0, 1280, 212, 0, true);
   images_->draw(banner, 0, 0, 1280, 212, 0, true);
   const auto back = screenLabel(previous_);
-  paint_.icon(7, 32, BackLine - 10, Surface, 20);
+  paint_.icon(7, 32, BackLine - 10, White, 20);
   // The band's chips from the right, 10 apart: admin, achievements, votes.
   float right = adminChip();
   if (right < BandRight) right -= 10;

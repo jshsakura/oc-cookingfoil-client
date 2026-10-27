@@ -138,6 +138,8 @@ public:
   std::string selectedName() const;
   void setDetail(net::Detail detail);
   bool confirmingInstall() const { return confirmInstall_; }
+  // The install button striped as a warning: only a plugin's option.
+  bool installWarned() const { return installButton() == InstallButton::Warned; }
   void offerFeature(const std::string &server, const std::string &feature) { serverFeatures_[server].insert(feature); }
   // `option` for every picked file, as a server would answer (tests, the
   // preview); one without an id takes them away.
@@ -1428,7 +1430,6 @@ private:
   // A picked file the server found surely unsigned: the console may refuse
   // it, so its button warns and its confirm says so, in the server's words
   // (empty when it gave none). Null when none is, or when it is not known.
-  const net::Unsigned *pickedUnsigned() const;
   // The install button's look: plain, blocked (gray; A says why) or warned
   // (butter with stripes; its confirm warns first), which a server plugin's
   // option or an unsigned file takes.

@@ -339,18 +339,12 @@ void Application::dialogs() {
     // warning icon), as tall as they are; the popup is wider so each keeps
     // to a line or two.
     constexpr float CardPad = 18, CardIcon = 56;
-    // An unsigned file says so on the same card, in the server's words.
-    const auto *unsignedFile = option ? nullptr : pickedUnsigned();
-    const std::string note = option         ? option->confirmBody
-                             : unsignedFile ? (!unsignedFile->body.empty() ? unsignedFile->body
-                                                                           : std::string(tr("This file is not signed, so the console may refuse to install it.")))
-                                            : std::string();
+    const std::string note = option ? option->confirmBody : std::string();
     const float cardW = CardIcon + OptionNoteWidth + CardPad;
     const float noteH = note.empty() ? 0 : paint_.fonts.lineCount(note, 18, OptionNoteWidth, OptionNoteLines) * 18 * 1.4f;
     const float noteBlock = note.empty() ? 0 : noteH + 2 * CardPad + 20;
     const std::string title = option ? (!option->confirmTitle.empty() ? option->confirmTitle : option->label)
-                              : unsignedFile && !unsignedFile->title.empty() ? unsignedFile->title
-                                                                             : std::string(tr("Install this game?"));
+                                     : std::string(tr("Install this game?"));
     const auto body = modal(note.empty() ? 700 : cardW + 64, 24 + 96 + 24 + (pick ? PickRow : 0) + noteBlock, title,
                             tr("Cancel"), "", tr("Install"), 4);
     const float x = body.x + 32, y = body.y + 24;
