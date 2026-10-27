@@ -21,6 +21,15 @@ It includes or links the components below. Each remains under its own license.
 | `lib.LICENSE` | CyberFoil library code | MIT | Copyright (c) 2026 luketanti |
 | `libusbhsfs.LICENSE` | libusbhsfs (USB code, not compiled into CookingFoil) | ISC | Copyright (c) 2020, DarkMatterCore; Copyright (c) 2020, XorTroll |
 
+### libhaze (MTP for 연결 to PC)
+
+- Source: https://github.com/ITotalJustice/libhaze, as CyberFoil carries it in
+  `third_party/CyberFoil/external/libhaze`; changed by `third_party/patches/0012-cookingfoil-haze-no-abort.patch`
+  (failures end its thread instead of the app; buffers held only while it runs)
+- Derived from haze in [Atmosphère](https://github.com/Atmosphere-NX/Atmosphere) (`troposphere/haze`)
+- License: GPL-2.0, full text in `third_party/CyberFoil/external/libhaze/LICENSE`
+- Copyright (c) Atmosphère-NX; libhaze changes by ITotalJustice
+
 ### SQLite
 
 - Source: https://www.sqlite.org/ amalgamation 3.46.1 (`third_party/sqlite`, unmodified),

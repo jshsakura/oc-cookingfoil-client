@@ -458,6 +458,7 @@ static const char *IconPaths[] = {
     R"(<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>)", // 47 thumbs up
     R"(<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>)", // 48 thumbs down
     R"(<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>)", // 49 moon (theme)
+    R"(<circle cx="10" cy="7" r="1"/><circle cx="4" cy="20" r="1"/><path d="M4.7 19.3 19 5"/><path d="m21 3-3 1 2 2Z"/><path d="M9.26 7.68 5 12l2 5"/><path d="m10 14 5 2 3.5-3.5"/><path d="m18 12 1-1 1 1-1 1Z"/>)", // 50 usb (connect to PC)
 };
 // Glyph-like marks read better a touch heavier than the menu icons.
 // Marks read a touch heavier than outline icons.
@@ -469,7 +470,7 @@ int Painter::iconNamed(const std::string &name) {
       {"hash", 18},     {"branch", 19},  {"package", 22},  {"check-circle", 24}, {"alert", 25}, {"sd", 26},
       {"gamepad", 27},  {"trophy", 28},  {"sparkle", 29},  {"clock", 30},    {"star", 31},     {"wrench", 32},
       {"info", 33},     {"shield", 34},  {"joystick", 35}, {"save", 36},     {"upload", 40},   {"image", 41},
-      {"layers", 42},   {"user", 43},    {"volume", 44},   {"shield-check", 45}, {"thumbs-up", 47}, {"thumbs-down", 48}, {"moon", 49}};
+      {"layers", 42},   {"user", 43},    {"volume", 44},   {"shield-check", 45}, {"thumbs-up", 47}, {"thumbs-down", 48}, {"moon", 49}, {"usb", 50}};
   const auto found = Names.find(name);
   return found == Names.end() ? -1 : found->second;
 }

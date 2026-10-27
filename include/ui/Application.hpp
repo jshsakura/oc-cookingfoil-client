@@ -17,6 +17,7 @@
 #include "ui/Job.hpp"
 #include "ui/Qr.hpp"
 #include "platform/Seal.hpp"
+#include "platform/UsbDrive.hpp"
 #include "ui/Sounds.hpp"
 #include "core/Installed.hpp"
 #include "core/SaveBackups.hpp"
@@ -282,6 +283,23 @@ public:
   void previewThemeClosed() { themePopup_ = false; }
   void previewLaunchOffer(std::string name) { launchOffer_ = LaunchOffer{0x0500000000001000ULL, std::move(name)}; }
   void previewLaunchOfferDone() { launchOffer_.reset(); }
+  // 연결 to PC in a given state (platform::usb on the host only reports it).
+  void previewUsbDrive(platform::usb::Status status) {
+    usbOpen_ = true;
+    usbStopping_ = false;
+    platform::usb::preview(std::move(status));
+    usbStatus_ = platform::usb::status();
+  }
+  void previewUsbStopping() { usbStopping_ = true; }
+  void previewUsbApplet() { usbAppletAsk_ = true; }
+  void previewUsbDone() {
+    platform::usb::stop();
+    usbOpen_ = usbStopping_ = usbAppletAsk_ = false;
+  }
+  bool usbDriveOpen() const { return usbOpen_; }
+  bool usbAppletShown() const { return usbAppletAsk_; }
+  SDL_FRect sdChip() const { return sdChip_; } // tests: where the footer's SD card space was drawn
+  bool footerPending() const { return menuPending(); } // tests: the footer still shows placeholders
   void previewLanguagePopup(int row) {
     languagePopup_ = true;
     languageRow_ = row;
@@ -421,7 +439,7 @@ public:
   void saveOwnState();
   // 설정's options card: 언어, 기본 저장 위치, 앱 업데이트, 남은 파일 정리,
   // then the switches: 홈 메뉴 바로가기, 효과음, then 버그 보고 보내기.
-  static constexpr int SettingsOptions = 8;
+  static constexpr int SettingsOptions = 9;
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).
@@ -705,6 +723,28 @@ private:
   void launchOfferDialog();
   void launchOfferAction(Action a);
   bool selfShortcutClosed_ = false; // closed this run
+  // 연결 to PC: the SD card over USB (platform::usb) while its popup is
+  // open. The popup closes itself when the cable goes; closing stops USB
+  // and sweeps what a Mac left, on usbWorker_.
+  bool usbOpen_ = false, usbStopping_ = false;
+  SDL_FRect sdChip_{}; // the footer's SD card space, its touch area
+  bool usbAppletAsk_ = false; // pressed in applet mode: why not, and the shortcut
+  platform::usb::Status usbStatus_;
+  uint32_t usbReadAt_ = 0, usbLostAt_ = 0;
+  bool usbToldPlugged_ = false;
+  std::thread usbWorker_;
+  std::atomic<bool> usbStopped_{false};
+  int usbSwept_ = 0; // Mac files the last close removed
+  bool usbLost_ = false; // the close came from the cable going
+  void openUsbDrive();
+  void closeUsbDrive(bool lost);
+  void pollUsbDrive();
+  void usbDriveDialog();
+  void usbDriveAction(Action a);
+  void usbAppletDialog();
+  void usbAppletAction(Action a);
+  bool selfShortcutPossible() const;
+  void makeSelfShortcut();
   // The app popup's shortcut row: only for an app on the card, after its
   // 패치 and 세이브 rows.
   bool homebrewShortcutRow(const homebrew::App &app) const;

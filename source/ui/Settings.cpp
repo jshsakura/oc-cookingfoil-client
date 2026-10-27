@@ -140,6 +140,8 @@ void Application::settings() {
   // popup and deletes the ones picked.
   option(4, 14, tr("File cleanup"), tidyBusy_ && tidyDeleting_ ? tr("Deleting") : tr("Clears leftover files and caches"),
          Secondary, false);
+  // The SD card to a PC over the USB cable, in a popup.
+  option(8, 50, tr("Connect to PC"), tr("Opens the SD card on a PC over USB"), Secondary, false);
   // This build against the server's newest; A checks or updates.
   option(3, 3, tr("App update"), appUpdateStatus(), appUpdate_ == AppUpdate::Available ? Ink : Secondary,
          appUpdate_ == AppUpdate::Available);
