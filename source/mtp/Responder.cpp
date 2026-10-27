@@ -7,7 +7,9 @@ namespace foil::mtp {
 namespace {
 enum Container : uint16_t { CommandBlock = 1, DataBlock = 2, ResponseBlock = 3 };
 constexpr size_t Header = 12;
-constexpr uint32_t Card = 0x00010001, Any = 0xFFFFFFFF;
+constexpr uint32_t Any = 0xFFFFFFFF;
+// Volume n is storage n+1, its first logical partition.
+uint32_t storageId(uint32_t volume) { return (volume + 1) << 16 | 1; }
 // Operations (PTP 1.1 table 18, MTP 1.1 appendix D).
 enum Op : uint16_t {
   GetDeviceInfo = 0x1001,
@@ -155,7 +157,6 @@ struct In {
     pass(size_t(count) * width[base]);
   }
 };
-uint32_t parentParam(uint32_t parent) { return parent == Objects::Root ? 0 : parent; }
 std::string join(const std::string &folder, const std::string &name) { return folder == "/" ? "/" + name : folder + "/" + name; }
 bool validName(const std::string &name) {
   return !name.empty() && name != "." && name != ".." && name.find_first_of("/\\") == std::string::npos;
@@ -163,9 +164,9 @@ bool validName(const std::string &name) {
 } // namespace
 
 Responder::Responder(Pipe &pipe, class Storage &storage, Listener &listener, uint8_t *buffers[2], size_t chunk,
-                     std::vector<std::string> guarded)
+                     std::vector<Volume> volumes)
     : pipe_(pipe), storage_(storage), listener_(listener), buffers_{buffers[0], buffers[1]}, chunk_(chunk),
-      guarded_(std::move(guarded)) {}
+      volumes_(std::move(volumes)), objects_(uint32_t(volumes_.size())) {}
 
 void Responder::reset() {
   if (session_) listener_.session(false);
@@ -173,10 +174,10 @@ void Responder::reset() {
   pending_ = {};
   objects_.clear();
 }
-bool Responder::guarded(const std::string &path) const {
+bool Responder::guarded(uint32_t volume, const std::string &path) const {
   const char *rest = path.c_str();
   while (*rest == '/') ++rest;
-  for (const auto &top : guarded_)
+  for (const auto &top : volumes_[volume].guarded)
     if (!strncasecmp(rest, top.c_str(), top.size()) && (rest[top.size()] == '\0' || rest[top.size()] == '/')) return true;
   return false;
 }
@@ -233,26 +234,43 @@ bool Responder::receiveData(std::vector<uint8_t> &out) {
     if (size_t(n) < chunk_ || (expected != 0xFFFFFFFF && got >= expected)) return true;
   }
 }
+std::string Responder::onCard(uint32_t handle) const {
+  const auto &base = volumes_[objects_.rootOf(handle)].folder;
+  const auto path = objects_.path(handle);
+  return base.empty() ? path : path == "/" ? base : base + path;
+}
+bool Responder::volumeOf(uint32_t storage, uint32_t &volume) const {
+  volume = (storage >> 16) - 1;
+  return (storage & 0xFFFF) == 1 && volume < volumes_.size();
+}
 const std::vector<uint32_t> *Responder::listFolder(uint32_t folder) {
   std::vector<Entry> entries;
-  if (!storage_.list(objects_.path(folder), entries)) return nullptr;
-  if (folder == Objects::Root)
-    entries.erase(std::remove_if(entries.begin(), entries.end(), [&](const Entry &e) { return guarded("/" + e.name); }),
+  if (!storage_.list(onCard(folder), entries)) return nullptr;
+  if (objects_.isRoot(folder))
+    entries.erase(std::remove_if(entries.begin(), entries.end(), [&](const Entry &e) { return guarded(folder, "/" + e.name); }),
                   entries.end());
   return &objects_.sync(folder, std::move(entries));
 }
-bool Responder::folderOf(uint32_t param, uint32_t &folder) const {
-  folder = param == Any ? Objects::Root : param;
-  if (folder == Objects::Root) return true;
+bool Responder::folderOf(uint32_t storage, uint32_t param, uint32_t &folder) const {
+  if (param == 0 || param == Any) {
+    // The top of the volume asked for; a PC that names none means the card.
+    uint32_t volume = 0;
+    if (storage && storage != Any && !volumeOf(storage, volume)) return false;
+    folder = volume;
+    return true;
+  }
+  folder = param;
   const auto *f = objects_.find(folder);
   return f && f->folder;
 }
 uint16_t Responder::createObject(uint32_t folder, Entry entry, uint32_t &handle) {
   handle = 0;
   if (!validName(entry.name)) return InvalidDataset;
-  const auto folderPath = objects_.path(folder);
-  const auto path = join(folderPath, entry.name);
-  if (guarded(path)) return AccessDenied;
+  const auto volume = objects_.rootOf(folder);
+  if (!volumes_[volume].adds) return AccessDenied;
+  const auto path = join(objects_.path(folder), entry.name);
+  if (guarded(volume, path)) return AccessDenied;
+  const auto folderPath = onCard(folder), cardPath = join(folderPath, entry.name);
   // What is there now, so a name already taken is found.
   if (!objects_.folder(folder).listed && !listFolder(folder)) return GeneralError;
   if (const auto had = objects_.child(folder, entry.name)) {
@@ -260,11 +278,11 @@ uint16_t Responder::createObject(uint32_t folder, Entry entry, uint32_t &handle)
     // A folder copied onto one of its name fills it; a file replaces the
     // old one (the PC asked before sending it).
     if (wasFolder && entry.folder) return handle = had, Ok;
-    if (wasFolder != entry.folder || !storage_.remove(objects_.path(had), false)) return AccessDenied;
+    if (wasFolder != entry.folder || !storage_.remove(onCard(had), false)) return AccessDenied;
     objects_.remove(had);
   }
   if (!entry.folder && entry.size != UINT64_MAX && entry.size > storage_.freeSpace()) return StoreFull;
-  const bool made = entry.folder ? storage_.createFolder(path) : storage_.createFile(path, entry.size);
+  const bool made = entry.folder ? storage_.createFolder(cardPath) : storage_.createFile(cardPath, entry.size);
   if (!made) return entry.folder ? AccessDenied : StoreFull;
   if (entry.size == UINT64_MAX) entry.size = 0;
   handle = objects_.add(folder, std::move(entry));
@@ -303,8 +321,8 @@ bool Responder::serve() {
   case CloseSession: reset(); return respond(c, Ok);
   case GetStorageIDs: {
     Out out;
-    out.u32(1);
-    out.u32(Card);
+    out.u32(uint32_t(volumes_.size()));
+    for (uint32_t v = 0; v < volumes_.size(); ++v) out.u32(storageId(v));
     return sendData(c, out.bytes) && respond(c, Ok);
   }
   case GetStorageInfo: return storageInfo(c);
@@ -343,22 +361,23 @@ bool Responder::deviceInfo(const Command &c) {
   return sendData(c, out.bytes) && respond(c, Ok);
 }
 bool Responder::storageInfo(const Command &c) {
-  if (c.params[0] != Card) return respond(c, InvalidStorage);
+  uint32_t volume;
+  if (!volumeOf(c.params[0], volume)) return respond(c, InvalidStorage);
   Out out;
   out.u16(0x0004); // removable RAM, as a memory card reads
   out.u16(0x0002); // hierarchical
-  out.u16(0x0000); // read and write
+  out.u16(volumes_[volume].adds ? 0x0000 : 0x0002); // read and write, or read and delete
   out.u64(storage_.totalSpace());
   out.u64(storage_.freeSpace());
   out.u32(0xFFFFFFFF);
-  out.str("microSD Card"); // i18n: as is
+  out.str(volumes_[volume].name);
   out.str("");
   return sendData(c, out.bytes) && respond(c, Ok);
 }
 bool Responder::objectHandles(const Command &c) {
-  if (c.params[0] != Card && c.params[0] != Any) return respond(c, InvalidStorage);
-  uint32_t folder;
-  if (!folderOf(c.params[2], folder)) return respond(c, objects_.find(c.params[2]) ? InvalidParent : InvalidHandle);
+  uint32_t volume, folder;
+  if (c.params[0] != Any && !volumeOf(c.params[0], volume)) return respond(c, InvalidStorage);
+  if (!folderOf(c.params[0], c.params[2], folder)) return respond(c, objects_.find(c.params[2]) ? InvalidParent : InvalidHandle);
   const auto *children = listFolder(folder);
   if (!children) return respond(c, GeneralError);
   const auto format = uint16_t(c.params[1]);
@@ -378,7 +397,7 @@ bool Responder::objectInfo(const Command &c) {
   const auto *o = objects_.find(c.params[0]);
   if (!o) return respond(c, InvalidHandle);
   Out out;
-  out.u32(Card);
+  out.u32(storageId(objects_.rootOf(c.params[0])));
   out.u16(o->folder ? Association : Undefined);
   out.u16(0); // no protection
   out.u32(uint32_t(std::min<uint64_t>(o->size, 0xFFFFFFFF)));
@@ -389,7 +408,7 @@ bool Responder::objectInfo(const Command &c) {
   out.u32(0); // image width, height, depth
   out.u32(0);
   out.u32(0);
-  out.u32(parentParam(o->parent));
+  out.u32(objects_.isRoot(o->parent) ? 0 : o->parent);
   out.u16(o->folder ? 1 : 0); // a generic folder
   out.u32(0);
   out.u32(0);
@@ -405,7 +424,7 @@ bool Responder::getObject(const Command &c) {
   const auto *o = objects_.find(c.params[0]);
   if (!o) return respond(c, InvalidHandle);
   if (o->folder) return respond(c, InvalidHandle);
-  const auto file = storage_.open(objects_.path(c.params[0]), false);
+  const auto file = storage_.open(onCard(c.params[0]), false);
   if (!file) return respond(c, AccessDenied);
   const uint64_t size = o->size;
   listener_.copyBegins(o->name, false);
@@ -444,9 +463,8 @@ bool Responder::getObject(const Command &c) {
 bool Responder::sendObjectInfo(const Command &c) {
   std::vector<uint8_t> data;
   if (!receiveData(data)) return false;
-  if (c.params[0] && c.params[0] != Card) return respond(c, InvalidStorage);
   uint32_t folder;
-  if (!folderOf(c.params[1], folder)) return respond(c, InvalidParent);
+  if (!folderOf(c.params[0], c.params[1], folder)) return respond(c, InvalidParent);
   In in{data.data(), data.size()};
   in.pass(4);
   const auto format = in.u16();
@@ -459,16 +477,15 @@ bool Responder::sendObjectInfo(const Command &c) {
   const auto code = createObject(folder, entry, handle);
   if (code != Ok) return respond(c, code);
   pending_ = entry.folder ? Pending{} : Pending{handle, entry.size};
-  return respond(c, Ok, {Card, parentParam(folder), handle});
+  return respond(c, Ok, {storageId(objects_.rootOf(folder)), objects_.isRoot(folder) ? 0 : folder, handle});
 }
 // As SendObjectInfo, with the size in 64 bits: what Windows sends for a file
 // of 4 GB or more.
 bool Responder::sendObjectPropList(const Command &c) {
   std::vector<uint8_t> data;
   if (!receiveData(data)) return false;
-  if (c.params[0] && c.params[0] != Card) return respond(c, InvalidStorage);
   uint32_t folder;
-  if (!folderOf(c.params[1], folder)) return respond(c, InvalidParent);
+  if (!folderOf(c.params[0], c.params[1], folder)) return respond(c, InvalidParent);
   Entry entry;
   entry.folder = uint16_t(c.params[2]) == Association;
   entry.size = uint64_t(c.params[3]) << 32 | c.params[4];
@@ -485,7 +502,7 @@ bool Responder::sendObjectPropList(const Command &c) {
   const auto code = createObject(folder, entry, handle);
   if (code != Ok) return respond(c, code, {0, 0, 0, 0});
   pending_ = entry.folder ? Pending{} : Pending{handle, entry.size};
-  return respond(c, Ok, {Card, parentParam(folder), handle});
+  return respond(c, Ok, {storageId(objects_.rootOf(folder)), objects_.isRoot(folder) ? 0 : folder, handle});
 }
 // The PC's file onto the card, two buffers turning: the cable fills one
 // while the card writes the other.
@@ -493,7 +510,7 @@ bool Responder::sendObject(const Command &c) {
   const auto pending = std::exchange(pending_, Pending{});
   const auto *o = objects_.find(pending.handle);
   std::unique_ptr<File> file;
-  const auto path = o ? objects_.path(pending.handle) : std::string();
+  const auto path = o ? onCard(pending.handle) : std::string();
   if (o) file = storage_.open(path, true);
   if (!file) {
     std::vector<uint8_t> dropped;
@@ -552,10 +569,9 @@ bool Responder::sendObject(const Command &c) {
 bool Responder::deleteObject(const Command &c) {
   const auto *o = objects_.find(c.params[0]);
   if (!o) return respond(c, c.params[0] == Any ? AccessDenied : InvalidHandle);
-  const auto path = objects_.path(c.params[0]);
-  if (guarded(path)) return respond(c, AccessDenied);
-  if (!storage_.remove(path, o->folder)) return respond(c, AccessDenied);
-  listener_.touched(objects_.path(o->parent));
+  if (guarded(objects_.rootOf(c.params[0]), objects_.path(c.params[0]))) return respond(c, AccessDenied);
+  if (!storage_.remove(onCard(c.params[0]), o->folder)) return respond(c, AccessDenied);
+  listener_.touched(onCard(o->parent));
   objects_.remove(c.params[0]);
   return respond(c, Ok);
 }
@@ -584,13 +600,14 @@ bool Responder::propDesc(const Command &c) {
   return sendData(c, out.bytes) && respond(c, Ok);
 }
 namespace {
-void value(Out &out, uint16_t prop, uint32_t handle, const Objects::Object &o) {
+void value(Out &out, uint16_t prop, uint32_t handle, const Objects &objects) {
+  const auto &o = *objects.find(handle);
   switch (prop) {
-  case StorageId: return out.u32(Card);
+  case StorageId: return out.u32(storageId(objects.rootOf(handle)));
   case ObjectFormat: return out.u16(o.folder ? Association : Undefined);
   case ObjectSize: return out.u64(o.size);
   case FileName: return out.str(o.name);
-  case ParentObject: return out.u32(parentParam(o.parent));
+  case ParentObject: return out.u32(objects.isRoot(o.parent) ? 0 : o.parent);
   case UniqueId: return out.u64(handle), out.u64(0);
   }
 }
@@ -600,7 +617,7 @@ bool Responder::propValue(const Command &c) {
   if (!o) return respond(c, InvalidHandle);
   if (!supported(c.params[1])) return respond(c, InvalidPropCode);
   Out out;
-  value(out, uint16_t(c.params[1]), c.params[0], *o);
+  value(out, uint16_t(c.params[1]), c.params[0], objects_);
   return sendData(c, out.bytes) && respond(c, Ok);
 }
 // A rename: the only property the PC can set.
@@ -613,10 +630,11 @@ bool Responder::setPropValue(const Command &c) {
   In in{data.data(), data.size()};
   const auto name = in.str();
   if (!in.ok || !validName(name)) return respond(c, InvalidPropValue);
-  const auto from = objects_.path(c.params[0]);
-  const auto folder = objects_.path(o->parent);
-  const auto to = join(folder, name);
-  if (guarded(from) || guarded(to)) return respond(c, AccessDenied);
+  const auto volume = objects_.rootOf(c.params[0]);
+  if (!volumes_[volume].adds || guarded(volume, objects_.path(c.params[0])) ||
+      guarded(volume, join(objects_.path(o->parent), name)))
+    return respond(c, AccessDenied);
+  const auto from = onCard(c.params[0]), folder = onCard(o->parent), to = join(folder, name);
   if (name == o->name) return respond(c, Ok);
   const auto taken = objects_.child(o->parent, name);
   // Only the case of the name changes: the card sees one file either way.
@@ -637,7 +655,7 @@ bool Responder::propList(const Command &c) {
     handles.push_back(handle);
   } else if (depth == 1) {
     uint32_t folder;
-    if (!folderOf(handle == 0 ? Any : handle, folder)) return respond(c, InvalidHandle);
+    if (!folderOf(0, handle, folder)) return respond(c, InvalidHandle);
     const auto *children = listFolder(folder);
     if (!children) return respond(c, GeneralError);
     handles = *children;
@@ -655,7 +673,7 @@ bool Responder::propList(const Command &c) {
       out.u32(h);
       out.u16(p);
       out.u16(typeOf(p));
-      value(out, p, h, o);
+      value(out, p, h, objects_);
       ++count;
     }
   }

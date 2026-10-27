@@ -6,16 +6,20 @@ namespace foil::mtp {
 void Objects::clear() {
   // swap, not clear(): the memory itself goes back.
   std::vector<Object>().swap(table_);
-  table_.emplace_back();
-  table_[Root].folder = true;
+  table_.resize(roots_);
+  for (auto &root : table_) root.folder = true;
 }
 const Objects::Object *Objects::find(uint32_t handle) const {
-  if (handle == Root || handle >= table_.size() || table_[handle].name.empty()) return nullptr;
+  if (isRoot(handle) || handle >= table_.size() || table_[handle].name.empty()) return nullptr;
   return &table_[handle];
+}
+uint32_t Objects::rootOf(uint32_t handle) const {
+  while (!isRoot(handle) && handle < table_.size()) handle = table_[handle].parent;
+  return handle < roots_ ? handle : 0;
 }
 std::string Objects::path(uint32_t handle) const {
   std::vector<const std::string *> names;
-  for (uint32_t at = handle; at != Root && at < table_.size(); at = table_[at].parent) names.push_back(&table_[at].name);
+  for (uint32_t at = handle; !isRoot(at) && at < table_.size(); at = table_[at].parent) names.push_back(&table_[at].name);
   std::string out;
   for (auto it = names.rbegin(); it != names.rend(); ++it) out += "/" + **it;
   return out.empty() ? "/" : out;

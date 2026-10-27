@@ -157,13 +157,42 @@ struct Shown final : mtp::Listener {
     if (usb::touched.size() < TouchedMax) usb::touched.insert(folder);
   }
 };
+// True when this boot runs from an emuMMC (Atmosphère's ExosphereEmummcType).
+bool bootedEmummc() {
+  if (R_FAILED(splInitialize())) return false;
+  u64 type = 0;
+  const bool ok = R_SUCCEEDED(splGetConfig(SplConfigItem(65007), &type));
+  splExit();
+  return ok && type != 0;
+}
+std::string readSmall(FsFileSystem *fs, const char *path) {
+  FsFile file;
+  if (R_FAILED(fsFsOpenFile(fs, path, FsOpenMode_Read, &file))) return "";
+  std::string text(4096, '\0');
+  u64 got = 0;
+  if (R_FAILED(fsFileRead(&file, 0, text.data(), text.size(), FsReadOption_None, &got))) got = 0;
+  fsFileClose(&file);
+  return text.substr(0, got);
+}
+// The card, and the album of the system this boot runs (the emuMMC's when it
+// is one): its screenshots and clips can be copied off and deleted. A
+// console that has never taken one has no album folder, and no such drive.
+std::vector<mtp::Volume> volumes(FsFileSystem *fs) {
+  std::vector<mtp::Volume> out{{"SD Card", "", true, Guarded}};
+  const bool emummc = bootedEmummc();
+  const auto album = mtp::nintendoFolder(emummc, emummc ? readSmall(fs, "/emuMMC/emummc.ini") : "") + "/Album";
+  FsDirEntryType type;
+  if (R_SUCCEEDED(fsFsGetEntryType(fs, album.c_str(), &type)) && type == FsDirEntryType_Dir)
+    out.push_back({"Album", album, false, {}});
+  return out;
+}
 struct Session {
   UsbPipe pipe;
   SdCard card;
   Shown listener;
   uint8_t *buffers[2];
   mtp::Responder responder;
-  Session(uint8_t *a, uint8_t *b) : buffers{a, b}, responder(pipe, card, listener, buffers, Chunk, Guarded) {}
+  Session(uint8_t *a, uint8_t *b) : buffers{a, b}, responder(pipe, card, listener, buffers, Chunk, volumes(card.fs)) {}
 };
 Thread worker;
 uint8_t *buffers[2] = {};

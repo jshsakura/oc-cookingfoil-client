@@ -217,13 +217,17 @@ int runMtpTests() {
   put(card.root / "switch" / "app.nro", bytes(1000, 1));
   put(card.root / "big.bin", bytes(3 * Chunk + 100, 2));
   put(card.root / "exact.bin", bytes(2 * Chunk - 12, 3)); // 12 + size ends on a packet
+  fs::create_directories(card.root / "emuMMC" / "RAW1" / "Nintendo" / "Album" / "2026" / "10");
+  put(card.root / "emuMMC" / "RAW1" / "Nintendo" / "Album" / "2026" / "10" / "shot.jpg", bytes(300, 6));
 
   std::vector<uint8_t> a(Chunk), b(Chunk);
   uint8_t *buffers[2] = {a.data(), b.data()};
   FakePipe pipe;
   card.pipe = &pipe;
   Seen seen;
-  foil::mtp::Responder mtp(pipe, card, seen, buffers, Chunk, {"Nintendo", "emuMMC"});
+  const auto album = foil::mtp::nintendoFolder(true, "[emummc]\nenabled=1\nnintendo_path=emuMMC/RAW1/Nintendo\n") + "/Album";
+  foil::mtp::Responder mtp(pipe, card, seen, buffers, Chunk,
+                           {{"SD Card", "", true, {"Nintendo", "emuMMC"}}, {"Album", album, false, {}}});
   Pc pc{pipe, mtp};
 
   // Before a session only the device's description answers; it names MTP.
@@ -231,15 +235,20 @@ int runMtpTests() {
   CHECK(info.code == 0x2001 && u32(info.data, 2) == 6);
   CHECK(pc.call(0x1004).code == 0x2003);
   CHECK(pc.call(0x1002, {1}).code == 0x2001 && seen.open);
+  // Two drives: the card, and the booted system's album.
   const auto ids = pc.call(0x1004);
-  CHECK(ids.code == 0x2001 && u32(ids.data, 0) == 1 && u32(ids.data, 4) == 0x00010001);
-  CHECK(pc.call(0x1005, {0x00010001}).code == 0x2001);
+  CHECK(ids.code == 0x2001 && u32(ids.data, 0) == 2 && u32(ids.data, 4) == 0x00010001 && u32(ids.data, 8) == 0x00020001);
+  const auto sdInfo = pc.call(0x1005, {0x00010001});
+  CHECK(sdInfo.code == 0x2001 && u16(sdInfo.data, 4) == 0);
+  const auto albumInfo = pc.call(0x1005, {0x00020001});
+  CHECK(albumInfo.code == 0x2001 && u16(albumInfo.data, 4) == 2 && albumInfo.data[26] == 6); // "Album" + terminator
+  CHECK(pc.call(0x1005, {0x00030001}).code == 0x2008);
 
   // The card's top, without the system's folders.
   auto top = names(pc, 0xFFFFFFFF);
   CHECK(top.size() == 3 && top.count("switch") && top.count("big.bin") && top.count("exact.bin"));
   CHECK(!top.count("Nintendo") && !top.count("emuMMC"));
-  const auto handles = pc.call(0x1007, {0xFFFFFFFF, 0, 0xFFFFFFFF});
+  const auto handles = pc.call(0x1007, {0x00010001, 0, 0xFFFFFFFF});
   CHECK(handles.code == 0x2001 && u32(handles.data, 0) == 3);
   // Read again, the same files keep their handles.
   CHECK(names(pc, 0xFFFFFFFF) == top);
@@ -312,10 +321,33 @@ int runMtpTests() {
   CHECK(get(card.root / "switch" / "new.bin") == "abc");
   CHECK(names(pc, top["switch"]).size() == 2);
 
+  // The album: its days and shots, copied off and deleted; nothing goes in
+  // and nothing is renamed.
+  const auto albumTop = pc.call(0x1007, {0x00020001, 0, 0xFFFFFFFF});
+  CHECK(albumTop.code == 0x2001 && u32(albumTop.data, 0) == 1);
+  const auto year = u32(albumTop.data, 4);
+  CHECK(u32(pc.call(0x9803, {year, 0xDC01}).data, 0) == 0x00020001);
+  const auto month = names(pc, year).at("10");
+  const auto shot = names(pc, month).at("shot.jpg");
+  CHECK(pc.call(0x1009, {shot}).data.size() == 300);
+  auto intoAlbum = objectInfo(0x3000, 3, u"x.jpg");
+  CHECK(pc.call(0x100C, {0x00020001, month}, &intoAlbum).code == 0x200F);
+  std::vector<uint8_t> renameShot;
+  str(renameShot, u"y.jpg");
+  CHECK(pc.call(0x9804, {shot, 0xDC07}, &renameShot).code == 0x200F);
+  CHECK(pc.call(0x100B, {shot}).code == 0x2001);
+  CHECK(!fs::exists(card.root / "emuMMC" / "RAW1" / "Nintendo" / "Album" / "2026" / "10" / "shot.jpg"));
+
   CHECK(pc.call(0x1003).code == 0x2001 && !seen.open);
   CHECK(pc.call(0x1007, {0xFFFFFFFF, 0, 0xFFFFFFFF}).code == 0x2003);
   // The cable gone: serve() says so and the thread starts over.
   CHECK(!mtp.serve());
+
+  // Where the album is: the card's own Nintendo folder, or the emuMMC's.
+  CHECK(foil::mtp::nintendoFolder(false, "[emummc]\nnintendo_path=emuMMC/SD00/Nintendo") == "/Nintendo");
+  CHECK(foil::mtp::nintendoFolder(true, "[emummc]\r\nenabled=1\r\nnintendo_path = emuMMC/SD00/Nintendo/\r\n") == "/emuMMC/SD00/Nintendo");
+  CHECK(foil::mtp::nintendoFolder(true, "[emummc]\npath=emuMMC/SD01\n") == "/emuMMC/SD01/Nintendo");
+  CHECK(foil::mtp::nintendoFolder(true, "[other]\nnintendo_path=elsewhere\n") == "/emuMMC/RAW1/Nintendo");
   fs::remove_all(card.root);
   return failures;
 }

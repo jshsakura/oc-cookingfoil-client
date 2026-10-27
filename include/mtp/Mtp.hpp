@@ -56,25 +56,40 @@ struct Listener {
   // A folder the PC wrote in.
   virtual void touched(const std::string &folder) = 0;
 };
+// One of the drives the PC sees: the whole card, or one folder of it.
+struct Volume {
+  std::string name;   // as the PC shows it
+  std::string folder; // on the card, "" for its top
+  // False: files can be copied off and deleted, nothing added or renamed.
+  bool adds = true;
+  // Top folders the PC never sees or changes ("Nintendo").
+  std::vector<std::string> guarded;
+};
+// The console's Nintendo folder on the card, where its album is: the card's
+// own, or for an emuMMC boot the one emuMMC/emummc.ini names (`ini`, its text).
+std::string nintendoFolder(bool emummc, const std::string &ini);
 // The files a session has seen, by handle. Only folders the PC opened are
 // read, and each file costs its name and a few numbers; a closed session
 // gives it all back.
 class Objects {
 public:
-  static constexpr uint32_t Root = 0;
   struct Object {
     std::string name; // empty once removed
-    uint32_t parent = Root;
+    uint32_t parent = 0;
     uint64_t size = 0;
     bool folder = false;
     bool listed = false;
     std::vector<uint32_t> children;
   };
-  Objects() { clear(); }
+  // Handles below `roots` are the volumes' tops, never given to the PC.
+  explicit Objects(uint32_t roots = 1) : roots_(roots) { clear(); }
   void clear();
+  bool isRoot(uint32_t handle) const { return handle < roots_; }
   const Object *find(uint32_t handle) const;
-  // The card's top as well (find() leaves it out: it is not an object).
+  // A volume's top as well (find() leaves it out: it is not an object).
   const Object &folder(uint32_t handle) const { return table_[handle]; }
+  uint32_t rootOf(uint32_t handle) const;
+  // From its volume's top ("/2024/01/x.jpg").
   std::string path(uint32_t handle) const;
   // A folder's listing, as the card has it now: the handles of what stays
   // are kept, what left is removed.
@@ -87,15 +102,15 @@ public:
   uint32_t child(uint32_t folder, const std::string &name) const;
 
 private:
-  std::vector<Object> table_; // the handle's index; 0 is the card's top
+  uint32_t roots_;
+  std::vector<Object> table_; // the handle's index
   void unlink(uint32_t handle);
 };
 class Responder {
 public:
   // `chunk`: the size of each of the two page-aligned buffers in `buffers`.
-  // `guarded`: top folders the PC never sees or changes ("Nintendo").
   Responder(Pipe &pipe, Storage &storage, Listener &listener, uint8_t *buffers[2], size_t chunk,
-            std::vector<std::string> guarded);
+            std::vector<Volume> volumes);
   // One command, answered: false once the cable is gone.
   bool serve();
   // The cable left: the session and its handles go.
@@ -116,20 +131,25 @@ private:
   Listener &listener_;
   uint8_t *buffers_[2];
   size_t chunk_;
-  std::vector<std::string> guarded_;
+  std::vector<Volume> volumes_;
   Objects objects_;
   bool session_ = false;
   Pending pending_; // SendObjectInfo's file, until SendObject fills it
 
-  bool guarded(const std::string &path) const;
+  // A path from volume `volume`'s top in a folder it hides.
+  bool guarded(uint32_t volume, const std::string &path) const;
+  // Where a handle is on the card.
+  std::string onCard(uint32_t handle) const;
+  // The volume a StorageID names.
+  bool volumeOf(uint32_t storage, uint32_t &volume) const;
   bool sendData(const Command &command, const std::vector<uint8_t> &payload);
   bool respond(const Command &command, uint16_t code, std::vector<uint32_t> params = {});
   // The PC's data phase in memory (small datasets only).
   bool receiveData(std::vector<uint8_t> &out);
   // A folder's children as the card has them now; null when it cannot be read.
   const std::vector<uint32_t> *listFolder(uint32_t folder);
-  // A handle the PC named as a folder (0 and 0xFFFFFFFF are the card's top).
-  bool folderOf(uint32_t param, uint32_t &folder) const;
+  // A handle the PC named as a folder (0 and 0xFFFFFFFF: `storage`'s top).
+  bool folderOf(uint32_t storage, uint32_t param, uint32_t &folder) const;
   uint16_t createObject(uint32_t folder, Entry entry, uint32_t &handle);
 
   bool deviceInfo(const Command &c);
