@@ -293,6 +293,12 @@ public:
   }
   void previewUsbStopping() { usbStopping_ = true; }
   void previewUsbApplet() { usbAppletAsk_ = true; }
+  std::string arrivalShown() const { return arrivals_.empty() ? "" : arrivals_.front().title; } // tests
+  void previewArrivals(std::vector<std::pair<std::string, std::string>> games, uint32_t age = 1000) {
+    arrivals_.clear();
+    for (auto &[name, icon] : games) arrivals_.push_back({std::move(name), std::move(icon), {}, {{"", ""}}});
+    arrivalAt_ = SDL_GetTicks() - age;
+  }
   void previewUsbDone() {
     platform::usb::stop();
     usbOpen_ = usbStopping_ = usbAppletAsk_ = false;
@@ -761,6 +767,22 @@ private:
   void pollSends();
   void takeSends(std::vector<sends::Pick> picks);
   Item sentItem(const sends::Pick &pick, std::string &name, std::string &icon) const;
+  // The card at the top right (DeviceSends.cpp), one at a time in the order
+  // they came: a game sent from the web, which goes to the download queue
+  // unless cancelled on the card in time. `acks` empty: a notice only.
+  struct Arrival {
+    std::string title, icon;
+    Item item;
+    std::vector<sends::Ack> acks;
+  };
+  std::deque<Arrival> arrivals_;
+  uint32_t arrivalAt_ = 0; // when the front one came up
+  uint32_t arrivalFrame_ = 0; // the last poll, to stop its time under a popup
+  void acceptArrival(Arrival arrival);
+  void cancelArrival();
+  void stepArrivals();
+  void arrived(std::vector<Arrival> games);
+  void arrivalCard();
   bool selfShortcutPossible() const;
   void makeSelfShortcut();
   // The app popup's shortcut row: only for an app on the card, after its

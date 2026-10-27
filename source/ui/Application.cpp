@@ -1573,6 +1573,11 @@ void Application::action(Action a) {
     descriptionScroll_ = std::clamp(int(std::lround(glide_.pos / ScrollStep)), 0,
                                     (descriptionHeight_ + ScrollStep - 1) / ScrollStep);
   unglide();
+  // B while a sent game's card shows (and no popup): not downloaded.
+  if (a == Action::Back && !arrivals_.empty() && !arrivals_.front().acks.empty() && !popupOpen()) {
+    cancelArrival();
+    return;
+  }
   if (galleryOpen_ && (fullPage() || (screen_ == Screen::Patches && managingPatch_))) {
     if (a == Action::Back) galleryOpen_ = false;
     else if (!detail_.screenshots.empty()) {
@@ -2756,6 +2761,7 @@ void Application::render() {
     else
       paint_.fonts.middle(notice_, x + 22 + Icon + 12, y + h / 2, 18, White);
   }
+  arrivalCard();
   dialogs();
   // What the finger is on, darker, as a pressed button on the web.
   if (pressing_) {

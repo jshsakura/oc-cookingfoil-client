@@ -14,6 +14,7 @@ constexpr uint32_t SendsEveryMs = 30000, SendsBusyMs = 60000, SendsAwayMs = 1200
 std::string sendKey(const std::string &server, const std::string &id) { return server + "|" + id; }
 } // namespace
 void Application::pollSends() {
+  stepArrivals();
   if (sendsDone_.exchange(false)) {
     sendsWorker_.join();
     takeSends(std::exchange(sendsIncoming_, {}));
@@ -120,53 +121,123 @@ void Application::takeSends(std::vector<sends::Pick> picks) {
               picks.end());
   // A console scan or the PC holding the card: the next round tries again.
   if (picks.empty() || deviceBusy_ || usbOpen_) return;
-  struct Ready {
-    Item item;
-    std::string name, icon;
-  };
-  std::vector<Ready> ready;
+  std::vector<Arrival> came;
   std::vector<sends::Candidate> candidates;
   for (const auto &p : picks) {
-    Ready r;
-    r.item = sentItem(p, r.name, r.icon);
-    candidates.push_back({std::max(r.item.size, r.item.installSize), true});
-    ready.push_back(std::move(r));
+    Arrival a;
+    a.item = sentItem(p, a.title, a.icon);
+    a.acks = p.acks;
+    candidates.push_back({std::max(a.item.size, a.item.installSize), true});
+    came.push_back(std::move(a));
   }
+  // Room for what waits on a card as well as what is queued.
+  uint64_t queued = queuedBytes();
+  for (const auto &a : arrivals_) queued += std::max(a.item.size, a.item.installSize);
   const bool console = installTarget() == "nand";
-  const auto admitted = sends::admit(candidates, {console ? nandFree_ : sdFree_, queuedBytes(), installQueue_.size()});
+  const auto admitted = sends::admit(candidates, {console ? nandFree_ : sdFree_, queued, installQueue_.size() + arrivals_.size()});
   // Free space not read yet: asked again shortly, not after the interval.
   if (admitted.waiting) {
     sendsAt_ = SDL_GetTicks() - SendsEveryMs + SendsRetryMs;
     return;
   }
-  int added = 0;
+  // Each one a card in turn: unless cancelled in time it goes to the queue.
+  std::vector<Arrival> cards;
   for (const size_t i : admitted.take) {
-    bool fresh = false;
-    if (auto error = enqueueInstall({ready[i].item}, ready[i].name, ready[i].icon, installTarget(), {}, false, fresh)) {
-      // Refused here (a system title): the server is told, not asked again.
-      logLine("device sends: " + ready[i].name + " not queued: " + error.message);
-      for (const auto &a : picks[i].acks) {
-        sendsTaken_.insert(sendKey(a.server, a.id));
-        sendsDeclines_[a.server].push_back(a.id);
-      }
-      continue;
-    }
-    added += fresh ? 1 : 0;
-    for (const auto &a : picks[i].acks) {
-      sendsTaken_.insert(sendKey(a.server, a.id));
-      sendsAcks_[a.server].push_back(a.id);
-    }
+    for (const auto &a : picks[i].acks) sendsTaken_.insert(sendKey(a.server, a.id));
+    cards.push_back(std::move(came[i]));
   }
+  arrived(std::move(cards));
   // Said once for each: it waits on the server until there is room.
   bool held = false;
   for (const size_t i : admitted.held)
     for (const auto &a : picks[i].acks) held = sendsHeld_.insert(sendKey(a.server, a.id)).second || held;
-  if (added) {
-    if (auto error = launchAdded(added)) alert_ = error.message;
-    else message(added > 1 ? trf("Added {0} games sent from the web to the download queue.", {std::to_string(added)})
-                           : tr("Added a game sent from the web to the download queue."));
-  } else if (held) {
-    message(tr("A game sent from the web waits until the console has room."));
-  }
+  if (held) message(tr("A game sent from the web waits until the console has room."));
+}
+// Its time ran out: into the queue, and the servers told.
+void Application::acceptArrival(Arrival arrival) {
+  bool fresh = false;
+  auto &answers = [&]() -> std::map<std::string, std::vector<std::string>> & {
+    if (auto error = enqueueInstall({arrival.item}, arrival.title, arrival.icon, installTarget(), {}, false, fresh)) {
+      // Refused here (a system title): the server is told, not asked again.
+      logLine("device sends: " + arrival.title + " not queued: " + error.message);
+      return sendsDeclines_;
+    }
+    return sendsAcks_;
+  }();
+  for (const auto &a : arrival.acks) answers[a.server].push_back(a.id);
+  if (fresh)
+    if (auto error = launchAdded(1)) alert_ = error.message;
+}
+// B or a tap on the card: not downloaded, and the servers told.
+void Application::cancelArrival() {
+  if (arrivals_.empty()) return;
+  for (const auto &a : arrivals_.front().acks) sendsDeclines_[a.server].push_back(a.id);
+  arrivals_.pop_front();
+  arrivalAt_ = SDL_GetTicks();
+  sounds_.play(Cue::Move);
+}
+} // namespace foil::ui
+namespace foil::ui {
+namespace {
+// One card at a time, in the order they came, 6 s each: cancelled in that
+// time it is not downloaded, else it goes to the queue. At most this many
+// wait; a game's file and names only, the cover from the image cache.
+constexpr size_t MaxArrivals = 20;
+constexpr uint32_t ArrivalTurnMs = 6000, ArrivalMoveMs = 240;
+float easeOut(float t) { return 1 - (1 - t) * (1 - t) * (1 - t); }
+} // namespace
+void Application::arrived(std::vector<Arrival> games) {
+  if (arrivals_.empty()) arrivalAt_ = SDL_GetTicks();
+  for (auto &g : games)
+    if (arrivals_.size() < MaxArrivals) arrivals_.push_back(std::move(g));
+}
+// The front card's time: under a popup it stops (the card cannot be seen or
+// cancelled there); once it runs out, the game goes to the queue.
+void Application::stepArrivals() {
+  const uint32_t now = SDL_GetTicks(), last = std::exchange(arrivalFrame_, now);
+  if (arrivals_.empty()) return;
+  if (popupOpen()) arrivalAt_ += now - last;
+  if (now - arrivalAt_ <= ArrivalTurnMs) return;
+  auto done = std::move(arrivals_.front());
+  arrivals_.pop_front();
+  arrivalAt_ = now;
+  if (!done.acks.empty()) acceptArrival(std::move(done));
+}
+void Application::arrivalCard() {
+  if (arrivals_.empty()) return;
+  const uint32_t now = SDL_GetTicks();
+  const bool covered = popupOpen();
+  // Drops in from above, eased, and goes back up at the end of its turn.
+  const uint32_t age = now - arrivalAt_;
+  const float in = easeOut(std::min(1.f, float(age) / ArrivalMoveMs));
+  const float out = age + ArrivalMoveMs > ArrivalTurnMs ? easeOut(float(age + ArrivalMoveMs - ArrivalTurnMs) / ArrivalMoveMs) : 0.f;
+  constexpr float W = 540, H = 104, Cover = 72, Right = 1280 - 24, Top = 20;
+  const float x = Right - W, y = Top - (H + Top + 24) * (1 - in) - (H + Top + 24) * out;
+  paint_.rect(x, y + 4, W, H, {0, 0, 0, 40}, 20); // its shadow
+  paint_.rect(x, y, W, H, Surface, 20);
+  const auto &front = arrivals_.front();
+  const float cy = y + (H - Cover) / 2;
+  images_->draw(front.icon, x + 14, cy, int(Cover), int(Cover), 14);
+  // A butter download mark on the cover's corner: it goes to the queue.
+  constexpr float Mark = 26;
+  const float mx = x + 14 + Cover - Mark + 6, my = cy + Cover - Mark + 6;
+  paint_.rect(mx - 2, my - 2, Mark + 4, Mark + 4, Surface, int(Mark / 2 + 2));
+  paint_.rect(mx, my, Mark, Mark, Butter, int(Mark / 2));
+  paint_.icon(4, mx + 5, my + 5, OnButter, int(Mark - 10));
+  // B 취소 at the right; the card itself is its touch area.
+  const std::string cancel = tr("Cancel");
+  const float keyW = paint_.keyWidth("B");
+  const float bw = 6 + keyW + 8 + paint_.fonts.measure(cancel, 17, true) + 16, bx = x + W - 16 - bw;
+  paint_.rect(bx, y + (H - 44) / 2, bw, 44, Ground, 22);
+  paint_.key("B", bx + 6, y + H / 2);
+  paint_.fonts.middle(cancel, bx + 6 + keyW + 8, y + H / 2, 17, Ink, true);
+  if (!covered) hit(x, y, W, H, [this] { cancelArrival(); }, {bx, y + (H - 44) / 2, bw, 44}, 22);
+  const float tx = x + 14 + Cover + 16, textW = bx - 14 - tx;
+  paint_.fonts.text(front.title, tx, y + 16, 19, Ink, true, textW);
+  paint_.fonts.wrapped(tr("Sent from the web. Goes to the download queue unless cancelled."), tx, y + 44, 15, Secondary,
+                       textW, 2);
+  // Its time left, a butter line along the bottom that shortens.
+  const float left = 1 - std::min(1.f, float(age) / ArrivalTurnMs);
+  paint_.rect(x + 20, y + H - 6, (W - 40) * left, 3, Butter, 2);
 }
 } // namespace foil::ui
