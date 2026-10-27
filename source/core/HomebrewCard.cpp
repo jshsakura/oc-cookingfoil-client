@@ -215,7 +215,7 @@ const App *matchCard(const std::vector<App> &apps, const std::string &path) {
   return nullptr;
 }
 std::string tileIcon(const App &app, bool onCard, const std::string &cardKey) {
-  return onCard || app.cardOnly ? cardKey : app.iconUrl;
+  return (onCard || app.cardOnly) && !cardKey.empty() ? cardKey : app.iconUrl;
 }
 std::string cardIconKey(const CardNro &nro) {
   return "card:" + nro.path + "#" + std::to_string(nro.size) + "-" + std::to_string(nro.mtime);

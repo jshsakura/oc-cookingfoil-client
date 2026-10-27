@@ -167,6 +167,10 @@ int runUiTests(SDL_Renderer *renderer) {
     app.touch(330, 250);
     CHECK(app.current() == foil::ui::Screen::Detail);
     app.render();
+    // The way back is the arrow and its label, not the band past them.
+    app.touch(220, 30);
+    CHECK(app.current() == foil::ui::Screen::Detail);
+    app.render();
     app.touch(60, 30);
     CHECK(app.current() == foil::ui::Screen::Library);
   }
