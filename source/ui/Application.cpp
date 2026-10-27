@@ -2238,7 +2238,7 @@ void Application::card(const Group &g, float x, float y, bool selected,
 }
 void Application::footer(
     const std::vector<std::pair<std::string, std::string>> &screenHints) {
-  paint_.rect(0, 660, 1280, 60, Surface);
+  paint_.rect(0, 660, 1280, 60, sideColor());
   paint_.rect(0, 660, 1280, 1, Line);
   const float left = statusBar();
   // Until the server first answers the buttons mean little: placeholders,
@@ -2436,7 +2436,8 @@ float Application::statusBar() {
     paint_.icon(d.icon, x, Mid - 8, Secondary, 16);
     x += 24;
     constexpr float Bar = 56;
-    paint_.rect(x, Mid - 3, Bar, 6, Line, 3);
+    // On a menu color of its own (pink) the line would vanish: the cards' color.
+    paint_.rect(x, Mid - 3, Bar, 6, palette.side.a ? Surface : Line, 3);
     if (d.free && d.total && *d.total > 0) {
       const float used = 1.f - float(std::min(*d.free, *d.total)) / float(*d.total);
       paint_.rect(x, Mid - 3, std::max(6.f, Bar * used), 6, Butter, 3);
