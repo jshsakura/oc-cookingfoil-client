@@ -343,6 +343,38 @@ int runMtpTests() {
   // The cable gone: serve() says so and the thread starts over.
   CHECK(!mtp.serve());
 
+  // A copy that never finished leaves nothing on the card: cancelled after
+  // its info, cut off mid-data, or the cable gone in between.
+  CHECK(pc.call(0x1002, {2}).code == 0x2001);
+  auto gone = objectInfo(0x3000, 10, u"gone.bin");
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &gone).code == 0x2001 && fs::exists(card.root / "gone.bin"));
+  auto next = objectInfo(0x3000, 3, u"next.bin");
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &next).code == 0x2001 && !fs::exists(card.root / "gone.bin"));
+  CHECK(pc.call(0x100D, {}, &three).code == 0x2001 && get(card.root / "next.bin") == "abc");
+  auto cut = objectInfo(0x3000, uint32_t(2 * Chunk), u"cut.bin");
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &cut).code == 0x2001);
+  // Short of its size, the transfer closed: refused, not kept.
+  const auto sent = [&](size_t body) {
+    ++pc.transaction;
+    pipe.push(pc.container(1, 0x100D, {}));
+    auto data = pc.container(2, 0x100D, std::vector<uint8_t>(body));
+    const uint32_t whole = uint32_t(12 + 2 * Chunk);
+    for (int i = 0; i < 4; ++i) data[size_t(i)] = uint8_t(whole >> (8 * i));
+    pipe.fromPc.push_back(std::move(data));
+    pipe.toPc.clear();
+    return mtp.serve();
+  };
+  CHECK(sent(Chunk + 100) && u16(pipe.toPc.back(), 6) != 0x2001 && !fs::exists(card.root / "cut.bin"));
+  // The cable gone after one full block.
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &cut).code == 0x2001 && fs::exists(card.root / "cut.bin"));
+  CHECK(!sent(Chunk - 12) && !fs::exists(card.root / "cut.bin"));
+  mtp.reset();
+  CHECK(pc.call(0x1002, {3}).code == 0x2001);
+  auto left = objectInfo(0x3000, 10, u"left.bin");
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &left).code == 0x2001 && fs::exists(card.root / "left.bin"));
+  mtp.reset();
+  CHECK(!fs::exists(card.root / "left.bin") && fs::exists(card.root / "next.bin"));
+
   // Where the album is: the card's own Nintendo folder, or the emuMMC's.
   CHECK(foil::mtp::nintendoFolder(false, "[emummc]\nnintendo_path=emuMMC/SD00/Nintendo") == "/Nintendo");
   CHECK(foil::mtp::nintendoFolder(true, "[emummc]\r\nenabled=1\r\nnintendo_path = emuMMC/SD00/Nintendo/\r\n") == "/emuMMC/SD00/Nintendo");

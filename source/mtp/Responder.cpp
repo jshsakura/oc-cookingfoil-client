@@ -171,8 +171,16 @@ Responder::Responder(Pipe &pipe, class Storage &storage, Listener &listener, uin
 void Responder::reset() {
   if (session_) listener_.session(false);
   session_ = false;
-  pending_ = {};
+  dropPending();
   objects_.clear();
+}
+// A file SendObjectInfo made whose data never came (the copy was cancelled,
+// or the cable pulled, in between): an empty name on the card, removed.
+void Responder::dropPending() {
+  const auto pending = std::exchange(pending_, Pending{});
+  if (!pending.size || !objects_.find(pending.handle)) return;
+  storage_.remove(onCard(pending.handle), false);
+  objects_.remove(pending.handle);
 }
 bool Responder::guarded(uint32_t volume, const std::string &path) const {
   const char *rest = path.c_str();
@@ -461,6 +469,7 @@ bool Responder::getObject(const Command &c) {
   return respond(c, Ok);
 }
 bool Responder::sendObjectInfo(const Command &c) {
+  dropPending();
   std::vector<uint8_t> data;
   if (!receiveData(data)) return false;
   uint32_t folder;
@@ -482,6 +491,7 @@ bool Responder::sendObjectInfo(const Command &c) {
 // As SendObjectInfo, with the size in 64 bits: what Windows sends for a file
 // of 4 GB or more.
 bool Responder::sendObjectPropList(const Command &c) {
+  dropPending();
   std::vector<uint8_t> data;
   if (!receiveData(data)) return false;
   uint32_t folder;
@@ -518,18 +528,21 @@ bool Responder::sendObject(const Command &c) {
     return respond(c, o ? AccessDenied : NoValidObjectInfo);
   }
   listener_.copyBegins(o->name, true);
+  // The cable gone mid-copy: what came so far is not the file.
+  const auto lost = [&] {
+    file.reset();
+    storage_.remove(path, false);
+    objects_.remove(pending.handle);
+    listener_.copyEnds();
+    return false;
+  };
   uint64_t total = pending.size, received = 0, written = 0;
   bool failed = false, first = true;
   size_t posted = size_t(total == UINT64_MAX ? chunk_ : std::min<uint64_t>(chunk_, Header + total));
-  if (!pipe_.startReceive(buffers_[0], posted)) return listener_.copyEnds(), false;
+  if (!pipe_.startReceive(buffers_[0], posted)) return lost();
   for (int b = 0;; b ^= 1) {
     const long n = pipe_.finishReceive();
-    if (n < 0) {
-      file.reset();
-      storage_.remove(path, false);
-      objects_.remove(pending.handle);
-      return listener_.copyEnds(), false;
-    }
+    if (n < 0) return lost();
     size_t skip = 0;
     if (first) {
       if (n < long(Header)) {
@@ -547,7 +560,7 @@ bool Responder::sendObject(const Command &c) {
     const bool more = size_t(n) == posted && (total == UINT64_MAX || received < total);
     if (more) {
       posted = size_t(total == UINT64_MAX ? chunk_ : std::min<uint64_t>(chunk_, total - received));
-      if (!pipe_.startReceive(buffers_[b ^ 1], posted)) return listener_.copyEnds(), false;
+      if (!pipe_.startReceive(buffers_[b ^ 1], posted)) return lost();
     }
     if (!failed && bytes) {
       failed = !file->write(written, buffers_[b] + skip, bytes);
@@ -556,6 +569,8 @@ bool Responder::sendObject(const Command &c) {
     listener_.copyMoved(received);
     if (!more) break;
   }
+  // Ended short of the size it was given: a broken copy, not the file.
+  if (total != UINT64_MAX && received < total) failed = true;
   file.reset();
   listener_.copyEnds();
   if (failed) {
