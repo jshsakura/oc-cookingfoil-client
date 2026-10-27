@@ -116,10 +116,8 @@ void Application::settings() {
     if (const auto *extra = extraLanguage()) paint_.languageChip(extra->code, Right - nameWidth - 42, y + (Row - 2) / 2 - 11, 33, 22);
     else paint_.flag(int(language()), Right - nameWidth - 42, y + (Row - 2) / 2 - 11, 33, 22);
   }
-  // Light or dark; unset follows the console's theme in System Settings.
-  option(1, 49, tr("Theme"),
-         state_.theme == "dark" ? tr("Dark|theme") : state_.theme == "light" ? tr("Light|theme") : tr("Same as the console"),
-         Ink, true);
+  // A opens the picker; unset follows the console's theme in System Settings.
+  option(1, 49, tr("Theme"), themeLabel(themeRowOf(state_.theme)), Ink, true);
   // Where installs go; A switches between the SD card and the console.
   option(2, 26, tr("Default location"), installTarget() == "nand" ? tr("Console") : tr("SD card"), Ink, true);
   // A HOME Menu shortcut with each retro game and homebrew app (and this

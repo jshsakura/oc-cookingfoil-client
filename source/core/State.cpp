@@ -150,7 +150,7 @@ std::optional<State> parseLegacy(const std::string& text) {
 // What a server URL, a key or a setting may be; anything else is dropped.
 State cleaned(State state) {
     if (state.installTarget != "sd" && state.installTarget != "nand") state.installTarget.clear();
-    if (state.theme != "light" && state.theme != "dark") state.theme.clear();
+    if (!isThemeName(state.theme)) state.theme.clear();
     if (state.lastScreen.empty()) state.lastScreen = "home";
     const auto keep = [](std::map<std::string, std::string>& by, auto&& good) {
         for (auto at = by.begin(); at != by.end();)

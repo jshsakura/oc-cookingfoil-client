@@ -98,13 +98,18 @@ int runStateTests() {
     CHECK(foil::loadState(db).value.queueJson == "[]");
   }
   {
-    // The theme chosen in 설정 comes back; anything but light or dark is
+    // The theme chosen in 설정 comes back; anything not in ThemeNames is
     // dropped, so the console's theme is followed.
     auto themed = foil::loadState(db).value;
     CHECK(themed.theme.empty());
     themed.theme = "dark";
     CHECK(foil::saveState(db, themed, error));
     CHECK(foil::loadState(db).value.theme == "dark");
+    for (const char* name : foil::ThemeNames) {
+        themed.theme = name;
+        CHECK(foil::saveState(db, themed, error));
+        CHECK(foil::loadState(db).value.theme == name);
+    }
     themed.theme = "sepia";
     CHECK(foil::saveState(db, themed, error));
     CHECK(foil::loadState(db).value.theme.empty());

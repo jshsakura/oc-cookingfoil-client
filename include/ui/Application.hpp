@@ -8,6 +8,7 @@
 #include "net/ClientStringsApi.hpp"
 #include "net/VariantsApi.hpp"
 #include "net/Dropbox.hpp"
+#include "ui/Theme.hpp"
 #include "net/HomebrewApi.hpp"
 #include "net/RetroApi.hpp"
 #include "ui/DropboxRows.hpp"
@@ -271,6 +272,12 @@ public:
   }
   // 설정 > 언어 with languages only a server has, and the window that gets one.
   void previewServerLanguages(std::vector<ExtraLanguage> languages) { serverLanguages_ = std::move(languages); }
+  void previewThemePopup(int row) {
+    themePopup_ = true;
+    themeRow_ = row;
+    usePalette(themePalette(row));
+  }
+  void previewThemeClosed() { themePopup_ = false; }
   void previewLanguagePopup(int row) {
     languagePopup_ = true;
     languageRow_ = row;
@@ -1284,6 +1291,19 @@ private:
   void languageDialog();
   bool languagePopup_ = false;
   int languageRow_ = 0;
+  // 설정 > 테마: the console's own, then every palette, with a swatch each
+  // (ThemePicker.cpp).
+  static constexpr int ThemeRows = 4;
+  static int themeCount();
+  static int themeRowOf(const std::string &theme);
+  const Palette &themePalette(int row) const;
+  static std::string themeLabel(int row);
+  void openThemePicker();
+  void themeAction(Action a);
+  void themeSwatch(const Palette &colors, float x, float y, float w, float h);
+  void themeDialog();
+  bool themePopup_ = false;
+  int themeRow_ = 0;
   void patchMenu(const PatchRow &row);
   void runPatchOp(int op);
   void installSelected();

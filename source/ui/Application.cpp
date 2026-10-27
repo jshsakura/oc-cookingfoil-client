@@ -510,7 +510,11 @@ void Application::openPatchStore(const std::string &sd) {
   patchCheckWanted_ = true; // once after the app starts
 }
 void Application::applyTheme() {
-  usePalette(state_.theme == "dark" || (state_.theme.empty() && consoleDark_) ? DarkPalette : LightPalette);
+  static_assert(std::size(ThemePalettes) == std::size(ThemeNames));
+  const Palette *chosen = consoleDark_ ? &DarkPalette : &LightPalette;
+  for (size_t i = 0; i < std::size(ThemeNames); ++i)
+    if (state_.theme == ThemeNames[i]) chosen = ThemePalettes[i];
+  usePalette(*chosen);
 }
 void Application::applyStartupLanguage() {
   auto code = state_.language;
@@ -1705,6 +1709,10 @@ void Application::action(Action a) {
     return;
   }
 
+  if (themePopup_) {
+    themeAction(a);
+    return;
+  }
   if (languagePopup_) {
     // Columns filled top to bottom.
     const int rows = languageRows(), count = languageCount();
@@ -2043,12 +2051,7 @@ void Application::action(Action a) {
             if (extras[i].code == extra->code) languageRow_ = LanguageCount + int(i);
         }
         break;
-      // The console's theme, then light, then dark.
-      case 1:
-        state_.theme = state_.theme.empty() ? "light" : state_.theme == "light" ? "dark" : "";
-        applyTheme();
-        saveOwnState();
-        break;
+      case 1: openThemePicker(); break;
       case 2:
         state_.installTarget = installTarget() == "nand" ? "sd" : "nand";
         saveOwnState();

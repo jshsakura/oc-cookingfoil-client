@@ -5,6 +5,14 @@
 #include <optional>
 #include <set>
 namespace foil {
+// The page colors 설정 offers besides the console's own, in its order
+// (ui/Theme.hpp has a palette for each).
+inline constexpr const char *ThemeNames[] = {"light", "dark", "navy", "purple", "green", "pink"};
+inline bool isThemeName(const std::string &name) {
+    for (const char *theme : ThemeNames)
+        if (name == theme) return true;
+    return false;
+}
 struct State {
     std::string deviceKey, lastServer, lastScreen = "home";
     std::string language; // chosen in 설정; empty follows the console
@@ -15,7 +23,7 @@ struct State {
     bool sounds = true;
     // "sd" or "nand", chosen in 설정; empty follows config.json's installTarget.
     std::string installTarget;
-    // "light" or "dark", chosen in 설정; empty follows the console's theme.
+    // One of ThemeNames, chosen in 설정; empty follows the console's theme.
     std::string theme;
     std::map<std::string, std::string> accessKeys;
     // Per server: the note sent with the approval request so the admin knows

@@ -64,7 +64,7 @@ const std::vector<const char *> &lockedKeys() {
     // Device approval, QR codes and phone sign-in steps.
     "For a server that uses device approval, enter only the address and save to go to the QR approval screen; the message goes to the admin with the request.",
     "Scan this QR code from the server website to approve.",
-    "Sign in to the shop on your phone, open device approval and scan the code to approve this device for that account.",
+    "Sign in to the server on your phone, open device approval and scan the code to approve this device for that account.",
     "This download was already used on another console. Scan the QR code to approve this one.",
     "This download has expired. Scan the QR code to approve this console.",
     "This download is no longer valid. Scan the QR code to approve this console.",
@@ -72,7 +72,7 @@ const std::vector<const char *> &lockedKeys() {
     "This account can register up to {0} consoles. Remove one you no longer use, then approve this one.",
     "This account has connected as many consoles by download as it can this hour. Scan the QR code to approve this one.",
     "If you cannot scan it, enter the device code in device approval. Connects automatically once approved.",
-    "This shop does not support QR approval. Enter the device code in device approval on the shop website.",
+    "This server does not support QR approval. Enter the device code in device approval on the server website.",
     "Sign in to Dropbox on your phone",
     "2. Scan the QR code with your phone and sign in to Dropbox.",
     "Could not open what the phone sent. Open a new QR code.",

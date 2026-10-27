@@ -247,7 +247,7 @@ void Application::viewPopup() {
 void Application::dialogs() {
   if (!confirmInstall_ && alert_.empty() && !serverForm_ && !confirmCancel_ && !viewPopup_ &&
       !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !tidyOpen_ && !homebrewSortAsk_ &&
-      !languagePopup_ && languageGet_ == LanguageGet::None && !retroArchAsking_ && !raModal() && !saveNeedsGame_ && !savePicking_ && !serverAppSaveAsk_ &&
+      !languagePopup_ && !themePopup_ && languageGet_ == LanguageGet::None && !retroArchAsking_ && !raModal() && !saveNeedsGame_ && !savePicking_ && !serverAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
       !homebrewRemoveAsk_ && !(homebrewAsk_ && homebrewExtras_) && !shortcutRemoveAsk_ && !selfShortcutAsk_ && !adminEdit_.open && unqueueAsk_ < 0 && !bugAsk_ && !serverInfo_ && !clockModal() && !resumeAsked())
     return;
@@ -298,6 +298,8 @@ void Application::dialogs() {
     viewPopup();
   } else if (languagePopup_) {
     languageDialog();
+  } else if (themePopup_) {
+    themeDialog();
   } else if (retroArchAsking_) {
     retroArchConfirm();
   } else if (raListOpen_) {

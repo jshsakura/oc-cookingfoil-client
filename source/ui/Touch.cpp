@@ -138,7 +138,7 @@ void Application::scrollToTop() {
   for (int n = 0; n < 4000 && !top(); ++n) action(Action::Up);
 }
 bool Application::popupOpen() const {
-  return !alert_.empty() || clockModal() || unqueueAsk_ >= 0 || bugAsk_ || serverInfo_ || appUpdateAsk_ || appUpdate_ == AppUpdate::Downloading || languageGet_ != LanguageGet::None || viewPopup_ || confirmInstall_ || confirmCancel_ || languagePopup_ ||
+  return !alert_.empty() || clockModal() || unqueueAsk_ >= 0 || bugAsk_ || serverInfo_ || appUpdateAsk_ || appUpdate_ == AppUpdate::Downloading || languageGet_ != LanguageGet::None || viewPopup_ || confirmInstall_ || confirmCancel_ || languagePopup_ || themePopup_ ||
          tidyOpen_ || homebrewSortAsk_ || confirmPatchRemove_ || managingPatch_ || pickingPatch_ || serverForm_ || homebrewRemoveAsk_ || (homebrewAsk_ && homebrewExtras_) || shortcutRemoveAsk_ || selfShortcutAsk_ || adminEdit_.open ||
          retroArchAsking_ || raModal() || saveNeedsGame_ || savePicking_ || serverAppSaveAsk_ || applyAsking_ || managedGame_ ||
          removal_ || galleryOpen_ || (screen_ == Screen::Saves && (dropboxModal() || dropboxSession_));
