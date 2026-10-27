@@ -1207,6 +1207,9 @@ const Translation rows[] = {
     {"Green|theme", "Verde"},
     {"Pink|theme", "Rosa"},
     {"Same as the console", "Igual que la consola"},
+    {"Start it now?", "¿Iniciarlo ahora?"},
+    {"CookingFoil closes and the shortcut starts.", "CookingFoil se cierra y se inicia el acceso directo."},
+    {"The downloads left go on from where they stopped the next time it opens.", "Las descargas pendientes siguen donde se quedaron la próxima vez que lo abras."},
 };
 const TranslationTable table(Language::Spanish, rows, sizeof rows / sizeof rows[0]);
 } // namespace

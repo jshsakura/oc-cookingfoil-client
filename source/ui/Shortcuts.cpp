@@ -4,6 +4,7 @@
 #include "ui/Application.hpp"
 #include "core/Forwarder.hpp"
 #include "core/Log.hpp"
+#include "platform/Installed.hpp"
 #include "platform/Shortcut.hpp"
 #include "platform/Storage.hpp"
 #include "core/Json.hpp"
@@ -270,6 +271,7 @@ bool Application::startShortcut(const QueuedInstall &next) {
         alert_ = error.message;
         return;
       }
+      if (!replaced && !shortcutWasInstalled(id)) offerLaunch(id, plan.display);
       shortcuts_.insert(id);
       if (replaced) shortcuts_.erase(plan.replaces);
       rememberShortcutKey(plan.app, plan.key);
@@ -358,5 +360,42 @@ void Application::selfShortcutDialog() {
   const float x = body.x + 32;
   float y = body.y + 24;
   paint_.fonts.wrapped(why, x, y, 19, Ink, textW, Lines);
+}
+// Whether the console had it before: the installed list as last read (it is
+// read again after each install), or this run's own record of shortcuts. An
+// unread list says yes, so nothing starts on a guess.
+bool Application::shortcutWasInstalled(uint64_t id) const {
+  if (shortcuts_.count(id) || !installed_.installed.complete) return true;
+  return std::any_of(installed_.games.begin(), installed_.games.end(),
+                     [id](const InstalledGame &game) { return game.applicationId == id; });
+}
+void Application::offerLaunch(uint64_t id, const std::string &name) {
+  if (!platform::applicationMode()) return; // the console would refuse to start it
+  launchOffer_ = LaunchOffer{id, name};
+}
+void Application::launchOfferDialog() {
+  constexpr float Width = 720, Text = Width - 64;
+  const bool waiting = !installQueue_.empty() || downloadRunning();
+  const std::string what = tr("CookingFoil closes and the shortcut starts.");
+  const std::string later = tr("The downloads left go on from where they stopped the next time it opens.");
+  const float nameH = paint_.fonts.lineCount(launchOffer_->name, 22, Text, 2, true) * 22 * 1.3f;
+  const float whatH = paint_.fonts.lineCount(what, 19, Text, 2) * 19 * 1.3f;
+  const float laterH = waiting ? 10 + paint_.fonts.lineCount(later, 18, Text, 2) * 18 * 1.3f : 0;
+  const auto body = modal(Width, 22 + nameH + 10 + whatH + laterH + 18, tr("Start it now?"), tr("Later"), "",
+                          tr("Launch|game"), HomeIcon);
+  float y = body.y + 22;
+  paint_.fonts.wrapped(launchOffer_->name, body.x + 32, y, 22, Ink, Text, 2, true);
+  y += nameH + 10;
+  paint_.fonts.wrapped(what, body.x + 32, y, 19, Ink, Text, 2);
+  if (waiting) paint_.fonts.wrapped(later, body.x + 32, y + whatH + 10, 18, Secondary, Text, 2);
+}
+void Application::launchOfferAction(Action a) {
+  if (a == Action::Back) launchOffer_.reset();
+  if (a != Action::Accept || !settled()) return;
+  const auto offer = *std::exchange(launchOffer_, std::nullopt);
+  if (auto error = platform::launchApplication(offer.id)) {
+    alertTitle_ = tr("Could not start the game.");
+    alert_ = error.message;
+  }
 }
 } // namespace foil::ui

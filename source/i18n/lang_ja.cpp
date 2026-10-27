@@ -1207,6 +1207,9 @@ const Translation rows[] = {
     {"Green|theme", "グリーン"},
     {"Pink|theme", "ピンク"},
     {"Same as the console", "本体の設定に合わせる"},
+    {"Start it now?", "今すぐ起動しますか？"},
+    {"CookingFoil closes and the shortcut starts.", "CookingFoilを閉じてショートカットを起動します。"},
+    {"The downloads left go on from where they stopped the next time it opens.", "残りのダウンロードは次に開いたときに続きから再開します。"},
 };
 const TranslationTable table(Language::Japanese, rows, sizeof rows / sizeof rows[0]);
 } // namespace

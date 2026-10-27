@@ -1207,6 +1207,9 @@ const Translation rows[] = {
     {"Green|theme", "绿色"},
     {"Pink|theme", "粉色"},
     {"Same as the console", "跟随主机设置"},
+    {"Start it now?", "现在启动吗？"},
+    {"CookingFoil closes and the shortcut starts.", "将关闭 CookingFoil 并启动快捷方式。"},
+    {"The downloads left go on from where they stopped the next time it opens.", "剩余的下载会在下次打开时继续。"},
 };
 const TranslationTable table(Language::Chinese, rows, sizeof rows / sizeof rows[0]);
 } // namespace

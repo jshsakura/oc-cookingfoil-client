@@ -1125,6 +1125,19 @@ void Application::poll() {
       // A shortcut (its id in the shortcut range), with a row of its own or not.
       const uint64_t id = forwarder::parseHexId(part.titleId);
       if (!forwarder::shortcutId(id)) continue;
+      // New on the console, and not in place of one made here: offered to start.
+      const bool replacesLocal = std::any_of(homebrew_.begin(), homebrew_.end(), [&](const homebrew::App &app) {
+        const auto local = homebrewShortcutId(app);
+        return app.forwarderTitleId == part.titleId && local && local != id && shortcuts_.count(local);
+      });
+      if (!shortcutWasInstalled(id) && !replacesLocal) {
+        std::string name = installer_.progress().name;
+        for (const auto &app : homebrew_)
+          if (app.forwarderTitleId == part.titleId) name = app.name;
+        for (const auto &game : retroGames_)
+          if (game.forwarderTitleId == part.titleId) name = retro::shortcutName(game);
+        offerLaunch(id, name);
+      }
       fresh.push_back(id);
       shortcuts_.insert(id);
       // One made here before for the same app goes, so it shows once: asked
@@ -1584,6 +1597,10 @@ void Application::action(Action a) {
   }
   if (selfShortcutAsk_) {
     selfShortcutAction(a);
+    return;
+  }
+  if (launchOffer_) {
+    launchOfferAction(a);
     return;
   }
   if (adminEdit_.open) {

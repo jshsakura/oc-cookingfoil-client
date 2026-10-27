@@ -278,6 +278,8 @@ public:
     usePalette(themePalette(row));
   }
   void previewThemeClosed() { themePopup_ = false; }
+  void previewLaunchOffer(std::string name) { launchOffer_ = LaunchOffer{0x0500000000001000ULL, std::move(name)}; }
+  void previewLaunchOfferDone() { launchOffer_.reset(); }
   void previewLanguagePopup(int row) {
     languagePopup_ = true;
     languageRow_ = row;
@@ -688,6 +690,18 @@ private:
   bool shortcutsUnasked() const;
   bool shortcutRemoveAsk_ = false; // X on the app popup's shortcut row, asked first
   bool selfShortcutAsk_ = false;   // this app's own, offered with the applet mode notice
+  // A shortcut new on the console (not one installed again over an older
+  // one), offered to start at once. Only in application mode: starting it
+  // closes this app, and what waits in the queue resumes at the next start.
+  struct LaunchOffer {
+    uint64_t id = 0;
+    std::string name;
+  };
+  std::optional<LaunchOffer> launchOffer_;
+  bool shortcutWasInstalled(uint64_t id) const;
+  void offerLaunch(uint64_t id, const std::string &name);
+  void launchOfferDialog();
+  void launchOfferAction(Action a);
   bool selfShortcutClosed_ = false; // closed this run
   // The app popup's shortcut row: only for an app on the card, after its
   // 패치 and 세이브 rows.

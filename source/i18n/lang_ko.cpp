@@ -1207,6 +1207,9 @@ const Translation rows[] = {
     {"Green|theme", "그린"},
     {"Pink|theme", "핑크"},
     {"Same as the console", "본체 설정대로"},
+    {"Start it now?", "바로 실행할까요?"},
+    {"CookingFoil closes and the shortcut starts.", "CookingFoil을 닫고 바로가기를 실행합니다."},
+    {"The downloads left go on from where they stopped the next time it opens.", "남은 다운로드는 다음에 열 때 이어서 받습니다."},
 };
 const TranslationTable table(Language::Korean, rows, sizeof rows / sizeof rows[0]);
 } // namespace
