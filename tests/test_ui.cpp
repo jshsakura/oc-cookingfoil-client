@@ -171,6 +171,36 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(app.current() == foil::ui::Screen::Library);
   }
   {
+    // The SD card's free space on the footer opens 연결 to PC. The host runs
+    // as an applet, so what opens is the applet notice saying why not (the
+    // popup itself is in the shots); B closes it.
+    app.screen(foil::ui::Screen::Home);
+    for (int frame = 0; frame < 400 && app.footerPending(); ++frame) {
+      app.render();
+      SDL_Delay(5);
+    }
+    app.render();
+    const auto chip = app.sdChip();
+    CHECK(chip.w >= 120 && chip.h >= 44); // a finger-sized target, not just the icon
+    app.touch(chip.x + chip.w / 2, chip.y + chip.h / 2);
+    CHECK(app.usbAppletShown() && !app.usbDriveOpen());
+    app.render();
+    app.touch(chip.x + chip.w / 2, chip.y + chip.h / 2); // the notice takes the touch
+    CHECK(app.usbAppletShown());
+    app.action(foil::ui::Action::Back);
+    CHECK(!app.usbAppletShown());
+    // Without touch (docked): 설정's last row opens it too.
+    app.screen(foil::ui::Screen::Settings);
+    app.render();
+    app.action(foil::ui::Action::Right);
+    for (int step = 0; step < 40; ++step) app.action(foil::ui::Action::Down);
+    app.render();
+    app.action(foil::ui::Action::Accept);
+    CHECK(app.usbAppletShown());
+    app.action(foil::ui::Action::Back);
+    CHECK(!app.usbAppletShown());
+  }
+  {
     // A finger glides the list and leaves the cursor where it was; any
     // button brings the view back to it.
     app.screen(foil::ui::Screen::Library);

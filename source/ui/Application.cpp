@@ -62,6 +62,9 @@ Application::~Application() {
   // place is written down, so the next start goes on from it.
   installer_.stop();
   installer_.wait();
+  // A PC still on the cable lets go of the card before the app goes.
+  platform::usb::stop();
+  if (usbWorker_.joinable()) usbWorker_.join();
   // Finished in its last step as the app closed, or in the frame it closed
   // in, before the screen heard: kept as done, or the next start would take
   // it from the queue and fetch it all again.
@@ -1599,6 +1602,15 @@ void Application::action(Action a) {
     selfShortcutAction(a);
     return;
   }
+  // Over everything else while open: B is the way out.
+  if (usbOpen_) {
+    usbDriveAction(a);
+    return;
+  }
+  if (usbAppletAsk_) {
+    usbAppletAction(a);
+    return;
+  }
   if (launchOffer_) {
     launchOfferAction(a);
     return;
@@ -2084,6 +2096,7 @@ void Application::action(Action a) {
         sounds_.play(Cue::Add); // turned on: heard at once
         break;
       case 7: openBugReport(""); break;
+      case 8: openUsbDrive(); break;
       default:
         // A server opens its form; "+ 서버 추가" an empty one.
         openServerForm(selected_ < int(config_.servers.size()) ? std::max(0, selected_) : -1);
@@ -2410,6 +2423,7 @@ float Application::statusBar() {
     std::optional<uint64_t> free, total;
   } disks[] = {{26, sdFree_, sdTotal_}, {27, nandFree_, nandTotal_}};
   for (const auto &d : disks) {
+    const float diskLeft = x;
     paint_.icon(d.icon, x, Mid - 8, Secondary, 16);
     x += 24;
     constexpr float Bar = 56;
@@ -2421,6 +2435,12 @@ float Application::statusBar() {
     x += Bar + 8;
     const auto room = d.free ? trf("{0} free|left", {formatBytes(*d.free)}) : std::string(tr("Unknown"));
     x = paint_.fonts.middle(room, x, Mid, 15, Secondary) + 26;
+    // Pressed, the SD card's opens it to a PC over USB.
+    if (d.icon == 26) {
+      sdChip_ = {diskLeft - 10, Mid - 22, x - 26 - diskLeft + 20, 44};
+      hit(sdChip_.x, sdChip_.y, sdChip_.w, sdChip_.h, [this] { openUsbDrive(); },
+          {diskLeft - 8, Mid - 16, x - 26 - diskLeft + 16, 32}, 16);
+    }
   }
 #ifdef __SWITCH__
   if (!platform::applicationMode()) {
@@ -2507,6 +2527,7 @@ void Application::render() {
     sidebar_ = autoSidebar_ = false;
   }
   pollStorage();
+  pollUsbDrive();
   images_->decode();
   paint_.rect(0, 0, 1280, 720, Ground);
   if (!fullPage())

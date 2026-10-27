@@ -11,12 +11,16 @@ ENGINE_ROOT := third_party/CyberFoil
 ENGINE_DIRS := $(ENGINE_ROOT)/source/install $(ENGINE_ROOT)/source/nx $(ENGINE_ROOT)/source/nx/ipc $(ENGINE_ROOT)/source/data $(ENGINE_ROOT)/source/util
 ENGINE_CPP := $(filter-out %/usb_nsp.cpp %/usb_xci.cpp %/sdmc_nsp.cpp %/sdmc_xci.cpp %/usbhdd.cpp %/byte_stream.cpp,$(wildcard $(ENGINE_ROOT)/source/install/*.cpp $(ENGINE_ROOT)/source/nx/*.cpp $(ENGINE_ROOT)/source/data/*.cpp)) $(addprefix $(ENGINE_ROOT)/source/util/,crypto.cpp file_util.cpp title_util.cpp)
 ENGINE_C := $(wildcard $(ENGINE_ROOT)/source/nx/ipc/*.c) $(ENGINE_ROOT)/source/util/debug.c
+# libhaze (Atmosphère's haze as a library, patched by 0012 so a failure ends
+# its thread instead of the app): the SD card over MTP from 연결 to PC.
+HAZE_ROOT := $(ENGINE_ROOT)/external/libhaze
+HAZE_CPP := $(wildcard $(HAZE_ROOT)/source/*.cpp)
 QR_ROOT := third_party/QR-Code-generator/cpp
 SQLITE_ROOT := third_party/sqlite
 # zstd 1.5.7, decompression only (see the Makefile).
 ZSTD_DIRS := third_party/zstd/lib/common third_party/zstd/lib/decompress
 ZSTD_C := entropy_common.c error_private.c fse_decompress.c xxhash.c zstd_common.c huf_decompress.c zstd_ddict.c zstd_decompress.c zstd_decompress_block.c ZstdSnapshot.c
-INCLUDES := engine-shim include $(ENGINE_ROOT)/include $(ENGINE_ROOT)/include/util $(QR_ROOT) $(SQLITE_ROOT) third_party/zstd/lib source/zstd
+INCLUDES := engine-shim include $(ENGINE_ROOT)/include $(ENGINE_ROOT)/include/util $(HAZE_ROOT)/include $(QR_ROOT) $(SQLITE_ROOT) third_party/zstd/lib source/zstd
 APP_TITLE := CookingFoil
 APP_AUTHOR := OpenCourse
 # The one place the version lives: the NACP, the HTTP Version header and the
@@ -38,9 +42,12 @@ LIBDIRS := $(TLS) $(PORTLIBS) $(LIBNX)
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 export OUTPUT := $(CURDIR)/$(TARGET)
 export TOPDIR := $(CURDIR)
-export VPATH := $(foreach dir,$(SOURCES) $(ENGINE_DIRS) $(QR_ROOT) $(SQLITE_ROOT) $(ZSTD_DIRS),$(CURDIR)/$(dir))
+export VPATH := $(foreach dir,$(SOURCES) $(ENGINE_DIRS) $(HAZE_ROOT)/source $(QR_ROOT) $(SQLITE_ROOT) $(ZSTD_DIRS),$(CURDIR)/$(dir))
 export DEPSDIR := $(CURDIR)/$(BUILD)
-export OFILES := $(foreach dir,$(SOURCES),$(notdir $(patsubst %.cpp,%.o,$(wildcard $(dir)/*.cpp)))) $(notdir $(ENGINE_CPP:.cpp=.o) $(ENGINE_C:.c=.o)) qrcodegen.o sqlite3.o $(ZSTD_C:.c=.o)
+export OFILES := $(foreach dir,$(SOURCES),$(notdir $(patsubst %.cpp,%.o,$(wildcard $(dir)/*.cpp)))) $(notdir $(ENGINE_CPP:.cpp=.o) $(ENGINE_C:.c=.o) $(HAZE_CPP:.cpp=.o)) qrcodegen.o sqlite3.o $(ZSTD_C:.c=.o)
+# Named here, where the wildcard sees the sources: the build folder's make
+# takes the list from the environment.
+export HAZE_O := $(notdir $(HAZE_CPP:.cpp=.o))
 # Objects go in one folder by file name alone: two sources of the same name
 # (source/i18n/es.cpp and the engine's nx/ipc/es.c) would leave one of them
 # out, and the link fails far from the cause.
@@ -84,5 +91,7 @@ $(OUTPUT).elf: $(OFILES)
 # (it needs shared memory the console does not have).
 sqlite3.o: CFLAGS += -w -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_OMIT_WAL -DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_OMIT_DEPRECATED
 $(ZSTD_C:.c=.o): CFLAGS += -w -DZSTD_DISABLE_ASM -DZSTD_LEGACY_SUPPORT=0 -DDEBUGLEVEL=0 -DZSTD_TRACE=0 -I$(TOPDIR)/third_party/zstd/lib/common
+# libhaze is written to C++20 (its own CMake asks for it).
+$(HAZE_O): CXXFLAGS += -std=gnu++20 -w
 -include $(OFILES:.o=.d)
 endif

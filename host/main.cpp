@@ -440,6 +440,50 @@ int main(int argc, char **argv) {
     ui.render();
     if (!app.screenshot(shot + "/08-launch-offer.png")) return 1;
     ui.previewLaunchOfferDone();
+    // 연결 to PC: waiting, a PC on the cable, a copy, closing, and the
+    // applet mode notice; the copy again on every theme.
+    {
+      using foil::platform::usb::Phase;
+      const auto state = [](Phase phase, std::string file = "", int copied = 0) {
+        foil::platform::usb::Status status;
+        status.phase = phase;
+        status.file = std::move(file);
+        status.toConsole = true;
+        status.moved = int64_t(3) << 30;
+        status.copied = copied;
+        status.cableSeen = phase != Phase::Waiting;
+        return status;
+      };
+      const auto copying = state(Phase::Open, "Tears of the Kingdom.nsp", 2);
+      const std::pair<const char *, foil::platform::usb::Status> states[] = {
+          {"09-usb-waiting", state(Phase::Waiting)},
+          {"09-usb-plugged", state(Phase::Plugged)},
+          {"09-usb-open", state(Phase::Open, "", 5)},
+          {"09-usb-copying", copying}};
+      for (const auto &[name, status] : states) {
+        ui.previewUsbDrive(status);
+        ui.render();
+        if (!app.screenshot(shot + "/" + name + ".png")) return 1;
+      }
+      ui.previewUsbStopping();
+      ui.render();
+      if (!app.screenshot(shot + "/09-usb-stopping.png")) return 1;
+      ui.previewUsbDone();
+      ui.previewUsbApplet();
+      ui.render();
+      if (!app.screenshot(shot + "/09-usb-applet.png")) return 1;
+      ui.previewUsbDone();
+      for (int row = 1; row < 7; ++row) {
+        ui.previewThemePopup(row);
+        ui.previewThemeClosed();
+        ui.previewUsbDrive(copying);
+        ui.render();
+        if (!app.screenshot(shot + "/09-usb-theme-0" + std::to_string(row) + ".png")) return 1;
+        ui.previewUsbDone();
+      }
+      ui.previewThemePopup(0);
+      ui.previewThemeClosed();
+    }
     // 설정 > 테마 on each palette, and the home screen in it.
     for (int row = 0; row < 7; ++row) {
       const auto name = std::string(row < 10 ? "0" : "") + std::to_string(row);

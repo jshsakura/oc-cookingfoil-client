@@ -310,7 +310,14 @@ void Application::selfShortcutAction(Action a) {
   if (a != Action::Back && !(a == Action::Accept && settled())) return;
   selfShortcutAsk_ = false;
   selfShortcutClosed_ = true; // not again this run; the next start from the album asks again
-  if (a != Action::Accept) return;
+  if (a == Action::Accept) makeSelfShortcut();
+}
+// This app's own shortcut can be made and is not there yet (as last looked).
+bool Application::selfShortcutPossible() const {
+  return platform::canMakeShortcuts() && selfPath_.rfind("sdmc:/", 0) == 0 &&
+         !shortcuts_.count(forwarder::titleId(forwarder::loaderPath(selfPath_)));
+}
+void Application::makeSelfShortcut() {
   // A download (a resumed one) holds NCM: it is made in its turn.
   if (downloadRunning() || !installQueue_.empty()) {
     queueJob("shortcut", trf("{0} shortcut", {"CookingFoil"}), "", "", 0, "self");
