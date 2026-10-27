@@ -1,6 +1,7 @@
 #include "mtp/Mtp.hpp"
 #include <algorithm>
 #include <cstring>
+#include <set>
 #include <strings.h>
 #include <utility>
 namespace foil::mtp {
@@ -8,9 +9,11 @@ namespace {
 enum Container : uint16_t { CommandBlock = 1, DataBlock = 2, ResponseBlock = 3 };
 constexpr size_t Header = 12;
 constexpr uint32_t Any = 0xFFFFFFFF;
-// A file from the PC is written under this name until all of it is there.
-const std::string PartPrefix = ".cookingfoil-part-"; // i18n: as is
-bool partial(const std::string &name) { return name.compare(0, PartPrefix.size(), PartPrefix) == 0; }
+// A file from the PC is written under the first name until all of it is
+// there; the file it replaces waits under the second until it has its name.
+const std::string PartPrefix = ".cookingfoil-part-", OldPrefix = ".cookingfoil-old-"; // i18n: as is
+bool startsWith(const std::string &name, const std::string &prefix) { return name.compare(0, prefix.size(), prefix) == 0; }
+bool partial(const std::string &name) { return startsWith(name, PartPrefix) || startsWith(name, OldPrefix); }
 // Volume n is storage n+1, its first logical partition.
 uint32_t storageId(uint32_t volume) { return (volume + 1) << 16 | 1; }
 // Operations (PTP 1.1 table 18, MTP 1.1 appendix D).
@@ -257,11 +260,24 @@ const std::vector<uint32_t> *Responder::listFolder(uint32_t folder) {
   std::vector<Entry> entries;
   const auto path = onCard(folder);
   if (!storage_.list(path, entries)) return nullptr;
-  // A copy the console lost power in the middle of: deleted where it is found.
+  // What a power cut left mid-copy, put right where it is found: the new
+  // file unfinished is deleted; the old one it was replacing gets its name
+  // back, unless the new one had already taken it.
+  std::set<std::string> names;
+  for (const auto &e : entries)
+    if (!partial(e.name)) names.insert(e.name);
   entries.erase(std::remove_if(entries.begin(), entries.end(),
-                               [&](const Entry &e) {
+                               [&](Entry &e) {
                                  if (!partial(e.name)) return false;
-                                 if (storage_.remove(join(path, e.name), e.folder)) listener_.dropped();
+                                 const auto at = join(path, e.name);
+                                 if (startsWith(e.name, OldPrefix)) {
+                                   const auto name = e.name.substr(OldPrefix.size());
+                                   if (!names.count(name) && validName(name) && storage_.rename(at, join(path, name), e.folder))
+                                     return e.name = name, names.insert(name), false;
+                                   if (names.count(name)) storage_.remove(at, e.folder);
+                                   return true;
+                                 }
+                                 if (storage_.remove(at, e.folder)) listener_.dropped();
                                  return true;
                                }),
                 entries.end());
@@ -529,6 +545,18 @@ bool Responder::sendObjectPropList(const Command &c) {
   if (code != Ok) return respond(c, code, {0, 0, 0, 0});
   return respond(c, Ok, {storageId(objects_.rootOf(folder)), objects_.isRoot(folder) ? 0 : folder, handle});
 }
+// A whole file from `part` to `path`. The one it replaces steps aside first
+// and comes back if the new one cannot take its place, so at every moment
+// one of the two holds the name or waits under OldPrefix (listFolder).
+bool Responder::land(const std::string &part, const std::string &path, bool replaces) {
+  if (!replaces) return storage_.rename(part, path, false);
+  const auto cut = path.rfind('/');
+  const auto old = path.substr(0, cut + 1) + OldPrefix + path.substr(cut + 1);
+  if (!storage_.rename(path, old, false)) return false;
+  if (!storage_.rename(part, path, false)) return storage_.rename(old, path, false), false;
+  storage_.remove(old, false);
+  return true;
+}
 // The PC's file onto the card, two buffers turning: the cable fills one
 // while the card writes the other.
 bool Responder::sendObject(const Command &c) {
@@ -596,11 +624,7 @@ bool Responder::sendObject(const Command &c) {
   file.reset();
   listener_.copyEnds();
   // All of it there: it takes its name, over the file it replaces.
-  if (!failed) {
-    const bool cleared = !pending.replaces || storage_.remove(path, false);
-    failed = !cleared || !storage_.rename(part, path, false);
-    if (failed && cleared) pending.replaces = false; // the old file is gone too
-  }
+  if (!failed) failed = !land(part, path, pending.replaces);
   if (failed) {
     drop();
     return respond(c, storage_.freeSpace() < 1 << 20 ? StoreFull : GeneralError);

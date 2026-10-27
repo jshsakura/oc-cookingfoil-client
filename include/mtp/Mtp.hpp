@@ -155,6 +155,7 @@ private:
   bool folderOf(uint32_t storage, uint32_t param, uint32_t &folder) const;
   uint16_t createObject(uint32_t folder, Entry entry, uint32_t &handle);
   void dropPending();
+  bool land(const std::string &part, const std::string &path, bool replaces);
 
   bool deviceInfo(const Command &c);
   bool storageInfo(const Command &c);

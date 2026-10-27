@@ -112,7 +112,9 @@ struct Card : foil::mtp::Storage {
     std::error_code ec;
     return folder ? fs::remove_all(at(path), ec) > 0 : fs::remove(at(path), ec);
   }
+  int renames = 0, failRename = 0; // the failRename-th rename from now fails
   bool rename(const std::string &from, const std::string &to, bool) override {
+    if (failRename && ++renames == failRename) return failRename = 0, false;
     std::error_code ec;
     fs::rename(at(from), at(to), ec);
     return !ec;
@@ -350,7 +352,7 @@ int runMtpTests() {
   // comes, an announced file is only a name the PC sees.
   const auto noParts = [&] {
     for (const auto &e : fs::recursive_directory_iterator(card.root))
-      if (e.path().filename().string().rfind(".cookingfoil-part-", 0) == 0) return false;
+      if (e.path().filename().string().rfind(".cookingfoil-", 0) == 0) return false;
     return true;
   };
   CHECK(pc.call(0x1002, {2}).code == 0x2001);
@@ -399,6 +401,26 @@ int runMtpTests() {
   CHECK(!sw2.count(".cookingfoil-part-half.nro") && noParts() && seen.drops == before + 1);
   auto sneaky = objectInfo(0x3000, 1, u".cookingfoil-part-x");
   CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &sneaky).code == 0xA806);
+  auto sneakyOld = objectInfo(0x3000, 1, u".cookingfoil-old-x");
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &sneakyOld).code == 0xA806);
+  // A power cut while a file was being replaced: the old one stepped aside
+  // and the new one had not taken its name, so the old one gets it back;
+  // had the new one taken it, the old one goes.
+  put(card.root / ".cookingfoil-old-lost.txt", "old");
+  put(card.root / "kept.txt", "new");
+  put(card.root / ".cookingfoil-old-kept.txt", "old");
+  const auto healed = names(pc, 0xFFFFFFFF);
+  CHECK(healed.count("lost.txt") && get(card.root / "lost.txt") == "old" && get(card.root / "kept.txt") == "new");
+  CHECK(noParts() && !fs::exists(card.root / ".cookingfoil-old-lost.txt") && !fs::exists(card.root / ".cookingfoil-old-kept.txt"));
+  // The new file cannot take the name: the old one comes back to it.
+  auto redo = objectInfo(0x3000, 3, u"next.bin");
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &redo).code == 0x2001);
+  const std::vector<uint8_t> xyz{'x', 'y', 'z'};
+  card.renames = 0, card.failRename = 2;
+  CHECK(pc.call(0x100D, {}, &xyz).code != 0x2001 && get(card.root / "next.bin") == "abc" && noParts());
+  CHECK(names(pc, 0xFFFFFFFF).count("next.bin"));
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &redo).code == 0x2001 && pc.call(0x100D, {}, &xyz).code == 0x2001);
+  CHECK(get(card.root / "next.bin") == "xyz" && noParts());
 
   // Where the album is: the card's own Nintendo folder, or the emuMMC's.
   CHECK(foil::mtp::nintendoFolder(false, "[emummc]\nnintendo_path=emuMMC/SD00/Nintendo") == "/Nintendo");
