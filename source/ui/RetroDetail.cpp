@@ -307,15 +307,12 @@ void Application::retroDetail() {
   if (!banner.empty() && !images_->loaded(banner) && !images_->failed(banner))
     paint_.skeleton(0, 0, 1280, 212, 0, true);
   images_->draw(banner, 0, 0, 1280, 212, 0, true);
-  const auto back = screenLabel(previous_);
-  paint_.icon(7, 32, BackLine - 10, Surface, 20);
+  backLink(screenLabel(previous_));
   // The band's chips from the right, 10 apart: admin, achievements, votes.
   float right = adminChip();
   if (right < BandRight) right -= 10;
   if (const float left = raChip(right); left < right) right = left - 10;
   voteChips(right);
-  paint_.fonts.middle(back, 56, BackLine, 17, White);
-  hit(24, BackLine - 20, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
   cover(game.iconUrl, 40, Top, 140, false, game.name, true, true);
   paint_.region(game.region, 40 + 140 - 44, Top + 140 - 32, 36, 24);
