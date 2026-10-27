@@ -114,6 +114,13 @@ float Application::pageTitle(const std::string &title, const std::string &meta, 
     x += 14 + paint_.pill(meta, x + 14, HeaderCenter - 13);
   return x;
 }
+void Application::backLink(const std::string &label) {
+  paint_.icon(7, 32, BackLine - 10, White, 20);
+  const float right = paint_.fonts.middle(label, 56, BackLine, 17, White, false, 360);
+  // Pressed, a pill just round the arrow and the label, not a card over the band.
+  const float w = right + 12 - 24;
+  hit(24, BackLine - 20, w, 40, [this] { action(Action::Back); }, {24, BackLine - 17, w, 34}, 17);
+}
 std::string Application::countLabel(size_t count, const std::string &query) const {
   return query.empty() ? std::to_string(count) : trf("Search results: {0}", {std::to_string(count)});
 }
