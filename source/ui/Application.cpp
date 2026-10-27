@@ -2269,7 +2269,7 @@ void Application::footer(
   }
 }
 void Application::shell() {
-  paint_.rect(0, 0, 232, 660, Surface);
+  paint_.rect(0, 0, 232, 660, sideColor());
   paint_.rect(231, 0, 1, 660, Line);
   // Centered in the 232px menu column: equal room left and right of the
   // mark and the wordmark's period.
