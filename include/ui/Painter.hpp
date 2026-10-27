@@ -35,7 +35,7 @@ public:
   // Thin focus border for tightly packed rows, where ring() would be covered
   // by the next row. Draw it before the row's own fill.
   void outline(float x, float y, float w, float h, int radius = 10);
-  // Row inside a panel: a 3px butter border drawn inside the row's own
+  // Row inside a panel: a 5px butter border drawn inside the row's own
   // bounds, so focus never spills onto headings or panel edges.
   void focusRow(float x, float y, float w, float h, SDL_Color fill, int radius = 12);
   void ring(float x, float y, float w, float h, int radius = 14);
