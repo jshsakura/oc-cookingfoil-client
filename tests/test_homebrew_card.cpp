@@ -182,13 +182,13 @@ int runHomebrewCardTests() {
     CHECK(status(app, ledger, gone, &older) == Status::Update);
   }
   {
-    // The tile's picture: an app on the card shows its file's icon, never
-    // the server's (none in the file: the name's initial); one not on the
-    // card the server's.
+    // The tile's picture: an app on the card shows its file's icon; with
+    // none in the file (StarCraft 64's has none) the server's, and an app
+    // only on the card the name's initial. One not on the card the server's.
     App listed;
     listed.iconUrl = "https://server.example/api/homebrew/gh-1/icon";
     CHECK(tileIcon(listed, true, "card:switch/a.nro") == "card:switch/a.nro");
-    CHECK(tileIcon(listed, true, "").empty());
+    CHECK(tileIcon(listed, true, "") == listed.iconUrl);
     CHECK(tileIcon(listed, false, "") == listed.iconUrl);
     App local = listed;
     local.iconUrl.clear();
