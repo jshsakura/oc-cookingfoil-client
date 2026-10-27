@@ -151,8 +151,18 @@ void Application::homebrewDetail() {
     SDL_Color color = Ink;
   };
   std::vector<Fact> facts;
-  if (!app.cardOnly && !app.version.empty()) facts.push_back({19, tr("Latest version"), "v" + app.version});
-  if (!onCard.empty()) facts.push_back({24, tr("Installed version"), "v" + onCard});
+  // The version on one line: what is on the card and whether it is the
+  // newest, or the server's newest when nothing is on the card.
+  const bool listed = !app.cardOnly && !app.version.empty();
+  if (onCard.empty()) {
+    if (listed) facts.push_back({19, tr("Latest version"), "v" + app.version});
+  } else if (!listed) {
+    facts.push_back({24, tr("Installed version"), "v" + onCard});
+  } else if (status == homebrew::Status::Update) {
+    facts.push_back({24, tr("Installed version"), "v" + onCard + " → v" + app.version});
+  } else {
+    facts.push_back({24, tr("Installed version"), trf("{0} · Up to date", {"v" + onCard})});
+  }
   if (!app.author.empty()) facts.push_back({12, tr("Developer"), app.author});
   if (app.size) facts.push_back({14, tr("Size|info"), formatBytes(app.size)});
   if (!app.releasedAt.empty()) facts.push_back({11, tr("Released"), dayLabel(app.releasedAt)});

@@ -543,7 +543,21 @@ float Application::infoCard(const Group &g, const std::string &publisher, float 
   if (!detail_.ratingContent.empty()) facts.push_back({25, tr("Rating|age"), detail_.ratingContent});
   const int dlcTotal = detail_.dlcTotal ? detail_.dlcTotal : base.dlcTotal;
   if (dlcTotal) facts.push_back({22, "DLC", trf("{0} released · {1} here", {std::to_string(dlcTotal), std::to_string(g.dlc.size())})});
-  facts.push_back({19, tr("Latest version"), versionLabel(g.update ? *g.update : item)});
+  // The version on one line: on the console, what is installed and whether
+  // it is the newest; else the server's newest.
+  const Item &newest = g.update ? *g.update : item;
+  const auto here = std::find_if(installed_.games.begin(), installed_.games.end(), [&](const InstalledGame &game) {
+    return std::equal(game.titleId.begin(), game.titleId.end(), g.id.begin(), g.id.end(),
+                      [](char a, char b) { return std::tolower(uint8_t(a)) == std::tolower(uint8_t(b)); });
+  });
+  if (here == installed_.games.end()) {
+    facts.push_back({19, tr("Latest version"), versionLabel(newest)});
+  } else {
+    const auto &shown = here->displayVersion;
+    const std::string mine = shown.empty() ? "v" + std::to_string(here->version) : shown.front() == 'v' ? shown : "v" + shown;
+    facts.push_back({19, tr("Installed version"), here->version >= newest.version ? trf("{0} · Up to date", {mine})
+                                                                                  : mine + " → " + versionLabel(newest)});
+  }
   if (!extension.empty()) facts.push_back({16, tr("File type"), extension});
   if (!item.region.empty()) facts.push_back({17, tr("Region"), item.region});
   facts.push_back({18, tr("Title ID"), g.id});
