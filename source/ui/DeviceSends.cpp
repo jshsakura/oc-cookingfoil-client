@@ -192,11 +192,12 @@ void Application::arrived(std::vector<Arrival> games) {
     if (arrivals_.size() < MaxArrivals) arrivals_.push_back(std::move(g));
 }
 // The front card's time: under a popup it stops (the card cannot be seen or
-// cancelled there); once it runs out, the game goes to the queue.
+// cancelled there), and with no internet (the game could not come down); once
+// it runs out, the game goes to the queue.
 void Application::stepArrivals() {
   const uint32_t now = SDL_GetTicks(), last = std::exchange(arrivalFrame_, now);
   if (arrivals_.empty()) return;
-  if (popupOpen()) arrivalAt_ += now - last;
+  if (popupOpen() || noInternet()) arrivalAt_ += now - last;
   if (now - arrivalAt_ <= ArrivalTurnMs) return;
   auto done = std::move(arrivals_.front());
   arrivals_.pop_front();

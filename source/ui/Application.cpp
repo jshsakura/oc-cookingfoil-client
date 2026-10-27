@@ -2380,6 +2380,9 @@ void Application::noteSignal(int strength) {
   }
   signal_ = strength;
 }
+bool Application::noInternet() const {
+  return linkDropped() || (!connected_ && error_.message == net::offlineMessage());
+}
 const char *Application::connectionStatus() const {
   const bool offline = error_.message == net::offlineMessage();
   // The Korean status is a key: statusColor() reads it, tr() draws it.
@@ -2994,6 +2997,7 @@ Error Application::launchAdded(int picks) {
 Error Application::enqueueInstall(const std::vector<Item> &files, const std::string &name, const std::string &icon,
                                   const std::string &target, std::vector<UserPatch> patches, bool first, bool &added) {
   added = false;
+  if (noInternet()) return {tr("Downloads start once the console is online.")};
   // A file already queued or installing is not added twice; one that failed
   // or was canceled before leaves 실패 and 취소 as it goes in again.
   for (const auto &f : files)
@@ -3068,6 +3072,11 @@ bool Application::queueJob(const std::string &kind, const std::string &name, con
   file.name = name;
   file.icon = icon;
   file.size = size;
+  // A shortcut is made on the console; everything else comes down.
+  if (kind != "shortcut" && noInternet()) {
+    alert_ = tr("Downloads start once the console is online.");
+    return false;
+  }
   history::Entry row;
   row.install = {name, icon, "sd", {file}, server.empty() ? serverInUse() : server};
   row.kind = kind;

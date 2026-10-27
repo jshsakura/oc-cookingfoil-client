@@ -389,6 +389,8 @@ public:
     signalAt_ = SDL_GetTicks();
   }
   std::string connectionLabel() const { return connectionStatus(); }
+  bool previewMenuOpen(Screen screen) const { return menuOpen(menuIndex(screen)); }
+  size_t historySize() const { return history_.size(); }
   std::string saveRowName(size_t i) const {
     const auto rows = saveGameRows();
     return i < rows.size() ? installed_.games[size_t(rows[i])].name : "";
@@ -539,8 +541,18 @@ private:
     default: return true;
     }
   }
+  // Without internet the same goes for the server's own lists; this
+  // console's games, saves and downloads stay open.
   bool menuOpen(int item) const {
-    return menuShown(item) && (!pairingPending_ || item == 0 || item == MenuItems - 1);
+    if (!menuShown(item)) return false;
+    if (pairingPending_) return item == 0 || item == MenuItems - 1;
+    switch (MenuScreens[item]) {
+    case Screen::Library:
+    case Screen::Retro:
+    case Screen::Homebrew:
+    case Screen::Patches: return !noInternet();
+    default: return true;
+    }
   }
   std::set<std::string> features_; // the server's /api/library/info features
   bool menuKnown_ = false;          // the server has answered once: menuShown() holds
@@ -987,6 +999,9 @@ private:
   uint32_t linkDropAt_ = 0, serverAnsweredAt_ = 0;
   void noteSignal(int strength);
   bool linkDropped() const { return connected_ && linkDropAt_ && linkDropAt_ > serverAnsweredAt_; }
+  // No internet now: the server never answered for it, or the link dropped
+  // after it did. Nothing new is downloaded and the server's screens close.
+  bool noInternet() const;
   const char *connectionStatus() const; // the footer's state, an untranslated key
   bool installRetroShortcut(const retro::Game &game);
   bool installShortcut(const std::string &name, const std::string &icon, const std::string &url,

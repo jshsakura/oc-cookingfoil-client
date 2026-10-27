@@ -664,8 +664,16 @@ int runUiTests(SDL_Renderer *renderer) {
     link.previewSignal(-1);
     CHECK(link.connectionLabel() == "No internet");
     link.render();
+    // Offline: the server's lists close, this console's own stay, and
+    // nothing new goes in the download queue.
+    CHECK(!link.previewMenuOpen(foil::ui::Screen::Library) && !link.previewMenuOpen(foil::ui::Screen::Patches));
+    CHECK(link.previewMenuOpen(foil::ui::Screen::Installed) && link.previewMenuOpen(foil::ui::Screen::Saves) &&
+          link.previewMenuOpen(foil::ui::Screen::Downloads));
+    CHECK(link.previewPick({parsed.value.front()}, "Offline Game").message == foil::tr("Downloads start once the console is online."));
+    CHECK(link.historySize() == 0);
     link.previewSignal(2);
     CHECK(link.connectionLabel() == "Connected");
+    CHECK(link.previewMenuOpen(foil::ui::Screen::Library));
     // The server answering after the drop wins over the console's check.
     link.previewSignal(-1);
     std::this_thread::sleep_for(std::chrono::milliseconds(2));

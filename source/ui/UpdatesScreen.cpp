@@ -163,6 +163,7 @@ void Application::updates() {
   unclip();
 }
 void Application::installUpdates(bool all) {
+  if (noInternet()) { alert_ = tr("Downloads start once the console is online."); return; }
   if (deviceBusy_ || !installed_.installed.complete) { message(tr("Updates start after installed versions are read.")); return; }
   const auto rows = updateRows();
   if (rows.empty()) return;
