@@ -1200,11 +1200,12 @@ const Translation rows[] = {
     {"This file is not signed, so the console may refuse to install it.", "서명이 없는 파일이라 본체가 설치를 거부할 수 있습니다."},
     {"The server could not prepare this file.", "서버가 이 파일을 준비하지 못했습니다."},
     {"Theme", "테마"},
-    {"Light|theme", "밝게"},
-    {"Dark|theme", "어둡게"},
+    {"Beige|theme", "베이지"},
     {"Black|theme", "블랙"},
-    {"Cream|theme", "크림"},
     {"Navy|theme", "네이비"},
+    {"Purple|theme", "퍼플"},
+    {"Green|theme", "그린"},
+    {"Pink|theme", "핑크"},
     {"Same as the console", "본체 설정대로"},
 };
 const TranslationTable table(Language::Korean, rows, sizeof rows / sizeof rows[0]);

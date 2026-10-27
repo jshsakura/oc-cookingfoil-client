@@ -1200,11 +1200,12 @@ const Translation rows[] = {
     {"This file is not signed, so the console may refuse to install it.", "此檔案沒有簽章，主機可能會拒絕安裝。"},
     {"The server could not prepare this file.", "伺服器未能準備此檔案。"},
     {"Theme", "主題"},
-    {"Light|theme", "淺色"},
-    {"Dark|theme", "深色"},
+    {"Beige|theme", "米色"},
     {"Black|theme", "純黑"},
-    {"Cream|theme", "奶油"},
     {"Navy|theme", "藏青"},
+    {"Purple|theme", "紫色"},
+    {"Green|theme", "綠色"},
+    {"Pink|theme", "粉色"},
     {"Same as the console", "跟隨主機設定"},
 };
 const TranslationTable table(Language::ChineseTraditional, rows, sizeof rows / sizeof rows[0]);

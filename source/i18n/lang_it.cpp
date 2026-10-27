@@ -1200,11 +1200,12 @@ const Translation rows[] = {
     {"This file is not signed, so the console may refuse to install it.", "Questo file non è firmato, quindi la console potrebbe rifiutarne l’installazione."},
     {"The server could not prepare this file.", "Il server non è riuscito a preparare questo file."},
     {"Theme", "Tema"},
-    {"Light|theme", "Chiaro"},
-    {"Dark|theme", "Scuro"},
+    {"Beige|theme", "Beige"},
     {"Black|theme", "Nero"},
-    {"Cream|theme", "Crema"},
     {"Navy|theme", "Blu navy"},
+    {"Purple|theme", "Viola"},
+    {"Green|theme", "Verde"},
+    {"Pink|theme", "Rosa"},
     {"Same as the console", "Come la console"},
 };
 const TranslationTable table(Language::Italian, rows, sizeof rows / sizeof rows[0]);

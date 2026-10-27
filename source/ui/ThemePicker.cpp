@@ -17,11 +17,12 @@ const Palette &Application::themePalette(int row) const {
 std::string Application::themeLabel(int row) {
   switch (row) {
   case 0: return tr("Same as the console");
-  case 1: return tr("Light|theme");
-  case 2: return tr("Dark|theme");
-  case 3: return tr("Black|theme");
-  case 4: return tr("Cream|theme");
-  case 5: return tr("Navy|theme");
+  case 1: return tr("Beige|theme");
+  case 2: return tr("Black|theme");
+  case 3: return tr("Navy|theme");
+  case 4: return tr("Purple|theme");
+  case 5: return tr("Green|theme");
+  case 6: return tr("Pink|theme");
   }
   return "";
 }

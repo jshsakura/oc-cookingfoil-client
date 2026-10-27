@@ -7,7 +7,7 @@
 namespace foil {
 // The page colors 설정 offers besides the console's own, in its order
 // (ui/Theme.hpp has a palette for each).
-inline constexpr const char *ThemeNames[] = {"light", "dark", "black", "cream", "navy"};
+inline constexpr const char *ThemeNames[] = {"light", "dark", "navy", "purple", "green", "pink"};
 inline bool isThemeName(const std::string &name) {
     for (const char *theme : ThemeNames)
         if (name == theme) return true;

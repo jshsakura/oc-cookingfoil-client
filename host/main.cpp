@@ -435,7 +435,7 @@ int main(int argc, char **argv) {
     if (!app.screenshot(shot + "/06-language-failed.png")) return 1;
     ui.previewLanguageDone();
     // 설정 > 테마 on each palette, and the home screen in it.
-    for (int row = 0; row < 6; ++row) {
+    for (int row = 0; row < 7; ++row) {
       const auto name = std::string(row < 10 ? "0" : "") + std::to_string(row);
       ui.screen(foil::ui::Screen::Settings);
       ui.previewThemePopup(row);

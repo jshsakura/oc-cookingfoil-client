@@ -32,17 +32,16 @@ constexpr Palette DarkPalette{{18, 18, 22, 255},     {34, 34, 40, 255},    {236,
                               {63, 191, 131, 255},   {232, 160, 48, 255},  {240, 104, 92, 255},
                               {72, 60, 30, 255},     {80, 38, 38, 255},    {30, 62, 46, 255},
                               {104, 104, 112, 255},  {255, 255, 255, 30},  true};
-// Black: true black for OLED screens. Cream: Solarized Light's warm page.
-// Navy: Nord's blue-grey night, its red brightened so errors read.
-constexpr Palette BlackPalette{{0, 0, 0, 255},        {22, 22, 26, 255},    {236, 236, 240, 255},
-                               {150, 150, 160, 255},  {46, 46, 52, 255},    {92, 204, 148, 255},
-                               {63, 191, 131, 255},   {232, 160, 48, 255},  {240, 104, 92, 255},
-                               {64, 53, 24, 255},     {70, 30, 30, 255},    {24, 54, 40, 255},
-                               {96, 96, 104, 255},    {255, 255, 255, 30},  true};
-constexpr Palette CreamPalette{{238, 232, 213, 255}, {253, 246, 227, 255}, {7, 54, 66, 255}, {88, 110, 117, 255}, {220, 212, 188, 255}, {98, 116, 0, 255}, {133, 153, 0, 255}, {160, 118, 0, 255}, {220, 50, 47, 255}, {250, 230, 178, 255}, {247, 215, 205, 255}, {228, 234, 200, 255}, {147, 161, 161, 255}, {0, 0, 0, 30}, false};
+// Navy takes Nord's colors and purple Catppuccin Mocha's, green Everforest's;
+// pink is a light page of its own. Their reds are brightened where errors
+// read too dim, and every text color keeps at least 4:1 against its page.
 constexpr Palette NavyPalette{{46, 52, 64, 255}, {59, 66, 82, 255}, {236, 239, 244, 255}, {196, 204, 218, 255}, {76, 86, 106, 255}, {163, 190, 140, 255}, {163, 190, 140, 255}, {235, 203, 139, 255}, {226, 128, 136, 255}, {93, 90, 83, 255}, {82, 63, 74, 255}, {75, 86, 83, 255}, {118, 128, 148, 255}, {255, 255, 255, 30}, true};
+constexpr Palette PurplePalette{{30, 30, 46, 255}, {49, 50, 68, 255}, {205, 214, 244, 255}, {166, 173, 200, 255}, {69, 71, 90, 255}, {166, 227, 161, 255}, {166, 227, 161, 255}, {250, 179, 135, 255}, {243, 139, 168, 255}, {85, 79, 78, 255}, {83, 57, 77, 255}, {64, 79, 75, 255}, {108, 112, 134, 255}, {255, 255, 255, 30}, true};
+constexpr Palette GreenPalette{{45, 53, 59, 255}, {55, 65, 71, 255}, {211, 198, 170, 255}, {165, 175, 160, 255}, {76, 88, 94, 255}, {167, 192, 128, 255}, {167, 192, 128, 255}, {219, 188, 127, 255}, {236, 134, 136, 255}, {89, 87, 76, 255}, {91, 71, 76, 255}, {75, 88, 76, 255}, {122, 132, 120, 255}, {255, 255, 255, 30}, true};
+constexpr Palette PinkPalette{{249, 231, 236, 255}, {255, 247, 249, 255}, {74, 52, 66, 255}, {116, 90, 104, 255}, {238, 210, 220, 255}, {20, 99, 63, 255}, {30, 142, 90, 255}, {176, 110, 0, 255}, {196, 48, 72, 255}, {255, 236, 204, 255}, {252, 214, 222, 255}, {222, 240, 230, 255}, {186, 160, 172, 255}, {60, 0, 30, 30}, false};
 // In ThemeNames' order (core/State.hpp).
-constexpr const Palette *ThemePalettes[] = {&LightPalette, &DarkPalette, &BlackPalette, &CreamPalette, &NavyPalette};
+constexpr const Palette *ThemePalettes[] = {&LightPalette, &DarkPalette,  &NavyPalette,
+                                            &PurplePalette, &GreenPalette, &PinkPalette};
 inline Palette palette = LightPalette;
 inline void usePalette(const Palette &next) { palette = next; }
 inline const SDL_Color &Ground = palette.ground, &Surface = palette.surface;
