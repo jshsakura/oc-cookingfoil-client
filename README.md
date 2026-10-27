@@ -8,7 +8,7 @@
   <a href="https://github.com/jshsakura/oc-cookingfoil/blob/main/README.md#quick-start"><img src="brand/buttons/setup-en.svg" alt="Setup guide" width="160" height="44" /></a>
   <a href="docs/README.md"><img src="brand/buttons/docs-en.svg" alt="Documentation" width="160" height="44" /></a>
   </p>
-  <p><a href="README.md">English</a> · <a href="README.ko.md">한국어</a></p>
+  <p><a href="README.md">English</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.es.md">Español</a></p>
   <a href="https://github.com/jshsakura/oc-cookingfoil-client/actions/workflows/ci.yml"><img src="https://github.com/jshsakura/oc-cookingfoil-client/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/jshsakura/oc-cookingfoil-client/releases"><img src="https://img.shields.io/github/v/release/jshsakura/oc-cookingfoil-client?color=FFC23D" alt="GitHub release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-16161A" alt="GPL-3.0-or-later" /></a>
@@ -50,8 +50,8 @@ integrations appear according to the server's capabilities. You choose when to a
 ## Get started
 
 1. **Prepare a server.** Follow the [CookingFoil server guide](https://github.com/jshsakura/oc-cookingfoil#readme), or use a server you have permission to access.
-2. **Copy the client.** Sign in to your server’s web page, download its `cookingfoil.nro` and copy it to `switch/cookingfoil/` on your SD card. The operator must provide a client build first.
-3. **Connect.** Launch the app from the Homebrew Menu and enter the address in **Settings → Add server**. You can also create a `config.json` on a PC.
+2. **Copy the client.** Download [`cookingfoil.nro`](https://github.com/jshsakura/oc-cookingfoil-client/releases/latest/download/cookingfoil.nro) from the latest release, or from your server’s web page, and copy it to `switch/cookingfoil/` on your SD card. No config file is needed.
+3. **Connect.** Launch the app from the Homebrew Menu and enter the address in **Settings → Add server**. A `config.json` written on a PC works too.
 4. **Approve the device.** If the server requires approval, scan the QR code on the console, sign in on your phone and approve it. The console connects when approved.
 
 You need a console that can run homebrew. Use application mode for operations that need console
