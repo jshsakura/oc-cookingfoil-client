@@ -110,6 +110,8 @@ Application::~Application() {
     homebrewFolderWorker_.join();
   if (serverSavesWorker_.joinable())
     serverSavesWorker_.join();
+  if (sendsWorker_.joinable())
+    sendsWorker_.join();
   if (stateWorker_.joinable())
     stateWorker_.join();
   if (reloadWorker_.joinable())
@@ -1074,6 +1076,7 @@ void Application::poll() {
   pollSaveJob();
   pollRetro();
   pollServerSaves();
+  pollSends();
   pollBackupSummary();
   pollDropbox();
   raJob_.poll();
