@@ -101,11 +101,9 @@ void Application::homebrewDetail() {
   if (!backdrop.empty() && !images_->loaded(backdrop) && !images_->failed(backdrop))
     paint_.skeleton(0, 0, 1280, 212, 0, true);
   images_->draw(backdrop, 0, 0, 1280, 212, 0, true);
-  paint_.icon(7, 32, BackLine - 10, White, 20);
+  backLink(homebrewReturn_ == Screen::Downloads ? tr("Downloads") : tr("Homebrew"));
   const float admin = adminChip();
   voteChips(admin < BandRight ? admin - 10 : admin);
-  paint_.fonts.middle(homebrewReturn_ == Screen::Downloads ? tr("Downloads") : tr("Homebrew"), 56, BackLine, 17, White, false, 360);
-  hit(24, BackLine - 20, 200, 40, [this] { action(Action::Back); });
   constexpr int Top = 58;
   cover(icon, 40, Top, 140, false, app.name, true, true);
   paint_.fonts.text(app.name, 208, Top + 4, 38, White, true, 1010);

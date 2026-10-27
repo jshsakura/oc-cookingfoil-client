@@ -1357,6 +1357,9 @@ private:
   // Returns the x after the meta text.
   // `metaRight`: where header buttons start, so long meta text stops short.
   float pageTitle(const std::string &title, const std::string &meta = "", float metaRight = 0);
+  // A detail page's way back on its band: the arrow and the screen it goes
+  // back to, touched on them alone.
+  void backLink(const std::string &label);
   // The count beside a title: while searching it says what it counts (the
   // words themselves stay in the search box).
   std::string countLabel(size_t count, const std::string &query) const;
