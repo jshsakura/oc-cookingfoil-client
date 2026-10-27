@@ -631,10 +631,22 @@ bool Application::runRetroArch(bool full, const Server &server) {
                                    &retroCancel_)) {
             for (const auto &file : plan.fetch) record.files[file.path] = file.sha256;
             done = int(plan.fetch.size());
+          } else if (!retroCancel_) {
+            // A tar stops at its first bad entry; the files then come one
+            // by one, so one of them cannot keep the rest away.
+            logLine("retroarch bundle failed: " + error.message);
+            error = {};
+            retroBytes_ = plan.bytes;
+            retroReceived_ = 0;
           }
         }
+        // One file that will not come (a write the card refuses, a 404) does
+        // not stop the rest: the others still arrive, and the first failure
+        // is what the user is told, with how many more there were.
+        Error first;
+        int failed = 0;
         for (const auto &file : plan.fetch) {
-          if (retroCancel_ || done == int(plan.fetch.size()) || error) break;
+          if (retroCancel_ || done == int(plan.fetch.size())) break;
           // A busy server answers 429: wait a little longer each time and
           // try the same file again before giving up.
           bool ok = false;
@@ -645,11 +657,21 @@ bool Application::runRetroArch(bool full, const Server &server) {
             if (status != 429) break;
             for (int waited = 0; waited < (2 << attempt) * 10 && !retroCancel_; ++waited) SDL_Delay(100);
           }
-          if (!ok) break;
+          if (!ok) {
+            if (retroCancel_) break;
+            logLine("retroarch file failed: " + file.path + ": " + error.message);
+            if (!failed++) first = error;
+            error = {};
+            continue;
+          }
           record.files[file.path] = file.sha256;
           // Written as it goes, so a sync cut off (power, a crash) resumes
           // from here instead of from the start.
           if (++done % 100 == 0) atomicWrite(sd + PackRecordPath, retro::serializePackRecord(record), ignored);
+        }
+        if (failed && !error) {
+          error = first;
+          if (failed > 1) error.message += " (+" + std::to_string(failed - 1) + ")";
         }
         // Whatever arrived is recorded, so a retry fetches only the rest.
         record.version = error ? record.version : pack.value.version;
