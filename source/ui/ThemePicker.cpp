@@ -20,12 +20,10 @@ std::string Application::themeLabel(int row) {
   case 1: return tr("Light|theme");
   case 2: return tr("Dark|theme");
   case 3: return tr("Black|theme");
+  case 4: return tr("Cream|theme");
+  case 5: return tr("Navy|theme");
   }
-  // The schemes' own names, the same in every language.
-  static const char *const Schemes[] = {"Catppuccin Latte", "Catppuccin Mocha", "Nord",           "Dracula",
-                                        "Gruvbox",          "Tokyo Night",      "Solarized Light", "Solarized Dark"};
-  const int scheme = row - 4;
-  return scheme >= 0 && scheme < int(std::size(Schemes)) ? Schemes[scheme] : "";
+  return "";
 }
 void Application::openThemePicker() {
   themePopup_ = true;

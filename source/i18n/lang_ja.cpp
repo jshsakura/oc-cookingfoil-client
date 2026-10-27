@@ -1203,6 +1203,8 @@ const Translation rows[] = {
     {"Light|theme", "ライト"},
     {"Dark|theme", "ダーク"},
     {"Black|theme", "ブラック"},
+    {"Cream|theme", "クリーム"},
+    {"Navy|theme", "ネイビー"},
     {"Same as the console", "本体の設定に合わせる"},
 };
 const TranslationTable table(Language::Japanese, rows, sizeof rows / sizeof rows[0]);

@@ -1203,6 +1203,8 @@ const Translation rows[] = {
     {"Light|theme", "밝게"},
     {"Dark|theme", "어둡게"},
     {"Black|theme", "블랙"},
+    {"Cream|theme", "크림"},
+    {"Navy|theme", "네이비"},
     {"Same as the console", "본체 설정대로"},
 };
 const TranslationTable table(Language::Korean, rows, sizeof rows / sizeof rows[0]);

@@ -1293,7 +1293,7 @@ private:
   int languageRow_ = 0;
   // 설정 > 테마: the console's own, then every palette, with a swatch each
   // (ThemePicker.cpp).
-  static constexpr int ThemeRows = 6;
+  static constexpr int ThemeRows = 3;
   static int themeCount();
   static int themeRowOf(const std::string &theme);
   const Palette &themePalette(int row) const;

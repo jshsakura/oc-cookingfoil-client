@@ -1203,6 +1203,8 @@ const Translation rows[] = {
     {"Light|theme", "淺色"},
     {"Dark|theme", "深色"},
     {"Black|theme", "純黑"},
+    {"Cream|theme", "奶油"},
+    {"Navy|theme", "藏青"},
     {"Same as the console", "跟隨主機設定"},
 };
 const TranslationTable table(Language::ChineseTraditional, rows, sizeof rows / sizeof rows[0]);

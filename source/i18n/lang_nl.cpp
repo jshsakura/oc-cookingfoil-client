@@ -1203,6 +1203,8 @@ const Translation rows[] = {
     {"Light|theme", "Licht"},
     {"Dark|theme", "Donker"},
     {"Black|theme", "Zwart"},
+    {"Cream|theme", "Crème"},
+    {"Navy|theme", "Marineblauw"},
     {"Same as the console", "Zoals de console"},
 };
 const TranslationTable table(Language::Dutch, rows, sizeof rows / sizeof rows[0]);
