@@ -1,4 +1,4 @@
 # The server repository's tag whose i18n/client/ the tables are generated from
 # (scripts/i18n.py generate --repo <clone>). Raise it to take new text; the
 # lang_*.cpp tables are not edited by hand.
-tag = client-strings-2026-10-26e
+tag = client-strings-2026-10-27a
