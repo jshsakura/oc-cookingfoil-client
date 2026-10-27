@@ -122,18 +122,18 @@ void Application::settings() {
   option(2, 26, tr("Default location"), installTarget() == "nand" ? tr("Console") : tr("SD card"), Ink, true);
   // A HOME Menu shortcut with each retro game and homebrew app (and this
   // app's own), when the server builds one.
-  option(5, 0, tr("Make HOME Menu shortcuts"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
+  option(6, 0, tr("Make HOME Menu shortcuts"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
   // Said as it is: made here, or only from the server's shortcuts when this
   // console cannot make them.
-  note(5, !state_.makeShortcuts            ? tr("Not made")
+  note(6, !state_.makeShortcuts            ? tr("Not made")
           : platform::canMakeShortcuts() ? tr("Creates a shortcut when a retro game or homebrew app downloads")
                                          : tr("Only for items the server has a shortcut for"));
   // The app's sounds: the start, cursor steps, the queue, done and errors.
-  option(6, 44, tr("Sound effects"), "", Ink, true, state_.sounds ? 1 : 0);
-  note(6, tr("Turns the startup sound and effects on or off"));
+  option(7, 44, tr("Sound effects"), "", Ink, true, state_.sounds ? 1 : 0);
+  note(7, tr("Turns the startup sound and effects on or off"));
   // The log's tail to the server, only when pressed: what went wrong reaches
   // whoever runs it.
-  option(7, 33, tr("Send a bug report"),
+  option(8, 33, tr("Send a bug report"),
          bugWorker_.joinable() ? std::string(tr("Sending")) : std::string(tr("Sends the end of the app's log to the connected server")),
          Secondary, false);
   // What the app leaves on the card: A shows how much each kind takes in a
@@ -141,7 +141,7 @@ void Application::settings() {
   option(4, 14, tr("File cleanup"), tidyBusy_ && tidyDeleting_ ? tr("Deleting") : tr("Clears leftover files and caches"),
          Secondary, false);
   // The SD card to a PC over the USB cable, in a popup.
-  option(8, 50, tr("Connect to PC"), tr("Opens the SD card on a PC over USB"), Secondary, false);
+  option(5, 50, tr("Connect to PC via MTP"), tr("Opens the SD card on a PC over USB"), Secondary, false);
   // This build against the server's newest; A checks or updates.
   option(3, 3, tr("App update"), appUpdateStatus(), appUpdate_ == AppUpdate::Available ? Ink : Secondary,
          appUpdate_ == AppUpdate::Available);

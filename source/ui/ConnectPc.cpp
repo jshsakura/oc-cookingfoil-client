@@ -109,12 +109,14 @@ void Application::usbDriveDialog() {
   const std::string detail = copying         ? st.file + " · " + formatBytes(uint64_t(std::max<int64_t>(0, st.moved)))
                              : st.copied > 0 ? trf("{0} files copied", {std::to_string(st.copied)})
                                              : std::string();
-  const std::string note = tr("Only the SD card shows. The Nintendo and emuMMC folders stay hidden.");
+  // What the PC gets, then why two folders are missing, each on its own line.
+  const std::string note = tr("You can browse and change the files on the SD card.");
+  const std::string hidden = tr("Sensitive folders such as Nintendo and emuMMC cannot be changed.");
   const float headH = paint_.fonts.lineCount(headline, 22, Text, 2, true) * 22 * 1.3f;
   const float detailH = detail.empty() ? 0 : 8 + 18 * 1.3f;
-  const float noteH = paint_.fonts.lineCount(note, 17, Text, 2) * 17 * 1.3f;
+  const float noteH = (paint_.fonts.lineCount(note, 17, Text, 2) + paint_.fonts.lineCount(hidden, 17, Text, 2)) * 17 * 1.3f + 4;
   const float bodyH = std::max(Tile + 48, 24 + headH + detailH + 14 + noteH + 24);
-  const auto body = modal(Width, bodyH, tr("Connect to PC"), usbStopping_ ? "" : tr("Disconnect|usb"), "", NoAccept, UsbIcon);
+  const auto body = modal(Width, bodyH, tr("Connect to PC via MTP"), usbStopping_ ? "" : tr("Disconnect|usb"), "", NoAccept, UsbIcon);
   // The cable's mark on a round tile: green once a PC holds it; while it
   // waits, the tile breathes so the screen reads as listening, not stuck.
   const float tileX = body.x + 32, tileY = body.y + (bodyH - Tile) / 2;
@@ -133,6 +135,8 @@ void Application::usbDriveDialog() {
     y += detailH;
   }
   paint_.fonts.wrapped(note, body.x + TextX, y + 14, 17, Secondary, Text, 2);
+  y += paint_.fonts.lineCount(note, 17, Text, 2) * 17 * 1.3f + 4;
+  paint_.fonts.wrapped(hidden, body.x + TextX, y + 14, 17, Secondary, Text, 2);
 }
 void Application::usbDriveAction(Action a) {
   if (a == Action::Back) closeUsbDrive(false);
