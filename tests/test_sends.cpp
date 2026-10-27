@@ -45,6 +45,11 @@ int runSendsTests() {
   CHECK(sd::admit({{1, false}}, {10 * GB, 0, 0}).held.size() == 1);
   CHECK(sd::admit({{1, true}}, {10 * GB, 0, sd::MaxQueue}).held.size() == 1);
 
+  // Only as many as can wait on screen: the rest are left for the next round.
+  const auto cards = sd::admit(std::vector<sd::Candidate>(25, {1, true}), {10 * GB, 0, 0, 20});
+  CHECK(cards.take.size() == 20 && cards.held.empty() && cards.take.back() == 19);
+  CHECK(sd::admit({{1, true}}, {10 * GB, 0, 0, 0}).take.empty());
+
   CHECK(sd::ackBody({"a1", "b1"}, true) == R"({"ids":["a1","b1"],"result":"accepted"})");
   CHECK(sd::ackBody({}, false) == R"({"ids":[],"result":"declined"})");
   return failures;

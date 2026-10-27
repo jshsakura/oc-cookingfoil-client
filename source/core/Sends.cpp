@@ -61,7 +61,7 @@ Admission admit(const std::vector<Candidate> &candidates, const Room &room) {
   const uint64_t free = *room.free;
   uint64_t used = room.queued;
   size_t count = room.queueCount;
-  for (size_t i = 0; i < candidates.size(); ++i) {
+  for (size_t i = 0; i < candidates.size() && a.take.size() < room.cards; ++i) {
     const auto &c = candidates[i];
     const bool fits = c.runs && count < MaxQueue && used <= free && c.need <= free - used &&
                       free - used - c.need >= Reserve;

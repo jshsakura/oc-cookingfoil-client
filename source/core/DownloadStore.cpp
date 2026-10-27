@@ -659,7 +659,11 @@ bool DownloadStore::run(bool writes, std::string &error, const std::function<boo
     closeDb(db);
     return false;
   }
+  const auto changesBefore = sqlite3_total_changes64(db);
   bool ok = exec(db, writes ? "BEGIN IMMEDIATE;" : "BEGIN;", error) && work(db, error);
+  // No row added, changed or removed: the file stays as it is, not written
+  // again for the same content (the card's wear).
+  const bool same = sqlite3_total_changes64(db) == changesBefore;
   // Suspended so long that another instance took the lock over: what this
   // one holds is no longer the file, so it rolls back instead of committing.
   if (ok && writes && !lock.owned()) {
@@ -669,7 +673,7 @@ bool DownloadStore::run(bool writes, std::string &error, const std::function<boo
   ok = ok && exec(db, "COMMIT;", error);
   // Committed in memory: the file takes it whole, or the change is lost
   // (and reported) with the file as it was.
-  if (ok && writes)
+  if (ok && writes && !same)
     ok = persist(db, file_, error, &was);
   if (!ok && error.empty())
     error = sqlite3_errmsg(db);
@@ -938,6 +942,15 @@ bool DownloadStore::changeResume(const std::function<void(Points &, std::vector<
   std::lock_guard<std::mutex> held(lock_);
   if (file_.empty() || readOnly_)
     return false;
+  // The change makes no difference to the file: nothing written, not even
+  // the lock file (a write of its own). The file is replaced by rename, so
+  // reading it without the lock sees it whole.
+  {
+    const auto text = readFile(resumeFile());
+    auto resume = parseResume(text);
+    change(resume.points, resume.made);
+    if (serializeResume(resume) == text) return true;
+  }
   std::string error;
   FileLock lock(file_ + ".lock");
   if (!lock.acquire(error))
@@ -995,36 +1008,59 @@ std::optional<DownloadStore::StateRows> DownloadStore::stateRows(std::string &er
   if (!ok) return std::nullopt;
   return rows;
 }
+namespace {
+// One table made to hold exactly `rows`: a row already there as it should be
+// is left alone, so saving what the file holds changes nothing.
+template <typename Key>
+bool syncTable(sqlite3 *db, const char *select, const char *upsert, const char *remove,
+               const std::map<Key, std::string> &rows, const std::function<Key(const Statement &)> &keyOf,
+               const std::function<void(Statement &, const Key &)> &bindKey, int keyColumns) {
+  std::map<Key, std::string> held;
+  {
+    Statement read(db, select);
+    if (!read) return false;
+    int rc;
+    while ((rc = read.step()) == SQLITE_ROW) held[keyOf(read)] = read.column(keyColumns);
+    if (rc != SQLITE_DONE) return false;
+  }
+  Statement put(db, upsert), drop(db, remove);
+  if (!put || !drop) return false;
+  for (const auto &[key, value] : rows) {
+    if (const auto at = held.find(key); at != held.end() && at->second == value) continue;
+    put.reset();
+    bindKey(put, key);
+    put.text(keyColumns + 1, value);
+    if (put.step() != SQLITE_DONE) return false;
+  }
+  for (const auto &[key, value] : held) {
+    if (rows.count(key)) continue;
+    drop.reset();
+    bindKey(drop, key);
+    if (drop.step() != SQLITE_DONE) return false;
+  }
+  return true;
+}
+} // namespace
 bool DownloadStore::saveStateRows(const StateRows &rows, std::string &error) {
   std::lock_guard<std::mutex> held(lock_);
-  return run(true, error, [&](sqlite3 *db, std::string &failure) {
-    if (!exec(db, "DELETE FROM settings; DELETE FROM pair_notes; DELETE FROM credentials;", failure))
-      return false;
-    Statement setting(db, "INSERT INTO settings(key, value) VALUES(?,?)");
-    Statement note(db, "INSERT INTO pair_notes(server, note) VALUES(?,?)");
-    Statement credential(db, "INSERT INTO credentials(kind, server, value) VALUES(?,?,?)");
-    if (!setting || !note || !credential)
-      return false;
-    for (const auto &[key, value] : rows.settings) {
-      setting.reset();
-      setting.text(1, key);
-      setting.text(2, value);
-      if (setting.step() != SQLITE_DONE) return false;
-    }
-    for (const auto &[server, text] : rows.notes) {
-      note.reset();
-      note.text(1, server);
-      note.text(2, text);
-      if (note.step() != SQLITE_DONE) return false;
-    }
-    for (const auto &[at, value] : rows.credentials) {
-      credential.reset();
-      credential.text(1, at.first);
-      credential.text(2, at.second);
-      credential.text(3, value);
-      if (credential.step() != SQLITE_DONE) return false;
-    }
-    return true;
+  return run(true, error, [&](sqlite3 *db, std::string &) {
+    using One = std::string;
+    using Two = std::pair<std::string, std::string>;
+    const std::function<One(const Statement &)> one = [](const Statement &r) { return r.column(0); };
+    const std::function<void(Statement &, const One &)> bindOne = [](Statement &st, const One &k) { st.text(1, k); };
+    const std::function<Two(const Statement &)> two = [](const Statement &r) { return Two{r.column(0), r.column(1)}; };
+    const std::function<void(Statement &, const Two &)> bindTwo = [](Statement &st, const Two &k) {
+      st.text(1, k.first);
+      st.text(2, k.second);
+    };
+    return syncTable<One>(db, "SELECT key, value FROM settings", "INSERT OR REPLACE INTO settings(key, value) VALUES(?,?)",
+                          "DELETE FROM settings WHERE key=?", rows.settings, one, bindOne, 1) &&
+           syncTable<One>(db, "SELECT server, note FROM pair_notes",
+                          "INSERT OR REPLACE INTO pair_notes(server, note) VALUES(?,?)",
+                          "DELETE FROM pair_notes WHERE server=?", rows.notes, one, bindOne, 1) &&
+           syncTable<Two>(db, "SELECT kind, server, value FROM credentials",
+                          "INSERT OR REPLACE INTO credentials(kind, server, value) VALUES(?,?,?)",
+                          "DELETE FROM credentials WHERE kind=? AND server=?", rows.credentials, two, bindTwo, 2);
   });
 }
 std::optional<DownloadStore::ClientStrings> DownloadStore::clientStrings(const std::string &lang) {
@@ -1071,6 +1107,20 @@ std::vector<ExtraLanguage> DownloadStore::clientLanguages() {
 bool DownloadStore::saveClientLanguages(const std::vector<ExtraLanguage> &languages, std::string &error) {
   std::lock_guard<std::mutex> held(lock_);
   return run(true, error, [&](sqlite3 *db, std::string &failure) {
+    // The same list again: nothing to write.
+    {
+      Statement read(db, "SELECT code, name, base FROM client_languages ORDER BY rowid");
+      if (!read) return false;
+      std::vector<ExtraLanguage> held;
+      int rc;
+      while ((rc = read.step()) == SQLITE_ROW) held.push_back({read.column(0), read.column(1), read.column(2)});
+      const auto same = [](const ExtraLanguage &a, const ExtraLanguage &b) {
+        return a.code == b.code && a.name == b.name && a.base == b.base;
+      };
+      if (rc == SQLITE_DONE &&
+          std::equal(held.begin(), held.end(), languages.begin(), languages.end(), same))
+        return true;
+    }
     if (!exec(db, "DELETE FROM client_languages;", failure)) return false;
     Statement write(db, "INSERT OR REPLACE INTO client_languages(code, name, base) VALUES(?,?,?)");
     if (!write) return false;
@@ -1087,6 +1137,14 @@ bool DownloadStore::saveClientLanguages(const std::vector<ExtraLanguage> &langua
 bool DownloadStore::saveClientStrings(const std::string &lang, const ClientStrings &row, std::string &error) {
   std::lock_guard<std::mutex> held(lock_);
   return run(true, error, [&](sqlite3 *db, std::string &) {
+    {
+      Statement read(db, "SELECT server, version, etag, body FROM client_strings WHERE lang=?");
+      if (!read) return false;
+      read.text(1, lang);
+      if (read.step() == SQLITE_ROW && read.column(0) == row.server && read.column(1) == row.version &&
+          read.column(2) == row.etag && read.column(3) == row.body)
+        return true; // the same text again: nothing to write
+    }
     Statement write(db, "INSERT OR REPLACE INTO client_strings(lang, server, version, etag, body) VALUES(?,?,?,?,?)");
     if (!write) return false;
     write.text(1, lang);

@@ -36,7 +36,7 @@ $(warning minizip not found: host build skips source/core/Zip.cpp (install libmi
 SHARED := $(filter-out source/core/Zip.cpp,$(SHARED))
 HOST_FLAGS += -DFOIL_NO_MINIZIP
 endif
-.PHONY: all host test clean switch-build engine-patch version
+.PHONY: all host test clean switch-build engine-patch version fuzz
 version:
 	@echo $(APP_VERSION)
 all: switch-build
@@ -101,6 +101,13 @@ test-i18n-tools: build-host/strings-check
 	python3 scripts/i18n.py selftest
 test: build-host/unit-tests test-switch-fs test-filesystem-policy test-i18n-tools
 	SDL_VIDEODRIVER=dummy ./build-host/unit-tests
+# The parsers of untrusted bytes, under ASan and UBSan on damaged input.
+fuzz:
+	@mkdir -p build-host
+	$(HOST_CXX) -std=c++17 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
+	  -ffunction-sections -fdata-sections -Iinclude $$(pkg-config --cflags json-c) tests/fuzz/zip.cpp \
+	  source/core/ZipStream.cpp -Wl,--gc-sections -o build-host/fuzz-zip
+	./build-host/fuzz-zip
 clean:
 	rm -rf build build-host cookingfoil.nro cookingfoil.nacp cookingfoil.elf
 

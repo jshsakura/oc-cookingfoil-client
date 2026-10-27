@@ -1051,5 +1051,34 @@ int runResumeTests() {
           entries[1].name == "b/c.txt" && entries[1].method == 0 && entries[1].size == 5 && entries[1].offset > 0);
     CHECK(!foil::zipDirectory("not a zip at all, just words", 0, 28, at, length));
   }
+  {
+    // A zip64 tail: its end record (56 bytes), the locator saying where that
+    // record starts, the plain end record pointing on. Only an end64 whose
+    // record lies whole inside the tail is read; one forged near 2^64 does
+    // not wrap past the check (it read a byte before the buffer).
+    const auto put = [](std::string &s, size_t at, uint64_t value, size_t n) {
+      for (size_t i = 0; i < n; ++i) s[at + i] = char(value >> (8 * i));
+    };
+    const auto tail64 = [&](uint64_t end64) {
+      std::string t(98, '\0');
+      put(t, 0, 0x06064b50, 4);
+      put(t, 40, 10, 8); // directory size
+      put(t, 48, 20, 8); // directory offset
+      put(t, 56, 0x07064b50, 4);
+      put(t, 64, end64, 8);
+      put(t, 76, 0x06054b50, 4);
+      put(t, 86, 0xffff, 2);
+      put(t, 88, 0xffffffff, 4);
+      put(t, 92, 0xffffffff, 4);
+      return t;
+    };
+    uint64_t at = 0, length = 0;
+    CHECK(foil::zipDirectory(tail64(1000), 1000, 2000, at, length) && at == 20 && length == 10);
+    for (const uint64_t end64 : {uint64_t(999), uint64_t(1001), uint64_t(1042), uint64_t(1043), uint64_t(1098),
+                                 UINT64_MAX, UINT64_MAX - 55, UINT64_MAX - 56, UINT64_MAX - 1000})
+      CHECK(!foil::zipDirectory(tail64(end64), 1000, 2000, at, length));
+    for (const uint64_t end64 : {UINT64_MAX, UINT64_MAX - 55, uint64_t(42), uint64_t(43)})
+      CHECK(!foil::zipDirectory(tail64(end64), 0, 98, at, length));
+  }
   return failures;
 }

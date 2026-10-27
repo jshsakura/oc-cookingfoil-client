@@ -206,11 +206,24 @@ DownloadStore::StateRows toRows(const State& given, const DeviceIdentity& id) {
 }
 // The secret rows encrypted and the whole set sealed, as stored. With no
 // identity nothing is written from these (saveState keeps what is stored).
-void protect(DownloadStore::StateRows& rows, const DeviceIdentity& id) {
+// stored: what the file holds now. A secret that did not change keeps the
+// sealed text it has there, so saving the same state writes nothing; a
+// changed one is sealed anew (a fresh nonce, never one used before).
+void protect(DownloadStore::StateRows& rows, const DeviceIdentity& id,
+             const DownloadStore::StateRows* stored = nullptr) {
     const auto key = storageKey(id);
     if (!key.empty())
-        for (auto& [at, value] : rows.credentials)
-            if (secretKind(at.first) && !vault::sealed(value)) value = encrypt(key, value);
+        for (auto& [at, value] : rows.credentials) {
+            if (!secretKind(at.first) || vault::sealed(value)) continue;
+            if (stored)
+                if (const auto was = stored->credentials.find(at); was != stored->credentials.end() &&
+                                                                   vault::sealed(was->second) &&
+                                                                   vault::open(key, was->second) == value) {
+                    value = was->second;
+                    continue;
+                }
+            value = encrypt(key, value);
+        }
     rows.credentials.erase({SealKind, ""});
     rows.credentials[{SealKind, ""}] = seal(id, rows);
 }
@@ -320,7 +333,7 @@ bool saveState(const std::string& dbPath, const State& state, Error& error) {
         if (ok && check(*stored, id) == Rebound::None)
             if (const auto link = stored->credentials.find({DropboxKind, ""}); link != stored->credentials.end())
                 rows.credentials[link->first] = link->second;
-        if (ok) protect(rows, id);
+        if (ok) protect(rows, id, &*stored);
     }
     if (ok && id.fingerprint.empty()) {
         // No console identity this run: credentials bound before stay as

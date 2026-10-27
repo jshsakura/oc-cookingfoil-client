@@ -11,6 +11,10 @@ namespace {
 // Every 30 s on 홈 and 다운로드, where a send is looked for (60 s while a
 // download runs); 120 s elsewhere.
 constexpr uint32_t SendsEveryMs = 30000, SendsBusyMs = 60000, SendsAwayMs = 120000, SendsRetryMs = 3000;
+// One card at a time, in the order they came, 6 s each: cancelled in that
+// time it is not downloaded, else it goes to the queue. At most this many
+// wait; a game's file and names only, the cover from the image cache.
+constexpr size_t MaxArrivals = 20;
 std::string sendKey(const std::string &server, const std::string &id) { return server + "|" + id; }
 } // namespace
 void Application::pollSends() {
@@ -134,7 +138,10 @@ void Application::takeSends(std::vector<sends::Pick> picks) {
   uint64_t queued = queuedBytes();
   for (const auto &a : arrivals_) queued += std::max(a.item.size, a.item.installSize);
   const bool console = installTarget() == "nand";
-  const auto admitted = sends::admit(candidates, {console ? nandFree_ : sdFree_, queued, installQueue_.size() + arrivals_.size()});
+  // Taken means shown: what has no card yet is left for a later round.
+  const size_t room = MaxArrivals - std::min(MaxArrivals, arrivals_.size());
+  const auto admitted =
+      sends::admit(candidates, {console ? nandFree_ : sdFree_, queued, installQueue_.size() + arrivals_.size(), room});
   // Free space not read yet: asked again shortly, not after the interval.
   if (admitted.waiting) {
     sendsAt_ = SDL_GetTicks() - SendsEveryMs + SendsRetryMs;
@@ -179,17 +186,12 @@ void Application::cancelArrival() {
 } // namespace foil::ui
 namespace foil::ui {
 namespace {
-// One card at a time, in the order they came, 6 s each: cancelled in that
-// time it is not downloaded, else it goes to the queue. At most this many
-// wait; a game's file and names only, the cover from the image cache.
-constexpr size_t MaxArrivals = 20;
 constexpr uint32_t ArrivalTurnMs = 6000, ArrivalMoveMs = 240;
 float easeOut(float t) { return 1 - (1 - t) * (1 - t) * (1 - t); }
 } // namespace
 void Application::arrived(std::vector<Arrival> games) {
   if (arrivals_.empty()) arrivalAt_ = SDL_GetTicks();
-  for (auto &g : games)
-    if (arrivals_.size() < MaxArrivals) arrivals_.push_back(std::move(g));
+  for (auto &g : games) arrivals_.push_back(std::move(g));
 }
 // The front card's time: under a popup it stops (the card cannot be seen or
 // cancelled there); once it runs out, the game goes to the queue.
