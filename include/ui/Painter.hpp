@@ -93,7 +93,9 @@ private:
   std::map<int, SDL_Texture *> corners_;
   SDL_Texture *cornerTexture(int r);
   SDL_Texture *logo_ = nullptr, *wordmark_ = nullptr;
+  bool wordmarkDark_ = false; // the palette the wordmark was drawn in
   SDL_Texture *splashMark_ = nullptr, *splashWord_ = nullptr;
+  bool splashWordDark_ = false;
   std::map<std::string, SDL_Texture *> flags_;
   SDL_Texture *renderWordmark(int size = 27);
   SDL_Texture *renderMark(int size);

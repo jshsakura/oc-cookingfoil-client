@@ -768,9 +768,9 @@ void Application::homebrewSortDialog() {
     if (n == homebrewSortRow_) paint_.focusRow(x, y, w, Row, Ground, 12);
     else paint_.rect(x, y, w, Row, Surface, 12);
     // A radio like the filter popup's sorts.
-    paint_.rect(x + 16, mid - 10, 20, 20, on ? Ink : SDL_Color{176, 174, 167, 255}, 10);
+    paint_.rect(x + 16, mid - 10, 20, 20, on ? Ink : Muted, 10);
     paint_.rect(x + 18, mid - 8, 16, 16, on ? Butter : Surface, 8);
-    if (on) paint_.rect(x + 22, mid - 4, 8, 8, Ink, 4);
+    if (on) paint_.rect(x + 22, mid - 4, 8, 8, OnButter, 4);
     paint_.fonts.middle(sortLabel(homebrew::Orders[n]), x + 50, mid, 20, Ink, on, w - 66);
   }
 }

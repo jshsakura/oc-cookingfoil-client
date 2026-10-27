@@ -810,7 +810,7 @@ float Application::labelChip(const labels::Ref &ref, const labels::Book &book, f
                          : tone == Tone::Warn ? Pending
                          : tone == Tone::Bad  ? Bad
                                               : Line;
-  const SDL_Color ink = tone == Tone::Neutral || tone == Tone::Accent ? Ink : Surface;
+  const SDL_Color ink = tone == Tone::Accent ? OnButter : tone == Tone::Neutral ? Ink : White;
   paint_.rect(x, top, w, height, fill, int(height / 3));
   if (mark) paint_.icon(icon, x + 8, top + (height - mark) / 2, ink, int(mark));
   paint_.fonts.middle(text, x + 8 + (mark ? mark + 4 : 0), top + height / 2, size, ink, true);
@@ -821,8 +821,9 @@ float Application::achievementLabel(const achievements::Summary &a, float x, flo
   const auto text = trf("Achievements {0}", {std::to_string(a.count)});
   const float icon = float(size), w = 8 + icon + 4 + paint_.fonts.measure(text, size, true) + 10;
   paint_.rect(x, top, w, height, a.byTitle ? Line : Butter, int(height / 3));
-  paint_.icon(28, x + 8, top + (height - icon) / 2, Ink, size);
-  paint_.fonts.middle(text, x + 8 + icon + 4, top + height / 2, size, Ink, true);
+  const SDL_Color ink = a.byTitle ? Ink : OnButter;
+  paint_.icon(28, x + 8, top + (height - icon) / 2, ink, size);
+  paint_.fonts.middle(text, x + 8 + icon + 4, top + height / 2, size, ink, true);
   return w;
 }
 std::vector<std::string> Application::retroLabels(const retro::Game &game, bool detail) const {
@@ -920,7 +921,7 @@ void Application::retroList() {
     paint_.key("L", x, Mid);
     x += paint_.keyWidth("L") + 12;
     if (!system->iconUrl.empty()) {
-      paint_.rect(x, Mid - 20, 40, 40, {255, 255, 255, 255}, 10);
+      paint_.rect(x, Mid - 20, 40, 40, White, 10);
       images_->draw(system->iconUrl, x + 5, Mid - 15, 30, 30, 4);
       x += 50;
     }
@@ -992,7 +993,7 @@ void Application::retroList() {
     const std::string state = busy ? tr("Downloading") : off ? tr("No core") : bezel ? tr("Get bezel") : there ? tr("Installed") : tr("Not installed");
     const float w = paint_.fonts.measure(state, 16, true) + 20;
     paint_.rect(right - w, y + 12, w, 28, busy || bezel ? Butter : there ? Good : Line, 8);
-    paint_.fonts.middle(state, right - w + 10, y + 26, 16, there && !busy ? Surface : Ink, true);
+    paint_.fonts.middle(state, right - w + 10, y + 26, 16, there && !busy ? White : busy || bezel ? OnButter : Ink, true);
     if (busy) {
       const float ratio = retroBytes_ ? std::min(1.f, float(retroReceived_.load()) / float(retroBytes_)) : 0.f;
       paint_.rect(right - 160, y + 58, 160, 8, Line, 4);

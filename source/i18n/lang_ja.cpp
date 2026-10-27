@@ -1199,6 +1199,10 @@ const Translation rows[] = {
     {"This file is not signed, so it cannot be installed.", "このファイルには署名がないため、インストールできません。"},
     {"This file is not signed, so the console may refuse to install it.", "署名のないファイルのため、本体がインストールを拒否する場合があります。"},
     {"The server could not prepare this file.", "サーバーがこのファイルを準備できませんでした。"},
+    {"Theme", "テーマ"},
+    {"Light|theme", "ライト"},
+    {"Dark|theme", "ダーク"},
+    {"Same as the console", "本体の設定に合わせる"},
 };
 const TranslationTable table(Language::Japanese, rows, sizeof rows / sizeof rows[0]);
 } // namespace

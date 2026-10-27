@@ -150,6 +150,7 @@ std::optional<State> parseLegacy(const std::string& text) {
 // What a server URL, a key or a setting may be; anything else is dropped.
 State cleaned(State state) {
     if (state.installTarget != "sd" && state.installTarget != "nand") state.installTarget.clear();
+    if (state.theme != "light" && state.theme != "dark") state.theme.clear();
     if (state.lastScreen.empty()) state.lastScreen = "home";
     const auto keep = [](std::map<std::string, std::string>& by, auto&& good) {
         for (auto at = by.begin(); at != by.end();)
@@ -169,6 +170,7 @@ State fromRows(const DownloadStore::StateRows& rows) {
     };
     state.language = setting("language");
     state.installTarget = setting("installTarget");
+    state.theme = setting("theme");
     state.lastServer = setting("lastServer");
     state.lastScreen = setting("lastScreen", "home");
     state.makeShortcuts = setting("makeShortcuts", "1") == "1";
@@ -187,6 +189,7 @@ DownloadStore::StateRows toRows(const State& given, const DeviceIdentity& id) {
     DownloadStore::StateRows rows;
     rows.settings = {{"language", state.language},
                      {"installTarget", state.installTarget},
+                     {"theme", state.theme},
                      {"lastServer", state.lastServer},
                      {"lastScreen", state.lastScreen},
                      {"makeShortcuts", flag(state.makeShortcuts)},

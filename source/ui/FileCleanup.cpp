@@ -168,9 +168,9 @@ void Application::fileCleanupDialog() {
     else paint_.rect(x, y, w, Row, Ground, 12);
     // A mark like the filter popup's: filled when it will be deleted.
     const bool on = tidyPicked(n) || (tidyDeleting_ && tidyRemoving_[n]);
-    paint_.rect(x + 18, mid - 11, 22, 22, on ? Ink : SDL_Color{176, 174, 167, 255}, 6);
+    paint_.rect(x + 18, mid - 11, 22, 22, on ? Ink : Muted, 6);
     paint_.rect(x + 20, mid - 9, 18, 18, on ? Butter : Surface, 4);
-    if (on) paint_.icon(8, x + 20, mid - 9, Ink, 18);
+    if (on) paint_.icon(8, x + 20, mid - 9, OnButter, 18);
     const auto &line = lines[n];
     paint_.fonts.text(line.name, x + 56, y + 12, 21, line.allowed ? Ink : Secondary, true, w - 260);
     paint_.fonts.text(line.note, x + 56, y + 44, 17, Secondary, false, w - 260);

@@ -131,7 +131,7 @@ void Application::retroHome() {
     }
     // Header: the system's icon on a white tile, its name, its game count.
     else if (!shelf.system.iconUrl.empty()) {
-      paint_.rect(x, y + HeaderMid - 17, 34, 34, {255, 255, 255, 255}, 9);
+      paint_.rect(x, y + HeaderMid - 17, 34, 34, White, 9);
       images_->draw(shelf.system.iconUrl, x + 4, y + HeaderMid - 13, 26, 26, 4);
       x += 44;
     }
@@ -185,7 +185,7 @@ void Application::retroHome() {
         const auto label = formatBytes(game.size);
         const float w = paint_.fonts.measure(label, 13, true) + 10, h = 19;
         paint_.rect(cx + 6, cy + 6, w, h, {22, 22, 26, 190}, 5);
-        paint_.fonts.middle(label, cx + 11, cy + 6 + h / 2, 13, Surface, true);
+        paint_.fonts.middle(label, cx + 11, cy + 6 + h / 2, 13, White, true);
       }
       scoreBadge(game.rating, cx + Card - 6, cy + 6);
       // Bottom left: how many versions it has, when more than one.
@@ -277,7 +277,7 @@ float Application::versionsBadge(int count, float x, float y, bool dark) {
   const float w = pad + mark + 4 + paint_.fonts.measure(label, text, true) + pad;
   paint_.rect(x, y, w, h, dark ? SDL_Color{22, 22, 26, 190} : Line, dark ? 5 : 7);
   paint_.icon(42, x + pad, y + (h - mark) / 2, dark ? Surface : Ink, mark);
-  paint_.fonts.middle(label, x + pad + mark + 4, y + h / 2, text, dark ? Surface : Ink, true);
+  paint_.fonts.middle(label, x + pad + mark + 4, y + h / 2, text, dark ? White : Ink, true);
   return w;
 }
 } // namespace foil::ui

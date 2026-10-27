@@ -119,9 +119,9 @@ void Application::retroFilterPopup() {
     paint_.rect(x, y, chip.w, ChipH, on ? Butter : Line, 20);
     paint_.rect(x + 1, y + 1, chip.w - 2, ChipH - 2, on ? Butter : Surface, 19);
     const float labelW = paint_.fonts.measure(chip.label, ChipText, true);
-    paint_.fonts.middle(chip.label, x + 16, y + ChipH / 2, ChipText, Ink, on, chip.w - 32);
+    paint_.fonts.middle(chip.label, x + 16, y + ChipH / 2, ChipText, on ? OnButter : Ink, on, chip.w - 32);
     if (!chip.count.empty())
-      paint_.fonts.middle(chip.count, x + 16 + labelW + 8, y + ChipH / 2 + 1, CountText, on ? Ink : Secondary);
+      paint_.fonts.middle(chip.count, x + 16 + labelW + 8, y + ChipH / 2 + 1, CountText, on ? OnButter : Secondary);
   }
   unclip();
   if (layout.height > view) {
@@ -136,10 +136,10 @@ void Application::retroFilterPopup() {
       popupRow_ = n;
       retroFilterAction(Action::Accept);
     });
-    const SDL_Color fill = on ? SDL_Color{255, 241, 204, 255} : focused ? Ground : Surface;
+    const SDL_Color fill = on ? Cream : focused ? Ground : Surface;
     if (focused) paint_.focusRow(sortLeft, y, SortWidth, h, fill, 10);
     else paint_.rect(sortLeft, y, SortWidth, h, fill, 10);
-    paint_.rect(sortLeft + 12, mid - 10, 20, 20, on ? Ink : SDL_Color{176, 174, 167, 255}, 10);
+    paint_.rect(sortLeft + 12, mid - 10, 20, 20, on ? Ink : Muted, 10);
     paint_.rect(sortLeft + 14, mid - 8, 16, 16, on ? Butter : Surface, 8);
     if (on) paint_.rect(sortLeft + 18, mid - 4, 8, 8, Ink, 4);
     paint_.fonts.middle(retro::textIn(book.sorts[size_t(n)].text, lang), sortLeft + 42, mid, 18, Ink, on, SortWidth - 52);

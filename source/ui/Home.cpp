@@ -158,7 +158,7 @@ void Application::home() {
   cover(thumbnailUrl(g.representative.icon, "md"), 296 + hx, 56 - scroll, 184, false, g.representative.name, false, true);
   paint_.fonts.text(heroes_.empty() ? tr("Featured") : heroes_[heroSlide_].label, 512 + hx,
                     61 - scroll, 18, Butter, true, 700);
-  paint_.fonts.text(g.representative.name, 512 + hx, 98 - scroll, 40, Surface, true,
+  paint_.fonts.text(g.representative.name, 512 + hx, 98 - scroll, 40, White, true,
                     700);
   paint_.fonts.text(g.representative.publisher, 512 + hx, 155 - scroll, 19,
                     {228, 228, 234, 255}, false, 680);
@@ -173,7 +173,7 @@ void Application::home() {
     const float w = paint_.fonts.measure(tag.text, 17, bold) + 28; // as pill(dark)
     if (w > right - x) break;
     paint_.rect(x, 199 - scroll, w, 35, bold ? scoreColor(tag.score) : SDL_Color{255, 255, 255, 41}, 17);
-    paint_.fonts.middle(tag.text, x + 14, 199 - scroll + 17.5f, 17, Surface, bold);
+    paint_.fonts.middle(tag.text, x + 14, 199 - scroll + 17.5f, 17, White, bold);
     x += w + 10;
   }
   unclip();

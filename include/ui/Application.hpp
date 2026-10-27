@@ -410,7 +410,7 @@ public:
   void saveOwnState();
   // 설정's options card: 언어, 기본 저장 위치, 앱 업데이트, 남은 파일 정리,
   // then the switches: 홈 메뉴 바로가기, 효과음, then 버그 보고 보내기.
-  static constexpr int SettingsOptions = 7;
+  static constexpr int SettingsOptions = 8;
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).
@@ -1523,6 +1523,7 @@ private:
   State state_;
   Error error_;
   std::string configPath_, statePath_, fixture_, query_, notice_;
+  bool consoleDark_ = false; // System Settings is Basic Black, read once at start
   std::vector<Group> groups_;
   // groups_ by id, rebuilt with it: a title ID finds its game without a scan.
   std::unordered_map<std::string, size_t> groupIndex_;
@@ -1555,6 +1556,8 @@ private:
   // server sent one (feature item-names), else the store's own name.
   void localizeNames();
   // Startup language: 설정's choice, else the console's, else config.json's.
+  // The palette from 설정's theme, or the console's when unset.
+  void applyTheme();
   void applyStartupLanguage();
 
   size_t serverIndex_ = 0, detailGroup_ = 0;

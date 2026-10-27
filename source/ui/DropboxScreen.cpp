@@ -438,7 +438,7 @@ void Application::dropboxTab() {
     for (int i = 0; i < 3; ++i) {
       const float mid = Top + 188 + i * 50;
       paint_.rect(Left, mid - 15, 30, 30, Butter, 15);
-      paint_.fonts.centered(std::to_string(i + 1), Left + 15, mid - 13, 17, Ink, 30, 1, true);
+      paint_.fonts.centered(std::to_string(i + 1), Left + 15, mid - 13, 17, OnButter, 30, 1, true);
       // The number is the dot's; the step's own "1. " is left off.
       std::string step = tr(steps[i]);
       if (const auto dot = step.find(". "); dot != std::string::npos && dot <= 2) step = step.substr(dot + 2);
@@ -448,7 +448,7 @@ void Application::dropboxTab() {
     const bool starting = dropboxBusy_ == "start";
     const float buttonW = paint_.keyLabelWidth("A", tr("Connect"), 21, true) + 64;
     paint_.rect(Left, ButtonY, buttonW, ButtonH, starting ? Line : Butter, 14);
-    paint_.keyLabel("A", tr("Connect"), Left + 32, ButtonY + ButtonH / 2, 21, Ink, true, !starting);
+    paint_.keyLabel("A", tr("Connect"), Left + 32, ButtonY + ButtonH / 2, 21, OnButter, true, !starting);
     // A connects; a tap on the card does the same.
     hit(260, Top, 992, 466, [this] {
       sidebar_ = false;
@@ -499,7 +499,7 @@ void Application::dropboxTab() {
     const std::string unlink = tr("Disconnect");
     const float bw = paint_.fonts.measure(unlink, 17, true) + 36;
     paint_.rect(1230 - bw, y + 22, bw, 40, focused ? Butter : Ground, 12);
-    paint_.fonts.middle(unlink, 1230 - bw + 18, y + 42, 17, Ink, true);
+    paint_.fonts.middle(unlink, 1230 - bw + 18, y + 42, 17, focused ? OnButter : Ink, true);
   }
   // Nothing to list yet: while Dropbox's list or the console's games are
   // still coming, that is loading, not "none".

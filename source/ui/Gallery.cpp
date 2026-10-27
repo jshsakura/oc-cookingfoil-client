@@ -55,12 +55,12 @@ void Application::gallery() {
   const auto name = galleryName();
   // B 닫기 at the top right, a small white chip; a tap on it closes too.
   const float close = paint_.keyChip("B", tr("Close"), 1240, 40);
-  const float after = paint_.fonts.middle(tr("Screenshots"), 40, 40, 26, Surface, true, 560);
+  const float after = paint_.fonts.middle(tr("Screenshots"), 40, 40, 26, White, true, 560);
   paint_.fonts.middle(name, after + 16, 40, 19, {170, 170, 178, 255}, false, 1240 - close - 24 - after - 16);
   // The full-screen photo at the screen's width, not the original.
   const auto url = thumbnailUrl(detail_.screenshots[screenshot_], "xl");
   if (images_->failed(url)) {
-    paint_.fonts.text(tr("Could not load the photo. Try again shortly."), 40, 330, 22, Surface, false, 1200);
+    paint_.fonts.text(tr("Could not load the photo. Try again shortly."), 40, 330, 22, White, false, 1200);
   } else if (!images_->loaded(url)) {
     // Until the large photo arrives, the small one the detail page already
     // holds stands in, so a turn never flashes a light loading box over

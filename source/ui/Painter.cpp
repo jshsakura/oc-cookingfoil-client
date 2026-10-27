@@ -166,9 +166,13 @@ void Painter::skeleton(float x, float y, float w, float h, int radius, bool dark
   constexpr SDL_Color DarkBase{28, 28, 34, 255}, DarkLift{44, 44, 52, 255};
   const float phase = std::fmod(SDL_GetTicks(), PulseMs) / PulseMs;
   const float breath = 0.5f + 0.5f * std::sin(phase * 6.283185f);
-  const auto below = [](Uint8 c, int by) { return Uint8(std::max(0, int(c) - by)); };
-  const SDL_Color base = dark ? DarkBase : SDL_Color{below(on.r, 16), below(on.g, 18), below(on.b, 22), 255};
-  const SDL_Color lift = dark ? DarkLift : on;
+  // On the dark theme's page the shades rise above it instead of sinking.
+  const auto by = [](Uint8 c, int step) { return Uint8(std::clamp(int(c) + step, 0, 255)); };
+  const bool rise = palette.dark;
+  const SDL_Color base = dark   ? DarkBase
+                         : rise ? SDL_Color{by(on.r, 12), by(on.g, 12), by(on.b, 14), 255}
+                                : SDL_Color{by(on.r, -16), by(on.g, -18), by(on.b, -22), 255};
+  const SDL_Color lift = dark ? DarkLift : rise ? SDL_Color{by(on.r, 26), by(on.g, 26), by(on.b, 30), 255} : on;
   rect(x, y, w, h, base, radius);
   rect(x, y, w, h, {lift.r, lift.g, lift.b, Uint8((dark ? 255 : 110) * breath)}, radius);
 }
@@ -312,8 +316,15 @@ void Painter::logo(float x, float y) {
   // Wordmark: lowercase "cookingfoil" in Baloo 2 ExtraBold, tracked
   // -0.02em, then a butter period. Rendered once into a small texture and
   // the font closed again, so it costs no memory after the first frame.
-  if (!wordmark_)
+  // Its ink is baked in, so a theme change draws it again.
+  if (wordmark_ && wordmarkDark_ != palette.dark) {
+    SDL_DestroyTexture(wordmark_);
+    wordmark_ = nullptr;
+  }
+  if (!wordmark_) {
     wordmark_ = renderWordmark();
+    wordmarkDark_ = palette.dark;
+  }
   if (wordmark_) {
     float sx = 1, sy = 1;
     SDL_RenderGetScale(renderer, &sx, &sy);
@@ -359,14 +370,22 @@ void Painter::splash(const std::string &caption, float progress, float seconds) 
   float sx = 1, sy = 1;
   SDL_RenderGetScale(renderer, &sx, &sy);
   if (!splashMark_) splashMark_ = renderMark(Mark);
-  if (!splashWord_) splashWord_ = renderWordmark(Word);
+  // The saved theme may differ from the console's the first frames used.
+  if (splashWord_ && splashWordDark_ != palette.dark) {
+    SDL_DestroyTexture(splashWord_);
+    splashWord_ = nullptr;
+  }
+  if (!splashWord_) {
+    splashWord_ = renderWordmark(Word);
+    splashWordDark_ = palette.dark;
+  }
   if (splashMark_) {
     // The butter fills rows 11..31 of the mark's 40: it stands on y 307.
     constexpr float Floor = 307, Bottom = Mark * 31 / 40.f;
     const auto h = hop(seconds);
     const float lift = h.rise / 34, shadow = 1.1f - .5f * lift;
     rect(640 - 50 * shadow, Floor + 7 - 5 * shadow, 100 * shadow, 10 * shadow,
-         {Ink.r, Ink.g, Ink.b, Uint8(36 - 22 * lift)}, int(5 * shadow));
+         {Night.r, Night.g, Night.b, Uint8((palette.dark ? 120 : 36) - (palette.dark ? 70 : 22) * lift)}, int(5 * shadow));
     const float w = Mark * h.wide, tall = Mark * h.tall;
     const SDL_FRect dest{640 - w / 2, Floor - h.rise - Bottom * h.tall, w, tall};
     SDL_RenderCopyF(renderer, splashMark_, nullptr, &dest);
@@ -438,6 +457,7 @@ static const char *IconPaths[] = {
     R"(<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>)", // 46 refresh
     R"(<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>)", // 47 thumbs up
     R"(<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>)", // 48 thumbs down
+    R"(<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>)", // 49 moon (theme)
 };
 // Glyph-like marks read better a touch heavier than the menu icons.
 // Marks read a touch heavier than outline icons.
@@ -449,7 +469,7 @@ int Painter::iconNamed(const std::string &name) {
       {"hash", 18},     {"branch", 19},  {"package", 22},  {"check-circle", 24}, {"alert", 25}, {"sd", 26},
       {"gamepad", 27},  {"trophy", 28},  {"sparkle", 29},  {"clock", 30},    {"star", 31},     {"wrench", 32},
       {"info", 33},     {"shield", 34},  {"joystick", 35}, {"save", 36},     {"upload", 40},   {"image", 41},
-      {"layers", 42},   {"user", 43},    {"volume", 44},   {"shield-check", 45}, {"thumbs-up", 47}, {"thumbs-down", 48}};
+      {"layers", 42},   {"user", 43},    {"volume", 44},   {"shield-check", 45}, {"thumbs-up", 47}, {"thumbs-down", 48}, {"moon", 49}};
   const auto found = Names.find(name);
   return found == Names.end() ? -1 : found->second;
 }
@@ -518,7 +538,7 @@ float Painter::keyWidth(const std::string &name) {
 }
 float Painter::key(const std::string &name, float x, float centerY, bool enabled) {
   constexpr float Height = 32, Gap = 4;
-  constexpr SDL_Color DisabledKey{176, 174, 167, 255};
+  const SDL_Color DisabledKey = Muted;
   if (const auto space = name.find(' '); space != std::string::npos) {
     const float left = key(name.substr(0, space), x, centerY, enabled);
     return left + Gap + key(name.substr(space + 1), x + left + Gap, centerY, enabled);
@@ -533,7 +553,7 @@ float Painter::keyLabel(const std::string &name, const std::string &label,
                         float x, float centerY, int size, SDL_Color color,
                         bool bold, bool enabled) {
   x += key(name, x, centerY, enabled) + 10;
-  return fonts.middle(label, x, centerY, size, enabled ? color : SDL_Color{150, 148, 142, 255}, bold);
+  return fonts.middle(label, x, centerY, size, enabled ? color : Muted, bold);
 }
 float Painter::keyLabelWidth(const std::string &name, const std::string &label,
                              int size, bool bold) {
@@ -589,7 +609,7 @@ float Painter::pill(const std::string &s, float x, float y, bool dark,
   rect(x, y, w, dark ? 35 : 26, dark ? SDL_Color{255, 255, 255, 41} : Line,
        dark ? 17 : 7);
   fonts.middle(s, x + (dark ? 14 : 9), y + (dark ? 35 : 26) / 2.f, size,
-               dark ? Surface : Ink, !dark);
+               dark ? White : Ink, !dark);
   return w;
 }
 } // namespace foil::ui

@@ -4,6 +4,11 @@
 #include <switch.h>
 #endif
 namespace foil::platform {
+#ifndef __SWITCH__
+namespace {
+bool hostDark = false; // the PC preview's console theme, from --theme
+}
+#endif
 DeviceIdentity consoleIdentity() {
 #ifdef __SWITCH__
   // The device ID fused into the console (spl), and nothing else: another
@@ -37,4 +42,18 @@ std::string consoleNickname() {
   return "";
 #endif
 }
+bool consoleDark() {
+#ifdef __SWITCH__
+  if (R_FAILED(setsysInitialize())) return false;
+  ColorSetId id = ColorSetId_Light;
+  const bool dark = R_SUCCEEDED(setsysGetColorSetId(&id)) && id == ColorSetId_Dark;
+  setsysExit();
+  return dark;
+#else
+  return hostDark;
+#endif
+}
+#ifndef __SWITCH__
+void setHostDark(bool dark) { hostDark = dark; }
+#endif
 } // namespace foil::platform

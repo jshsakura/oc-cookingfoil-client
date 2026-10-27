@@ -1199,6 +1199,10 @@ const Translation rows[] = {
     {"This file is not signed, so it cannot be installed.", "此文件没有签名,无法安装。"},
     {"This file is not signed, so the console may refuse to install it.", "此文件没有签名，主机可能会拒绝安装。"},
     {"The server could not prepare this file.", "服务器未能准备此文件。"},
+    {"Theme", "主题"},
+    {"Light|theme", "浅色"},
+    {"Dark|theme", "深色"},
+    {"Same as the console", "跟随主机设置"},
 };
 const TranslationTable table(Language::Chinese, rows, sizeof rows / sizeof rows[0]);
 } // namespace

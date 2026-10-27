@@ -1199,6 +1199,10 @@ const Translation rows[] = {
     {"This file is not signed, so it cannot be installed.", "Este archivo no está firmado, así que no se puede instalar."},
     {"This file is not signed, so the console may refuse to install it.", "Este archivo no está firmado, así que la consola puede rechazar su instalación."},
     {"The server could not prepare this file.", "El servidor no pudo preparar este archivo."},
+    {"Theme", "Tema"},
+    {"Light|theme", "Claro"},
+    {"Dark|theme", "Oscuro"},
+    {"Same as the console", "Igual que la consola"},
 };
 const TranslationTable table(Language::Spanish, rows, sizeof rows / sizeof rows[0]);
 } // namespace

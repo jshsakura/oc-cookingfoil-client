@@ -94,7 +94,7 @@ void Application::updates() {
   if (canUpdate) headerItem("all", buttonX, 24, w, 48, [this] { action(Action::Queue); });
   paint_.rect(buttonX, 24, w, 48, Surface, 12);
   paint_.key("Y", buttonX + 18, 48);
-  const auto ink = canUpdate ? Ink : SDL_Color{184, 182, 176, 255};
+  const auto ink = canUpdate ? Ink : Muted;
   paint_.icon(3, buttonX + 60, 38, ink, 20);
   paint_.fonts.middle(yLabel, buttonX + 88, 48, 18, ink, true, w - 106);
   pageTitle(tr("My games"),

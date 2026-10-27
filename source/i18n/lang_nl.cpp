@@ -1199,6 +1199,10 @@ const Translation rows[] = {
     {"This file is not signed, so it cannot be installed.", "Dit bestand is niet ondertekend en kan daarom niet worden geïnstalleerd."},
     {"This file is not signed, so the console may refuse to install it.", "Dit bestand is niet ondertekend, dus de console kan de installatie weigeren."},
     {"The server could not prepare this file.", "De server kon dit bestand niet voorbereiden."},
+    {"Theme", "Thema"},
+    {"Light|theme", "Licht"},
+    {"Dark|theme", "Donker"},
+    {"Same as the console", "Zoals de console"},
 };
 const TranslationTable table(Language::Dutch, rows, sizeof rows / sizeof rows[0]);
 } // namespace

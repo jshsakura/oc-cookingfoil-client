@@ -116,30 +116,34 @@ void Application::settings() {
     if (const auto *extra = extraLanguage()) paint_.languageChip(extra->code, Right - nameWidth - 42, y + (Row - 2) / 2 - 11, 33, 22);
     else paint_.flag(int(language()), Right - nameWidth - 42, y + (Row - 2) / 2 - 11, 33, 22);
   }
+  // Light or dark; unset follows the console's theme in System Settings.
+  option(1, 49, tr("Theme"),
+         state_.theme == "dark" ? tr("Dark|theme") : state_.theme == "light" ? tr("Light|theme") : tr("Same as the console"),
+         Ink, true);
   // Where installs go; A switches between the SD card and the console.
-  option(1, 26, tr("Default location"), installTarget() == "nand" ? tr("Console") : tr("SD card"), Ink, true);
+  option(2, 26, tr("Default location"), installTarget() == "nand" ? tr("Console") : tr("SD card"), Ink, true);
   // A HOME Menu shortcut with each retro game and homebrew app (and this
   // app's own), when the server builds one.
-  option(4, 0, tr("Make HOME Menu shortcuts"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
+  option(5, 0, tr("Make HOME Menu shortcuts"), "", Ink, true, state_.makeShortcuts ? 1 : 0);
   // Said as it is: made here, or only from the server's shortcuts when this
   // console cannot make them.
-  note(4, !state_.makeShortcuts            ? tr("Not made")
+  note(5, !state_.makeShortcuts            ? tr("Not made")
           : platform::canMakeShortcuts() ? tr("Creates a shortcut when a retro game or homebrew app downloads")
                                          : tr("Only for items the server has a shortcut for"));
   // The app's sounds: the start, cursor steps, the queue, done and errors.
-  option(5, 44, tr("Sound effects"), "", Ink, true, state_.sounds ? 1 : 0);
-  note(5, tr("Turns the startup sound and effects on or off"));
+  option(6, 44, tr("Sound effects"), "", Ink, true, state_.sounds ? 1 : 0);
+  note(6, tr("Turns the startup sound and effects on or off"));
   // The log's tail to the server, only when pressed: what went wrong reaches
   // whoever runs it.
-  option(6, 33, tr("Send a bug report"),
+  option(7, 33, tr("Send a bug report"),
          bugWorker_.joinable() ? std::string(tr("Sending")) : std::string(tr("Sends the end of the app's log to the connected server")),
          Secondary, false);
   // What the app leaves on the card: A shows how much each kind takes in a
   // popup and deletes the ones picked.
-  option(3, 14, tr("File cleanup"), tidyBusy_ && tidyDeleting_ ? tr("Deleting") : tr("Clears leftover files and caches"),
+  option(4, 14, tr("File cleanup"), tidyBusy_ && tidyDeleting_ ? tr("Deleting") : tr("Clears leftover files and caches"),
          Secondary, false);
   // This build against the server's newest; A checks or updates.
-  option(2, 3, tr("App update"), appUpdateStatus(), appUpdate_ == AppUpdate::Available ? Ink : Secondary,
+  option(3, 3, tr("App update"), appUpdateStatus(), appUpdate_ == AppUpdate::Available ? Ink : Secondary,
          appUpdate_ == AppUpdate::Available);
   if (error_)
     paint_.fonts.wrapped(error_.message + (error_.line ? " " + trf("(line {0})", {std::to_string(error_.line)}) : ""),
