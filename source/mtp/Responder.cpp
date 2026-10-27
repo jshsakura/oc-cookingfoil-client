@@ -2,11 +2,12 @@
 #include <algorithm>
 #include <cstring>
 #include <strings.h>
+#include <utility>
 namespace foil::mtp {
 namespace {
 enum Container : uint16_t { CommandBlock = 1, DataBlock = 2, ResponseBlock = 3 };
 constexpr size_t Header = 12;
-constexpr uint32_t Storage = 0x00010001, Any = 0xFFFFFFFF;
+constexpr uint32_t Card = 0x00010001, Any = 0xFFFFFFFF;
 // Operations (PTP 1.1 table 18, MTP 1.1 appendix D).
 enum Op : uint16_t {
   GetDeviceInfo = 0x1001,
@@ -118,6 +119,10 @@ struct In {
     at += n, left -= size_t(n);
     return v;
   }
+  void pass(size_t n) {
+    if (left < n) return void(ok = false), void(left = 0);
+    at += n, left -= n;
+  }
   uint16_t u16() { return uint16_t(take(2)); }
   uint32_t u32() { return uint32_t(take(4)); }
   std::string str() {
@@ -146,8 +151,8 @@ struct In {
     const uint16_t base = type & 0x0FFF;
     if (base > 10 || !width[base]) return void(ok = false);
     const uint64_t count = type & 0x4000 ? take(4) : 1;
-    if (count * width[base] > left) return void(ok = false);
-    at += count * width[base], left -= count * width[base];
+    if (count > left) return void(ok = false);
+    pass(size_t(count) * width[base]);
   }
 };
 uint32_t parentParam(uint32_t parent) { return parent == Objects::Root ? 0 : parent; }
@@ -299,7 +304,7 @@ bool Responder::serve() {
   case GetStorageIDs: {
     Out out;
     out.u32(1);
-    out.u32(Storage);
+    out.u32(Card);
     return sendData(c, out.bytes) && respond(c, Ok);
   }
   case GetStorageInfo: return storageInfo(c);
@@ -324,21 +329,21 @@ bool Responder::deviceInfo(const Command &c) {
   out.u16(100);                     // PTP 1.00
   out.u32(6);                       // the MTP vendor extension
   out.u16(100);
-  out.str("microsoft.com: 1.0;");
+  out.str("microsoft.com: 1.0;"); // i18n: as is
   out.u16(0);                       // functional mode: standard
   out.array16(Operations);
   out.array16(std::vector<uint16_t>{}); // events
   out.array16(std::vector<uint16_t>{}); // device properties
   out.array16(std::vector<uint16_t>{}); // capture formats
   out.array16(std::vector<uint16_t>{Undefined, Association});
-  out.str("Nintendo");
-  out.str("Nintendo Switch");
-  out.str("1.0");
-  out.str("CookingFoil");
+  out.str("Nintendo"); // i18n: as is
+  out.str("Nintendo Switch"); // i18n: as is
+  out.str("1.0"); // i18n: as is
+  out.str("CookingFoil"); // i18n: as is
   return sendData(c, out.bytes) && respond(c, Ok);
 }
 bool Responder::storageInfo(const Command &c) {
-  if (c.params[0] != Storage) return respond(c, InvalidStorage);
+  if (c.params[0] != Card) return respond(c, InvalidStorage);
   Out out;
   out.u16(0x0004); // removable RAM, as a memory card reads
   out.u16(0x0002); // hierarchical
@@ -346,12 +351,12 @@ bool Responder::storageInfo(const Command &c) {
   out.u64(storage_.totalSpace());
   out.u64(storage_.freeSpace());
   out.u32(0xFFFFFFFF);
-  out.str("microSD Card");
+  out.str("microSD Card"); // i18n: as is
   out.str("");
   return sendData(c, out.bytes) && respond(c, Ok);
 }
 bool Responder::objectHandles(const Command &c) {
-  if (c.params[0] != Storage && c.params[0] != Any) return respond(c, InvalidStorage);
+  if (c.params[0] != Card && c.params[0] != Any) return respond(c, InvalidStorage);
   uint32_t folder;
   if (!folderOf(c.params[2], folder)) return respond(c, objects_.find(c.params[2]) ? InvalidParent : InvalidHandle);
   const auto *children = listFolder(folder);
@@ -373,7 +378,7 @@ bool Responder::objectInfo(const Command &c) {
   const auto *o = objects_.find(c.params[0]);
   if (!o) return respond(c, InvalidHandle);
   Out out;
-  out.u32(Storage);
+  out.u32(Card);
   out.u16(o->folder ? Association : Undefined);
   out.u16(0); // no protection
   out.u32(uint32_t(std::min<uint64_t>(o->size, 0xFFFFFFFF)));
@@ -439,29 +444,29 @@ bool Responder::getObject(const Command &c) {
 bool Responder::sendObjectInfo(const Command &c) {
   std::vector<uint8_t> data;
   if (!receiveData(data)) return false;
-  if (c.params[0] && c.params[0] != Storage) return respond(c, InvalidStorage);
+  if (c.params[0] && c.params[0] != Card) return respond(c, InvalidStorage);
   uint32_t folder;
   if (!folderOf(c.params[1], folder)) return respond(c, InvalidParent);
   In in{data.data(), data.size()};
-  in.take(4);
+  in.pass(4);
   const auto format = in.u16();
-  in.take(2);
+  in.pass(2);
   const uint32_t size = in.u32();
-  in.take(2 + 4 * 6 + 4 + 2 + 4 + 4); // thumbnail and image fields, parent, association, sequence
+  in.pass(2 + 4 * 6 + 4 + 2 + 4 + 4); // thumbnail and image fields, parent, association, sequence
   Entry entry{in.str(), format == Association, size == 0xFFFFFFFF ? UINT64_MAX : size};
   if (!in.ok) return respond(c, InvalidDataset);
   uint32_t handle;
   const auto code = createObject(folder, entry, handle);
   if (code != Ok) return respond(c, code);
   pending_ = entry.folder ? Pending{} : Pending{handle, entry.size};
-  return respond(c, Ok, {Storage, parentParam(folder), handle});
+  return respond(c, Ok, {Card, parentParam(folder), handle});
 }
 // As SendObjectInfo, with the size in 64 bits: what Windows sends for a file
 // of 4 GB or more.
 bool Responder::sendObjectPropList(const Command &c) {
   std::vector<uint8_t> data;
   if (!receiveData(data)) return false;
-  if (c.params[0] && c.params[0] != Storage) return respond(c, InvalidStorage);
+  if (c.params[0] && c.params[0] != Card) return respond(c, InvalidStorage);
   uint32_t folder;
   if (!folderOf(c.params[1], folder)) return respond(c, InvalidParent);
   Entry entry;
@@ -480,7 +485,7 @@ bool Responder::sendObjectPropList(const Command &c) {
   const auto code = createObject(folder, entry, handle);
   if (code != Ok) return respond(c, code, {0, 0, 0, 0});
   pending_ = entry.folder ? Pending{} : Pending{handle, entry.size};
-  return respond(c, Ok, {Storage, parentParam(folder), handle});
+  return respond(c, Ok, {Card, parentParam(folder), handle});
 }
 // The PC's file onto the card, two buffers turning: the cable fills one
 // while the card writes the other.
@@ -581,7 +586,7 @@ bool Responder::propDesc(const Command &c) {
 namespace {
 void value(Out &out, uint16_t prop, uint32_t handle, const Objects::Object &o) {
   switch (prop) {
-  case StorageId: return out.u32(Storage);
+  case StorageId: return out.u32(Card);
   case ObjectFormat: return out.u16(o.folder ? Association : Undefined);
   case ObjectSize: return out.u64(o.size);
   case FileName: return out.str(o.name);

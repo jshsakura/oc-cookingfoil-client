@@ -23,7 +23,7 @@ ZSTD_FLAGS := -DZSTD_DISABLE_ASM -DZSTD_LEGACY_SUPPORT=0 -DDEBUGLEVEL=0 -DZSTD_T
 # public repository's history would each read differently.
 APP_VERSION := $(shell sed -n 's/^APP_VERSION := //p' makefiles/switch.mk)
 HOST_FLAGS += -DCOOKINGFOIL_VERSION=\"$(APP_VERSION)\"
-SHARED := $(wildcard source/core/*.cpp source/net/*.cpp source/ui/*.cpp source/install/*.cpp source/platform/*.cpp source/i18n/*.cpp source/zstd/*.cpp) $(QR_ROOT)/qrcodegen.cpp
+SHARED := $(wildcard source/core/*.cpp source/net/*.cpp source/ui/*.cpp source/install/*.cpp source/platform/*.cpp source/mtp/*.cpp source/i18n/*.cpp source/zstd/*.cpp) $(QR_ROOT)/qrcodegen.cpp
 # Save backups zip with minizip. Without it on the host (Debian/Ubuntu package
 # libminizip-dev) the zip code and its archive tests are left out.
 ifeq ($(shell pkg-config --exists minizip && echo yes),yes)

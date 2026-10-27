@@ -6,7 +6,7 @@ endif
 include $(DEVKITPRO)/libnx/switch_rules
 TARGET := cookingfoil
 BUILD := build
-SOURCES := source source/core source/net source/ui source/platform source/install source/i18n source/zstd
+SOURCES := source source/core source/net source/ui source/platform source/mtp source/install source/i18n source/zstd
 ENGINE_ROOT := third_party/CyberFoil
 ENGINE_DIRS := $(ENGINE_ROOT)/source/install $(ENGINE_ROOT)/source/nx $(ENGINE_ROOT)/source/nx/ipc $(ENGINE_ROOT)/source/data $(ENGINE_ROOT)/source/util
 ENGINE_CPP := $(filter-out %/usb_nsp.cpp %/usb_xci.cpp %/sdmc_nsp.cpp %/sdmc_xci.cpp %/usbhdd.cpp %/byte_stream.cpp,$(wildcard $(ENGINE_ROOT)/source/install/*.cpp $(ENGINE_ROOT)/source/nx/*.cpp $(ENGINE_ROOT)/source/data/*.cpp)) $(addprefix $(ENGINE_ROOT)/source/util/,crypto.cpp file_util.cpp title_util.cpp)
