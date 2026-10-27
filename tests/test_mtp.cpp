@@ -133,6 +133,8 @@ struct Seen : foil::mtp::Listener {
   void copyMoved(uint64_t) override {}
   void copyEnds() override { ++copies; }
   void touched(const std::string &folder) override { folders.insert(folder); }
+  void dropped() override { ++drops; }
+  int drops = 0;
 };
 struct Reply {
   std::vector<uint8_t> data;
@@ -344,15 +346,20 @@ int runMtpTests() {
   CHECK(!mtp.serve());
 
   // A copy that never finished leaves nothing on the card: cancelled after
-  // its info, cut off mid-data, or the cable gone in between.
+  // its info, cut off mid-data, or the cable gone in between. Until its data
+  // comes, an announced file is only a name the PC sees.
+  const auto noParts = [&] {
+    for (const auto &e : fs::recursive_directory_iterator(card.root))
+      if (e.path().filename().string().rfind(".cookingfoil-part-", 0) == 0) return false;
+    return true;
+  };
   CHECK(pc.call(0x1002, {2}).code == 0x2001);
   auto gone = objectInfo(0x3000, 10, u"gone.bin");
-  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &gone).code == 0x2001 && fs::exists(card.root / "gone.bin"));
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &gone).code == 0x2001 && !fs::exists(card.root / "gone.bin"));
+  CHECK(names(pc, 0xFFFFFFFF).count("gone.bin"));
   auto next = objectInfo(0x3000, 3, u"next.bin");
-  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &next).code == 0x2001 && !fs::exists(card.root / "gone.bin"));
-  CHECK(pc.call(0x100D, {}, &three).code == 0x2001 && get(card.root / "next.bin") == "abc");
-  auto cut = objectInfo(0x3000, uint32_t(2 * Chunk), u"cut.bin");
-  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &cut).code == 0x2001);
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &next).code == 0x2001 && !names(pc, 0xFFFFFFFF).count("gone.bin"));
+  CHECK(pc.call(0x100D, {}, &three).code == 0x2001 && get(card.root / "next.bin") == "abc" && noParts());
   // Short of its size, the transfer closed: refused, not kept.
   const auto sent = [&](size_t body) {
     ++pc.transaction;
@@ -364,16 +371,34 @@ int runMtpTests() {
     pipe.toPc.clear();
     return mtp.serve();
   };
-  CHECK(sent(Chunk + 100) && u16(pipe.toPc.back(), 6) != 0x2001 && !fs::exists(card.root / "cut.bin"));
+  auto cut = objectInfo(0x3000, uint32_t(2 * Chunk), u"cut.bin");
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &cut).code == 0x2001);
+  const int drops = seen.drops;
+  CHECK(sent(Chunk + 100) && u16(pipe.toPc.back(), 6) != 0x2001 && !fs::exists(card.root / "cut.bin") && noParts());
+  CHECK(seen.drops == drops + 1 && !names(pc, 0xFFFFFFFF).count("cut.bin"));
   // The cable gone after one full block.
-  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &cut).code == 0x2001 && fs::exists(card.root / "cut.bin"));
-  CHECK(!sent(Chunk - 12) && !fs::exists(card.root / "cut.bin"));
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &cut).code == 0x2001);
+  CHECK(!sent(Chunk - 12) && !fs::exists(card.root / "cut.bin") && noParts());
   mtp.reset();
+  // Over a file of its name, cut off: the old file is still all there.
   CHECK(pc.call(0x1002, {3}).code == 0x2001);
-  auto left = objectInfo(0x3000, 10, u"left.bin");
-  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &left).code == 0x2001 && fs::exists(card.root / "left.bin"));
+  auto over = objectInfo(0x3000, uint32_t(2 * Chunk), u"next.bin");
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &over).code == 0x2001 && get(card.root / "next.bin") == "abc");
+  CHECK(!sent(Chunk - 12) && get(card.root / "next.bin") == "abc" && noParts());
   mtp.reset();
-  CHECK(!fs::exists(card.root / "left.bin") && fs::exists(card.root / "next.bin"));
+  CHECK(pc.call(0x1002, {4}).code == 0x2001);
+  auto left = objectInfo(0x3000, 10, u"left.bin");
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &left).code == 0x2001);
+  mtp.reset();
+  CHECK(!fs::exists(card.root / "left.bin") && get(card.root / "next.bin") == "abc");
+  // What a power cut left mid-copy: gone once its folder is read, never shown.
+  CHECK(pc.call(0x1002, {5}).code == 0x2001);
+  put(card.root / "switch" / ".cookingfoil-part-half.nro", "half");
+  const int before = seen.drops;
+  const auto sw2 = names(pc, names(pc, 0xFFFFFFFF).at("switch"));
+  CHECK(!sw2.count(".cookingfoil-part-half.nro") && noParts() && seen.drops == before + 1);
+  auto sneaky = objectInfo(0x3000, 1, u".cookingfoil-part-x");
+  CHECK(pc.call(0x100C, {0x00010001, 0xFFFFFFFF}, &sneaky).code == 0xA806);
 
   // Where the album is: the card's own Nintendo folder, or the emuMMC's.
   CHECK(foil::mtp::nintendoFolder(false, "[emummc]\nnintendo_path=emuMMC/SD00/Nintendo") == "/Nintendo");

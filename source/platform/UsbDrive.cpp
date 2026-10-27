@@ -156,6 +156,10 @@ struct Shown final : mtp::Listener {
     std::lock_guard lock(guard);
     if (usb::touched.size() < TouchedMax) usb::touched.insert(folder);
   }
+  void dropped() override {
+    std::lock_guard lock(guard);
+    ++shown.dropped;
+  }
 };
 // True when this boot runs from an emuMMC (Atmosphère's ExosphereEmummcType).
 bool bootedEmummc() {

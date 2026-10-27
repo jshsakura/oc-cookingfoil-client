@@ -291,7 +291,10 @@ public:
     platform::usb::preview(std::move(status));
     usbStatus_ = platform::usb::status();
   }
-  void previewUsbStopping() { usbStopping_ = true; }
+  void previewUsbStopping(bool cleaning = false) {
+    usbStopping_ = true;
+    usbCleaning_ = cleaning;
+  }
   void previewUsbApplet() { usbAppletAsk_ = true; }
   std::string arrivalShown() const { return arrivals_.empty() ? "" : arrivals_.front().title; } // tests
   void previewArrivals(std::vector<std::pair<std::string, std::string>> games, uint32_t age = 1000) {
@@ -302,6 +305,7 @@ public:
   void previewUsbDone() {
     platform::usb::stop();
     usbOpen_ = usbStopping_ = usbAppletAsk_ = false;
+    usbCleaning_ = false;
   }
   bool usbDriveOpen() const { return usbOpen_; }
   bool usbAppletShown() const { return usbAppletAsk_; }
@@ -741,10 +745,13 @@ private:
   bool usbToldPlugged_ = false;
   std::thread usbWorker_;
   std::atomic<bool> usbStopped_{false};
-  int usbSwept_ = 0; // Mac files the last close removed
+  std::atomic<bool> usbCleaning_{false}; // USB is off, the card being swept
+  int usbSwept_ = 0, usbDropped_ = 0; // Mac files and unfinished copies the last close removed
   bool usbLost_ = false; // the close came from the cable going
   void openUsbDrive();
   void closeUsbDrive(bool lost);
+  // USB let go of and the card swept: on usbWorker_, or as the app closes.
+  void releaseUsbDrive(const std::string &sd);
   void pollUsbDrive();
   void usbDriveDialog();
   void usbDriveAction(Action a);

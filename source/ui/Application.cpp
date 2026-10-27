@@ -62,8 +62,10 @@ Application::~Application() {
   // place is written down, so the next start goes on from it.
   installer_.stop();
   installer_.wait();
-  // A PC still on the cable lets go of the card before the app goes.
-  platform::usb::stop();
+  // A PC still on the cable lets go of the card before the app goes, and
+  // the card is swept as 연결 끊기 sweeps it. A close already under way
+  // finishes on its worker.
+  if (usbOpen_ && !usbStopping_) guarded("usb close", [&] { releaseUsbDrive(sdRoot_); });
   if (usbWorker_.joinable()) usbWorker_.join();
   // Finished in its last step as the app closed, or in the frame it closed
   // in, before the screen heard: kept as done, or the next start would take

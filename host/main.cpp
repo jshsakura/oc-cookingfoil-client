@@ -468,6 +468,9 @@ int main(int argc, char **argv) {
       ui.previewUsbStopping();
       ui.render();
       if (!app.screenshot(shot + "/09-usb-stopping.png")) return 1;
+      ui.previewUsbStopping(true);
+      ui.render();
+      if (!app.screenshot(shot + "/09-usb-cleaning.png")) return 1;
       ui.previewUsbDone();
       ui.previewUsbApplet();
       ui.render();

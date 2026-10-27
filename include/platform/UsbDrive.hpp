@@ -22,6 +22,7 @@ struct Status {
   bool toConsole = false; // that copy goes from the PC to the card
   int64_t moved = 0;      // of that file so far
   int copied = 0;         // files copied this time, either way
+  int dropped = 0;        // copies that did not finish, deleted from the card
   // The folders (paths on the card) the PC wrote to, for sweepMacJunk.
   std::vector<std::string> touched;
   bool cableSeen = false; // the PC took the cable at some point

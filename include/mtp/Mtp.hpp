@@ -55,6 +55,8 @@ struct Listener {
   virtual void copyEnds() = 0;
   // A folder the PC wrote in.
   virtual void touched(const std::string &folder) = 0;
+  // A copy that did not finish, deleted from the card.
+  virtual void dropped() = 0;
 };
 // One of the drives the PC sees: the whole card, or one folder of it.
 struct Volume {
@@ -125,6 +127,7 @@ private:
   struct Pending {
     uint32_t handle = 0;
     uint64_t size = 0;
+    bool replaces = false; // over a file of its name, kept until it is all here
   };
   Pipe &pipe_;
   Storage &storage_;
@@ -134,7 +137,7 @@ private:
   std::vector<Volume> volumes_;
   Objects objects_;
   bool session_ = false;
-  Pending pending_; // SendObjectInfo's file, until SendObject fills it
+  Pending pending_; // SendObjectInfo's file, until SendObject writes it
 
   // A path from volume `volume`'s top in a folder it hides.
   bool guarded(uint32_t volume, const std::string &path) const;

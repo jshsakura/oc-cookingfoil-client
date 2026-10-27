@@ -1,7 +1,8 @@
 // 연결 to PC: the SD card over the USB cable (platform::usb), from the free
 // space on the footer or 설정. One popup says how it stands; it closes by
 // itself when the cable goes, and B cuts it at any time. USB stops and what
-// a Mac left is swept on a worker, so the screen never waits on either.
+// a Mac left is swept on a worker, so the screen never waits on either; it
+// says which of the two it is at.
 #include "ui/Application.hpp"
 #include "core/Forwarder.hpp"
 #include "core/Log.hpp"
@@ -51,25 +52,30 @@ void Application::closeUsbDrive(bool lost) {
   if (usbWorker_.joinable()) usbWorker_.join();
   usbWorker_ = std::thread([this, sd = sdRoot_] {
     const platform::OnCore off(platform::WriterCore);
-    int swept = 0;
-    guarded("usb close", [&] {
-      const auto touched = platform::usb::status().touched;
-      platform::usb::stop();
-      const auto sweep = sweepMacJunk(sd, touched);
-      swept = sweep.removed;
-      logLine("usb: closed; " + std::to_string(touched.size()) + " folders written, " + std::to_string(sweep.removed) +
-              " Mac files removed, " + std::to_string(sweep.failed) + " not");
-    });
-    usbSwept_ = swept;
+    guarded("usb close", [&] { releaseUsbDrive(sd); });
     usbStopped_ = true;
   });
+}
+void Application::releaseUsbDrive(const std::string &sd) {
+  usbSwept_ = usbDropped_ = 0;
+  const auto touched = platform::usb::status().touched;
+  // A copy cut by the close is deleted as USB stops.
+  platform::usb::stop();
+  usbDropped_ = platform::usb::status().dropped;
+  usbCleaning_ = true;
+  const auto sweep = sweepMacJunk(sd, touched);
+  usbSwept_ = sweep.removed;
+  logLine("usb: closed; " + std::to_string(touched.size()) + " folders written, " + std::to_string(usbDropped_) +
+          " unfinished copies removed, " + std::to_string(sweep.removed) + " Mac files removed, " +
+          std::to_string(sweep.failed) + " not");
 }
 void Application::pollUsbDrive() {
   if (usbStopping_ && usbStopped_.exchange(false)) {
     usbWorker_.join();
-    usbOpen_ = usbStopping_ = false;
+    usbOpen_ = usbStopping_ = usbCleaning_ = false;
     cardChanged(); // the PC may have changed anything on the card
     std::string said = usbLost_ ? tr("The cable came out, so the connection closed.") : tr("Disconnected from the PC.");
+    if (usbDropped_ > 0) said += " " + trf("Removed {0} unfinished copies.", {std::to_string(usbDropped_)});
     if (usbSwept_ > 0) said += " " + trf("Removed {0} files a Mac left.", {std::to_string(usbSwept_)});
     message(said);
     return;
@@ -98,45 +104,52 @@ void Application::usbDriveDialog() {
   using Phase = platform::usb::Phase;
   constexpr float Width = 720, Tile = 72, TextX = 32 + Tile + 24, Text = Width - TextX - 32;
   const auto &st = usbStatus_;
-  const bool linked = st.phase == Phase::Plugged || st.phase == Phase::Open;
-  const bool copying = st.phase == Phase::Open && !st.file.empty();
-  const std::string headline = usbStopping_                ? tr("Disconnecting")
+  const bool linked = !usbStopping_ && (st.phase == Phase::Plugged || st.phase == Phase::Open);
+  const bool copying = !usbStopping_ && st.phase == Phase::Open && !st.file.empty();
+  const std::string headline = usbCleaning_                ? tr("Cleaning up files")
+                               : usbStopping_              ? tr("Disconnecting")
                                : copying && st.toConsole   ? tr("Copying to the console")
                                : copying                   ? tr("Copying to the PC")
                                : st.phase == Phase::Open   ? tr("The PC has the SD card open.")
                                : st.phase == Phase::Plugged ? tr("Connected to the PC.")
                                                            : tr("Connect the console to a PC with a USB cable.");
-  const std::string detail = copying         ? st.file + " · " + formatBytes(uint64_t(std::max<int64_t>(0, st.moved)))
+  const std::string detail = usbStopping_    ? std::string()
+                             : copying       ? st.file + " · " + formatBytes(uint64_t(std::max<int64_t>(0, st.moved)))
                              : st.copied > 0 ? trf("{0} files copied", {std::to_string(st.copied)})
                                              : std::string();
-  // What the PC gets, then why two folders are missing, each on its own line.
-  const std::string note = tr("You can browse and change the files on the SD card.");
-  const std::string hidden = tr("Sensitive folders such as Nintendo and emuMMC cannot be changed.");
+  // What the PC gets, then why two folders are missing, each on its own line;
+  // closing, what the sweep does instead.
+  const std::string note = usbCleaning_   ? tr("Deleting unfinished copies and files a Mac left.")
+                           : usbStopping_ ? std::string()
+                                          : tr("You can browse and change the files on the SD card.");
+  const std::string hidden = usbStopping_ ? std::string() : tr("Sensitive folders such as Nintendo and emuMMC cannot be changed.");
   const float headH = paint_.fonts.lineCount(headline, 22, Text, 2, true) * 22 * 1.3f;
   const float detailH = detail.empty() ? 0 : 8 + 18 * 1.3f;
-  const float noteH = (paint_.fonts.lineCount(note, 17, Text, 2) + paint_.fonts.lineCount(hidden, 17, Text, 2)) * 17 * 1.3f + 4;
-  const float bodyH = std::max(Tile + 48, 24 + headH + detailH + 14 + noteH + 24);
+  const auto lines = [&](const std::string &text) { return text.empty() ? 0 : paint_.fonts.lineCount(text, 17, Text, 2); };
+  const float noteH = note.empty() ? 0 : 14 + (lines(note) + lines(hidden)) * 17 * 1.3f + 4;
+  const float bodyH = std::max(Tile + 48, 24 + headH + detailH + noteH + 24);
   const auto body = modal(Width, bodyH, tr("Connect to PC via MTP"), usbStopping_ ? "" : tr("Disconnect|usb"), "", NoAccept, UsbIcon);
   // The cable's mark on a round tile: green once a PC holds it; while it
-  // waits, the tile breathes so the screen reads as listening, not stuck.
+  // waits or closes, the tile breathes so the screen reads as busy, not stuck.
   const float tileX = body.x + 32, tileY = body.y + (bodyH - Tile) / 2;
   SDL_Color tile = linked ? GreenTint : Ground;
-  if (!linked && !usbStopping_) {
+  if (!linked) {
     const float wave = 0.5f + 0.5f * std::sin(float(SDL_GetTicks() % 1600) / 1600.f * 6.2832f);
     tile.a = Uint8(140 + 115 * wave);
   }
   paint_.rect(tileX, tileY, Tile, Tile, tile, Tile / 2);
   paint_.icon(UsbIcon, tileX + (Tile - 40) / 2, tileY + (Tile - 40) / 2, linked ? Good : usbStopping_ ? Secondary : Ink, 40);
-  float y = body.y + (bodyH - (headH + detailH + 14 + noteH)) / 2;
+  float y = body.y + (bodyH - (headH + detailH + noteH)) / 2;
   paint_.fonts.wrapped(headline, body.x + TextX, y, 22, Ink, Text, 2, true);
   y += headH;
   if (!detail.empty()) {
     paint_.fonts.text(detail, body.x + TextX, y + 8, 18, Secondary, false, Text);
     y += detailH;
   }
+  if (note.empty()) return;
   paint_.fonts.wrapped(note, body.x + TextX, y + 14, 17, Secondary, Text, 2);
-  y += paint_.fonts.lineCount(note, 17, Text, 2) * 17 * 1.3f + 4;
-  paint_.fonts.wrapped(hidden, body.x + TextX, y + 14, 17, Secondary, Text, 2);
+  y += lines(note) * 17 * 1.3f + 4;
+  if (!hidden.empty()) paint_.fonts.wrapped(hidden, body.x + TextX, y + 14, 17, Secondary, Text, 2);
 }
 void Application::usbDriveAction(Action a) {
   if (a == Action::Back) closeUsbDrive(false);
