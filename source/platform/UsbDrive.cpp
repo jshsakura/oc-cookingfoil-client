@@ -217,18 +217,17 @@ bool setUpUsb() {
   if (R_FAILED(usbDsInitialize())) return false;
   static const u16 English = 0x0409;
   u8 manufacturer = 0, product = 0, serial = 0;
-  usb_device_descriptor device{USB_DT_DEVICE_SIZE, USB_DT_DEVICE, 0x0110, 0, 0, 0, 0x40, Vendor, Product, 0x0100, 0, 0, 0, 1};
+  usb_device_descriptor device{USB_DT_DEVICE_SIZE, USB_DT_DEVICE, 0x0200, 0, 0, 0, 0x40, Vendor, Product, 0x0100, 0, 0, 0, 1};
   // USB 2.0 LPM and USB 3 SuperSpeed, so a USB 3 port runs at its speed.
   static const u8 bos[] = {0x05, USB_DT_BOS, 0x16, 0x00, 0x02,
                            0x07, USB_DT_DEVICE_CAPABILITY, 0x02, 0x02, 0x00, 0x00, 0x00,
-                           0x0A, USB_DT_DEVICE_CAPABILITY, 0x03, 0x00, 0x0E, 0x00, 0x03, 0x00, 0x00, 0x00};
+                           0x0A, USB_DT_DEVICE_CAPABILITY, 0x03, 0x00, 0x0C, 0x00, 0x03, 0x00, 0x00, 0x00};
   bool ok = R_SUCCEEDED(usbDsClearDeviceData()) && R_SUCCEEDED(usbDsAddUsbLanguageStringDescriptor(nullptr, &English, 1)) &&
             R_SUCCEEDED(usbDsAddUsbStringDescriptor(&manufacturer, "Nintendo")) &&
             R_SUCCEEDED(usbDsAddUsbStringDescriptor(&product, "Nintendo Switch")) &&
             R_SUCCEEDED(usbDsAddUsbStringDescriptor(&serial, "CookingFoil"));
   device.iManufacturer = manufacturer, device.iProduct = product, device.iSerialNumber = serial;
-  ok = ok && R_SUCCEEDED(usbDsSetUsbDeviceDescriptor(UsbDeviceSpeed_Full, &device));
-  device.bcdUSB = 0x0200;
+  // High and SuperSpeed only, as libhaze set them up (the one a Mac took).
   ok = ok && R_SUCCEEDED(usbDsSetUsbDeviceDescriptor(UsbDeviceSpeed_High, &device));
   device.bcdUSB = 0x0300, device.bMaxPacketSize0 = 0x09;
   ok = ok && R_SUCCEEDED(usbDsSetUsbDeviceDescriptor(UsbDeviceSpeed_Super, &device)) &&
@@ -236,22 +235,25 @@ bool setUpUsb() {
   UsbDsInterface *usbInterface = nullptr;
   ok = ok && R_SUCCEEDED(usbDsRegisterInterface(&usbInterface));
   if (!ok) return usbDsExit(), false;
-  // A still-image interface with the PTP protocol: what Windows, macOS and
-  // Linux take as an MTP device.
+  // A still-image interface with the PTP protocol, named "MTP": what Windows,
+  // macOS and Linux take as an MTP device. Without the name a Mac takes it
+  // for a camera, and OpenMTP never gets past GetDeviceInfo.
+  u8 named = 0;
+  if (R_FAILED(usbDsAddUsbStringDescriptor(&named, "MTP"))) return usbDsExit(), false; // i18n: as is
   const usb_interface_descriptor face{USB_DT_INTERFACE_SIZE, USB_DT_INTERFACE, usbInterface->interface_index, 0, 3,
-                                      USB_CLASS_IMAGE, 1, 1, 0};
+                                      USB_CLASS_IMAGE, 1, 1, named};
   usb_endpoint_descriptor in{USB_DT_ENDPOINT_SIZE, USB_DT_ENDPOINT, u8(USB_ENDPOINT_IN | (usbInterface->interface_index + 1)),
                              USB_TRANSFER_TYPE_BULK, 0, 0};
   usb_endpoint_descriptor out{USB_DT_ENDPOINT_SIZE, USB_DT_ENDPOINT, u8(USB_ENDPOINT_OUT | (usbInterface->interface_index + 1)),
                               USB_TRANSFER_TYPE_BULK, 0, 0};
   usb_endpoint_descriptor events{USB_DT_ENDPOINT_SIZE, USB_DT_ENDPOINT, u8(USB_ENDPOINT_IN | (usbInterface->interface_index + 2)),
-                                 USB_TRANSFER_TYPE_INTERRUPT, 0x40, 6};
+                                 USB_TRANSFER_TYPE_INTERRUPT, 0x18, 6};
   usb_ss_endpoint_companion_descriptor companion{USB_DT_SS_ENDPOINT_COMPANION_SIZE, USB_DT_SS_ENDPOINT_COMPANION, 0x0F, 0, 0};
   usb_ss_endpoint_companion_descriptor eventsCompanion{USB_DT_SS_ENDPOINT_COMPANION_SIZE, USB_DT_SS_ENDPOINT_COMPANION, 0, 0, 0x40};
   const auto append = [&](UsbDeviceSpeed speed, const void *d, size_t n) {
     ok = ok && R_SUCCEEDED(usbDsInterface_AppendConfigurationData(usbInterface, speed, d, n));
   };
-  for (const auto [speed, packet] : {std::pair{UsbDeviceSpeed_Full, 64}, {UsbDeviceSpeed_High, 512}, {UsbDeviceSpeed_Super, 1024}}) {
+  for (const auto [speed, packet] : {std::pair{UsbDeviceSpeed_High, 512}, {UsbDeviceSpeed_Super, 1024}}) {
     const bool super = speed == UsbDeviceSpeed_Super;
     in.wMaxPacketSize = out.wMaxPacketSize = u16(packet);
     append(speed, &face, USB_DT_INTERFACE_SIZE);
