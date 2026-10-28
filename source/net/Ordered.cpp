@@ -339,7 +339,7 @@ bool streamOne(const std::string &url, uint64_t from, uint64_t length, const Ord
       const int rc = requestOnce(url, sent, from + received, length - received, counted, options);
       if (rc == 0) return true;
       lastFailure = describe(rc);
-      const auto where = std::string(sent == url ? "server" : "direct") + " at " + std::to_string(from + received) + ", " +
+      const auto where = std::string(sent == url ? "server " : "direct ") + originOf(sent) + " at " + std::to_string(from + received) + ", " +
                          std::to_string(received) + " of " + std::to_string(length);
       lastWhere = where;
       wait = seconds(0);
