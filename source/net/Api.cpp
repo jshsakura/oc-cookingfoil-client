@@ -1503,6 +1503,17 @@ bool Session::keepEnrolledKey(const std::string& accessKey, const std::string& d
     }, KeySaveTries);
     enrollUnsaved_ = true; // the token leaves config.json once the key is written
     if (written) keyWritten();
+    // The session token and the ask behind it were the old key's: both go
+    // now, before anything else is asked with them (a 401 session-revoked
+    // and access-key-wrong right after the enroll).
+    // Before this run read the server's features, the session goes whole;
+    // the next library/info offers it again with the new key.
+    if (features_.count("session-token")) {
+        auto asking = state_;
+        asking.accessKeys[server_.url] = accessKey;
+        offerSessionFor(server_, asking);
+    } else
+        withdrawSession(originOf(server_.url));
     return true;
 }
 State Session::stateFromFile() {

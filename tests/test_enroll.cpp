@@ -17,6 +17,7 @@
 #include <functional>
 #include <mutex>
 #include <thread>
+#include <algorithm>
 #include <utility>
 #include <vector>
 // A client downloaded from the website carries a one-time enroll token in
@@ -39,6 +40,8 @@ int runEnrollTests() {
   int enrollStatus = 200, sectionsStatus = 200;
   std::string pairStatus = "approved", enrollReason = "invalid", pairLimit, enrollExtra;
   bool approveEnrolled = false; // the server approves the key it gave by enroll
+  bool sessionTokens = false;   // the server offers session tokens
+  bool oldEnded = false;        // the enroll ended the old key's token
   mock.answer = [&](const std::string &request) -> Reply {
     if (request.rfind("POST /api/pair/enroll", 0) == 0) {
       if (enrollStatus == 401 || enrollStatus == 403)
@@ -46,7 +49,15 @@ int runEnrollTests() {
       if (enrollStatus != 200) return {enrollStatus, "", R"({"error":"x"})"};
       return {200, "", R"({"status":"approved","accessKey":"enrolled-key","libraryUrl":null)" + enrollExtra + "}"};
     }
-    if (request.rfind("GET /api/library/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
+    // The enroll ends the old key's session token.
+    if (sessionTokens && has(request, "POST /api/pair/enroll")) oldEnded = true;
+    if (oldEnded && has(request, "Bearer cfs_old") && !has(request, "/api/pair/enroll"))
+      return {401, "X-CookingFoil-Auth: session-revoked\r\n", "{}"};
+    if (request.rfind("GET /api/session", 0) == 0)
+      return has(request, "X-Access-Key: enrolled-key") ? Reply{200, "", R"({"token":"cfs_new","expiresAt":0})"}
+                                                        : Reply{200, "", R"({"token":"cfs_old","expiresAt":0})"};
+    if (request.rfind("GET /api/library/info", 0) == 0)
+      return {200, "", sessionTokens ? R"({"features":["enroll","session-token"]})" : R"({"features":["enroll"]})"};
     if (request.rfind("GET /api/pair/status", 0) == 0 && approveEnrolled && has(request, "X-Access-Key: enrolled-key"))
       return {200, "", R"({"status":"approved"})"};
     if (request.rfind("GET /api/pair/status", 0) == 0)
@@ -55,6 +66,7 @@ int runEnrollTests() {
       return sectionsStatus == 200 ? Reply{200, "", R"({"sections":[]})"} : Reply{sectionsStatus, "", R"({"error":"denied"})"};
     return {200, "", "{}"};
   };
+  const auto original = mock.answer;
   char temporary[] = "/tmp/cookingfoil-enroll-XXXXXX";
   const char *made = mkdtemp(temporary);
   CHECK(made);
@@ -652,6 +664,36 @@ int runEnrollTests() {
     CHECK(!basic(upstream));
     upstream.username = "user";
     CHECK(basic(upstream));
+  }
+  {
+    // Enrolled while a session token of the old key is held: that token and
+    // the ask behind it go at once, so nothing after the enroll is sent with
+    // them (a 401 session-revoked, then access-key-wrong, right after it).
+    auto state = loadState(db).value;
+    state.accessKeys[url] = "auto-key";
+    CHECK(saveState(db, state, error));
+    mock.answer = original;
+    enrollStatus = sectionsStatus = 200;
+    pairStatus = "approved";
+    approveEnrolled = false;
+    sessionTokens = true;
+    {
+      net::Session before(server(), loadState(db).value, db);
+      CHECK(before.refresh(error) && before.refresh(error));
+      CHECK(count(mock.take(), "Bearer cfs_old") > 0);
+    }
+    writeConfig();
+    net::Session::forgetEnrollAttempts();
+    net::Session session(server(), loadState(db).value, db);
+    session.setConfigPath(configPath);
+    CHECK(session.refresh(error) && session.refresh(error));
+    const auto sent = mock.take();
+    const auto enrolled = std::find_if(sent.begin(), sent.end(), [](const std::string &r) { return has(r, "POST /api/pair/enroll"); });
+    CHECK(enrolled != sent.end());
+    for (auto after = enrolled == sent.end() ? sent.end() : enrolled + 1; after != sent.end(); ++after)
+      CHECK(!has(*after, "Bearer cfs_old") && !has(*after, "X-Access-Key: auto-key"));
+    CHECK(count(sent, "Bearer cfs_new") > 0);
+    sessionTokens = oldEnded = false;
   }
   std::filesystem::remove_all(root);
   return failures;
