@@ -200,6 +200,8 @@ State fromRows(const DownloadStore::StateRows& rows) {
     state.lastScreen = setting("lastScreen", "home");
     state.makeShortcuts = setting("makeShortcuts", "1") == "1";
     state.sounds = setting("sounds", "1") == "1";
+    const auto level = setting("logLevel", "errors");
+    state.logLevel = level == "off" ? LogLevel::Off : level == "all" ? LogLevel::All : LogLevel::Errors;
     state.queueJson = setting(PendingSetting, "[]");
     state.sendsDeclined = parseDeclined(setting(DeclinedSetting));
     state.pairMessages = rows.notes;
@@ -219,7 +221,10 @@ DownloadStore::StateRows toRows(const State& given, const DeviceIdentity& id) {
                      {"lastServer", state.lastServer},
                      {"lastScreen", state.lastScreen},
                      {"makeShortcuts", flag(state.makeShortcuts)},
-                     {"sounds", flag(state.sounds)}};
+                     {"sounds", flag(state.sounds)},
+                     {"logLevel", state.logLevel == LogLevel::Off   ? "off"
+                                  : state.logLevel == LogLevel::All ? "all"
+                                                                    : "errors"}};
     if (state.queueJson != "[]") rows.settings[PendingSetting] = state.queueJson;
     if (const auto declined = serializeDeclined(state.sendsDeclined); declined != "{}") rows.settings[DeclinedSetting] = declined;
     rows.notes = state.pairMessages;

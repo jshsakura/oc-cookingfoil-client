@@ -1,4 +1,5 @@
 #pragma once
+#include "core/Log.hpp"
 #include "core/Types.hpp"
 #include <functional>
 #include <map>
@@ -16,11 +17,12 @@ inline bool isThemeName(const std::string &name) {
 struct State {
     std::string deviceKey, lastServer, lastScreen = "home";
     std::string language; // chosen in 설정; empty follows the console
-    // Send the log to the server on its own when an error shows.
     // Install a HOME Menu shortcut with each retro game and homebrew app.
     bool makeShortcuts = true;
     // The app's sounds (start, cursor, queue, done, error), 설정's 효과음.
     bool sounds = true;
+    // What the log keeps (it goes out with bug reports), 설정's 버그 보고용 로그.
+    LogLevel logLevel = LogLevel::Errors;
     // "sd" or "nand", chosen in 설정; empty follows config.json's installTarget.
     std::string installTarget;
     // One of ThemeNames, chosen in 설정; empty follows the console's theme.

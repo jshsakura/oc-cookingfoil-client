@@ -303,11 +303,13 @@ bool Application::open() {
         const auto saved = loadState(statePath_).value;
         state_.language = saved.language;
         state_.sounds = saved.sounds;
+        state_.logLevel = saved.logLevel;
         state_.theme = saved.theme;
       }
       applyTheme();
       applyStartupLanguage();
       sounds_.setOn(state_.sounds);
+      setLogLevel(state_.logLevel);
       // Each step says what it is doing under the logo, so a slow SD card or
       // server shows where the time goes.
       background(tr("Preparing the image cache"), 0.38f, 0.40f);
@@ -1388,6 +1390,7 @@ void Application::takeNetwork() {
     state_.language = mine.language;
     state_.makeShortcuts = mine.makeShortcuts;
     state_.sounds = mine.sounds;
+    state_.logLevel = mine.logLevel;
     state_.installTarget = mine.installTarget;
     state_.theme = mine.theme;
     state_.pairMessages = mine.pairMessages;
@@ -2159,7 +2162,15 @@ void Application::action(Action a) {
         sounds_.setOn(state_.sounds);
         sounds_.play(Cue::Add); // turned on: heard at once
         break;
-      case 8: openBugReport(""); break;
+      // Errors, then everything, then nothing, then errors again.
+      case 8:
+        state_.logLevel = state_.logLevel == LogLevel::Errors ? LogLevel::All
+                        : state_.logLevel == LogLevel::All    ? LogLevel::Off
+                                                              : LogLevel::Errors;
+        setLogLevel(state_.logLevel);
+        saveOwnState();
+        break;
+      case 9: openBugReport(""); break;
       default:
         // A server opens its form; "+ 서버 추가" an empty one.
         openServerForm(selected_ < int(config_.servers.size()) ? std::max(0, selected_) : -1);

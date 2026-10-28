@@ -128,7 +128,7 @@ void Application::installAppUpdate() {
         };
         net::ClientUpdateReply reply;
         const auto fresh = net::latestClient(server, state, reply, &updateCancel_);
-        logLine("update: check " + (fresh ? "v" + fresh->version : std::string("failed")) + " after " + since());
+        logDetail("update: check " + (fresh ? "v" + fresh->version : std::string("failed")) + " after " + since());
         if (tries && (!fresh || fresh->sha256 == release.sha256)) break; // the same build: a real mismatch
         if (fresh) release = *fresh;
         updateReceived_ = 0;

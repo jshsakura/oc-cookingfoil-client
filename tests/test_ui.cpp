@@ -229,8 +229,8 @@ int runUiTests(SDL_Renderer *renderer) {
     app.render();
     app.action(foil::ui::Action::Right);
     for (int step = 0; step < 40; ++step) app.action(foil::ui::Action::Down);
-    // The bug report is last; Connect to PC sits three rows above it.
-    for (int step = 0; step < 3; ++step) app.action(foil::ui::Action::Up);
+    // The bug report is last; Connect to PC sits four rows above it.
+    for (int step = 0; step < 4; ++step) app.action(foil::ui::Action::Up);
     app.render();
     app.action(foil::ui::Action::Accept);
     CHECK(app.usbAppletShown());

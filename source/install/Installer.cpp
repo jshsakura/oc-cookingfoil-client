@@ -375,7 +375,7 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
         headers.push_back("Range: bytes=0-0");
         const auto asked = std::chrono::steady_clock::now();
         const auto first = net::get(files[i].url, headers, "", &cancel_);
-        logLine("variant: first byte HTTP " + std::to_string(first.status) + " after " +
+        logDetail("variant: first byte HTTP " + std::to_string(first.status) + " after " +
                 std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - asked).count()) +
                 "ms");
         if (first.status == 409) throw std::runtime_error(refusal(first.body, files[i].variantFailed));

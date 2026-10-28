@@ -151,10 +151,10 @@ uint64_t streamPieces(const std::string &url, uint64_t from, uint64_t length, co
     const bool offline = linkDown(url);
     if (offline) {
       lastData = Clock::now();
-      if (!offlineSaid) logLine("download waits for the network");
+      if (!offlineSaid) logDetail("download waits for the network");
       offlineSaid = true;
     } else if (offlineSaid) {
-      logLine("network back; download goes on");
+      logDetail("network back; download goes on");
       offlineSaid = false;
     }
     const auto reading = [&] {

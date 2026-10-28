@@ -137,7 +137,7 @@ struct SdCard final : mtp::Storage {
   }
 };
 struct Shown final : mtp::Listener {
-  void trace(const std::string &line) override { logLine(line); }
+  void trace(const std::string &line) override { logDetail(line); }
   void session(bool open) override {
     std::lock_guard lock(guard);
     sessionOpen = open;
@@ -193,7 +193,7 @@ std::vector<mtp::Volume> volumes(FsFileSystem *fs) {
   FsDirEntryType type;
   if (R_SUCCEEDED(fsFsGetEntryType(fs, album.c_str(), &type)) && type == FsDirEntryType_Dir)
     out.push_back({"Album", album, false, {}});
-  logLine("usb: " + std::to_string(out.size()) + " drives" + (out.size() > 1 ? ", album " + album : std::string()));
+  logDetail("usb: " + std::to_string(out.size()) + " drives" + (out.size() > 1 ? ", album " + album : std::string()));
   return out;
 }
 struct Session {

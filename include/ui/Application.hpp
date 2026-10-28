@@ -453,8 +453,9 @@ public:
   void toggleInstallCheck(bool &skip);
   void saveOwnState();
   // 설정's options card: 언어, 기본 저장 위치, 앱 업데이트, 남은 파일 정리,
-  // then the switches: 홈 메뉴 바로가기, 효과음, then 버그 보고 보내기.
-  static constexpr int SettingsOptions = 9;
+  // then the switches: 홈 메뉴 바로가기, 효과음, then 버그 보고용 로그 and
+  // 버그 보고 보내기.
+  static constexpr int SettingsOptions = 10;
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).

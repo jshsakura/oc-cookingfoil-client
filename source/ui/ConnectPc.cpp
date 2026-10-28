@@ -42,7 +42,7 @@ void Application::openUsbDrive() {
   usbReadAt_ = usbLostAt_ = 0;
   usbStatus_ = {};
   usbStatus_.phase = platform::usb::Phase::Waiting;
-  logLine("usb: open, waiting for a PC");
+  logDetail("usb: open, waiting for a PC");
 }
 void Application::closeUsbDrive(bool lost) {
   if (!usbOpen_ || usbStopping_) return;
@@ -65,7 +65,7 @@ void Application::releaseUsbDrive(const std::string &sd) {
   usbCleaning_ = true;
   const auto sweep = sweepMacJunk(sd, touched);
   usbSwept_ = sweep.removed;
-  logLine("usb: closed; " + std::to_string(touched.size()) + " folders written, " + std::to_string(usbDropped_) +
+  logDetail("usb: closed; " + std::to_string(touched.size()) + " folders written, " + std::to_string(usbDropped_) +
           " unfinished copies removed, " + std::to_string(sweep.removed) + " Mac files removed, " +
           std::to_string(sweep.failed) + " not");
 }

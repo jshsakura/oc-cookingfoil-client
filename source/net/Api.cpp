@@ -1368,7 +1368,7 @@ bool Session::enroll(Error& error) {
         if (const auto at = enrollSpent.find(tried); at != enrollSpent.end()) {
             const auto spent = at->second;
             held.unlock();
-            logLine("enroll: the token was spent earlier this run; its key goes on");
+            logDetail("enroll: the token was spent earlier this run; its key goes on");
             return keepEnrolledKey(spent, device, error);
         }
     }
@@ -1448,7 +1448,7 @@ bool Session::enroll(Error& error) {
     // older server says nothing.
     const auto* bound = field(reply.get(), "bound");
     if (json_object_is_type(bound, json_type_boolean))
-        logLine(std::string("enroll: ") + (json_object_get_boolean(bound) ? "linked to the download's account" : "kept by the server's admin"));
+        logDetail(std::string("enroll: ") + (json_object_get_boolean(bound) ? "linked to the download's account" : "kept by the server's admin"));
     enrollRefusal_.clear();
     return keepEnrolledKey(accessKey, device, error);
 }
@@ -1495,7 +1495,7 @@ bool Session::saveKey(const std::function<void(State&)>& change, int tries) {
     }
     state_ = std::move(updated);
     keyUnsaved_ = true;
-    logLine("key held for this run; written again at the next refresh");
+    logDetail("key held for this run; written again at the next refresh");
     return false;
 }
 void Session::keyWritten() {
@@ -1535,7 +1535,7 @@ bool Session::refresh(Error& error) {
     if (keyUnsaved_) {
         std::unique_lock<std::mutex> filed(stateFile);
         if (saveKey([](State&) {}, 1)) {
-            logLine("the held key is written now");
+            logDetail("the held key is written now");
             keyWritten();
         }
     }

@@ -251,6 +251,7 @@ int runEnrollTests() {
     net::Session::forgetEnrollAttempts();
     const auto logged = (root / "bound.txt").string();
     openLog(logged);
+    setLogLevel(LogLevel::All); // the lines below are detail
     enrollExtra = R"(,"bound":true,"owner":{"kind":"user","displayName":"Someone"})";
     net::Session session(server(), loadState(db).value, db);
     session.setConfigPath(configPath);
@@ -263,6 +264,7 @@ int runEnrollTests() {
     flushLog();
     CHECK(readFile(logged).find("enroll: linked to the download's account") != std::string::npos);
     CHECK(readFile(logged).find("Someone") == std::string::npos);
+    setLogLevel(LogLevel::Errors);
     enrollExtra.clear();
   }
   {
@@ -569,6 +571,7 @@ int runEnrollTests() {
     };
     const auto logged = (root / "log.txt").string();
     openLog(logged);
+    setLogLevel(LogLevel::All); // the held key's lines are detail
     noToken();
     {
       net::Session session(server(), keyless(), db);
@@ -590,6 +593,7 @@ int runEnrollTests() {
       CHECK(!loadState(db).value.pairSecrets.count(url));
       flushLog();
       CHECK(readFile(logged).find("the held key is written now") != std::string::npos);
+      setLogLevel(LogLevel::Errors);
       CHECK(keysGiven == 2);
     }
     {
