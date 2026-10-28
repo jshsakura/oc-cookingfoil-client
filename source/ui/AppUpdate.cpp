@@ -53,7 +53,8 @@ void Application::checkAppUpdate() {
       }
     });
     if (release && reply.missing) reply = {}; // the one in use has none, another has
-    updateFinish_ = [this, reply, release, from] {
+    const auto refused = platform::refusedBuild(nroPath(selfPath_, sdRoot_)); // read here, off the drawing thread
+    updateFinish_ = [this, reply, release, from, refused] {
       appUpdateError_ = reply.error.message;
       if (reply.missing) appUpdate_ = AppUpdate::Missing;
       else if (!release) appUpdate_ = AppUpdate::Failed;
@@ -62,6 +63,13 @@ void Application::checkAppUpdate() {
         appReleaseServer_ = from;
         appUpdate_ = update::compareVersions(release->version, COOKINGFOIL_VERSION) > 0 ? AppUpdate::Available
                                                                                       : AppUpdate::Latest;
+        // Stopped twice on this console before it opened: not taken again,
+        // or the console loops between it and this one.
+        if (appUpdate_ == AppUpdate::Available && release->version == refused) {
+          appUpdate_ = AppUpdate::Failed;
+          appUpdateError_ = trf("v{0} stopped twice on this console before it opened, so it is not installed again. A bug report went to the server.",
+                                {release->version});
+        }
         updateNewer_ = appUpdate_ == AppUpdate::Available;
       }
     };
@@ -85,6 +93,9 @@ void Application::noticeRollBack() {
     alertTitle_ = tr("Update undone");
     alert_ = trf("The new version stopped before it opened, so v{0} is back. Wait for the next update.",
                  {COOKINGFOIL_VERSION});
+    // The second time for the same build: the server hears of it on its own.
+    if (text != "1" && platform::refusedBuild(selfPath_) == text)
+      autoReport_ = "update v" + text + " stopped twice before it opened; rolled back to v" COOKINGFOIL_VERSION;
     return;
   }
   if (take(".updatefailed", text)) {
@@ -153,6 +164,7 @@ void Application::installAppUpdate() {
       // place before anything opens the app's file (main.cpp). Swapping it
       // here, with the fonts still reading the running file, failed.
       appUpdate_ = AppUpdate::Latest;
+      platform::noteTrialVersion(target, release.version);
       // The loader starts the new build as this one closes; without one the
       // player starts it again.
       if (platform::relaunch(target)) {
@@ -273,7 +285,10 @@ void Application::sendBugReport(const std::string &said) {
   // What the player wrote comes first, then the log, then the console's
   // report of the app's last crash when one is from the last day (it says
   // where the app stopped, which the log cannot).
-  const auto note = said.empty() ? std::string() : "message: " + said + "\n\n";
+  // Where it runs comes first: a crash in the loader depends on it.
+  const auto where = platform::runEnvironment();
+  const auto note = (where.empty() ? std::string() : "console: " + where + "\n") +
+                    (said.empty() ? std::string() : "message: " + said + "\n") + (where.empty() && said.empty() ? "" : "\n");
   bugWorker_ = std::thread([this, server, state, note] {
     const platform::OnCore off(platform::NetworkCore);
     Error error;
@@ -289,6 +304,11 @@ void Application::sendBugReport(const std::string &said) {
   });
 }
 void Application::pollLog() {
+  // A file a save could not put in place: said once, not only in the log.
+  if (const auto failed = takeSaveFailure(); !failed.empty())
+    message(std::string(tr("Could not write to the SD card. Check the free space.")) + " · " + failed);
+  if (!autoReport_.empty() && connected_ && !bugWorker_.joinable() && bugReportServer() != std::string::npos)
+    sendBugReport(std::exchange(autoReport_, std::string()));
   if (bugDone_.exchange(false)) {
     bugWorker_.join();
     message(incomingBugStatus_); // said once; the row reads as before

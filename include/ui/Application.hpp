@@ -1389,6 +1389,7 @@ private:
   int bugServer_ = 0; // the row of reportServers() it goes to
   std::string bugMessage_;
   std::thread bugWorker_;
+  std::string autoReport_; // sent once a server answers (a build that stopped twice)
   std::atomic<bool> bugDone_{false};
   std::string incomingBugStatus_;
   std::string lastAlert_; // the alert already written to the log

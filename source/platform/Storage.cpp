@@ -267,7 +267,19 @@ bool rollBackUpdate(const std::string &self, std::string &note) {
   std::filesystem::remove(old, ec);
   std::filesystem::remove(trial, ec);
   std::string ignored;
-  atomicWrite(self + ".rolledback", "1", ignored); // said on screen once the app is up
+  // Which build stopped, and how many times in a row: twice and it is not
+  // taken again (refusedBuild), so the console does not loop on it.
+  const auto version = readFile(self + ".pending");
+  std::filesystem::remove(self + ".pending", ec);
+  if (!version.empty()) {
+    const auto before = readFile(self + ".refused");
+    const auto newline = before.find('\n');
+    int times = 1;
+    if (newline != std::string::npos && before.substr(0, newline) == version)
+      times = std::atoi(before.c_str() + newline + 1) + 1;
+    atomicWrite(self + ".refused", version + "\n" + std::to_string(times), ignored);
+  }
+  atomicWrite(self + ".rolledback", version.empty() ? "1" : version, ignored); // said on screen once the app is up
   note = "update rolled back: the new build stopped before it was up";
   return true;
 }
@@ -276,6 +288,42 @@ void confirmUpdate(const std::string &self) {
   if (!std::filesystem::exists(self + ".trial", ec)) return;
   std::filesystem::remove(self + ".old", ec);
   std::filesystem::remove(self + ".trial", ec);
+  std::filesystem::remove(self + ".pending", ec);
+  std::filesystem::remove(self + ".refused", ec); // a build came up: the count starts over
+}
+void noteTrialVersion(const std::string &self, const std::string &version) {
+  std::string ignored;
+  atomicWrite(self + ".pending", version, ignored);
+}
+std::string refusedBuild(const std::string &self) {
+  const auto record = readFile(self + ".refused");
+  const auto newline = record.find('\n');
+  if (newline == std::string::npos || std::atoi(record.c_str() + newline + 1) < 2) return "";
+  return record.substr(0, newline);
+}
+std::string runEnvironment() {
+#ifdef __SWITCH__
+  std::string out;
+  u64 api = 0;
+  if (R_SUCCEEDED(splInitialize())) {
+    // 65000: Atmosphere's own config item, its version in the top bytes.
+    if (R_SUCCEEDED(splGetConfig(SplConfigItem(65000), &api)))
+      out = "atmosphere " + std::to_string((api >> 56) & 0xFF) + "." + std::to_string((api >> 48) & 0xFF) + "." +
+            std::to_string((api >> 40) & 0xFF);
+    splExit();
+  }
+  u64 program = 0;
+  if (R_SUCCEEDED(svcGetInfo(&program, InfoType_ProgramId, CUR_PROCESS_HANDLE, 0))) {
+    char id[17];
+    std::snprintf(id, sizeof id, "%016llX", static_cast<unsigned long long>(program));
+    out += std::string(out.empty() ? "" : "; ") + "program " + id;
+  }
+  out += std::string(out.empty() ? "" : "; ") + (appletGetAppletType() == AppletType_Application ? "application" : "applet") +
+         "; firmware " + firmwareVersion();
+  return out;
+#else
+  return "";
+#endif
 }
 bool serviceApplet() {
 #ifdef __SWITCH__
