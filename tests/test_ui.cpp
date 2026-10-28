@@ -34,6 +34,34 @@ static void settle(foil::ui::Application &app) {
 int runUiTests(SDL_Renderer *renderer) {
   int failures = 0;
   {
+    // The dots of the small icons show at 1:1 (the toast's info mark is 22
+    // wide in handheld): a dot drawn as a zero-length stroke vanished there.
+    float sx = 1, sy = 1;
+    SDL_RenderGetScale(renderer, &sx, &sy);
+    SDL_RenderSetScale(renderer, 1, 1);
+    foil::ui::Painter painter(renderer);
+    auto *format = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA32);
+    struct Dot { int kind; float x, y; };
+    for (const Dot dot : {Dot{33, 12, 8}, Dot{25, 12, 16}, Dot{39, 12, 20}, Dot{20, 12, 20}, Dot{21, 6, 6}, Dot{15, 7, 7},
+                          Dot{14, 10, 16}, Dot{27, 18, 11}}) {
+      SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+      SDL_RenderClear(renderer);
+      painter.icon(dot.kind, 0, 0, {255, 255, 255, 255}, 22);
+      Uint32 pixels[9] = {};
+      const SDL_Rect at{int(dot.x * 22 / 24) - 1, int(dot.y * 22 / 24) - 1, 3, 3};
+      CHECK(SDL_RenderReadPixels(renderer, &at, SDL_PIXELFORMAT_RGBA32, pixels, 3 * sizeof(Uint32)) == 0);
+      Uint8 brightest = 0;
+      for (const auto pixel : pixels) {
+        Uint8 r, g, b;
+        SDL_GetRGB(pixel, format, &r, &g, &b);
+        brightest = std::max(brightest, r);
+      }
+      CHECK(brightest > 160);
+    }
+    SDL_FreeFormat(format);
+    SDL_RenderSetScale(renderer, sx, sy);
+  }
+  {
     // 설치 불가 in every language: the install button (386 wide) keeps a margin.
     foil::ui::Painter painter(renderer);
     CHECK(painter.fonts.open());
