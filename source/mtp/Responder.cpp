@@ -1,7 +1,6 @@
 #include "mtp/Mtp.hpp"
 #include <algorithm>
 #include <cstring>
-#include <set>
 #include <strings.h>
 #include <utility>
 namespace foil::mtp {
@@ -9,11 +8,6 @@ namespace {
 enum Container : uint16_t { CommandBlock = 1, DataBlock = 2, ResponseBlock = 3 };
 constexpr size_t Header = 12;
 constexpr uint32_t Any = 0xFFFFFFFF;
-// A file from the PC is written under the first name until all of it is
-// there; the file it replaces waits under the second until it has its name.
-const std::string PartPrefix = ".cookingfoil-part-", OldPrefix = ".cookingfoil-old-"; // i18n: as is
-bool startsWith(const std::string &name, const std::string &prefix) { return name.compare(0, prefix.size(), prefix) == 0; }
-bool partial(const std::string &name) { return startsWith(name, PartPrefix) || startsWith(name, OldPrefix); }
 // Volume n is storage n+1, its first logical partition.
 uint32_t storageId(uint32_t volume) { return (volume + 1) << 16 | 1; }
 // Operations (PTP 1.1 table 18, MTP 1.1 appendix D).
@@ -165,7 +159,7 @@ struct In {
 };
 std::string join(const std::string &folder, const std::string &name) { return folder == "/" ? "/" + name : folder + "/" + name; }
 bool validName(const std::string &name) {
-  return !name.empty() && name != "." && name != ".." && name.find_first_of("/\\") == std::string::npos && !partial(name);
+  return !name.empty() && name != "." && name != ".." && name.find_first_of("/\\") == std::string::npos;
 }
 } // namespace
 
@@ -177,15 +171,17 @@ Responder::Responder(Pipe &pipe, class Storage &storage, Listener &listener, uin
 void Responder::reset() {
   if (session_) listener_.session(false);
   session_ = false;
+  traced_ = refusals_ = 0;
   dropPending();
   objects_.clear();
 }
-// A file SendObjectInfo announced whose data never came (the copy was
-// cancelled, or the cable pulled, in between): nothing is on the card yet,
-// only its handle goes.
+// A file SendObjectInfo made whose data never came (the copy was cancelled,
+// or the cable pulled, in between): an empty name on the card, removed.
 void Responder::dropPending() {
   const auto pending = std::exchange(pending_, Pending{});
-  if (pending.handle && !pending.replaces) objects_.remove(pending.handle);
+  if (!pending.size || !objects_.find(pending.handle)) return;
+  storage_.remove(onCard(pending.handle), false);
+  objects_.remove(pending.handle);
 }
 bool Responder::guarded(uint32_t volume, const std::string &path) const {
   const char *rest = path.c_str();
@@ -214,7 +210,17 @@ bool Responder::sendData(const Command &command, const std::vector<uint8_t> &pay
     fill = 0;
   }
 }
+namespace {
+std::string hex(uint32_t value, int digits) {
+  static const char Digits[] = "0123456789ABCDEF";
+  std::string out(size_t(digits), '0');
+  for (int i = digits - 1; i >= 0; --i, value >>= 4) out[size_t(i)] = Digits[value & 0xF];
+  return out;
+}
+} // namespace
 bool Responder::respond(const Command &command, uint16_t code, std::vector<uint32_t> params) {
+  if (code != Ok && refusals_ < 50)
+    ++refusals_, listener_.trace("mtp: op " + hex(command.code, 4) + " answered " + hex(code, 4));
   Out out;
   out.u32(uint32_t(Header + 4 * params.size()));
   out.u16(ResponseBlock);
@@ -258,35 +264,10 @@ bool Responder::volumeOf(uint32_t storage, uint32_t &volume) const {
 }
 const std::vector<uint32_t> *Responder::listFolder(uint32_t folder) {
   std::vector<Entry> entries;
-  const auto path = onCard(folder);
-  if (!storage_.list(path, entries)) return nullptr;
-  // What a power cut left mid-copy, put right where it is found: the new
-  // file unfinished is deleted; the old one it was replacing gets its name
-  // back, unless the new one had already taken it.
-  std::set<std::string> names;
-  for (const auto &e : entries)
-    if (!partial(e.name)) names.insert(e.name);
-  entries.erase(std::remove_if(entries.begin(), entries.end(),
-                               [&](Entry &e) {
-                                 if (!partial(e.name)) return false;
-                                 const auto at = join(path, e.name);
-                                 if (startsWith(e.name, OldPrefix)) {
-                                   const auto name = e.name.substr(OldPrefix.size());
-                                   if (!names.count(name) && validName(name) && storage_.rename(at, join(path, name), e.folder))
-                                     return e.name = name, names.insert(name), false;
-                                   if (names.count(name)) storage_.remove(at, e.folder);
-                                   return true;
-                                 }
-                                 if (storage_.remove(at, e.folder)) listener_.dropped();
-                                 return true;
-                               }),
-                entries.end());
+  if (!storage_.list(onCard(folder), entries)) return nullptr;
   if (objects_.isRoot(folder))
     entries.erase(std::remove_if(entries.begin(), entries.end(), [&](const Entry &e) { return guarded(folder, "/" + e.name); }),
                   entries.end());
-  // The file announced and not yet sent is not on the card, and keeps its handle.
-  if (const auto *p = pending_.replaces ? nullptr : objects_.find(pending_.handle); p && p->parent == folder)
-    entries.push_back({p->name, false, 0});
   return &objects_.sync(folder, std::move(entries));
 }
 bool Responder::folderOf(uint32_t storage, uint32_t param, uint32_t &folder) const {
@@ -303,7 +284,6 @@ bool Responder::folderOf(uint32_t storage, uint32_t param, uint32_t &folder) con
 }
 uint16_t Responder::createObject(uint32_t folder, Entry entry, uint32_t &handle) {
   handle = 0;
-  bool replaces = false;
   if (!validName(entry.name)) return InvalidDataset;
   const auto volume = objects_.rootOf(folder);
   if (!volumes_[volume].adds) return AccessDenied;
@@ -317,16 +297,14 @@ uint16_t Responder::createObject(uint32_t folder, Entry entry, uint32_t &handle)
     // A folder copied onto one of its name fills it; a file replaces the
     // old one (the PC asked before sending it).
     if (wasFolder && entry.folder) return handle = had, Ok;
-    if (wasFolder != entry.folder) return AccessDenied;
-    handle = had, replaces = true;
+    if (wasFolder != entry.folder || !storage_.remove(onCard(had), false)) return AccessDenied;
+    objects_.remove(had);
   }
   if (!entry.folder && entry.size != UINT64_MAX && entry.size > storage_.freeSpace()) return StoreFull;
-  // A file is only announced here: SendObject writes it, under a passing name
-  // until all of it is there, so the one it replaces stays until then.
-  if (entry.folder && !storage_.createFolder(cardPath)) return AccessDenied;
-  const uint64_t size = entry.size;
-  if (!handle) handle = objects_.add(folder, {entry.name, entry.folder, 0});
-  if (!entry.folder) pending_ = {handle, size, replaces};
+  const bool made = entry.folder ? storage_.createFolder(cardPath) : storage_.createFile(cardPath, entry.size);
+  if (!made) return entry.folder ? AccessDenied : StoreFull;
+  if (entry.size == UINT64_MAX) entry.size = 0;
+  handle = objects_.add(folder, std::move(entry));
   listener_.touched(folderPath);
   return Ok;
 }
@@ -334,7 +312,7 @@ uint16_t Responder::createObject(uint32_t folder, Entry entry, uint32_t &handle)
 bool Responder::serve() {
   if (!pipe_.startReceive(buffers_[0], chunk_)) return false;
   const long n = pipe_.finishReceive();
-  if (n < 0) return false;
+  if (n < 0) return listener_.trace("mtp: the cable stopped answering"), false;
   if (n < long(Header)) return true;
   In in{buffers_[0], size_t(n)};
   const auto length = in.u32();
@@ -343,6 +321,8 @@ bool Responder::serve() {
   c.code = in.u16();
   c.transaction = in.u32();
   for (size_t i = 0; i < 5 && Header + 4 * (i + 1) <= std::min<size_t>(length, size_t(n)); ++i) c.params[i] = in.u32();
+  if (traced_ < 24)
+    ++traced_, listener_.trace("mtp: op " + hex(c.code, 4) + " " + hex(c.params[0], 8) + " " + hex(c.params[1], 8));
   const bool hostData = c.code == SendObjectInfo || c.code == SendObject || c.code == SetObjectPropValue ||
                         c.code == SendObjectPropList;
   if (!session_ && c.code != GetDeviceInfo && c.code != OpenSession) {
@@ -518,6 +498,7 @@ bool Responder::sendObjectInfo(const Command &c) {
   uint32_t handle;
   const auto code = createObject(folder, entry, handle);
   if (code != Ok) return respond(c, code);
+  pending_ = entry.folder ? Pending{} : Pending{handle, entry.size};
   return respond(c, Ok, {storageId(objects_.rootOf(folder)), objects_.isRoot(folder) ? 0 : folder, handle});
 }
 // As SendObjectInfo, with the size in 64 bits: what Windows sends for a file
@@ -543,46 +524,28 @@ bool Responder::sendObjectPropList(const Command &c) {
   uint32_t handle;
   const auto code = createObject(folder, entry, handle);
   if (code != Ok) return respond(c, code, {0, 0, 0, 0});
+  pending_ = entry.folder ? Pending{} : Pending{handle, entry.size};
   return respond(c, Ok, {storageId(objects_.rootOf(folder)), objects_.isRoot(folder) ? 0 : folder, handle});
-}
-// A whole file from `part` to `path`. The one it replaces steps aside first
-// and comes back if the new one cannot take its place, so at every moment
-// one of the two holds the name or waits under OldPrefix (listFolder).
-bool Responder::land(const std::string &part, const std::string &path, bool replaces) {
-  if (!replaces) return storage_.rename(part, path, false);
-  const auto cut = path.rfind('/');
-  const auto old = path.substr(0, cut + 1) + OldPrefix + path.substr(cut + 1);
-  if (!storage_.rename(path, old, false)) return false;
-  if (!storage_.rename(part, path, false)) return storage_.rename(old, path, false), false;
-  storage_.remove(old, false);
-  return true;
 }
 // The PC's file onto the card, two buffers turning: the cable fills one
 // while the card writes the other.
 bool Responder::sendObject(const Command &c) {
-  auto pending = std::exchange(pending_, Pending{});
+  const auto pending = std::exchange(pending_, Pending{});
   const auto *o = objects_.find(pending.handle);
-  const auto path = o ? onCard(pending.handle) : std::string();
-  const auto part = o ? join(onCard(o->parent), PartPrefix + o->name) : std::string();
-  const auto name = o ? o->name : std::string();
-  // What came so far is not the file: the passing one goes, the one it was
-  // to replace stays as it was.
-  const auto drop = [&] {
-    if (storage_.remove(part, false)) listener_.dropped();
-    if (!pending.replaces) objects_.remove(pending.handle);
-  };
   std::unique_ptr<File> file;
-  if (o && storage_.createFile(part, pending.size)) file = storage_.open(part, true);
+  const auto path = o ? onCard(pending.handle) : std::string();
+  if (o) file = storage_.open(path, true);
   if (!file) {
-    if (o) drop();
-    std::vector<uint8_t> refused;
-    if (!receiveData(refused)) return false;
-    return respond(c, !o ? NoValidObjectInfo : storage_.freeSpace() < 1 << 20 ? StoreFull : AccessDenied);
+    std::vector<uint8_t> dropped;
+    if (!receiveData(dropped)) return false;
+    return respond(c, o ? AccessDenied : NoValidObjectInfo);
   }
-  listener_.copyBegins(name, true);
+  listener_.copyBegins(o->name, true);
+  // The cable gone mid-copy: what came so far is not the file.
   const auto lost = [&] {
     file.reset();
-    drop();
+    storage_.remove(path, false);
+    objects_.remove(pending.handle);
     listener_.copyEnds();
     return false;
   };
@@ -623,10 +586,9 @@ bool Responder::sendObject(const Command &c) {
   if (total != UINT64_MAX && received < total) failed = true;
   file.reset();
   listener_.copyEnds();
-  // All of it there: it takes its name, over the file it replaces.
-  if (!failed) failed = !land(part, path, pending.replaces);
   if (failed) {
-    drop();
+    storage_.remove(path, false);
+    objects_.remove(pending.handle);
     return respond(c, storage_.freeSpace() < 1 << 20 ? StoreFull : GeneralError);
   }
   objects_.resize(pending.handle, written);
