@@ -776,7 +776,7 @@ void Application::screen(Screen screen) {
     if (homebrewLoaded_ && !homebrewError_) loadHomebrew();
   }
   // 설정 says whether a newer build is on the server, asked once a launch.
-  if (screen == Screen::Settings && appUpdate_ == AppUpdate::Unknown && connected_)
+  if (screen == Screen::Settings && appUpdate_ == AppUpdate::Unknown && (connected_ || (session_ && !network_.joinable())))
     checkAppUpdate();
   // Dropbox's popups belong to the visit that opened them.
   dropboxOpen_ = dropboxUnlinkAsk_ = dropboxChoosing_ = false;
@@ -2571,8 +2571,10 @@ void Application::render() {
   clips_.clear();
   glideStep();
   header_.clear();
-  // Asked once a launch, as soon as a server answers; 설정's badge shows it.
-  if (connected_ && appUpdate_ == AppUpdate::Unknown && !updateWorker_.joinable())
+  // Asked once a launch, as soon as a server answers, or once it was tried
+  // and did not let the console in: the update needs only its address, so
+  // a console shut out (suspended, waiting for approval) can still get a fix.
+  if ((connected_ || (session_ && !network_.joinable())) && appUpdate_ == AppUpdate::Unknown && !updateWorker_.joinable())
     checkAppUpdate();
   headerHome_.clear();
   // The menu's cursor has rested on another screen: show it, the cursor

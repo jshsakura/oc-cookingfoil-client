@@ -51,6 +51,7 @@ void Application::pairing() {
                     : refusal == "revoked" ? "This download is no longer valid. Scan the QR code to approve this console."
                     : refusal == "limit"   ? "This account has connected as many consoles by download as it can this hour. Scan the QR code to approve this one."
                     : refusal == "other-account" ? "This console is linked to another account. Scan the QR code to approve it."
+                    : refusal == "suspended" ? "This console needs to be approved again. Scan the QR code to link it to your account."
                                            : "Sign in to the server on your phone, open device approval and scan the code to approve this device for that account.";
   const auto said = pairingInfo_.deviceLimitCount > 1 // one: the text without a number, whose words are plural
                         ? trf("This account can register up to {0} consoles. Remove one you no longer use, then approve this one.",

@@ -12,10 +12,25 @@
 #include <filesystem>
 #include <memory>
 namespace foil::net {
+namespace {
+// Only the server's address (and its Cloudflare Access pass): no key, no
+// password, no device.
+Server anonymous(const Server &server) {
+  Server open;
+  open.url = server.url;
+  open.cfClientId = server.cfClientId;
+  open.cfClientSecret = server.cfClientSecret;
+  return open;
+}
+} // namespace
 std::optional<update::Release> latestClient(const Server &server, const State &state, ClientUpdateReply &reply,
                                             const std::atomic<bool> *cancel) {
   const auto url = server.url + "/api/client/latest";
-  const auto response = get(url, authHeaders(server, state, url), "", cancel);
+  // The update is open to anyone with the server's address: a console
+  // whose key is refused (suspended, taken back) asks again without it.
+  auto response = get(url, authHeaders(server, state, url), "", cancel);
+  if (response.error.empty() && (response.status == 401 || response.status == 403))
+    response = get(url, authHeaders(anonymous(server), {}, url), "", cancel);
   if (response.status == 404) {
     reply.missing = true;
     return std::nullopt;
@@ -48,7 +63,13 @@ bool installClient(const Server &server, const State &state, const update::Relea
   wanted.url = release.url;
   wanted.tag = release.sha256;
   wanted.size = release.size;
-  const auto got = fetchPart(release.url, downloadHeaders(server, state, release.url), part, wanted, true, received, cancel);
+  auto got = fetchPart(release.url, downloadHeaders(server, state, release.url), part, wanted, true, received, cancel);
+  // The build is open to anyone with the address, as the check is.
+  if (got.response.status == 401 || got.response.status == 403) {
+    dropPart(part);
+    received = 0;
+    got = fetchPart(release.url, authHeaders(anonymous(server), {}, release.url), part, wanted, true, received, cancel);
+  }
   const auto fail = [&](const std::string &message) {
     if (!keepPart(got)) dropPart(part);
     error.message = message;

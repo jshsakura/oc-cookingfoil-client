@@ -1103,7 +1103,7 @@ std::mutex catalogReading;
 }
 std::string Session::pairSecret() {
     const auto key = state_.accessKeys.find(server_.url);
-    if (key != state_.accessKeys.end() && !key->second.empty()) return "";
+    if (!repairing_ && key != state_.accessKeys.end() && !key->second.empty()) return "";
     if (const auto kept = state_.pairSecrets.find(server_.url); kept != state_.pairSecrets.end()) return kept->second;
     // Saved before it is ever sent: a new one after a restart would not match
     // the one the server holds.
@@ -1124,8 +1124,8 @@ std::string suspensionMessage(const std::string& reason) {
 }
 namespace {
 // A 403 for a suspended console (its account off or deleted): the reason in
-// `error`, every key and token kept, and no approval asked for; the next
-// refresh tries again with the same key.
+// `error`, every key and token kept. Pairing then asks for a QR code without
+// the key (Session::pair), so another account can take the console.
 bool suspended(const Response& reply, Error& error) {
     if (reply.status != 403) return false;
     Error unread;
@@ -1140,7 +1140,13 @@ bool suspended(const Response& reply, Error& error) {
 }
 bool Session::pair(Error& error) {
     const auto url = server_.url + "/api/pair/status";
-    auto headers = authHeaders(server_, state_, url);
+    // Suspended: asked as a console with only the server address and its
+    // pair secret, which the server answers with a re-pair QR code. The key
+    // stays: turning the account on again lets it in as before, and only an
+    // approval of the QR code replaces it.
+    State asking = state_;
+    if (repairing_) asking.accessKeys.erase(server_.url);
+    auto headers = authHeaders(server_, asking, url);
     if (const auto secret = pairSecret(); !secret.empty()) headers.push_back("X-Pair-Secret: " + secret);
     const auto response = get(url, headers, "", cancel_);
     const auto held = state_.accessKeys.find(server_.url);
@@ -1149,7 +1155,12 @@ bool Session::pair(Error& error) {
         if (keyless && server_.username.empty()) logLine("pair: no device approval on this server (404) and no key held");
         pairingPending_ = false; pairingInfo_ = {}; return true;
     }
-    if (suspended(response, error)) return false;
+    if (suspended(response, error)) {
+        if (repairing_) return false;
+        repairing_ = true;
+        error = {};
+        return pair(error);
+    }
     if (!response.error.empty() || response.status != 200) { error.message = response.error.empty() ? tr("Could not check the device approval status.") : response.error; return false; }
     auto root = parseJson(response.body, error); if (error) return false;
     const auto status = stringField(root.get(), "status");
@@ -1163,7 +1174,7 @@ bool Session::pair(Error& error) {
     // Taken back (the account off, its password changed): the kept key is
     // no good, and approval starts again with a new pair secret, so the key
     // the server issues next goes only to this console.
-    if (status == "pending" && kept != state_.accessKeys.end() && !kept->second.empty() && server_.enrollToken.empty()) {
+    if (!repairing_ && status == "pending" && kept != state_.accessKeys.end() && !kept->second.empty() && server_.enrollToken.empty()) {
         forgetAccessKey();
         return pair(error);
     }
@@ -1175,7 +1186,7 @@ bool Session::pair(Error& error) {
             return false;
         }
         pairingPending_ = true; pairingInfo_ = parsePairingInfo(response.body, server_).value;
-        pairingInfo_.refusal = enrollRefusal_;
+        pairingInfo_.refusal = repairing_ ? "suspended" : enrollRefusal_;
         error.message = tr("Connects once you approve this device on the server website."); return false;
     }
     if (status != "approved") { error.message = tr("Check the device approval response."); return false; }
@@ -1194,6 +1205,7 @@ bool Session::pair(Error& error) {
         filed.unlock();
         if (written) forgetPasswordOnceKeyed();
     }
+    repairing_ = false;
     pairingPending_ = false; pairingInfo_ = {}; return true;
 }
 // Approved (a key held) on a server that takes the password for approval
@@ -1422,8 +1434,9 @@ bool Session::enroll(Error& error) {
         return true;
     };
     if (!sent.error.empty()) { error.message = sent.error; return false; }
-    // Suspended: the token stays for when the account is back.
-    if (suspended(sent, error)) return false;
+    // Suspended: the token stays for when the account is back, and pairing
+    // asks for a QR code meanwhile.
+    if (Error unused; suspended(sent, unused)) return true;
     // A server that does not know enroll (before it, or with pairing off):
     // the token is not for it, and the console connects as before.
     if (sent.status == 404 || sent.status == 405) return true;

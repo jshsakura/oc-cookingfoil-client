@@ -277,6 +277,8 @@ private:
     // The server holds another secret for this console's request (409): an
     // admin must clear that request before a QR code means anything.
     bool pairMismatch_ = false;
+    // Suspended here: pairing asks without the key for a re-pair QR code.
+    bool repairing_ = false;
     bool keyUnsaved_ = false;
     bool enrollUnsaved_ = false; // the key came from the enroll token, kept until written
     const std::atomic<bool>* cancel_ = nullptr;

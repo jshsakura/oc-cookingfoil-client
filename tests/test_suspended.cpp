@@ -4,6 +4,7 @@
 #include "core/Json.hpp"
 #include "core/State.hpp"
 #include "net/Api.hpp"
+#include "net/ClientUpdateApi.hpp"
 #include "net/Socket.hpp"
 #include "MockServer.hpp"
 #include <chrono>
@@ -13,8 +14,10 @@
 // A console whose account is turned off or deleted is suspended: the server
 // answers 403 with X-CookingFoil-Session: suspended (the key and the session
 // token) or X-CookingFoil-Token: suspended (a download), and keeps its key.
-// The console keeps its access key and its enroll token, asks for no new
-// approval, says why, and comes back with the same key when the account does.
+// The console keeps its access key and its enroll token, shows a re-pair QR
+// code (asked with only the server address and its pair secret) so another
+// account can take it, comes back with the same key when the account does,
+// and still gets app updates.
 namespace {
 bool has(const std::string &request, const std::string &text) { return request.find(text) != std::string::npos; }
 int count(const std::vector<std::string> &requests, const std::string &text) {
@@ -29,7 +32,17 @@ int runSuspendedTests() {
   Mock mock;
   std::string reason; // empty: the account is on
   bool sessions = false; // the server offers session tokens
+  std::string repairKey; // what approving the re-pair QR code hands over
+  const std::string sha(64, 'c');
   mock.answer = [&](const std::string &request) -> Reply {
+    const bool keyed = has(request, "X-Access-Key:");
+    // Open to anyone with the address, refused with a suspended key.
+    if (request.rfind("GET /api/client/latest", 0) == 0 && !keyed && !has(request, "Authorization:"))
+      return {200, "", R"({"version":"9.9.9","size":25,"sha256":")" + sha + R"(","url":"/api/client/cookingfoil.nro"})"};
+    // Without the key: the re-pair QR code, or the new key once approved.
+    if (!reason.empty() && request.rfind("GET /api/pair/status", 0) == 0 && !keyed && has(request, "X-Pair-Secret:"))
+      return {200, "", repairKey.empty() ? R"({"status":"pending","repair":true,"pairUrl":"https://example.com/p/1","pairCode":"ABCD1234"})"
+                                         : R"({"status":"approved","accessKey":")" + repairKey + R"("})"};
     if (!reason.empty() && request.rfind("GET /api/library/info", 0) != 0)
       return {403, "X-CookingFoil-Session: suspended\r\n", R"({"error":"suspended","reason":")" + reason + R"("})"};
     if (request.rfind("GET /api/library/info", 0) == 0)
@@ -67,28 +80,45 @@ int runSuspendedTests() {
   net::Session::forgetEnrollAttempts();
   Error error;
   {
-    // Turned off: the reason on the screen, the key and the enroll token
-    // kept, no approval asked for.
+    // Turned off: a re-pair QR code, asked without the key; the key and
+    // the enroll token kept.
     reason = "account-off";
     net::Session session(server(), loadState(db).value, db);
     session.setConfigPath(configPath);
     CHECK(!session.refresh(error));
-    CHECK(error.message == tr("This console's account is turned off. Contact the server's admin."));
-    CHECK(!session.pairingPending());
+    CHECK(session.pairingPending());
+    CHECK(session.pairingInfo().refusal == "suspended");
+    CHECK(session.pairingInfo().code == "ABCD1234");
     CHECK(loadState(db).value.accessKeys.at(url) == "held-key");
     CHECK(readFile(configPath).find(enrollToken) != std::string::npos);
-    CHECK(net::consoleSuspension(url) == "account-off");
-    CHECK(count(mock.take(), "POST /api/pair/request") == 0);
+    const auto sent = mock.take();
+    int keyless = 0;
+    for (const auto &r : sent)
+      keyless += r.rfind("GET /api/pair/status", 0) == 0 && !has(r, "X-Access-Key:") && has(r, "X-Pair-Secret:");
+    CHECK(keyless >= 1);
+    // The update is still there, asked without the key.
+    net::ClientUpdateReply reply;
+    const auto release = net::latestClient(server(), loadState(db).value, reply, nullptr);
+    CHECK(release && release->version == "9.9.9");
+    mock.take();
   }
   {
-    // Deleted: its own reason.
+    // Deleted, and another account approves the QR code: its key replaces
+    // the old one.
     reason = "account-gone";
+    repairKey = "new-key";
     net::Session session(server(), loadState(db).value, db);
     session.setConfigPath(configPath);
-    CHECK(!session.refresh(error));
-    CHECK(error.message == tr("This console's account was deleted. Contact the server's admin."));
-    CHECK(loadState(db).value.accessKeys.at(url) == "held-key");
+    session.refresh(error);
+    CHECK(!session.pairingPending());
+    CHECK(loadState(db).value.accessKeys.at(url) == "new-key");
+    repairKey.clear();
     mock.take();
+    // Put back for what follows.
+    auto state = loadState(db).value;
+    state.accessKeys[url] = "held-key";
+    Error saved;
+    CHECK(saveState(db, state, saved));
   }
   {
     // A session token refused while suspended is asked again once the

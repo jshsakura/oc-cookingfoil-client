@@ -25,7 +25,8 @@ std::string nroPath(const std::string &self, const std::string &sd) {
 } // namespace
 void Application::checkAppUpdate() {
   if (updateWorker_.joinable()) return;
-  if (!session_ || !connected_) {
+  // Not connected is fine: the update needs only the server's address.
+  if (!session_) {
     appUpdate_ = AppUpdate::Failed;
     appUpdateError_ = tr("Connect to a server to check.");
     return;
