@@ -312,6 +312,7 @@ public:
   }
   bool usbDriveOpen() const { return usbOpen_; }
   bool usbAppletShown() const { return usbAppletAsk_; }
+  bool pressShown() const { return pressing_; }
   SDL_FRect sdChip() const { return sdChip_; } // tests: where the footer's SD card space was drawn
   bool footerPending() const { return menuPending(); } // tests: the footer still shows placeholders
   void previewLanguagePopup(int row) {
@@ -1548,8 +1549,9 @@ private:
     hit(x, y, w, h, std::move(run), {}, -radius);
   }
   // Under a popup nothing answers: no taps, and no list glides behind it.
+  // A finger outside the popup presses nothing, so nothing darkens.
   void blockTouch() {
-    hit(0, 0, 1280, 720, [] {});
+    hits_.push_back({{0, 0, 1280, 720}, [] {}, {}, 0, false});
     glideAreas_.clear();
   }
   void hintAction(const std::string &key);
@@ -1560,6 +1562,7 @@ private:
     std::function<void()> run;
     SDL_FRect look{}; // shown pressed as this when set; else a card around area
     int radius = 0;   // below 0: a row (rowHit), pressed as area itself with these corners
+    bool pressable = true; // false: takes the touch but is never shown pressed
   };
   std::vector<Hit> hits_;
   // The header's buttons (tabs, filter, search, Y buttons), recorded each

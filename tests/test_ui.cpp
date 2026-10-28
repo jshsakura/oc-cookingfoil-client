@@ -219,6 +219,9 @@ int runUiTests(SDL_Renderer *renderer) {
     app.render();
     app.touch(chip.x + chip.w / 2, chip.y + chip.h / 2); // the notice takes the touch
     CHECK(app.usbAppletShown());
+    // A finger outside the popup darkens nothing, the popup included.
+    app.fingerDown(20, 20);
+    CHECK(!app.pressShown());
     app.action(foil::ui::Action::Back);
     CHECK(!app.usbAppletShown());
     // Without touch (docked): its row in 설정 opens it too.
