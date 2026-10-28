@@ -395,6 +395,9 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
           // The download token (or the session token) ran out: a fresh one,
           // and the same file goes on from the same byte, not counted as a
           // failed try.
+          // Suspended (the account off or deleted): no token or try helps.
+          if (const auto why = net::consoleSuspension(server.url); !why.empty())
+            throw std::runtime_error(net::suspensionMessage(why));
           const bool refused = session ? net::sessionRefusals(server.url) != refusals : net::downloadTokenRejected(server.url);
           if (refused && !cancel_ && renewed++ < 2 && net::renewDownloadToken(server.url, sent)) {
             --attempt;

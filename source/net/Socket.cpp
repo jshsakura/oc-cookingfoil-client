@@ -37,6 +37,7 @@ struct Link {
   std::chrono::steady_clock::time_point restartUntil;
   bool restarting = false;
   uint64_t sessionRefusals = 0;
+  std::string suspended; // consoleSuspension; empty while not
   int activeDownloads = 0, recommended = 0;
   // One ask for a token at a time, per server: the others wait for its
   // token, and a slow server holds up no other.
@@ -107,7 +108,11 @@ void heardHeader(const std::string &url, const char *data, size_t bytes) {
     return;
   }
   if (line.empty()) { // the block ended: a success with no restart header means it is back
-    if (replyOk) changeLink(url, [](Link &link) { link.restarting = false; });
+    if (replyOk)
+      changeLink(url, [](Link &link) {
+        link.restarting = false;
+        link.suspended.clear();
+      });
     replyOk = false;
     return;
   }
@@ -159,6 +164,12 @@ void heardHeader(const std::string &url, const char *data, size_t bytes) {
   // connections are shared out among them.
   if (key == "x-cookingfoil-active-downloads") {
     heardActiveDownloads(url, int(std::strtol(trimmed().c_str(), nullptr, 10)));
+    return;
+  }
+  // Suspended: the key and the token are good, the account is not; neither
+  // is asked for again because of it.
+  if ((key == "x-cookingfoil-session" || key == "x-cookingfoil-token") && trimmed() == "suspended") {
+    heardSuspension(url, "");
     return;
   }
   if (key == "x-cookingfoil-session") { // the session token refused: expired | revoked | invalid
@@ -427,7 +438,8 @@ void askSession(const std::string &origin, std::unique_lock<std::mutex> &held) {
   // (the console taken back), and the request it was for says so. 429 is
   // the lock, not asked again. Anything else (a 5xx, no answer) is the
   // server for now: asked again after the gap.
-  if (grant.status != 401 && grant.status != 403 && grant.status != 429) {
+  // Suspended: the sign-in is good, the account is off for now.
+  if ((grant.status != 401 && grant.status != 403 && grant.status != 429) || grant.suspended) {
     now.retryAt = std::chrono::steady_clock::now() + sessionRetryGap;
     logLine("session token for " + origin + " not given: status " + std::to_string(grant.status) + "; asking again later");
     return;
@@ -497,6 +509,17 @@ bool isSessionToken(const std::string &token) {
 }
 uint64_t sessionRefusals(const std::string &url) {
   return peekLink(url, [](const Link &link) { return link.sessionRefusals; });
+}
+std::string consoleSuspension(const std::string &url) {
+  return peekLink(url, [](const Link &link) { return link.suspended; });
+}
+void heardSuspension(const std::string &url, const std::string &reason) {
+  const bool fresh = changeLink(url, [&](Link &link) {
+    const bool was = !link.suspended.empty();
+    if (!reason.empty() || !was) link.suspended = reason.empty() ? "suspended" : reason;
+    return !was;
+  });
+  if (fresh) logLine("this console is suspended on the server" + (reason.empty() ? std::string() : " (" + reason + ")"));
 }
 bool takeConsoleRevoked(const std::string &serverUrl) {
   std::lock_guard<std::mutex> held(linkLock);

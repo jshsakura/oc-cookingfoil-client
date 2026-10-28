@@ -36,6 +36,8 @@ std::vector<std::string> downloadHeaders(const Server& server, const State& stat
 // GET /api/session with the sign-in, and handing that ask to the requests
 // to this server (net/Socket's session token).
 SessionGrant askSessionToken(const Server& server, const State& state);
+// What the screen says for a suspended console (consoleSuspension's reason).
+std::string suspensionMessage(const std::string& reason);
 void offerSessionFor(const Server& server, const State& state);
 bool internetConnected();
 // The console's link: -1 offline, else signal bars 0-3 (wired reads as 3).

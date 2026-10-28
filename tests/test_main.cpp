@@ -14,6 +14,7 @@ int runRebindTests();
 int runSessionTokenTests();
 int runVaultTests();
 int runEnrollTests();
+int runSuspendedTests();
 int runSessionTests();
 int runCatalogTests();
 int runUpdatesTests();
@@ -85,7 +86,7 @@ int main() {
   // A console that reads its ID, as on the Switch (test_state covers one
   // that cannot).
   foil::setDeviceIdentity(foil::deriveIdentity(0x756e697474657374ull));
-  const int failures = runDownloadCleanupTests() + runMacJunkTests() + runOrderedTests() + runConfigTests() + runNetworkTests() + runNtpTests() + runStateTests() + runRebindTests() + runSessionTokenTests() + runVaultTests() + runEnrollTests() +
+  const int failures = runDownloadCleanupTests() + runMacJunkTests() + runOrderedTests() + runConfigTests() + runNetworkTests() + runNtpTests() + runStateTests() + runRebindTests() + runSessionTokenTests() + runVaultTests() + runEnrollTests() + runSuspendedTests() +
                        runSessionTests() + runPairingTests() + runCatalogTests() + runUpdatesTests() + runInstalledTests() +
                        runSelectionTests() + runInstallerTests() + runPatchTests() + runI18nTests() +
                        runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runLabelsTests() + runHistoryTests() + runStoreTests() + runZstdResumeTests() + runNczPointTests() + runClientUpdateTests() + runHomebrewTests() + runImageSizeTests() + runHomebrewCardTests() + runNacpTests() + runDropboxRowsTests() + runAchievementsTests() + runResumeTests() + runForwarderTests() + runDirectTests() + runCardPatchTests() + runTunerTests() + runSegmentedTests() + runAdminEditTests() + runVotesTests() + runSendsTests() + runMtpTests() + runClientStringsTests() + runOriginTests() + runOriginRecordTests() + runMergeCatalogTests() +

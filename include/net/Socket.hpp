@@ -93,6 +93,7 @@ struct SessionGrant {
   long status = 0;
   std::string token;
   int64_t secondsLeft = 0; // until the server's expiresAt, by the server's clock
+  bool suspended = false;  // X-CookingFoil-Session: suspended; asked again later
 };
 // The server offers it: `ask` gets one. `credentials` tells the sign-in it
 // was asked with; while it is the same, a refusal (401, 403: the server
@@ -131,6 +132,13 @@ uint64_t sessionRefusals(const std::string &url);
 // for a session token was refused (401). True once per take-back of the
 // server `serverUrl`, for the screen to refresh it and ask for approval again.
 bool takeConsoleRevoked(const std::string &serverUrl);
+// The server suspended this console (its account turned off or deleted; it
+// keeps the key): "account-off", "account-gone", or "suspended" when only a
+// header said so (X-CookingFoil-Session or X-CookingFoil-Token). Empty again
+// once a reply from that server goes through.
+std::string consoleSuspension(const std::string &url);
+// The reason a suspended reply's body gave.
+void heardSuspension(const std::string &url, const std::string &reason);
 // Tests: every session forgotten.
 void forgetSessions();
 // Tests: the wait before asking again after a 5xx or no answer.

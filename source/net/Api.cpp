@@ -172,6 +172,7 @@ SessionGrant askSessionToken(const Server& server, const State& state) {
     const auto reply = get(url, serverHeaders(server, state, url, false), "", scopedCancel());
     SessionGrant grant;
     grant.status = reply.status;
+    grant.suspended = reply.session == "suspended";
     if (reply.status != 200) return grant;
     Error unread;
     const auto root = parseJson(reply.body, unread);
@@ -1116,6 +1117,27 @@ std::string Session::pairSecret() {
     state_ = std::move(updated);
     return secret;
 }
+std::string suspensionMessage(const std::string& reason) {
+    if (reason == "account-gone") return tr("This console's account was deleted. Contact the server's admin.");
+    if (reason == "account-off") return tr("This console's account is turned off. Contact the server's admin.");
+    return tr("This console is suspended on this server. Contact the server's admin.");
+}
+namespace {
+// A 403 for a suspended console (its account off or deleted): the reason in
+// `error`, every key and token kept, and no approval asked for; the next
+// refresh tries again with the same key.
+bool suspended(const Response& reply, Error& error) {
+    if (reply.status != 403) return false;
+    Error unread;
+    const auto body = reply.body.size() < 4096 ? parseJson(reply.body, unread) : Json(nullptr);
+    if (reply.session != "suspended" && !(body && stringField(body.get(), "error") == "suspended")) return false;
+    auto reason = body ? stringField(body.get(), "reason") : std::string();
+    if (reason != "account-off" && reason != "account-gone") reason = "suspended";
+    heardSuspension(reply.url, reason);
+    error.message = suspensionMessage(reason);
+    return true;
+}
+}
 bool Session::pair(Error& error) {
     const auto url = server_.url + "/api/pair/status";
     auto headers = authHeaders(server_, state_, url);
@@ -1127,6 +1149,7 @@ bool Session::pair(Error& error) {
         if (keyless && server_.username.empty()) logLine("pair: no device approval on this server (404) and no key held");
         pairingPending_ = false; pairingInfo_ = {}; return true;
     }
+    if (suspended(response, error)) return false;
     if (!response.error.empty() || response.status != 200) { error.message = response.error.empty() ? tr("Could not check the device approval status.") : response.error; return false; }
     auto root = parseJson(response.body, error); if (error) return false;
     const auto status = stringField(root.get(), "status");
@@ -1399,6 +1422,8 @@ bool Session::enroll(Error& error) {
         return true;
     };
     if (!sent.error.empty()) { error.message = sent.error; return false; }
+    // Suspended: the token stays for when the account is back.
+    if (suspended(sent, error)) return false;
     // A server that does not know enroll (before it, or with pairing off):
     // the token is not for it, and the console connects as before.
     if (sent.status == 404 || sent.status == 405) return true;
@@ -1583,6 +1608,7 @@ bool Session::refresh(Error& error) {
     if (!response.error.empty()) { error.message = response.error; return false; }
     unchanged_ = response.status == 304;
     if (unchanged_) return true;
+    if (suspended(response, error)) return false;
     if (response.status != 200) {
         logRefusal(signIn, response);
         // The host too: a photo of the screen says where the console went.
