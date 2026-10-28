@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <chrono>
 // The TCP receive window. One connection carries at most its window per
 // round trip, so it caps a download over a distant edge. The system's stack
 // is BSD's: a socket that sets SO_RCVBUF itself stays at that size for good,
@@ -94,8 +95,9 @@ struct SessionGrant {
   int64_t secondsLeft = 0; // until the server's expiresAt, by the server's clock
 };
 // The server offers it: `ask` gets one. `credentials` tells the sign-in it
-// was asked with; while it is the same, a refusal stands for the run (403:
-// the server keeps Basic), and a token held stays.
+// was asked with; while it is the same, a refusal (401, 403: the server
+// keeps Basic, 429) stands for the run, and a token held stays. Any other
+// answer is asked again after RenewGapSeconds; new credentials ask at once.
 void offerSession(const std::string &origin, const std::string &credentials, std::function<SessionGrant()> ask);
 void withdrawSession(const std::string &origin);
 // The token for a request to `origin`, asked for first when there is none,
@@ -131,4 +133,6 @@ uint64_t sessionRefusals(const std::string &url);
 bool takeConsoleRevoked(const std::string &serverUrl);
 // Tests: every session forgotten.
 void forgetSessions();
+// Tests: the wait before asking again after a 5xx or no answer.
+void setSessionRetryGap(std::chrono::milliseconds gap);
 } // namespace foil::net

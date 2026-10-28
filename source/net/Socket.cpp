@@ -368,12 +368,18 @@ struct SessionEntry {
   std::chrono::steady_clock::time_point until;
   uint64_t refusalsSeen = 0; // its server's session refusals when it was asked
   bool refused = false; // the server gave none to this sign-in
+  // Not asked again before this: its last answer was neither a token nor a
+  // refusal (a 503, no answer at all).
+  std::chrono::steady_clock::time_point retryAt;
   // Held while its server is asked: the other requests for it wait, those
   // for other servers do not.
   std::shared_ptr<std::mutex> asking = std::make_shared<std::mutex>();
 };
 std::mutex sessionLock; // the list; never held while a server is asked
 std::map<std::string, SessionEntry> sessions; // by origin
+std::chrono::milliseconds sessionRetryGap{std::chrono::seconds(RenewGapSeconds)};
+// No token to be had now: refused for this sign-in, or waiting to ask again.
+bool withheld(const SessionEntry &entry) { return entry.refused || std::chrono::steady_clock::now() < entry.retryAt; }
 // Asks `origin`'s server for a token in place of the one held (`held` locks
 // sessionLock, and is let go while the server answers). Nothing when another
 // request got a new one, or a refusal, meanwhile.
@@ -394,7 +400,7 @@ void askSession(const std::string &origin, std::unique_lock<std::mutex> &held) {
   std::lock_guard<std::mutex> one(*gate, std::adopt_lock);
   held.lock();
   found = sessions.find(origin);
-  if (found == sessions.end() || found->second.asking != gate || found->second.refused || found->second.token != seen)
+  if (found == sessions.end() || found->second.asking != gate || withheld(found->second) || found->second.token != seen)
     return;
   auto &entry = found->second;
   entry.refusalsSeen = sessionRefusals(origin);
@@ -419,7 +425,13 @@ void askSession(const std::string &origin, std::unique_lock<std::mutex> &held) {
   }
   // 403: this server keeps the sign-in; 401: the sign-in itself is wrong
   // (the console taken back), and the request it was for says so. 429 is
-  // the lock, not asked again.
+  // the lock, not asked again. Anything else (a 5xx, no answer) is the
+  // server for now: asked again after the gap.
+  if (grant.status != 401 && grant.status != 403 && grant.status != 429) {
+    now.retryAt = std::chrono::steady_clock::now() + sessionRetryGap;
+    logLine("session token for " + origin + " not given: status " + std::to_string(grant.status) + "; asking again later");
+    return;
+  }
   if (const auto owner = serverOf(origin); grant.status == 401 && !owner.empty()) {
     std::lock_guard<std::mutex> held(linkLock);
     revoked.insert(owner);
@@ -445,6 +457,7 @@ void offerSession(const std::string &origin, const std::string &credentials, std
     if (!entry.token.empty()) entry.spent.insert(entry.token);
     entry.token.clear();
     entry.refused = false;
+    entry.retryAt = {};
     entry.credentials = credentials;
   }
   entry.ask = std::move(ask);
@@ -456,13 +469,13 @@ void withdrawSession(const std::string &origin) {
 std::string sessionToken(const std::string &origin) {
   std::unique_lock<std::mutex> held(sessionLock);
   auto found = sessions.find(origin);
-  if (found == sessions.end() || found->second.refused) return {};
+  if (found == sessions.end() || withheld(found->second)) return {};
   const auto &entry = found->second;
   const bool ending = std::chrono::steady_clock::now() + std::chrono::seconds(RenewBeforeSeconds) >= entry.until;
   if (!entry.token.empty() && !ending && entry.refusalsSeen == sessionRefusals(origin)) return entry.token;
   askSession(origin, held);
   found = sessions.find(origin);
-  return found == sessions.end() || found->second.refused ? std::string() : found->second.token;
+  return found == sessions.end() || withheld(found->second) ? std::string() : found->second.token;
 }
 bool renewSession(const std::string &sent) {
   std::unique_lock<std::mutex> held(sessionLock);
@@ -470,7 +483,7 @@ bool renewSession(const std::string &sent) {
   for (const auto &[at, entry] : sessions)
     if (entry.token == sent || entry.spent.count(sent)) origin = at;
   auto found = sessions.find(origin);
-  if (found == sessions.end() || found->second.refused) return false;
+  if (found == sessions.end() || withheld(found->second)) return false;
   // Another request already got a newer one.
   if (!found->second.token.empty() && found->second.token != sent) return true;
   askSession(origin, held);
@@ -492,5 +505,9 @@ bool takeConsoleRevoked(const std::string &serverUrl) {
 void forgetSessions() {
   std::lock_guard<std::mutex> held(sessionLock);
   sessions.clear();
+}
+void setSessionRetryGap(std::chrono::milliseconds gap) {
+  std::lock_guard<std::mutex> held(sessionLock);
+  sessionRetryGap = gap;
 }
 } // namespace foil::net

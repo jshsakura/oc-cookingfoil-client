@@ -141,6 +141,41 @@ int runSessionTokenTests() {
     foil::net::withdrawSession(slow);
     foil::net::withdrawSession(quick);
   }
+  {
+    // A 503 (the server for now) is not a refusal: nothing is asked again
+    // until the gap ends, then the token comes. A 403 stands for the run;
+    // new credentials ask at once.
+    using namespace std::chrono_literals;
+    const std::string busy = "https://busy.example.com";
+    int asks = 0;
+    int status = 503;
+    foil::net::setSessionRetryGap(200ms);
+    foil::net::offerSession(busy, "a", [&] {
+      ++asks;
+      return status == 200 ? foil::net::SessionGrant{200, "busy-token", 3600} : foil::net::SessionGrant{status, "", 0};
+    });
+    CHECK(foil::net::sessionToken(busy).empty() && asks == 1);
+    status = 200;
+    CHECK(foil::net::sessionToken(busy).empty() && asks == 1); // within the gap
+    std::this_thread::sleep_for(250ms);
+    CHECK(foil::net::sessionToken(busy) == "busy-token" && asks == 2);
+    status = 403;
+    foil::net::offerSession(busy, "b", [&] {
+      ++asks;
+      return status == 200 ? foil::net::SessionGrant{200, "busy-token-2", 3600} : foil::net::SessionGrant{status, "", 0};
+    });
+    CHECK(foil::net::sessionToken(busy).empty() && asks == 3);
+    std::this_thread::sleep_for(250ms);
+    status = 200;
+    CHECK(foil::net::sessionToken(busy).empty() && asks == 3); // refused: not asked again
+    foil::net::offerSession(busy, "c", [&] {
+      ++asks;
+      return foil::net::SessionGrant{200, "busy-token-3", 3600};
+    });
+    CHECK(foil::net::sessionToken(busy) == "busy-token-3" && asks == 4);
+    foil::net::withdrawSession(busy);
+    foil::net::setSessionRetryGap(std::chrono::seconds(foil::net::RenewGapSeconds));
+  }
   Mock mock;
   foil::Server server;
   server.url = "http://127.0.0.1:" + std::to_string(mock.port);
