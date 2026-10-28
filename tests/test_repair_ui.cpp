@@ -76,7 +76,7 @@ int runRepairUiTests(SDL_Renderer *renderer) {
     until([&] { return app.pairingPending(); }, 3000);
     CHECK(app.pairingPending());
     phase = 2;
-    // The first approval poll comes 5 seconds after the QR code shows.
+    // The approval shows within one poll (3 s) of the server giving it.
     until([&] { return !app.pairingPending(); }, 9000);
     CHECK(!app.pairingPending());
     CHECK(app.groupCount() == 1);

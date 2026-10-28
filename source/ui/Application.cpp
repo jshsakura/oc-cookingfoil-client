@@ -1280,8 +1280,8 @@ void Application::poll() {
       scoreLabels_ = session_->scoreLabels();
       setGroups(std::exchange(earlyGroups_, {}));
     }
-    // Waiting for approval: asked less and less often, and not after a
-    // while (pairPollGap, PairWaitMs); the screen then has 다시 시도.
+    // Waiting for approval: asked every few seconds, and not after a while
+    // (pairPollGap, PairWaitMs); the screen then has 다시 시도.
     if (!network_.joinable() && pairingPending_ && !pairingStopped() && SDL_GetTicks() - pairPollAt_ >= pairPollGap()) {
       pairPollAt_ = 0;
       ++pairPolls_;

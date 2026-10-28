@@ -1868,10 +1868,10 @@ private:
   bool updateNewer_ = false; // a newer build was found; kept while checking again
   // Every automatic ask is bounded; -, Y or A starts them again.
   uint32_t pairSince_ = 0;    // when approval became pending; polling stops after a while
-  int pairPolls_ = 0;         // approval checks made since: each waits longer
-  // Approval is checked after 5 seconds, then twice as long each time up to
-  // a minute (pairPollGap), and not at all after PairWaitMs until asked again.
-  uint32_t pairPollGap() const { return std::min<uint32_t>(5000u << std::min(pairPolls_, 4), 60000); }
+  int pairPolls_ = 0;         // approval checks made since
+  // Every 3 s: an approval done on the phone shows within moments, however
+  // long it took to sign in there; PairWaitMs still ends the asking.
+  uint32_t pairPollGap() const { return 3000; }
   // Checks approval now and starts the wait over.
   void retryPairing();
   int patchRetries_ = 0, retroRetries_ = 0;
