@@ -112,18 +112,21 @@ struct SdCard final : mtp::Storage {
     return R_SUCCEEDED(fsFsGetFreeSpace(fs, "/", &n)) ? uint64_t(n) : 0;
   }
   bool createFile(const std::string &path, uint64_t size) override {
-    const s64 bytes = size == UINT64_MAX ? 0 : s64(size);
-    if (R_SUCCEEDED(fsFsCreateFile(fs, path.c_str(), bytes, 0))) return true;
-    // A FAT32 card holds 4 GB and up only as the console's split file.
-    return size != UINT64_MAX && size >= (4ull << 30) &&
-           R_SUCCEEDED(fsFsCreateFile(fs, path.c_str(), bytes, FsCreateOption_BigFile));
+    // A FAT32 card holds 4 GB and up only as the console's split file; one
+    // of a size the PC did not say is made that way, so it can grow past it.
+    if (size == UINT64_MAX) return R_SUCCEEDED(fsFsCreateFile(fs, path.c_str(), 0, FsCreateOption_BigFile));
+    if (R_SUCCEEDED(fsFsCreateFile(fs, path.c_str(), s64(size), 0))) return true;
+    return size >= (4ull << 30) && R_SUCCEEDED(fsFsCreateFile(fs, path.c_str(), s64(size), FsCreateOption_BigFile));
   }
   bool createFolder(const std::string &path) override { return R_SUCCEEDED(fsFsCreateDirectory(fs, path.c_str())); }
   bool remove(const std::string &path, bool folder) override {
     return R_SUCCEEDED(folder ? fsFsDeleteDirectoryRecursively(fs, path.c_str()) : fsFsDeleteFile(fs, path.c_str()));
   }
   bool rename(const std::string &from, const std::string &to, bool folder) override {
-    return R_SUCCEEDED(folder ? fsFsRenameDirectory(fs, from.c_str(), to.c_str()) : fsFsRenameFile(fs, from.c_str(), to.c_str()));
+    if (folder) return R_SUCCEEDED(fsFsRenameDirectory(fs, from.c_str(), to.c_str()));
+    // A split file is a folder underneath: renamed as one when the other fails.
+    return R_SUCCEEDED(fsFsRenameFile(fs, from.c_str(), to.c_str())) ||
+           R_SUCCEEDED(fsFsRenameDirectory(fs, from.c_str(), to.c_str()));
   }
   std::unique_ptr<mtp::File> open(const std::string &path, bool write) override {
     auto out = std::make_unique<SdFile>();
@@ -157,6 +160,10 @@ struct Shown final : mtp::Listener {
   void touched(const std::string &folder) override {
     std::lock_guard lock(guard);
     if (usb::touched.size() < TouchedMax) usb::touched.insert(folder);
+  }
+  void dropped() override {
+    std::lock_guard lock(guard);
+    ++shown.dropped;
   }
 };
 // True when this boot runs from an emuMMC (Atmosphère's ExosphereEmummcType).
