@@ -22,8 +22,8 @@
 // A client downloaded from the website carries a one-time enroll token in
 // config.json: spent once (POST /api/pair/enroll) for this console's access
 // key before anything else, then taken out of the file. Refused, it says
-// why and stays; a console with a key never spends it; a server that does
-// not know enroll ignores it.
+// why and stays; a console with a key spends it too (to be the account's);
+// a server that does not know enroll ignores it.
 namespace {
 bool has(const std::string &request, const std::string &text) { return request.find(text) != std::string::npos; }
 int count(const std::vector<std::string> &requests, const std::string &text) {
@@ -37,15 +37,18 @@ int runEnrollTests() {
   using namespace foil;
   Mock mock;
   int enrollStatus = 200, sectionsStatus = 200;
-  std::string pairStatus = "approved", enrollReason = "invalid", pairLimit;
+  std::string pairStatus = "approved", enrollReason = "invalid", pairLimit, enrollExtra;
+  bool approveEnrolled = false; // the server approves the key it gave by enroll
   mock.answer = [&](const std::string &request) -> Reply {
     if (request.rfind("POST /api/pair/enroll", 0) == 0) {
       if (enrollStatus == 401 || enrollStatus == 403)
         return {enrollStatus, "X-CookingFoil-Enroll: " + enrollReason + "\r\n", R"({"error":"x"})"};
       if (enrollStatus != 200) return {enrollStatus, "", R"({"error":"x"})"};
-      return {200, "", R"({"status":"approved","accessKey":"enrolled-key","libraryUrl":null})"};
+      return {200, "", R"({"status":"approved","accessKey":"enrolled-key","libraryUrl":null)" + enrollExtra + "}"};
     }
     if (request.rfind("GET /api/library/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
+    if (request.rfind("GET /api/pair/status", 0) == 0 && approveEnrolled && has(request, "X-Access-Key: enrolled-key"))
+      return {200, "", R"({"status":"approved"})"};
     if (request.rfind("GET /api/pair/status", 0) == 0)
       return {200, "", R"({"status":")" + pairStatus + R"(")" + (pairLimit.empty() ? "" : R"(,"limit":")" + pairLimit + "\"") + "}"};
     if (request.rfind("GET /api/library/sections", 0) == 0)
@@ -224,6 +227,7 @@ int runEnrollTests() {
     writeConfig();
     net::Session::forgetEnrollAttempts();
     pairStatus = "pending";
+    approveEnrolled = true;
     net::Session session(server(), loadState(db).value, db);
     session.setConfigPath(configPath);
     CHECK(session.refresh(error));
@@ -233,6 +237,72 @@ int runEnrollTests() {
     CHECK(loadState(db).value.accessKeys.at(url) == "enrolled-key");
     CHECK(server().enrollToken.empty());
     pairStatus = "approved";
+    approveEnrolled = false;
+  }
+  {
+    // A console the server approved on its own (auto, an admin, Telegram)
+    // holds a key that is no one's: a download's token put in config.json
+    // is spent all the same, so the console becomes that account's (the
+    // website lists it and can send to it). Once, then out of the file.
+    auto state = loadState(db).value;
+    state.accessKeys[url] = "auto-key";
+    CHECK(saveState(db, state, error));
+    writeConfig();
+    net::Session::forgetEnrollAttempts();
+    const auto logged = (root / "bound.txt").string();
+    openLog(logged);
+    enrollExtra = R"(,"bound":true,"owner":{"kind":"user","displayName":"Someone"})";
+    net::Session session(server(), loadState(db).value, db);
+    session.setConfigPath(configPath);
+    CHECK(session.refresh(error));
+    const auto sent = mock.take();
+    CHECK(count(sent, "POST /api/pair/enroll") == 1 && !sent.empty() && has(sent.front(), "X-Access-Key: auto-key"));
+    CHECK(loadState(db).value.accessKeys.at(url) == "enrolled-key" && server().enrollToken.empty());
+    CHECK(session.enrollRefusal().empty());
+    CHECK(session.refresh(error) && count(mock.take(), "/api/pair/enroll") == 0);
+    flushLog();
+    CHECK(readFile(logged).find("enroll: linked to the download's account") != std::string::npos);
+    CHECK(readFile(logged).find("Someone") == std::string::npos);
+    enrollExtra.clear();
+  }
+  {
+    // Another account's console, with a key held: it keeps connecting with
+    // that key, the token leaves config.json, and the refusal is kept for
+    // the screen to say why the website's sends will not come.
+    auto state = loadState(db).value;
+    state.accessKeys[url] = "auto-key";
+    CHECK(saveState(db, state, error));
+    writeConfig();
+    net::Session::forgetEnrollAttempts();
+    enrollStatus = 409;
+    net::Session session(server(), loadState(db).value, db);
+    session.setConfigPath(configPath);
+    CHECK(session.refresh(error) && !session.pairingPending());
+    CHECK(count(mock.take(), "POST /api/pair/enroll") == 1);
+    CHECK(loadState(db).value.accessKeys.at(url) == "auto-key" && server().enrollToken.empty());
+    CHECK(session.enrollRefusal() == "other-account");
+    enrollStatus = 200;
+  }
+  {
+    // The server asks for the key held (403 needs-key): the token is not
+    // spent and stays in config.json; the console goes on with its key,
+    // the refusal kept for the screen, and it is not sent again this run.
+    auto state = loadState(db).value;
+    state.accessKeys[url] = "auto-key";
+    CHECK(saveState(db, state, error));
+    writeConfig();
+    net::Session::forgetEnrollAttempts();
+    enrollStatus = 403;
+    enrollReason = "needs-key";
+    net::Session session(server(), loadState(db).value, db);
+    session.setConfigPath(configPath);
+    CHECK(session.refresh(error) && !session.pairingPending());
+    CHECK(count(mock.take(), "POST /api/pair/enroll") == 1);
+    CHECK(loadState(db).value.accessKeys.at(url) == "auto-key" && server().enrollToken == token);
+    CHECK(session.enrollRefusal() == "needs-key");
+    CHECK(session.refresh(error) && count(mock.take(), "POST /api/pair/enroll") == 0);
+    enrollStatus = 200;
+    enrollReason = "invalid";
   }
   const auto withoutKey = [&] {
     auto state = loadState(db).value;
@@ -309,17 +379,22 @@ int runEnrollTests() {
     // A server error of its own: the QR code shows all the same, never a
     // dead end. The token stays for the next start and is not sent again
     // this run.
-    for (const int status : {500, 400}) {
+    // Busy (429, 5xx) is asked again at the next refreshes, three times in
+    // all; any other error once.
+    for (const int status : {500, 503, 429, 400}) {
       withoutKey();
       enrollStatus = status;
       pairStatus = "pending";
       net::Session session(server(), loadState(db).value, db);
       session.setConfigPath(configPath);
       Error waiting;
-      CHECK(!session.refresh(waiting) && session.pairingPending());
-      CHECK(session.pairingInfo().refusal.empty());
-      CHECK(server().enrollToken == token);
-      CHECK(count(mock.take(), "/api/pair/enroll") == 1);
+      const int tries = status == 400 ? 1 : 3;
+      for (int i = 0; i < tries; ++i) {
+        CHECK(!session.refresh(waiting) && session.pairingPending());
+        CHECK(session.pairingInfo().refusal.empty());
+        CHECK(server().enrollToken == token);
+        CHECK(count(mock.take(), "/api/pair/enroll") == 1);
+      }
       CHECK(!session.refresh(waiting) && session.pairingPending());
       CHECK(count(mock.take(), "/api/pair/enroll") == 0);
     }
@@ -464,7 +539,7 @@ int runEnrollTests() {
     int keysGiven = 0;
     mock.answer = [&](const std::string &request) -> Reply {
       if (request.rfind("POST /api/pair/enroll", 0) == 0)
-        return {200, "", R"({"status":"approved","accessKey":"enrolled-key","libraryUrl":null})"};
+        return {200, "", R"({"status":"approved","accessKey":"enrolled-key","libraryUrl":null)" + enrollExtra + "}"};
       if (request.rfind("GET /api/library/info", 0) == 0) return {200, "", R"({"features":["enroll"]})"};
       if (request.rfind("GET /api/pair/status", 0) == 0)
         return keysGiven++ == 0 ? Reply{200, "", R"({"status":"approved","accessKey":"issued-key"})"}

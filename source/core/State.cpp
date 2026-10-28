@@ -72,6 +72,31 @@ constexpr const char* SealKind = "seal";
 constexpr const char* ReboundKind = "rebound"; // per server, the made key it took
 constexpr const char* DropboxKind = "dropbox"; // the Dropbox link, its tokens as JSON
 constexpr const char* PendingSetting = "pendingInstall";
+constexpr const char* DeclinedSetting = "sendsDeclined";
+// {"<server>":["<id>",...]}; anything else reads as none.
+std::map<std::string, std::set<std::string>> parseDeclined(const std::string& text) {
+    std::map<std::string, std::set<std::string>> out;
+    Error unread;
+    auto root = parseJson(text, unread);
+    if (unread || !json_object_is_type(root.get(), json_type_object)) return out;
+    json_object_object_foreach(root.get(), server, ids) {
+        if (!json_object_is_type(ids, json_type_array)) continue;
+        for (size_t i = 0; i < json_object_array_length(ids); ++i)
+            if (auto* id = json_object_array_get_idx(ids, i); json_object_is_type(id, json_type_string))
+                out[server].insert(json_object_get_string(id));
+    }
+    return out;
+}
+std::string serializeDeclined(const std::map<std::string, std::set<std::string>>& declined) {
+    Json root(json_object_new_object());
+    for (const auto& [server, ids] : declined) {
+        if (ids.empty()) continue;
+        auto* list = json_object_new_array();
+        for (const auto& id : ids) json_object_array_add(list, json_object_new_string(id.c_str()));
+        json_object_object_add(root.get(), server.c_str(), list);
+    }
+    return json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PLAIN);
+}
 DeviceIdentity currentIdentity() {
     std::lock_guard<std::mutex> held(identityLock);
     if (identity.fingerprint.empty() && identitySource) identity = identitySource();
@@ -176,6 +201,7 @@ State fromRows(const DownloadStore::StateRows& rows) {
     state.makeShortcuts = setting("makeShortcuts", "1") == "1";
     state.sounds = setting("sounds", "1") == "1";
     state.queueJson = setting(PendingSetting, "[]");
+    state.sendsDeclined = parseDeclined(setting(DeclinedSetting));
     state.pairMessages = rows.notes;
     for (const auto& [at, value] : rows.credentials) {
         if (at.first == DeviceKind) state.deviceKey = value;
@@ -195,6 +221,7 @@ DownloadStore::StateRows toRows(const State& given, const DeviceIdentity& id) {
                      {"makeShortcuts", flag(state.makeShortcuts)},
                      {"sounds", flag(state.sounds)}};
     if (state.queueJson != "[]") rows.settings[PendingSetting] = state.queueJson;
+    if (const auto declined = serializeDeclined(state.sendsDeclined); declined != "{}") rows.settings[DeclinedSetting] = declined;
     rows.notes = state.pairMessages;
     rows.credentials[{DeviceKind, ""}] = state.deviceKey;
     rows.credentials[{FingerprintKind, ""}] = id.fingerprint;

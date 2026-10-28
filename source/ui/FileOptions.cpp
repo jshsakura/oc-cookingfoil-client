@@ -18,17 +18,32 @@ void Application::askFileOptions() {
   for (const auto *list : {&selection_->parts(), &selection_->baseFiles()})
     for (const auto &f : *list)
       if (std::find(files.begin(), files.end(), f.url) == files.end()) files.push_back(f.url);
-  optionsJob_.run(
+  // One asked at a time: a detail opened while another's are asked asks for
+  // its own once that answer is in (which is not this one's, and dropped).
+  const auto again = [this] {
+    if (std::exchange(optionsAgain_, false)) askFileOptions();
+  };
+  optionsAgain_ = !optionsJob_.run(
       "file options",
-      [this, from = session->server(), state = state_, files, id = group.id]() -> Job::Finish {
+      [this, from = session->server(), state = state_, files, id = group.id, again]() -> Job::Finish {
         auto options = net::fileOptions(from, state, files, &stop_);
-        return [this, id, options = std::move(options)]() mutable {
-          if (detailGroup_ >= groups_.size() || groups_[detailGroup_].id != id) return;
-          fileOptions_ = std::move(options);
-          optionsFor_ = id;
+        return [this, id, server = from.url, options = std::move(options), again]() mutable {
+          // The same game from the same server: another server's copy of it
+          // (the list changed meanwhile) asks its own.
+          bool same = detailGroup_ < groups_.size() && groups_[detailGroup_].id == id;
+          if (same) {
+            const auto &shown = groups_[detailGroup_];
+            const auto *now = sessionFor(shown.base ? shown.base->server : shown.representative.server);
+            same = now && now->server().url == server;
+          }
+          if (same) {
+            fileOptions_ = std::move(options);
+            optionsFor_ = id;
+          }
+          again();
         };
       },
-      [] {});
+      again);
 }
 // The base file's first option, else the first picked file's.
 const net::FileOption *Application::pickedOption() const {

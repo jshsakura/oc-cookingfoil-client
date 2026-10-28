@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 // The TCP receive window. One connection carries at most its window per
 // round trip, so it caps a download over a distant edge. The system's stack
 // is BSD's: a socket that sets SO_RCVBUF itself stays at that size for good,
@@ -102,6 +103,20 @@ void withdrawSession(const std::string &origin);
 // down; empty when the server gives none (the request signs in as before).
 constexpr int64_t RenewBeforeSeconds = 600;
 std::string sessionToken(const std::string &origin);
+// The stop flag of the work this thread does, while the scope lasts: asking
+// for a session token (sessionToken, renewSession), and waiting for another
+// request's ask, end when it is set, as the request itself does.
+class CancelScope {
+public:
+  explicit CancelScope(const std::atomic<bool> *cancel);
+  ~CancelScope();
+  CancelScope(const CancelScope &) = delete;
+  CancelScope &operator=(const CancelScope &) = delete;
+
+private:
+  const std::atomic<bool> *outer_;
+};
+const std::atomic<bool> *scopedCancel();
 // After a 401 with X-CookingFoil-Session for a request sent with `sent`:
 // a new token is asked for once, true when one newer than `sent` is held.
 bool renewSession(const std::string &sent);

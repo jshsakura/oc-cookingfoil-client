@@ -5,6 +5,7 @@
 #include "core/Json.hpp"
 #include "net/Api.hpp"
 #include "core/Log.hpp"
+#include "core/ImageSize.hpp"
 #include <SDL2/SDL_image.h>
 #include <algorithm>
 #include <cmath>
@@ -33,6 +34,7 @@ constexpr size_t MaxQueuedJobs = 64;
 // emptied and filled again all the time, which wears the card more.
 constexpr uint64_t MaxCacheBytes = 128ull << 20, MinCacheBytes = 64ull << 20;
 constexpr int MaxAttempts = 3; // then it stays blank until the list is refreshed
+constexpr size_t MaxFailed = 256;
 constexpr uint32_t RetryAfterMs = 10000;
 // Large art is kept at screen size; a 4K banner would otherwise hold 64MB.
 SDL_Surface *shrink(SDL_Surface *surface) {
@@ -57,6 +59,24 @@ SDL_Surface *shrink(SDL_Surface *surface) {
   SDL_BlitScaled(surface, nullptr, small, nullptr);
   SDL_FreeSurface(surface);
   return small;
+}
+// A picture is unpacked whole before it is shrunk: one larger than a 4K
+// screen (33 MB unpacked) is not unpacked at all, however small its file,
+// and only one past a 1080p screen unpacks at a time across the workers.
+constexpr uint64_t MostPixels = 3840ull * 2160, LargePixels = 1920ull * 1080;
+std::mutex largeDecode;
+// Null when it cannot be read; tooLarge says it was refused for its size.
+SDL_Surface *decodePicture(const std::string &bytes, bool &tooLarge) {
+  tooLarge = false;
+  uint32_t w = 0, h = 0;
+  const bool known = imageSize(bytes, w, h);
+  if (known && uint64_t(w) * h > MostPixels) {
+    tooLarge = true;
+    return nullptr;
+  }
+  std::unique_lock<std::mutex> one(largeDecode, std::defer_lock);
+  if (!known || uint64_t(w) * h > LargePixels) one.lock();
+  return shrink(IMG_Load_RW(SDL_RWFromConstMem(bytes.data(), int(bytes.size())), 1));
 }
 std::string hash(const std::string &text) {
   uint64_t value = 14695981039346656037ULL;
@@ -296,6 +316,7 @@ void Images::worker() {
     // fetched; there is nothing on the server under that name.
     if (bytes.empty() && fixture_.empty() && url.rfind("http", 0) == 0) {
       // WebP when the server has it (a third smaller), JPEG otherwise.
+      const net::CancelScope scope(&stop_); // the session token asked for too
       auto headers = net::authHeaders(owner, state, url);
       headers.push_back("Accept: image/webp,image/*;q=0.8");
       waitOutLimit();
@@ -319,10 +340,11 @@ void Images::worker() {
     // Decoded here, off the drawing thread: unpacking a picture as a row
     // scrolled in held up that frame.
     SDL_Surface *decoded = nullptr;
+    bool tooLarge = false;
     if (!bytes.empty()) {
-      decoded = shrink(IMG_Load_RW(SDL_RWFromConstMem(bytes.data(), int(bytes.size())), 1));
+      decoded = decodePicture(bytes, tooLarge);
       if (!decoded) {
-        logLine("image decode failed " + url.substr(0, url.find('?')) + ": " + IMG_GetError());
+        logLine("image decode failed " + url.substr(0, url.find('?')) + ": " + (tooLarge ? "too large" : IMG_GetError()));
         // A broken cache file (an HTML error page, a cut download) would fail
         // the same way on every retry, so drop it and fetch again next time.
         std::error_code ignored;
@@ -337,8 +359,9 @@ void Images::worker() {
       entry.failed = !decoded;
       if (entry.failed) {
         entry.failedAt = SDL_GetTicks();
-        // A 404 answers the same on every try; only a refresh asks again.
-        entry.attempts = missing ? MaxAttempts : entry.attempts + 1;
+        // A 404 answers the same on every try, and so does a picture too
+        // large; only a refresh asks again.
+        entry.attempts = missing || tooLarge ? MaxAttempts : entry.attempts + 1;
       }
       if (entry.surface)
         SDL_FreeSurface(entry.surface);
@@ -379,10 +402,10 @@ void Images::decode(int budget) {
       break;
     if (!e.finished || e.failed || e.surface)
       continue;
-    auto *rw = SDL_RWFromConstMem(e.bytes.data(), e.bytes.size());
-    e.surface = shrink(IMG_Load_RW(rw, 1));
+    bool tooLarge = false;
+    e.surface = decodePicture(e.bytes, tooLarge);
     if (!e.surface) {
-      logLine("image decode failed " + pair.first.substr(0, pair.first.find('?')) + ": " + IMG_GetError());
+      logLine("image decode failed " + pair.first.substr(0, pair.first.find('?')) + ": " + (tooLarge ? "too large" : IMG_GetError()));
       // A broken cache file (an HTML error page, a cut download) would fail the
       // same way on every retry, so drop it and fetch again next time.
       std::error_code ignored;
@@ -412,6 +435,16 @@ void Images::decode(int budget) {
     SDL_FreeSurface(oldest->second.surface);
     entries_.erase(oldest);
     --count;
+  }
+  // Pictures that failed are remembered (not asked again at every frame),
+  // but not without end: past MaxFailed the ones not on screen go, oldest
+  // first; one that shows again is asked once more.
+  std::vector<std::map<std::string, Entry>::iterator> failed;
+  for (auto it = entries_.begin(); it != entries_.end(); ++it)
+    if (it->second.failed && it->second.frame + 2 < frame_) failed.push_back(it);
+  if (failed.size() > MaxFailed) {
+    std::sort(failed.begin(), failed.end(), [](const auto &a, const auto &b) { return a->second.used < b->second.used; });
+    for (size_t i = 0; i + MaxFailed < failed.size(); ++i) entries_.erase(failed[i]);
   }
 }
 void Images::draw(const std::string &url, float x, float y, int w, int h,

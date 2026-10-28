@@ -22,7 +22,8 @@ struct Feed {
   std::vector<Sent> items;
 };
 // GET /api/device/sends; an item without an id or a url is left out.
-Feed parse(const std::string &json);
+// shaped: false when the text is no feed at all (an error page).
+Feed parse(const std::string &json, bool *shaped = nullptr);
 // One server's answer, with the address it came from.
 struct Source {
   std::string server;

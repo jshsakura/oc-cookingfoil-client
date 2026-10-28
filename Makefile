@@ -108,6 +108,9 @@ fuzz:
 	  -ffunction-sections -fdata-sections -Iinclude $$(pkg-config --cflags json-c) tests/fuzz/zip.cpp \
 	  source/core/ZipStream.cpp -Wl,--gc-sections -o build-host/fuzz-zip
 	./build-host/fuzz-zip
+	$(HOST_CXX) -std=c++17 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
+	  -Iinclude tests/fuzz/image.cpp source/core/ImageSize.cpp -o build-host/fuzz-image
+	./build-host/fuzz-image
 clean:
 	rm -rf build build-host cookingfoil.nro cookingfoil.nacp cookingfoil.elf
 

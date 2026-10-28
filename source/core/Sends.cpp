@@ -4,13 +4,14 @@
 #include <map>
 #include <set>
 namespace foil::sends {
-Feed parse(const std::string &json) {
+Feed parse(const std::string &json, bool *shaped) {
   Feed feed;
   Error ignored;
   const auto root = parseJson(json, ignored);
+  auto *items = root ? field(root.get(), "items") : nullptr;
+  if (shaped) *shaped = json_object_is_type(items, json_type_array);
   if (!root) return feed;
   feed.serverId = stringField(root.get(), "serverId");
-  auto *items = field(root.get(), "items");
   if (!json_object_is_type(items, json_type_array)) return feed;
   const size_t count = std::min<size_t>(json_object_array_length(items), MaxItems);
   for (size_t i = 0; i < count; ++i) {

@@ -964,6 +964,39 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(took < 2 * SlowMs - 100);
     std::filesystem::remove_all(togetherRoot);
   }
+  char stuckDirectory[] = "/tmp/cookingfoil-stuck-XXXXXX";
+  if (const auto stuckRoot = mkdtemp(stuckDirectory)) {
+    // A server that takes the connection and never answers: picking another
+    // one meanwhile stops it within about a second and connects there,
+    // instead of "Connecting to the server." until every timeout ran out.
+    std::atomic<bool> letGo{false};
+    Mock stuck, quick;
+    stuck.answer = [&](const std::string &) -> Reply {
+      for (int i = 0; i < 1500 && !letGo; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      return {503, "", "{}"};
+    };
+    quick.answer = [](const std::string &request) -> Reply {
+      if (request.rfind("GET /api/library/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
+      return {404, "", "{}"};
+    };
+    const auto configPath = std::string(stuckRoot) + "/config.json";
+    std::string error;
+    const auto quickUrl = "http://127.0.0.1:" + std::to_string(quick.port);
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:)" + std::to_string(stuck.port) +
+                                            R"("},{"title":"B","url":")" + quickUrl + R"("}]})",
+                            error));
+    foil::ui::Application app(renderer, configPath, std::string(stuckRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(app.open());
+    for (int frame = 0; frame < 40; ++frame) { SDL_Delay(5); app.render(); }
+    CHECK(app.asking());
+    const auto picked = std::chrono::steady_clock::now();
+    app.pickServer(1);
+    for (int frame = 0; frame < 1000 && app.serverUsed() != quickUrl; ++frame) { SDL_Delay(5); app.render(); }
+    const auto took = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - picked).count();
+    CHECK(app.serverUsed() == quickUrl && took < 3000);
+    letGo = true;
+    std::filesystem::remove_all(stuckRoot);
+  }
   char downDirectory[] = "/tmp/cookingfoil-down-XXXXXX";
   if (const auto downRoot = mkdtemp(downDirectory)) {
     // A server that does not answer: the card with 다시 시도 stays, and

@@ -26,6 +26,14 @@ struct Archive {
   uint64_t size = 0; // the zip's own size
   std::vector<ArchiveEntry> entries;
   bool usable() const { return format == "zip" && !url.empty() && size > 0 && !entries.empty(); }
+  // What its entries take on the card once written: the room an install
+  // needs, which the zip's own size (what is downloaded) is not. Held at
+  // the largest value rather than wrapped by a forged size.
+  uint64_t extracted() const {
+    uint64_t sum = 0;
+    for (const auto &e : entries) sum = e.size > UINT64_MAX - sum ? UINT64_MAX : sum + e.size;
+    return sum;
+  }
 };
 // 도구 or 포트, the 홈브류 tab an app shows under.
 enum class Kind { Tool, Port };
@@ -105,8 +113,10 @@ std::vector<App> mergeServers(std::vector<ServerApps> lists);
 // become "• ", and runs of blank lines become one.
 std::string plainNotes(const std::string &markdown);
 // GET /api/homebrew's list; entries missing what is needed, or with a file
-// name that could leave its folder, are left out.
-std::vector<App> parse(const std::string &json, const std::string &base);
+// name that could leave its folder, are left out. shaped: false when the
+// text is not such a list at all (a proxy's error page), which an empty
+// list is not.
+std::vector<App> parse(const std::string &json, const std::string &base, bool *shaped = nullptr);
 // A folder install's files from its own reply ({"files": [...]}), checked as
 // the list's are, into app.files; false (app.files left empty) when one
 // fails a check or there are none.

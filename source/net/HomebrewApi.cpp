@@ -34,7 +34,16 @@ bool homebrewList(const Server &server, const State &state, std::string &etag, s
   else if (response.status == 404) error.message = tr("This server does not offer homebrew.");
   else if (response.status != 200) error.message = trf("Could not load the homebrew list. HTTP {0}", {std::to_string(response.status)});
   if (error) return false;
-  apps = homebrew::parse(response.body, server.url);
+  // Not a list (an error page answered 200): the list and its ETag as they
+  // were, and said, rather than an empty list kept as the server's.
+  bool shaped = false;
+  auto read = homebrew::parse(response.body, server.url, &shaped);
+  if (!shaped) {
+    logLine("homebrew: the list could not be read (HTTP 200, " + std::to_string(response.body.size()) + " bytes)");
+    error.message = tr("The server's answer could not be read.");
+    return false;
+  }
+  apps = std::move(read);
   etag = response.etag;
   return true;
 }

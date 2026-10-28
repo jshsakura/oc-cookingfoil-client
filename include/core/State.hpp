@@ -45,6 +45,10 @@ struct State {
     // An install state.json held from before 다운로드 kept the queue; put in
     // the queue once, then "[]".
     std::string queueJson = "[]";
+    // Per server: the sends refused here (cancelled, or not queued) that the
+    // server has not confirmed yet. Kept across a restart, so a cancelled
+    // game is answered again and never comes back as a card.
+    std::map<std::string, std::set<std::string>> sendsDeclined;
 };
 // The console this card is in. Both are derived from a value only the
 // console has (platform/Identity), which is kept nowhere: the fingerprint

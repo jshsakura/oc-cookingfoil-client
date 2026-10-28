@@ -214,6 +214,9 @@ public:
     const std::string& serverId() const { return serverId_; }
     bool pairingPending() const { return pairingPending_; }
     const PairingInfo& pairingInfo() const { return pairingInfo_; }
+    // Why the download's token was refused this run (PairingInfo::refusal's
+    // words), also when the console connects with a key it held before.
+    const std::string& enrollRefusal() const { return enrollRefusal_; }
     // The note for this server's approval request, from the app; a changed
     // one goes out with the next refresh while approval is pending.
     void setPairMessage(const std::string& message);
@@ -225,7 +228,7 @@ private:
     // The enroll token from the website's download, spent for this server's
     // access key before anything else; false (with the reason) when refused.
     // replacing: spent even with a key kept, which the server no longer approves.
-    bool enroll(Error& error, bool replacing = false);
+    bool enroll(Error& error);
     bool keepEnrolledKey(const std::string& accessKey, const std::string& device, Error& error);
     // The file's state (settings chosen since this session began stay), with
     // the key this run holds but has not written yet. Under stateFile.

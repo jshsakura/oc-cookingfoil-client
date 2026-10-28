@@ -15,6 +15,7 @@
 #include <set>
 #include <string>
 #include <sys/socket.h>
+#include <thread>
 #include <utility>
 #ifdef __SWITCH__
 #include <switch.h>
@@ -350,6 +351,15 @@ void shareConnections(void *curl) {
   }
 }
 namespace {
+thread_local const std::atomic<bool> *threadCancel = nullptr;
+bool cancelled() { return threadCancel && threadCancel->load(); }
+} // namespace
+CancelScope::CancelScope(const std::atomic<bool> *cancel) : outer_(threadCancel) {
+  if (cancel) threadCancel = cancel;
+}
+CancelScope::~CancelScope() { threadCancel = outer_; }
+const std::atomic<bool> *scopedCancel() { return threadCancel; }
+namespace {
 struct SessionEntry {
   std::string credentials;
   std::function<SessionGrant()> ask;
@@ -373,7 +383,15 @@ void askSession(const std::string &origin, std::unique_lock<std::mutex> &held) {
   const auto gate = found->second.asking;
   const auto seen = found->second.token;
   held.unlock();
-  std::lock_guard<std::mutex> one(*gate);
+  // Another request asks: waited for, unless this one's work is stopped.
+  while (!gate->try_lock()) {
+    if (cancelled()) {
+      held.lock();
+      return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  std::lock_guard<std::mutex> one(*gate, std::adopt_lock);
   held.lock();
   found = sessions.find(origin);
   if (found == sessions.end() || found->second.asking != gate || found->second.refused || found->second.token != seen)
@@ -387,6 +405,8 @@ void askSession(const std::string &origin, std::unique_lock<std::mutex> &held) {
   held.unlock();
   const auto grant = ask ? ask() : SessionGrant{};
   held.lock();
+  // Stopped while asking: no answer, not a refusal; the next one asks again.
+  if (cancelled() && grant.token.empty()) return;
   found = sessions.find(origin);
   // Taken back, or another sign-in offered meanwhile: this answer is for
   // neither.

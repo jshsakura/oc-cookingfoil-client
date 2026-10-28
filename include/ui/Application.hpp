@@ -137,6 +137,9 @@ public:
   bool reloading() const { return reloadWorker_.joinable(); }
   // The server still asked (network_ not yet taken by a frame).
   bool asking() const { return network_.joinable() && !done_; }
+  // The server picked in 설정 (tests): connect, and the one in use.
+  void pickServer(size_t index) { connect(index); }
+  std::string serverUsed() const { return session_ ? session_->server().url : std::string(); }
   std::string selectedName() const;
   void setDetail(net::Detail detail);
   bool confirmingInstall() const { return confirmInstall_; }
@@ -769,7 +772,9 @@ private:
   std::vector<sends::Pick> sendsIncoming_;
   std::map<std::string, std::vector<std::string>> sendsAcks_; // per server: ids taken, not yet answered
   std::map<std::string, std::vector<std::string>> sendsUnsent_; // the worker's answers that did not go out
-  std::map<std::string, std::vector<std::string>> sendsDeclines_; // per server: ids the queue refused
+  std::map<std::string, std::vector<std::string>> sendsDeclines_; // per server: refused since the last round (asked at once)
+  std::map<std::string, std::vector<std::string>> sendsDeclinedDone_; // the worker's refusals the servers took
+  std::set<std::string> sendsAnswered_; // servers whose list came this run: what they no longer list is done
   std::set<std::string> sendsTaken_, sendsHeld_; // "server|id"
   void pollSends();
   void takeSends(std::vector<sends::Pick> picks);
@@ -789,6 +794,7 @@ private:
   void cancelArrival();
   void stepArrivals();
   void arrived(std::vector<Arrival> games);
+  void decline(const std::vector<sends::Ack> &acks);
   void arrivalCard();
   bool selfShortcutPossible() const;
   void makeSelfShortcut();
@@ -1533,6 +1539,7 @@ private:
   // The picked files with their options' queries and words put on them.
   std::vector<Item> withOptions(std::vector<Item> files) const;
   Job optionsJob_;
+  bool optionsAgain_ = false; // another detail opened while the last one's options were asked
   std::string optionsFor_; // the group id the options are for
   std::map<std::string, std::vector<net::FileOption>> fileOptions_;
   bool optionInstall_ = false; // the confirm open is the option's
@@ -1715,12 +1722,21 @@ private:
   std::vector<OtherRead> othersRead_;
   std::vector<std::thread> othersAsking_;
   bool othersUnshown_ = false; // a change read while session_'s list failed
+  // An empty home is not left waiting for the slowest server: session_'s
+  // list (with what the others gave before) goes up as soon as it is read,
+  // and the merged list replaces it once they all answered.
+  std::vector<Group> earlyGroups_;
+  std::atomic<bool> earlyReady_{false};
   void askOthers();
   void joinOthers();
   bool readOthers(bool primaryChanged);
   std::thread network_;
   std::atomic<bool> done_{false};
   std::atomic<bool> stop_{false};
+  // The sessions' own stop: set to change servers while one is still asked
+  // (connectNext_ waits for it), or as the app closes.
+  std::atomic<bool> connectStop_{false};
+  std::optional<size_t> connectNext_;
   std::atomic<bool> retroCancel_{false}; // Y while RetroArch downloads; also set on exit
   std::vector<Item> incoming_;
   std::vector<Group> incomingGroups_; // incoming_ grouped on the network thread
@@ -1739,6 +1755,10 @@ private:
     net::Detail detail;
     uint32_t at;
   };
+  // A detail opened again within a minute comes from here; older ones and
+  // all past the last DetailsKept go when the next one comes.
+  static constexpr uint32_t DetailKeptMs = 60000;
+  static constexpr size_t DetailsKept = 16;
   std::map<std::string, DetailCache> details_;
   install::Installer installer_;
   // The download screen's speed and time left, timed by its own frames.
@@ -1829,6 +1849,7 @@ private:
   std::vector<CardPatch> cardPatches_, incomingCardPatches_;
   Qr qr_;
   bool pairingPending_ = false;
+  std::string enrollTold_; // the server + token refusal already said this run
   net::PairingInfo pairingInfo_;
   uint32_t pairPollAt_ = 0;
   // Updates and DLC the console lacks, worked out once per catalog or

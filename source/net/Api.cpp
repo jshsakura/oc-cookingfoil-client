@@ -169,7 +169,7 @@ std::vector<std::string> authHeaders(const Server& server, const State& state, c
 }
 SessionGrant askSessionToken(const Server& server, const State& state) {
     const auto url = server.url + "/api/session";
-    const auto reply = get(url, serverHeaders(server, state, url, false));
+    const auto reply = get(url, serverHeaders(server, state, url, false), "", scopedCancel());
     SessionGrant grant;
     grant.status = reply.status;
     if (reply.status != 200) return grant;
@@ -301,6 +301,7 @@ Response withSession(const std::string& url, const std::vector<std::string>& hea
 }
 }
 Response get(const std::string& url, const std::vector<std::string>& headers, const std::string& etag, const std::atomic<bool>* cancel) {
+    const CancelScope scope(cancel); // a renewal after a 401 stops with the request
     return withSession(url, headers, [&](const std::vector<std::string>& h) { return getOnce(url, h, etag, cancel); });
 }
 namespace {
@@ -473,6 +474,7 @@ namespace {
 Response postOnce(const std::string& url, const std::vector<std::string>& headers, const PostOptions& options, const std::atomic<bool>* cancel);
 }
 Response post(const std::string& url, const std::vector<std::string>& headers, const PostOptions& options, const std::atomic<bool>* cancel) {
+    const CancelScope scope(cancel);
     return withSession(url, headers, [&](const std::vector<std::string>& h) { return postOnce(url, h, options, cancel); });
 }
 namespace {
@@ -1134,13 +1136,7 @@ bool Session::pair(Error& error) {
         pairPasswordOnly_ = true;
         markPairPasswordOnly(originOf(server_.url), true);
     }
-    // A key kept from before that the server no longer approves (the console
-    // was removed): the download's token approves it again, not a new request.
     const auto kept = state_.accessKeys.find(server_.url);
-    if (status != "approved" && !server_.enrollToken.empty() && kept != state_.accessKeys.end() && !kept->second.empty()) {
-        if (!enroll(error, true)) return false;
-        if (server_.enrollToken.empty()) { pairingPending_ = false; pairingInfo_ = {}; return true; }
-    }
     // Taken back (the account off, its password changed): the kept key is
     // no good, and approval starts again with a new pair secret, so the key
     // the server issues next goes only to this console.
@@ -1344,16 +1340,24 @@ std::map<std::string, std::string> enrollSpent;
 // One enroll at a time, so a second session for the server waits for the
 // first one's key instead of sending the token beside it.
 std::mutex enrollSending;
+// url + token -> tries answered 429 or 5xx this run: the server busy for a
+// moment, asked again at the next refresh, up to EnrollTries.
+std::map<std::string, int> enrollBusy;
+constexpr int EnrollTries = 3;
 }
 void Session::forgetEnrollAttempts() {
     std::lock_guard<std::mutex> held(enrollLock);
     enrollSkipped.clear();
     enrollSpent.clear();
+    enrollBusy.clear();
 }
-bool Session::enroll(Error& error, bool replacing) {
+bool Session::enroll(Error& error) {
+    // A token in config.json is spent even with a key held: the download it
+    // came with is the user's own account, and only the enroll ties this
+    // console to it (a console approved before by the server alone is no
+    // one's, and the website cannot send to it).
     const auto token = server_.enrollToken;
-    const auto key = state_.accessKeys.find(server_.url);
-    if (token.empty() || (!replacing && key != state_.accessKeys.end() && !key->second.empty())) return true;
+    if (token.empty()) return true;
     const auto tried = server_.url + '\n' + token;
     std::lock_guard<std::mutex> one(enrollSending);
     // The key made from the console: the one the server approves.
@@ -1372,6 +1376,12 @@ bool Session::enroll(Error& error, bool replacing) {
     auto headers = authHeaders(server_, state_, url);
     for (auto& header : headers)
         if (header.rfind("X-Device-Key: ", 0) == 0) header = "X-Device-Key: " + device;
+    // The key held goes along even beside a session token: a console the
+    // server approved on its own proves with it that it is this console,
+    // or the server refuses (403 needs-key) and the token stays unspent.
+    if (const auto held = state_.accessKeys.find(server_.url); held != state_.accessKeys.end() && !held->second.empty() &&
+        std::none_of(headers.begin(), headers.end(), [](const std::string& h) { return h.rfind("X-Access-Key: ", 0) == 0; }))
+        headers.push_back("X-Access-Key: " + held->second);
     headers.push_back("Content-Type: application/json");
     Json body(json_object_new_object());
     json_object_object_add(body.get(), "token", json_object_new_string(token.c_str()));
@@ -1392,6 +1402,15 @@ bool Session::enroll(Error& error, bool replacing) {
     // A server that does not know enroll (before it, or with pairing off):
     // the token is not for it, and the console connects as before.
     if (sent.status == 404 || sent.status == 405) return true;
+    // Busy for a moment: asked again at the next refresh, a few times, and
+    // meanwhile the console goes on as it is (its key, or the QR code).
+    if (sent.status == 429 || sent.status >= 500) {
+        std::lock_guard<std::mutex> held(enrollLock);
+        if (++enrollBusy[tried] < EnrollTries) {
+            logLine("enroll: HTTP " + std::to_string(sent.status) + ", asked again at the next refresh");
+            return true;
+        }
+    }
     // Expired or spent, past the account's limits (403: as many consoles as
     // it may hold), or another account's console (409): out of config.json,
     // so no later start sends it again, and the console asks for approval as
@@ -1408,6 +1427,13 @@ bool Session::enroll(Error& error, bool replacing) {
         enrollRefusal_ = sent.status == 409 ? "other-account" : sent.status == 401 && told ? sent.enroll : "";
         return true;
     }
+    // The server wants the key this console holds and got none it took: the
+    // token is not spent and stays for a later start; this run goes on as
+    // it is, and the screen says the console is not the account's.
+    if (sent.status == 403 && sent.enroll == "needs-key") {
+        enrollRefusal_ = "needs-key";
+        return skip("the server asks for the key held (403 needs-key)");
+    }
     Error unread;
     const auto reply = sent.status == 200 ? parseJson(sent.body, unread) : Json(nullptr);
     const auto accessKey = reply ? stringField(reply.get(), "accessKey") : std::string();
@@ -1417,6 +1443,13 @@ bool Session::enroll(Error& error, bool replacing) {
         std::lock_guard<std::mutex> held(enrollLock);
         enrollSpent[tried] = accessKey;
     }
+    // Whose console it is now, as the server says (bound: the download's
+    // account; false: an admin's console, which stays the admin's). An
+    // older server says nothing.
+    const auto* bound = field(reply.get(), "bound");
+    if (json_object_is_type(bound, json_type_boolean))
+        logLine(std::string("enroll: ") + (json_object_get_boolean(bound) ? "linked to the download's account" : "kept by the server's admin"));
+    enrollRefusal_.clear();
     return keepEnrolledKey(accessKey, device, error);
 }
 // Saved as a key from approval is (saveKey); the server knows the console by
@@ -1497,6 +1530,7 @@ void logRefusal(const std::vector<std::string>& headers, const Response& reply) 
 }
 }
 bool Session::refresh(Error& error) {
+    const CancelScope scope(cancel_);
     error = {};
     if (keyUnsaved_) {
         std::unique_lock<std::mutex> filed(stateFile);

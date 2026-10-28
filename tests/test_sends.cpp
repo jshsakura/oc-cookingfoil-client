@@ -14,6 +14,13 @@ int runSendsTests() {
     {"id":"a3","url":"not a url"}]})");
   CHECK(feed.serverId == "s1" && feed.items.size() == 1 && feed.items[0].name == "One" && feed.items[0].size == 10);
   CHECK(sd::parse("nonsense").items.empty());
+  bool shaped = false;
+  CHECK(sd::parse(R"({"serverId":"s1","items":[]})", &shaped).items.empty() && shaped);
+  for (const char *broken : {"<html>proxy error</html>", "{}", R"({"items":{}})"}) {
+    shaped = true;
+    sd::parse(broken, &shaped);
+    CHECK(!shaped);
+  }
 
   // Server b sent the same game earlier: it comes once, answered on both.
   sd::Feed a{"s1", {{"a1", "", "One", "0100", "https://a.example.com/1", "2026-10-20T10:00:00Z", "", 10},
