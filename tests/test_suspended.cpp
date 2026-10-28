@@ -36,8 +36,9 @@ int runSuspendedTests() {
   const std::string sha(64, 'c');
   mock.answer = [&](const std::string &request) -> Reply {
     const bool keyed = has(request, "X-Access-Key:");
-    // Open to anyone with the address, refused with a suspended key.
-    if (request.rfind("GET /api/client/latest", 0) == 0 && !keyed && !has(request, "Authorization:"))
+    // The approved key brings the update even while suspended; a session
+    // token does not.
+    if (request.rfind("GET /api/client/latest", 0) == 0 && has(request, "X-Access-Key: held-key") && !has(request, "Authorization:"))
       return {200, "", R"({"version":"9.9.9","size":25,"sha256":")" + sha + R"(","url":"/api/client/cookingfoil.nro"})"};
     // Without the key: the re-pair QR code, or the new key once approved.
     if (!reason.empty() && request.rfind("GET /api/pair/status", 0) == 0 && !keyed && has(request, "X-Pair-Secret:"))
@@ -96,7 +97,7 @@ int runSuspendedTests() {
     for (const auto &r : sent)
       keyless += r.rfind("GET /api/pair/status", 0) == 0 && !has(r, "X-Access-Key:") && has(r, "X-Pair-Secret:");
     CHECK(keyless >= 1);
-    // The update is still there, asked without the key.
+    // The update is still there with the key.
     net::ClientUpdateReply reply;
     const auto release = net::latestClient(server(), loadState(db).value, reply, nullptr);
     CHECK(release && release->version == "9.9.9");

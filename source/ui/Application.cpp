@@ -2572,8 +2572,8 @@ void Application::render() {
   glideStep();
   header_.clear();
   // Asked once a launch, as soon as a server answers, or once it was tried
-  // and did not let the console in: the update needs only its address, so
-  // a console shut out (suspended, waiting for approval) can still get a fix.
+  // and did not let the console in: an approved console whose account is
+  // off still gets a fix with its key.
   if ((connected_ || (session_ && !network_.joinable())) && appUpdate_ == AppUpdate::Unknown && !updateWorker_.joinable())
     checkAppUpdate();
   headerHome_.clear();

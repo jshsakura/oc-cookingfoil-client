@@ -6,6 +6,7 @@
 #include "net/Api.hpp"
 #include "net/DropboxUtil.hpp"
 #include "net/Ranged.hpp"
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -13,24 +14,28 @@
 #include <memory>
 namespace foil::net {
 namespace {
-// Only the server's address (and its Cloudflare Access pass): no key, no
-// password, no device.
-Server anonymous(const Server &server) {
-  Server open;
-  open.url = server.url;
-  open.cfClientId = server.cfClientId;
-  open.cfClientSecret = server.cfClientSecret;
-  return open;
+// The console's own key, never a session token: a suspended console's token
+// is refused, while its key still brings the update (the server lets an
+// approved key fetch the build even when the account is off).
+std::vector<std::string> keyHeaders(const Server &server, const State &state, const std::string &url) {
+  auto headers = authHeaders(server, state, url);
+  headers.erase(std::remove_if(headers.begin(), headers.end(),
+                               [](const std::string &h) { return h.rfind("Authorization: Bearer ", 0) == 0; }),
+                headers.end());
+  const auto held = state.accessKeys.find(server.url);
+  if (held != state.accessKeys.end() && !held->second.empty() &&
+      std::none_of(headers.begin(), headers.end(), [](const std::string &h) { return h.rfind("X-Access-Key: ", 0) == 0; }))
+    headers.push_back("X-Access-Key: " + held->second);
+  return headers;
 }
 } // namespace
 std::optional<update::Release> latestClient(const Server &server, const State &state, ClientUpdateReply &reply,
                                             const std::atomic<bool> *cancel) {
   const auto url = server.url + "/api/client/latest";
-  // The update is open to anyone with the server's address: a console
-  // whose key is refused (suspended, taken back) asks again without it.
   auto response = get(url, authHeaders(server, state, url), "", cancel);
+  // Refused with the session token (suspended): asked again with the key.
   if (response.error.empty() && (response.status == 401 || response.status == 403))
-    response = get(url, authHeaders(anonymous(server), {}, url), "", cancel);
+    response = get(url, keyHeaders(server, state, url), "", cancel);
   if (response.status == 404) {
     reply.missing = true;
     return std::nullopt;
@@ -64,11 +69,11 @@ bool installClient(const Server &server, const State &state, const update::Relea
   wanted.tag = release.sha256;
   wanted.size = release.size;
   auto got = fetchPart(release.url, downloadHeaders(server, state, release.url), part, wanted, true, received, cancel);
-  // The build is open to anyone with the address, as the check is.
+  // The build as the check: with the key when the session token is refused.
   if (got.response.status == 401 || got.response.status == 403) {
     dropPart(part);
     received = 0;
-    got = fetchPart(release.url, authHeaders(anonymous(server), {}, release.url), part, wanted, true, received, cancel);
+    got = fetchPart(release.url, keyHeaders(server, state, release.url), part, wanted, true, received, cancel);
   }
   const auto fail = [&](const std::string &message) {
     if (!keepPart(got)) dropPart(part);
