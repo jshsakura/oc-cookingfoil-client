@@ -258,6 +258,12 @@ uint64_t streamPieces(const std::string &url, uint64_t from, uint64_t length, co
 // One request for the range, its bytes straight to the sink. 0 when all of
 // it came, else the HTTP status, 1000 + curl's code, or SinkFailed.
 constexpr int SinkFailed = 1999;
+thread_local std::string lastFailure;
+std::string describe(int rc) {
+  if (rc == SinkFailed) return "the install stopped taking data";
+  if (rc >= 1000) return curl_easy_strerror(CURLcode(rc - 1000));
+  return "HTTP " + std::to_string(rc);
+}
 struct Single {
   const OrderedSink *sink;
   const OrderedOptions *options;
@@ -317,6 +323,7 @@ bool streamOne(const std::string &url, uint64_t from, uint64_t length, const Ord
     return taken;
   };
   auto lastData = Clock::now();
+  std::string lastWhere;
   for (;;) {
     // Before the next ask: 2 s unless the last one said otherwise (0: at once).
     seconds wait = seconds(2);
@@ -331,6 +338,10 @@ bool streamOne(const std::string &url, uint64_t from, uint64_t length, const Ord
       const auto sent = routeDownload(url);
       const int rc = requestOnce(url, sent, from + received, length - received, counted, options);
       if (rc == 0) return true;
+      lastFailure = describe(rc);
+      const auto where = std::string(sent == url ? "server" : "direct") + " at " + std::to_string(from + received) + ", " +
+                         std::to_string(received) + " of " + std::to_string(length);
+      lastWhere = where;
       wait = seconds(0);
       // Not a try, again at once from the same byte: a 401 on the direct
       // address a fresh token answers, a pause, a token that ran out.
@@ -354,7 +365,7 @@ bool streamOne(const std::string &url, uint64_t from, uint64_t length, const Ord
         continue;
       }
       if (rc == SinkFailed || rc == 401 || rc == 403 || rc == 404 || rc == 416 || rc == 1000 + CURLE_WRITE_ERROR) {
-        logLine("download stopped: " + std::to_string(rc));
+        logLine("download stopped: " + lastFailure + " (" + where + ")");
         return false;
       }
       // Busy (503), rate limited (429) or a slow first byte through the
@@ -371,12 +382,15 @@ bool streamOne(const std::string &url, uint64_t from, uint64_t length, const Ord
         continue;
       }
     }
+    logLine("download gave up after its tries: " + lastFailure + " (" + lastWhere + ")");
     if (!(options.tryAgain && options.tryAgain())) return false;
   }
 }
 } // namespace
+std::string orderedFailure() { return lastFailure; }
 bool orderedStream(const std::string &url, uint64_t from, uint64_t length, const OrderedSink &sink,
                    const OrderedOptions &options) {
+  lastFailure.clear();
   if (length == 0) return true;
   // Large ranges first on several connections; what is left after a
   // failure goes on one, with its tries.
