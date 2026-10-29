@@ -12,6 +12,9 @@ constexpr float ChipLine = 42;
 // A game card: its labels just under the name, and the step from one row
 // of cards to the next in a grid.
 constexpr float CardLabelTop = 186, CardRowStep = 226;
+// A card takes touches down to its badges' bottom (26 px pills), so its
+// pressed look (8 px larger all round) stops short of the next row's poster.
+constexpr float CardTapHeight = CardLabelTop + 26;
 constexpr float BandRight = 1248; // the band's chips end here
 // The page's colors, light or dark. They change while the app runs, so the
 // names below are references into the palette in use, not constants.

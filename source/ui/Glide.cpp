@@ -206,6 +206,10 @@ void Application::clipTo(float x, float y, float w, float h) {
     SDL_IntersectRect(&previous, &area, &area);
   SDL_RenderSetClipRect(paint_.renderer, &area);
 }
+void Application::clipList(float top, float h) {
+  paint_.rect(232, top - 1, 1048, 1, Line);
+  clipTo(232, top, 1048, h);
+}
 void Application::unclip() {
   if (clips_.empty())
     return;
