@@ -40,7 +40,9 @@ bool retroBundle(const Server &server, const State &state, const retro::Game &ga
 bool retroPackBundle(const Server &server, const State &state, const retro::Pack &pack, const std::string &sd,
                      std::function<bool(const std::string &)> skip, std::atomic<uint64_t> &received, Error &error,
                      const std::atomic<bool> *cancel);
-// `status` gets the HTTP status, so a caller can wait out a 429.
+// `status` gets the HTTP status, so a caller can wait out a 429; `refused`
+// says the card would not take the file under its name (see fetchFile).
 bool retroFile(const Server &server, const State &state, const retro::PackFile &file, const std::string &sd,
-               std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel, long *status = nullptr);
+               std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel, long *status = nullptr,
+               bool *refused = nullptr);
 } // namespace foil::net

@@ -22,7 +22,7 @@ std::string filePart(const std::string &sd, const std::string &path) {
 }
 bool fetchFile(const Server &server, const State &state, const std::string &url, const std::string &sd,
                const std::string &path, std::string sha256, uint64_t size, std::atomic<uint64_t> &received,
-               Error &error, const std::atomic<bool> *cancel, int *busy, long *status) {
+               Error &error, const std::atomic<bool> *cancel, int *busy, long *status, bool *refused) {
   const auto target = sd + "/" + path;
   const auto folder = std::filesystem::path(target).parent_path().string();
   const auto part = filePart(sd, path);
@@ -61,8 +61,11 @@ bool fetchFile(const Server &server, const State &state, const std::string &url,
   if (sha256.empty() && path.size() > 4 && path.compare(path.size() - 4, 4, ".nro") == 0 && !platform::wholeNro(part))
     return fail(tr("The downloaded file does not match the server's. Try again."));
   // The old file goes only once the new one can take its place.
-  if (std::string reason; !replaceFile(part, target, reason))
+  if (std::string reason; !replaceFile(part, target, reason)) {
+    // A full card is not the name's fault: that one is tried again.
+    if (refused) *refused = reason.find(std::strerror(ENOSPC)) == std::string::npos;
     return fail(trf("Could not write the file: {0}", {path}) + " (" + reason + ")");
+  }
   std::filesystem::remove(partInfoPath(part), ec);
   return true;
 }
