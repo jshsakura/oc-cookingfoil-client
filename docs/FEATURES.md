@@ -76,6 +76,24 @@ Menu shortcuts, and show RetroAchievements information when supplied and configu
 This repository includes no ROMs, BIOS files or RetroArch. Prepare your own permitted content
 and the server-side packs needed by the features you enable.
 
+## Connect to PC (MTP)
+
+Opens the SD card on a PC over a USB cable so you can browse and move files. Select
+**Connect to PC via MTP** in Settings, then plug in the cable. Press B or unplug the cable to
+disconnect. Sensitive folders such as Nintendo and emuMMC cannot be changed. Applet mode (started
+from the Album) does not have enough memory to connect, so start the app from a HOME Menu shortcut.
+
+When the connection closes, the app deletes unfinished copies and the `._*` and `.DS_Store`
+files a Mac leaves behind.
+
+- **Windows**: the console appears as a device in File Explorer. Nothing else to install.
+- **Mac**: macOS has no MTP file manager, so use [OpenMTP](https://openmtp.ganeshrvel.com/)
+  with Kalam mode turned on in its settings.
+
+**If a Mac does not connect**: while Preview, Photos or Image Capture is open, macOS claims the
+console as a camera and does not let go, so OpenMTP cannot reach it. Quit all three apps and plug
+the cable in again. Quitting the `ptpcamerad` process does not help because it restarts at once.
+
 ## Maintenance
 
 The installed game manager handles games and their saves. Leftover cleanup asks for confirmation
