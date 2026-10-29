@@ -174,12 +174,16 @@ std::vector<size_t> browseFiltered(const std::vector<Group> &groups, const std::
       return x.addedAt > y.addedAt;
     if (sort == SortMode::Release && x.representative.releaseDate != y.representative.releaseDate)
       return x.representative.releaseDate > y.representative.releaseDate;
-    // Popular: ranked titles first (1 is top), unranked keep their order after.
+    // Popular: ranked titles first (1 is top), then the unranked newest first,
+    // not in the server's name order.
     if (sort == SortMode::Popular && x.representative.rank != y.representative.rank) {
       if (!x.representative.rank || !y.representative.rank)
         return x.representative.rank != 0;
       return x.representative.rank < y.representative.rank;
     }
+    if (sort == SortMode::Popular && !x.representative.rank &&
+        x.representative.releaseDate != y.representative.releaseDate)
+      return x.representative.releaseDate > y.representative.releaseDate;
     // Score: rated titles first, highest on top; unrated keep their order after.
     if (sort == SortMode::Score && x.representative.score != y.representative.score)
       return x.representative.score > y.representative.score;
