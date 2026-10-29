@@ -5,8 +5,16 @@
 namespace foil {
 // Appends to the log file opened by openLog. No-op until then.
 void openLog(const std::string &path);
+// What the log keeps, chosen in 설정: nothing, errors (the default), or
+// every step too.
+enum class LogLevel { Off, Errors, All };
+void setLogLevel(LogLevel level);
 // Queued and written by a thread of its own, so it never waits for the card.
+// An error or a fact a bug report needs; dropped only at Off.
 void logLine(const std::string &line);
+// A step that went as planned (an MTP operation, a download back on the
+// network); written only at All.
+void logDetail(const std::string &line);
 // Waits until every line logged so far is in the file (a report, a test).
 void flushLog();
 // A line as the log keeps it: no server addresses. An address's scheme and

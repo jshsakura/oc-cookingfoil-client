@@ -34,6 +34,34 @@ static void settle(foil::ui::Application &app) {
 int runUiTests(SDL_Renderer *renderer) {
   int failures = 0;
   {
+    // The dots of the small icons show at 1:1 (the toast's info mark is 22
+    // wide in handheld): a dot drawn as a zero-length stroke vanished there.
+    float sx = 1, sy = 1;
+    SDL_RenderGetScale(renderer, &sx, &sy);
+    SDL_RenderSetScale(renderer, 1, 1);
+    foil::ui::Painter painter(renderer);
+    auto *format = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA32);
+    struct Dot { int kind; float x, y; };
+    for (const Dot dot : {Dot{33, 12, 8}, Dot{25, 12, 16}, Dot{39, 12, 20}, Dot{20, 12, 20}, Dot{21, 6, 6}, Dot{15, 7, 7},
+                          Dot{14, 10, 16}, Dot{27, 18, 11}}) {
+      SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+      SDL_RenderClear(renderer);
+      painter.icon(dot.kind, 0, 0, {255, 255, 255, 255}, 22);
+      Uint32 pixels[9] = {};
+      const SDL_Rect at{int(dot.x * 22 / 24) - 1, int(dot.y * 22 / 24) - 1, 3, 3};
+      CHECK(SDL_RenderReadPixels(renderer, &at, SDL_PIXELFORMAT_RGBA32, pixels, 3 * sizeof(Uint32)) == 0);
+      Uint8 brightest = 0;
+      for (const auto pixel : pixels) {
+        Uint8 r, g, b;
+        SDL_GetRGB(pixel, format, &r, &g, &b);
+        brightest = std::max(brightest, r);
+      }
+      CHECK(brightest > 160);
+    }
+    SDL_FreeFormat(format);
+    SDL_RenderSetScale(renderer, sx, sy);
+  }
+  {
     // 설치 불가 in every language: the install button (386 wide) keeps a margin.
     foil::ui::Painter painter(renderer);
     CHECK(painter.fonts.open());
@@ -191,6 +219,9 @@ int runUiTests(SDL_Renderer *renderer) {
     app.render();
     app.touch(chip.x + chip.w / 2, chip.y + chip.h / 2); // the notice takes the touch
     CHECK(app.usbAppletShown());
+    // A finger outside the popup darkens nothing, the popup included.
+    app.fingerDown(20, 20);
+    CHECK(!app.pressShown());
     app.action(foil::ui::Action::Back);
     CHECK(!app.usbAppletShown());
     // Without touch (docked): its row in 설정 opens it too.
@@ -198,8 +229,8 @@ int runUiTests(SDL_Renderer *renderer) {
     app.render();
     app.action(foil::ui::Action::Right);
     for (int step = 0; step < 40; ++step) app.action(foil::ui::Action::Down);
-    // The bug report is last; Connect to PC sits three rows above it.
-    for (int step = 0; step < 3; ++step) app.action(foil::ui::Action::Up);
+    // The bug report is last; Connect to PC sits four rows above it.
+    for (int step = 0; step < 4; ++step) app.action(foil::ui::Action::Up);
     app.render();
     app.action(foil::ui::Action::Accept);
     CHECK(app.usbAppletShown());
@@ -963,6 +994,39 @@ int runUiTests(SDL_Renderer *renderer) {
     CHECK(first.take().size() >= 1 && second.take().size() >= 1);
     CHECK(took < 2 * SlowMs - 100);
     std::filesystem::remove_all(togetherRoot);
+  }
+  char stuckDirectory[] = "/tmp/cookingfoil-stuck-XXXXXX";
+  if (const auto stuckRoot = mkdtemp(stuckDirectory)) {
+    // A server that takes the connection and never answers: picking another
+    // one meanwhile stops it within about a second and connects there,
+    // instead of "Connecting to the server." until every timeout ran out.
+    std::atomic<bool> letGo{false};
+    Mock stuck, quick;
+    stuck.answer = [&](const std::string &) -> Reply {
+      for (int i = 0; i < 1500 && !letGo; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      return {503, "", "{}"};
+    };
+    quick.answer = [](const std::string &request) -> Reply {
+      if (request.rfind("GET /api/library/sections", 0) == 0) return {200, "", R"({"sections":[]})"};
+      return {404, "", "{}"};
+    };
+    const auto configPath = std::string(stuckRoot) + "/config.json";
+    std::string error;
+    const auto quickUrl = "http://127.0.0.1:" + std::to_string(quick.port);
+    CHECK(foil::atomicWrite(configPath, R"({"servers":[{"title":"A","url":"http://127.0.0.1:)" + std::to_string(stuck.port) +
+                                            R"("},{"title":"B","url":")" + quickUrl + R"("}]})",
+                            error));
+    foil::ui::Application app(renderer, configPath, std::string(stuckRoot) + "/cookingfoil.db", "host/fixtures/art");
+    CHECK(app.open());
+    for (int frame = 0; frame < 40; ++frame) { SDL_Delay(5); app.render(); }
+    CHECK(app.asking());
+    const auto picked = std::chrono::steady_clock::now();
+    app.pickServer(1);
+    for (int frame = 0; frame < 1000 && app.serverUsed() != quickUrl; ++frame) { SDL_Delay(5); app.render(); }
+    const auto took = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - picked).count();
+    CHECK(app.serverUsed() == quickUrl && took < 3000);
+    letGo = true;
+    std::filesystem::remove_all(stuckRoot);
   }
   char downDirectory[] = "/tmp/cookingfoil-down-XXXXXX";
   if (const auto downRoot = mkdtemp(downDirectory)) {

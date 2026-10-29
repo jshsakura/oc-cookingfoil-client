@@ -31,6 +31,25 @@ int runHomebrewTests() {
       R"("size":33584861,"hash":"sha256:fb7d","file_name":"ytb-player.nro","icon_url":"/api/homebrew/gh-9c9ef5794087/icon",)"
       R"("download_url":"/api/homebrew/gh-9c9ef5794087/download","source":"github","released_at":"2026-09-26T20:06:01Z",)"
       R"("repo_url":"https://github.com/murat303/ytb-player"})";
+  {
+    // An empty list is a list; an error page or another shape is not.
+    bool shaped = false;
+    CHECK(parse(R"({"homebrew":[]})", "", &shaped).empty() && shaped);
+    for (const char *broken : {"<html>temporary proxy error</html>", "", "{}", R"({"homebrew":{}})", "[]", "null"}) {
+      shaped = true;
+      CHECK(parse(broken, "", &shaped).empty() && !shaped);
+    }
+  }
+  {
+    // The room a zip needs is what it unpacks to, not its download size;
+    // forged sizes hold at the largest value instead of wrapping.
+    Archive zip;
+    zip.size = 1 << 20;
+    zip.entries = {{"a", "switch/a/a.nro", 300ull << 20}, {"b", "switch/a/b.bin", 200ull << 20}};
+    CHECK(zip.extracted() == (500ull << 20));
+    zip.entries.push_back({"c", "switch/a/c", UINT64_MAX - 10});
+    CHECK(zip.extracted() == UINT64_MAX);
+  }
   const auto apps = parse(R"({"homebrew":[)" + entry + "]}", "https://server.example");
   CHECK(apps.size() == 1);
   if (!apps.empty()) {

@@ -15,6 +15,7 @@
 #include <set>
 #include <string>
 #include <sys/socket.h>
+#include <thread>
 #include <utility>
 #ifdef __SWITCH__
 #include <switch.h>
@@ -36,6 +37,7 @@ struct Link {
   std::chrono::steady_clock::time_point restartUntil;
   bool restarting = false;
   uint64_t sessionRefusals = 0;
+  std::string suspended; // consoleSuspension; empty while not
   int activeDownloads = 0, recommended = 0;
   // One ask for a token at a time, per server: the others wait for its
   // token, and a slow server holds up no other.
@@ -106,7 +108,11 @@ void heardHeader(const std::string &url, const char *data, size_t bytes) {
     return;
   }
   if (line.empty()) { // the block ended: a success with no restart header means it is back
-    if (replyOk) changeLink(url, [](Link &link) { link.restarting = false; });
+    if (replyOk)
+      changeLink(url, [](Link &link) {
+        link.restarting = false;
+        link.suspended.clear();
+      });
     replyOk = false;
     return;
   }
@@ -158,6 +164,12 @@ void heardHeader(const std::string &url, const char *data, size_t bytes) {
   // connections are shared out among them.
   if (key == "x-cookingfoil-active-downloads") {
     heardActiveDownloads(url, int(std::strtol(trimmed().c_str(), nullptr, 10)));
+    return;
+  }
+  // Suspended: the key and the token are good, the account is not; neither
+  // is asked for again because of it.
+  if ((key == "x-cookingfoil-session" || key == "x-cookingfoil-token") && trimmed() == "suspended") {
+    heardSuspension(url, "");
     return;
   }
   if (key == "x-cookingfoil-session") { // the session token refused: expired | revoked | invalid
@@ -350,6 +362,15 @@ void shareConnections(void *curl) {
   }
 }
 namespace {
+thread_local const std::atomic<bool> *threadCancel = nullptr;
+bool cancelled() { return threadCancel && threadCancel->load(); }
+} // namespace
+CancelScope::CancelScope(const std::atomic<bool> *cancel) : outer_(threadCancel) {
+  if (cancel) threadCancel = cancel;
+}
+CancelScope::~CancelScope() { threadCancel = outer_; }
+const std::atomic<bool> *scopedCancel() { return threadCancel; }
+namespace {
 struct SessionEntry {
   std::string credentials;
   std::function<SessionGrant()> ask;
@@ -358,12 +379,18 @@ struct SessionEntry {
   std::chrono::steady_clock::time_point until;
   uint64_t refusalsSeen = 0; // its server's session refusals when it was asked
   bool refused = false; // the server gave none to this sign-in
+  // Not asked again before this: its last answer was neither a token nor a
+  // refusal (a 503, no answer at all).
+  std::chrono::steady_clock::time_point retryAt;
   // Held while its server is asked: the other requests for it wait, those
   // for other servers do not.
   std::shared_ptr<std::mutex> asking = std::make_shared<std::mutex>();
 };
 std::mutex sessionLock; // the list; never held while a server is asked
 std::map<std::string, SessionEntry> sessions; // by origin
+std::chrono::milliseconds sessionRetryGap{std::chrono::seconds(RenewGapSeconds)};
+// No token to be had now: refused for this sign-in, or waiting to ask again.
+bool withheld(const SessionEntry &entry) { return entry.refused || std::chrono::steady_clock::now() < entry.retryAt; }
 // Asks `origin`'s server for a token in place of the one held (`held` locks
 // sessionLock, and is let go while the server answers). Nothing when another
 // request got a new one, or a refusal, meanwhile.
@@ -373,10 +400,18 @@ void askSession(const std::string &origin, std::unique_lock<std::mutex> &held) {
   const auto gate = found->second.asking;
   const auto seen = found->second.token;
   held.unlock();
-  std::lock_guard<std::mutex> one(*gate);
+  // Another request asks: waited for, unless this one's work is stopped.
+  while (!gate->try_lock()) {
+    if (cancelled()) {
+      held.lock();
+      return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  std::lock_guard<std::mutex> one(*gate, std::adopt_lock);
   held.lock();
   found = sessions.find(origin);
-  if (found == sessions.end() || found->second.asking != gate || found->second.refused || found->second.token != seen)
+  if (found == sessions.end() || found->second.asking != gate || withheld(found->second) || found->second.token != seen)
     return;
   auto &entry = found->second;
   entry.refusalsSeen = sessionRefusals(origin);
@@ -387,6 +422,8 @@ void askSession(const std::string &origin, std::unique_lock<std::mutex> &held) {
   held.unlock();
   const auto grant = ask ? ask() : SessionGrant{};
   held.lock();
+  // Stopped while asking: no answer, not a refusal; the next one asks again.
+  if (cancelled() && grant.token.empty()) return;
   found = sessions.find(origin);
   // Taken back, or another sign-in offered meanwhile: this answer is for
   // neither.
@@ -399,7 +436,14 @@ void askSession(const std::string &origin, std::unique_lock<std::mutex> &held) {
   }
   // 403: this server keeps the sign-in; 401: the sign-in itself is wrong
   // (the console taken back), and the request it was for says so. 429 is
-  // the lock, not asked again.
+  // the lock, not asked again. Anything else (a 5xx, no answer) is the
+  // server for now: asked again after the gap.
+  // Suspended: the sign-in is good, the account is off for now.
+  if ((grant.status != 401 && grant.status != 403 && grant.status != 429) || grant.suspended) {
+    now.retryAt = std::chrono::steady_clock::now() + sessionRetryGap;
+    logLine("session token for " + origin + " not given: status " + std::to_string(grant.status) + "; asking again later");
+    return;
+  }
   if (const auto owner = serverOf(origin); grant.status == 401 && !owner.empty()) {
     std::lock_guard<std::mutex> held(linkLock);
     revoked.insert(owner);
@@ -425,6 +469,7 @@ void offerSession(const std::string &origin, const std::string &credentials, std
     if (!entry.token.empty()) entry.spent.insert(entry.token);
     entry.token.clear();
     entry.refused = false;
+    entry.retryAt = {};
     entry.credentials = credentials;
   }
   entry.ask = std::move(ask);
@@ -436,13 +481,13 @@ void withdrawSession(const std::string &origin) {
 std::string sessionToken(const std::string &origin) {
   std::unique_lock<std::mutex> held(sessionLock);
   auto found = sessions.find(origin);
-  if (found == sessions.end() || found->second.refused) return {};
+  if (found == sessions.end() || withheld(found->second)) return {};
   const auto &entry = found->second;
   const bool ending = std::chrono::steady_clock::now() + std::chrono::seconds(RenewBeforeSeconds) >= entry.until;
   if (!entry.token.empty() && !ending && entry.refusalsSeen == sessionRefusals(origin)) return entry.token;
   askSession(origin, held);
   found = sessions.find(origin);
-  return found == sessions.end() || found->second.refused ? std::string() : found->second.token;
+  return found == sessions.end() || withheld(found->second) ? std::string() : found->second.token;
 }
 bool renewSession(const std::string &sent) {
   std::unique_lock<std::mutex> held(sessionLock);
@@ -450,7 +495,7 @@ bool renewSession(const std::string &sent) {
   for (const auto &[at, entry] : sessions)
     if (entry.token == sent || entry.spent.count(sent)) origin = at;
   auto found = sessions.find(origin);
-  if (found == sessions.end() || found->second.refused) return false;
+  if (found == sessions.end() || withheld(found->second)) return false;
   // Another request already got a newer one.
   if (!found->second.token.empty() && found->second.token != sent) return true;
   askSession(origin, held);
@@ -465,6 +510,17 @@ bool isSessionToken(const std::string &token) {
 uint64_t sessionRefusals(const std::string &url) {
   return peekLink(url, [](const Link &link) { return link.sessionRefusals; });
 }
+std::string consoleSuspension(const std::string &url) {
+  return peekLink(url, [](const Link &link) { return link.suspended; });
+}
+void heardSuspension(const std::string &url, const std::string &reason) {
+  const bool fresh = changeLink(url, [&](Link &link) {
+    const bool was = !link.suspended.empty();
+    if (!reason.empty() || !was) link.suspended = reason.empty() ? "suspended" : reason;
+    return !was;
+  });
+  if (fresh) logLine("this console is suspended on the server" + (reason.empty() ? std::string() : " (" + reason + ")"));
+}
 bool takeConsoleRevoked(const std::string &serverUrl) {
   std::lock_guard<std::mutex> held(linkLock);
   return revoked.erase(ownerOf(serverUrl)) > 0;
@@ -472,5 +528,9 @@ bool takeConsoleRevoked(const std::string &serverUrl) {
 void forgetSessions() {
   std::lock_guard<std::mutex> held(sessionLock);
   sessions.clear();
+}
+void setSessionRetryGap(std::chrono::milliseconds gap) {
+  std::lock_guard<std::mutex> held(sessionLock);
+  sessionRetryGap = gap;
 }
 } // namespace foil::net

@@ -6,16 +6,36 @@
 #include "net/Api.hpp"
 #include "net/DropboxUtil.hpp"
 #include "net/Ranged.hpp"
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <memory>
 namespace foil::net {
+namespace {
+// The console's own key, never a session token: a suspended console's token
+// is refused, while its key still brings the update (the server lets an
+// approved key fetch the build even when the account is off).
+std::vector<std::string> keyHeaders(const Server &server, const State &state, const std::string &url) {
+  auto headers = authHeaders(server, state, url);
+  headers.erase(std::remove_if(headers.begin(), headers.end(),
+                               [](const std::string &h) { return h.rfind("Authorization: Bearer ", 0) == 0; }),
+                headers.end());
+  const auto held = state.accessKeys.find(server.url);
+  if (held != state.accessKeys.end() && !held->second.empty() &&
+      std::none_of(headers.begin(), headers.end(), [](const std::string &h) { return h.rfind("X-Access-Key: ", 0) == 0; }))
+    headers.push_back("X-Access-Key: " + held->second);
+  return headers;
+}
+} // namespace
 std::optional<update::Release> latestClient(const Server &server, const State &state, ClientUpdateReply &reply,
                                             const std::atomic<bool> *cancel) {
   const auto url = server.url + "/api/client/latest";
-  const auto response = get(url, authHeaders(server, state, url), "", cancel);
+  auto response = get(url, authHeaders(server, state, url), "", cancel);
+  // Refused with the session token (suspended): asked again with the key.
+  if (response.error.empty() && (response.status == 401 || response.status == 403))
+    response = get(url, keyHeaders(server, state, url), "", cancel);
   if (response.status == 404) {
     reply.missing = true;
     return std::nullopt;
@@ -48,7 +68,13 @@ bool installClient(const Server &server, const State &state, const update::Relea
   wanted.url = release.url;
   wanted.tag = release.sha256;
   wanted.size = release.size;
-  const auto got = fetchPart(release.url, downloadHeaders(server, state, release.url), part, wanted, true, received, cancel);
+  auto got = fetchPart(release.url, downloadHeaders(server, state, release.url), part, wanted, true, received, cancel);
+  // The build as the check: with the key when the session token is refused.
+  if (got.response.status == 401 || got.response.status == 403) {
+    dropPart(part);
+    received = 0;
+    got = fetchPart(release.url, keyHeaders(server, state, release.url), part, wanted, true, received, cancel);
+  }
   const auto fail = [&](const std::string &message) {
     if (!keepPart(got)) dropPart(part);
     error.message = message;

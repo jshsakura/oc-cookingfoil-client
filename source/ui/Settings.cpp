@@ -131,9 +131,15 @@ void Application::settings() {
   // The app's sounds: the start, cursor steps, the queue, done and errors.
   option(7, 44, tr("Sound effects"), "", Ink, true, state_.sounds ? 1 : 0);
   note(7, tr("Turns the startup sound and effects on or off"));
+  // What the log keeps; A steps through the levels. It is what a report sends.
+  option(8, 16, tr("Log for bug reports"),
+         state_.logLevel == LogLevel::Off   ? tr("Off")
+         : state_.logLevel == LogLevel::All ? tr("All")
+                                            : tr("Errors only"),
+         Ink, true);
   // The log's tail to the server, only when pressed: what went wrong reaches
   // whoever runs it.
-  option(8, 33, tr("Send a bug report"),
+  option(9, 33, tr("Send a bug report"),
          bugWorker_.joinable() ? std::string(tr("Sending")) : std::string(tr("Sends the end of the app's log to the connected server")),
          Secondary, false);
   // What the app leaves on the card: A shows how much each kind takes in a

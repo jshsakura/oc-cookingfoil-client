@@ -1,4 +1,6 @@
 #pragma once
+#include <atomic>
+#include <chrono>
 // The TCP receive window. One connection carries at most its window per
 // round trip, so it caps a download over a distant edge. The system's stack
 // is BSD's: a socket that sets SO_RCVBUF itself stays at that size for good,
@@ -91,10 +93,12 @@ struct SessionGrant {
   long status = 0;
   std::string token;
   int64_t secondsLeft = 0; // until the server's expiresAt, by the server's clock
+  bool suspended = false;  // X-CookingFoil-Session: suspended; asked again later
 };
 // The server offers it: `ask` gets one. `credentials` tells the sign-in it
-// was asked with; while it is the same, a refusal stands for the run (403:
-// the server keeps Basic), and a token held stays.
+// was asked with; while it is the same, a refusal (401, 403: the server
+// keeps Basic, 429) stands for the run, and a token held stays. Any other
+// answer is asked again after RenewGapSeconds; new credentials ask at once.
 void offerSession(const std::string &origin, const std::string &credentials, std::function<SessionGrant()> ask);
 void withdrawSession(const std::string &origin);
 // The token for a request to `origin`, asked for first when there is none,
@@ -102,6 +106,20 @@ void withdrawSession(const std::string &origin);
 // down; empty when the server gives none (the request signs in as before).
 constexpr int64_t RenewBeforeSeconds = 600;
 std::string sessionToken(const std::string &origin);
+// The stop flag of the work this thread does, while the scope lasts: asking
+// for a session token (sessionToken, renewSession), and waiting for another
+// request's ask, end when it is set, as the request itself does.
+class CancelScope {
+public:
+  explicit CancelScope(const std::atomic<bool> *cancel);
+  ~CancelScope();
+  CancelScope(const CancelScope &) = delete;
+  CancelScope &operator=(const CancelScope &) = delete;
+
+private:
+  const std::atomic<bool> *outer_;
+};
+const std::atomic<bool> *scopedCancel();
 // After a 401 with X-CookingFoil-Session for a request sent with `sent`:
 // a new token is asked for once, true when one newer than `sent` is held.
 bool renewSession(const std::string &sent);
@@ -114,6 +132,15 @@ uint64_t sessionRefusals(const std::string &url);
 // for a session token was refused (401). True once per take-back of the
 // server `serverUrl`, for the screen to refresh it and ask for approval again.
 bool takeConsoleRevoked(const std::string &serverUrl);
+// The server suspended this console (its account turned off or deleted; it
+// keeps the key): "account-off", "account-gone", or "suspended" when only a
+// header said so (X-CookingFoil-Session or X-CookingFoil-Token). Empty again
+// once a reply from that server goes through.
+std::string consoleSuspension(const std::string &url);
+// The reason a suspended reply's body gave.
+void heardSuspension(const std::string &url, const std::string &reason);
 // Tests: every session forgotten.
 void forgetSessions();
+// Tests: the wait before asking again after a 5xx or no answer.
+void setSessionRetryGap(std::chrono::milliseconds gap);
 } // namespace foil::net

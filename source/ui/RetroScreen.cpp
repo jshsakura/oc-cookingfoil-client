@@ -4,6 +4,7 @@
 #include "net/RetroApi.hpp"
 #include "core/Json.hpp"
 #include "core/Sha256.hpp"
+#include <future>
 #include <algorithm>
 #include <chrono>
 #include <ctime>
@@ -115,15 +116,33 @@ void Application::loadRetroHome() {
   const auto state = state_;
   const auto sd = sdRoot_;
   runRetroJob("list", [this, servers, server, state, sd]() -> std::function<void()> {
-    net::RetroReply reply;
+    // Every server's home and picked rows at once, so a slow one holds the
+    // others up by its own time, not by the sum of all of them. What each
+    // brought is put together in the servers' order, as before.
+    using Homes = std::pair<net::RetroReply, std::vector<retro::Shelf>>;
+    using Themes = std::pair<net::RetroReply, std::vector<retro::Theme>>;
+    std::vector<std::future<Homes>> homes;
+    std::vector<std::future<Themes>> picked;
+    for (const auto &one : servers) {
+      homes.push_back(std::async(std::launch::async, [this, one, &state] {
+        Homes got;
+        got.second = net::retroHome(one, state, got.first, &stop_).value;
+        return got;
+      }));
+      picked.push_back(std::async(std::launch::async, [this, one, &state] {
+        Themes got;
+        got.second = net::retroThemes(one, state, got.first, &stop_).value;
+        return got;
+      }));
+    }
+    auto home = homes.front().get();
+    net::RetroReply reply = std::move(home.first);
     // The one in use says how the home went; the others' shelves join it.
-    std::vector<std::pair<std::string, std::vector<retro::Shelf>>> parts{
-        {server.url, net::retroHome(server, state, reply, &stop_).value}};
+    std::vector<std::pair<std::string, std::vector<retro::Shelf>>> parts{{server.url, std::move(home.second)}};
     // The servers' label dictionaries, the one in use first.
     labels::Book book = reply.labels;
     for (size_t i = 1; i < servers.size() && !reply.missing && !reply.error; ++i) {
-      net::RetroReply theirs;
-      auto shelves = net::retroHome(servers[i], state, theirs, &stop_).value;
+      auto [theirs, shelves] = homes[i].get();
       labels::merge(book, theirs.labels);
       if (theirs.error) logLine("retro: " + servers[i].url + " not read: " + theirs.error.message);
       else if (!theirs.missing) parts.push_back({servers[i].url, std::move(shelves)});
@@ -144,11 +163,10 @@ void Application::loadRetroHome() {
     // and none failing leaves the home as it was.
     if (!noHome && !reply.error) {
       std::vector<std::pair<std::string, std::vector<retro::Theme>>> themes;
-      for (const auto &one : servers) {
-        net::RetroReply theirs;
-        auto rows = net::retroThemes(one, state, theirs, &stop_).value;
+      for (size_t i = 0; i < servers.size(); ++i) {
+        auto [theirs, rows] = picked[i].get();
         labels::merge(book, theirs.labels);
-        if (!theirs.error && !theirs.missing) themes.push_back({one.url, std::move(rows)});
+        if (!theirs.error && !theirs.missing) themes.push_back({servers[i].url, std::move(rows)});
       }
       auto rows = retro::themeShelves(retro::mergeThemes(std::move(themes)));
       shelves.insert(shelves.begin(), std::make_move_iterator(rows.begin()), std::make_move_iterator(rows.end()));

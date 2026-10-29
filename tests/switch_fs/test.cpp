@@ -158,10 +158,12 @@ int main() {
   std::filesystem::create_directories(physicalRoot);
   const auto ledger = physicalRoot + "/ledger.json";
   std::ofstream(ledger) << "old";
+  // The card refuses the move even once the old file is gone: the record is
+  // written anew in its place, and nothing is left beside it.
   failFinalRename = true;
-  CHECK(!foil::atomicWrite(ledger, "complete new record", error));
-  CHECK(!std::filesystem::exists(ledger));
-  CHECK(foil::readFile(ledger + ".tmp") == "complete new record");
+  CHECK(foil::atomicWrite(ledger, "complete new record", error));
+  CHECK(foil::readFile(ledger) == "complete new record" && !std::filesystem::exists(ledger + ".tmp"));
+  std::ofstream(ledger) << "old";
   failFinalRename = false;
   CHECK(foil::atomicWrite(ledger, "complete new record", error));
   CHECK(foil::readFile(ledger) == "complete new record" && !std::filesystem::exists(ledger + ".tmp"));

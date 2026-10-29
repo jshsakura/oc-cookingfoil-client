@@ -1,9 +1,9 @@
 #pragma once
-// The SD card to a PC over the USB cable, as an MTP device (libhaze): open
+// The SD card to a PC over the USB cable, as an MTP device (mtp/Mtp.hpp): open
 // in Explorer on Windows, in OpenMTP on a Mac. Only the card is offered,
 // never the system's own storage. Nothing is held before start() or after
-// stop(): the transfer buffers (8 MiB) come with start(), the file list of a
-// PC's session (up to 16 MiB) only while a PC has it open.
+// stop(): the transfer buffers (8 MiB) come with start(), the file names of
+// the folders a PC opened only while it has the card open.
 // On the host, preview() walks the screen through each state instead.
 #include <cstdint>
 #include <string>
@@ -22,6 +22,7 @@ struct Status {
   bool toConsole = false; // that copy goes from the PC to the card
   int64_t moved = 0;      // of that file so far
   int copied = 0;         // files copied this time, either way
+  int dropped = 0;        // copies that did not finish, deleted from the card
   // The folders (paths on the card) the PC wrote to, for sweepMacJunk.
   std::vector<std::string> touched;
   bool cableSeen = false; // the PC took the cable at some point

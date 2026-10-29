@@ -11,6 +11,10 @@ namespace {
 // Every 30 s on 홈 and 다운로드, where a send is looked for (60 s while a
 // download runs); 120 s elsewhere.
 constexpr uint32_t SendsEveryMs = 30000, SendsBusyMs = 60000, SendsAwayMs = 120000, SendsRetryMs = 3000;
+// One card at a time, in the order they came, 6 s each: cancelled in that
+// time it is not downloaded, else it goes to the queue. At most this many
+// wait; a game's file and names only, the cover from the image cache.
+constexpr size_t MaxArrivals = 20;
 std::string sendKey(const std::string &server, const std::string &id) { return server + "|" + id; }
 } // namespace
 void Application::pollSends() {
@@ -34,7 +38,11 @@ void Application::pollSends() {
   sendsAt_ = now;
   const auto state = state_;
   auto acks = std::exchange(sendsAcks_, {});
-  auto declines = std::exchange(sendsDeclines_, {});
+  // Every refusal not confirmed yet goes, the new ones and those that did
+  // not get through before (kept in the state across a restart).
+  sendsDeclines_.clear();
+  std::map<std::string, std::vector<std::string>> declines;
+  for (const auto &[server, ids] : state_.sendsDeclined) declines[server].assign(ids.begin(), ids.end());
   sendsWorker_ = std::thread([this, servers, state, acks = std::move(acks), declines = std::move(declines)]() mutable {
     const platform::OnCore off(platform::NetworkCore);
     guarded("device sends", [&] {
@@ -45,15 +53,18 @@ void Application::pollSends() {
         if (net::ackSends(server, state, ids->second, true, &stop_)) acks.erase(ids);
         else logLine("device sends: answer to " + server.url + " not sent");
       }
-      // One that failed is answered again when the list still holds it.
+      // One that failed is answered again next round, while the list holds it.
       for (const auto &server : servers)
-        if (const auto ids = declines.find(server.url); ids != declines.end())
-          net::ackSends(server, state, ids->second, false, &stop_);
+        if (const auto ids = declines.find(server.url); ids != declines.end()) {
+          if (net::ackSends(server, state, ids->second, false, &stop_)) sendsDeclinedDone_[server.url] = ids->second;
+          else logLine("device sends: refusal to " + server.url + " not sent");
+        }
       std::vector<sends::Source> sources;
       for (const auto &server : servers) {
         auto &kept = sendsKept_[server.url];
         auto reply = net::deviceSends(server, state, kept.first, &stop_);
         if (reply.feed) kept = {reply.etag, std::move(*reply.feed)};
+        if (!reply.failed) sendsAnswered_.insert(server.url);
         sources.push_back({server.url, kept.second});
       }
       sendsIncoming_ = sends::merge(sources);
@@ -112,10 +123,25 @@ void Application::takeSends(std::vector<sends::Pick> picks) {
   };
   forget(sendsTaken_);
   forget(sendsHeld_);
+  // Refusals the servers took, or whose sends they no longer list, are done.
+  bool declinedChanged = false;
+  for (const auto &[server, ids] : std::exchange(sendsDeclinedDone_, {}))
+    for (const auto &id : ids)
+      if (auto at = state_.sendsDeclined.find(server); at != state_.sendsDeclined.end())
+        declinedChanged = at->second.erase(id) > 0 || declinedChanged;
+  for (auto at = state_.sendsDeclined.begin(); at != state_.sendsDeclined.end();) {
+    for (auto id = at->second.begin(); id != at->second.end();)
+      if (!sendsAnswered_.count(at->first) || listed.count(sendKey(at->first, *id))) ++id;
+      else id = at->second.erase(id), declinedChanged = true;
+    at = at->second.empty() ? state_.sendsDeclined.erase(at) : std::next(at);
+  }
+  if (declinedChanged) saveOwnState();
   picks.erase(std::remove_if(picks.begin(), picks.end(),
                              [&](const sends::Pick &p) {
                                return std::any_of(p.acks.begin(), p.acks.end(), [&](const sends::Ack &a) {
-                                 return sendsTaken_.count(sendKey(a.server, a.id)) > 0;
+                                 const auto declined = state_.sendsDeclined.find(a.server);
+                                 return sendsTaken_.count(sendKey(a.server, a.id)) > 0 ||
+                                        (declined != state_.sendsDeclined.end() && declined->second.count(a.id) > 0);
                                });
                              }),
               picks.end());
@@ -134,7 +160,10 @@ void Application::takeSends(std::vector<sends::Pick> picks) {
   uint64_t queued = queuedBytes();
   for (const auto &a : arrivals_) queued += std::max(a.item.size, a.item.installSize);
   const bool console = installTarget() == "nand";
-  const auto admitted = sends::admit(candidates, {console ? nandFree_ : sdFree_, queued, installQueue_.size() + arrivals_.size()});
+  // Taken means shown: what has no card yet is left for a later round.
+  const size_t room = MaxArrivals - std::min(MaxArrivals, arrivals_.size());
+  const auto admitted =
+      sends::admit(candidates, {console ? nandFree_ : sdFree_, queued, installQueue_.size() + arrivals_.size(), room});
   // Free space not read yet: asked again shortly, not after the interval.
   if (admitted.waiting) {
     sendsAt_ = SDL_GetTicks() - SendsEveryMs + SendsRetryMs;
@@ -160,18 +189,29 @@ void Application::acceptArrival(Arrival arrival) {
     if (auto error = enqueueInstall({arrival.item}, arrival.title, arrival.icon, installTarget(), {}, false, fresh)) {
       // Refused here (a system title): the server is told, not asked again.
       logLine("device sends: " + arrival.title + " not queued: " + error.message);
+      decline(arrival.acks);
       return sendsDeclines_;
     }
     return sendsAcks_;
   }();
-  for (const auto &a : arrival.acks) answers[a.server].push_back(a.id);
+  if (&answers == &sendsAcks_)
+    for (const auto &a : arrival.acks) answers[a.server].push_back(a.id);
   if (fresh)
     if (auto error = launchAdded(1)) alert_ = error.message;
 }
 // B or a tap on the card: not downloaded, and the servers told.
+// Refused here: kept (and written) until the server takes the answer, so a
+// restart in between answers it again instead of showing the card anew.
+void Application::decline(const std::vector<sends::Ack> &acks) {
+  for (const auto &a : acks) {
+    sendsDeclines_[a.server].push_back(a.id);
+    state_.sendsDeclined[a.server].insert(a.id);
+  }
+  saveOwnState();
+}
 void Application::cancelArrival() {
   if (arrivals_.empty()) return;
-  for (const auto &a : arrivals_.front().acks) sendsDeclines_[a.server].push_back(a.id);
+  decline(arrivals_.front().acks);
   arrivals_.pop_front();
   arrivalAt_ = SDL_GetTicks();
   sounds_.play(Cue::Move);
@@ -179,17 +219,12 @@ void Application::cancelArrival() {
 } // namespace foil::ui
 namespace foil::ui {
 namespace {
-// One card at a time, in the order they came, 6 s each: cancelled in that
-// time it is not downloaded, else it goes to the queue. At most this many
-// wait; a game's file and names only, the cover from the image cache.
-constexpr size_t MaxArrivals = 20;
 constexpr uint32_t ArrivalTurnMs = 6000, ArrivalMoveMs = 240;
 float easeOut(float t) { return 1 - (1 - t) * (1 - t) * (1 - t); }
 } // namespace
 void Application::arrived(std::vector<Arrival> games) {
   if (arrivals_.empty()) arrivalAt_ = SDL_GetTicks();
-  for (auto &g : games)
-    if (arrivals_.size() < MaxArrivals) arrivals_.push_back(std::move(g));
+  for (auto &g : games) arrivals_.push_back(std::move(g));
 }
 // The front card's time: under a popup it stops (the card cannot be seen or
 // cancelled there); once it runs out, the game goes to the queue.

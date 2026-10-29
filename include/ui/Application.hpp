@@ -137,6 +137,9 @@ public:
   bool reloading() const { return reloadWorker_.joinable(); }
   // The server still asked (network_ not yet taken by a frame).
   bool asking() const { return network_.joinable() && !done_; }
+  // The server picked in 설정 (tests): connect, and the one in use.
+  void pickServer(size_t index) { connect(index); }
+  std::string serverUsed() const { return session_ ? session_->server().url : std::string(); }
   std::string selectedName() const;
   void setDetail(net::Detail detail);
   bool confirmingInstall() const { return confirmInstall_; }
@@ -291,7 +294,10 @@ public:
     platform::usb::preview(std::move(status));
     usbStatus_ = platform::usb::status();
   }
-  void previewUsbStopping() { usbStopping_ = true; }
+  void previewUsbStopping(bool cleaning = false) {
+    usbStopping_ = true;
+    usbCleaning_ = cleaning;
+  }
   void previewUsbApplet() { usbAppletAsk_ = true; }
   std::string arrivalShown() const { return arrivals_.empty() ? "" : arrivals_.front().title; } // tests
   void previewArrivals(std::vector<std::pair<std::string, std::string>> games, uint32_t age = 1000) {
@@ -302,9 +308,11 @@ public:
   void previewUsbDone() {
     platform::usb::stop();
     usbOpen_ = usbStopping_ = usbAppletAsk_ = false;
+    usbCleaning_ = false;
   }
   bool usbDriveOpen() const { return usbOpen_; }
   bool usbAppletShown() const { return usbAppletAsk_; }
+  bool pressShown() const { return pressing_; }
   SDL_FRect sdChip() const { return sdChip_; } // tests: where the footer's SD card space was drawn
   bool footerPending() const { return menuPending(); } // tests: the footer still shows placeholders
   void previewLanguagePopup(int row) {
@@ -445,8 +453,9 @@ public:
   void toggleInstallCheck(bool &skip);
   void saveOwnState();
   // 설정's options card: 언어, 기본 저장 위치, 앱 업데이트, 남은 파일 정리,
-  // then the switches: 홈 메뉴 바로가기, 효과음, then 버그 보고 보내기.
-  static constexpr int SettingsOptions = 9;
+  // then the switches: 홈 메뉴 바로가기, 효과음, then 버그 보고용 로그 and
+  // 버그 보고 보내기.
+  static constexpr int SettingsOptions = 10;
   float settingsScroll_ = 0; // how far 설정 is scrolled to keep the cursor in view
   void chooseLanguage(Language language);
   // Genre names without a session (the PC preview's fixtures).
@@ -741,10 +750,13 @@ private:
   bool usbToldPlugged_ = false;
   std::thread usbWorker_;
   std::atomic<bool> usbStopped_{false};
-  int usbSwept_ = 0; // Mac files the last close removed
+  std::atomic<bool> usbCleaning_{false}; // USB is off, the card being swept
+  int usbSwept_ = 0, usbDropped_ = 0; // Mac files and unfinished copies the last close removed
   bool usbLost_ = false; // the close came from the cable going
   void openUsbDrive();
   void closeUsbDrive(bool lost);
+  // USB let go of and the card swept: on usbWorker_, or as the app closes.
+  void releaseUsbDrive(const std::string &sd);
   void pollUsbDrive();
   void usbDriveDialog();
   void usbDriveAction(Action a);
@@ -762,7 +774,9 @@ private:
   std::vector<sends::Pick> sendsIncoming_;
   std::map<std::string, std::vector<std::string>> sendsAcks_; // per server: ids taken, not yet answered
   std::map<std::string, std::vector<std::string>> sendsUnsent_; // the worker's answers that did not go out
-  std::map<std::string, std::vector<std::string>> sendsDeclines_; // per server: ids the queue refused
+  std::map<std::string, std::vector<std::string>> sendsDeclines_; // per server: refused since the last round (asked at once)
+  std::map<std::string, std::vector<std::string>> sendsDeclinedDone_; // the worker's refusals the servers took
+  std::set<std::string> sendsAnswered_; // servers whose list came this run: what they no longer list is done
   std::set<std::string> sendsTaken_, sendsHeld_; // "server|id"
   void pollSends();
   void takeSends(std::vector<sends::Pick> picks);
@@ -782,6 +796,7 @@ private:
   void cancelArrival();
   void stepArrivals();
   void arrived(std::vector<Arrival> games);
+  void decline(const std::vector<sends::Ack> &acks);
   void arrivalCard();
   bool selfShortcutPossible() const;
   void makeSelfShortcut();
@@ -1374,6 +1389,7 @@ private:
   int bugServer_ = 0; // the row of reportServers() it goes to
   std::string bugMessage_;
   std::thread bugWorker_;
+  std::string autoReport_; // sent once a server answers (a build that stopped twice)
   std::atomic<bool> bugDone_{false};
   std::string incomingBugStatus_;
   std::string lastAlert_; // the alert already written to the log
@@ -1526,6 +1542,7 @@ private:
   // The picked files with their options' queries and words put on them.
   std::vector<Item> withOptions(std::vector<Item> files) const;
   Job optionsJob_;
+  bool optionsAgain_ = false; // another detail opened while the last one's options were asked
   std::string optionsFor_; // the group id the options are for
   std::map<std::string, std::vector<net::FileOption>> fileOptions_;
   bool optionInstall_ = false; // the confirm open is the option's
@@ -1534,8 +1551,9 @@ private:
     hit(x, y, w, h, std::move(run), {}, -radius);
   }
   // Under a popup nothing answers: no taps, and no list glides behind it.
+  // A finger outside the popup presses nothing, so nothing darkens.
   void blockTouch() {
-    hit(0, 0, 1280, 720, [] {});
+    hits_.push_back({{0, 0, 1280, 720}, [] {}, {}, 0, false});
     glideAreas_.clear();
   }
   void hintAction(const std::string &key);
@@ -1546,6 +1564,7 @@ private:
     std::function<void()> run;
     SDL_FRect look{}; // shown pressed as this when set; else a card around area
     int radius = 0;   // below 0: a row (rowHit), pressed as area itself with these corners
+    bool pressable = true; // false: takes the touch but is never shown pressed
   };
   std::vector<Hit> hits_;
   // The header's buttons (tabs, filter, search, Y buttons), recorded each
@@ -1708,12 +1727,21 @@ private:
   std::vector<OtherRead> othersRead_;
   std::vector<std::thread> othersAsking_;
   bool othersUnshown_ = false; // a change read while session_'s list failed
+  // An empty home is not left waiting for the slowest server: session_'s
+  // list (with what the others gave before) goes up as soon as it is read,
+  // and the merged list replaces it once they all answered.
+  std::vector<Group> earlyGroups_;
+  std::atomic<bool> earlyReady_{false};
   void askOthers();
   void joinOthers();
   bool readOthers(bool primaryChanged);
   std::thread network_;
   std::atomic<bool> done_{false};
   std::atomic<bool> stop_{false};
+  // The sessions' own stop: set to change servers while one is still asked
+  // (connectNext_ waits for it), or as the app closes.
+  std::atomic<bool> connectStop_{false};
+  std::optional<size_t> connectNext_;
   std::atomic<bool> retroCancel_{false}; // Y while RetroArch downloads; also set on exit
   std::vector<Item> incoming_;
   std::vector<Group> incomingGroups_; // incoming_ grouped on the network thread
@@ -1732,6 +1760,10 @@ private:
     net::Detail detail;
     uint32_t at;
   };
+  // A detail opened again within a minute comes from here; older ones and
+  // all past the last DetailsKept go when the next one comes.
+  static constexpr uint32_t DetailKeptMs = 60000;
+  static constexpr size_t DetailsKept = 16;
   std::map<std::string, DetailCache> details_;
   install::Installer installer_;
   // The download screen's speed and time left, timed by its own frames.
@@ -1822,6 +1854,7 @@ private:
   std::vector<CardPatch> cardPatches_, incomingCardPatches_;
   Qr qr_;
   bool pairingPending_ = false;
+  std::string enrollTold_; // the server + token refusal already said this run
   net::PairingInfo pairingInfo_;
   uint32_t pairPollAt_ = 0;
   // Updates and DLC the console lacks, worked out once per catalog or
@@ -1835,10 +1868,10 @@ private:
   bool updateNewer_ = false; // a newer build was found; kept while checking again
   // Every automatic ask is bounded; -, Y or A starts them again.
   uint32_t pairSince_ = 0;    // when approval became pending; polling stops after a while
-  int pairPolls_ = 0;         // approval checks made since: each waits longer
-  // Approval is checked after 5 seconds, then twice as long each time up to
-  // a minute (pairPollGap), and not at all after PairWaitMs until asked again.
-  uint32_t pairPollGap() const { return std::min<uint32_t>(5000u << std::min(pairPolls_, 4), 60000); }
+  int pairPolls_ = 0;         // approval checks made since
+  // Every 3 s: an approval done on the phone shows within moments, however
+  // long it took to sign in there; PairWaitMs still ends the asking.
+  uint32_t pairPollGap() const { return 3000; }
   // Checks approval now and starts the wait over.
   void retryPairing();
   int patchRetries_ = 0, retroRetries_ = 0;

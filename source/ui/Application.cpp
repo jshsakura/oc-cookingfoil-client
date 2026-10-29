@@ -56,14 +56,17 @@ Application::Application(SDL_Renderer *renderer, std::string configPath,
 Application::~Application() {
   platform::stopWatchingScreen();
   stop_ = true;
+  connectStop_ = true;
   retroCancel_ = true;
   updateCancel_ = true;
   // Closing (HOME, power, an update): a download stops where it is and its
   // place is written down, so the next start goes on from it.
   installer_.stop();
   installer_.wait();
-  // A PC still on the cable lets go of the card before the app goes.
-  platform::usb::stop();
+  // A PC still on the cable lets go of the card before the app goes, and
+  // the card is swept as 연결 끊기 sweeps it. A close already under way
+  // finishes on its worker.
+  if (usbOpen_ && !usbStopping_) guarded("usb close", [&] { releaseUsbDrive(sdRoot_); });
   if (usbWorker_.joinable()) usbWorker_.join();
   // Finished in its last step as the app closed, or in the frame it closed
   // in, before the screen heard: kept as done, or the next start would take
@@ -300,11 +303,13 @@ bool Application::open() {
         const auto saved = loadState(statePath_).value;
         state_.language = saved.language;
         state_.sounds = saved.sounds;
+        state_.logLevel = saved.logLevel;
         state_.theme = saved.theme;
       }
       applyTheme();
       applyStartupLanguage();
       sounds_.setOn(state_.sounds);
+      setLogLevel(state_.logLevel);
       // Each step says what it is doing under the logo, so a slow SD card or
       // server shows where the time goes.
       background(tr("Preparing the image cache"), 0.38f, 0.40f);
@@ -771,7 +776,7 @@ void Application::screen(Screen screen) {
     if (homebrewLoaded_ && !homebrewError_) loadHomebrew();
   }
   // 설정 says whether a newer build is on the server, asked once a launch.
-  if (screen == Screen::Settings && appUpdate_ == AppUpdate::Unknown && connected_)
+  if (screen == Screen::Settings && appUpdate_ == AppUpdate::Unknown && (connected_ || (session_ && !network_.joinable())))
     checkAppUpdate();
   // Dropbox's popups belong to the visit that opened them.
   dropboxOpen_ = dropboxUnlinkAsk_ = dropboxChoosing_ = false;
@@ -942,7 +947,11 @@ void Application::applyReload(int prefer, ReloadRead read) {
 void Application::connect(size_t index) {
   if (index >= config_.servers.size() || !config_.servers[index].enabled)
     return;
+  // Another server still asked: it is stopped (within about a second, not
+  // after its timeouts) and this one connects once it has let go.
   if (network_.joinable() && !done_) {
+    connectNext_ = index;
+    connectStop_ = true;
     message(tr("Connecting to the server."));
     return;
   }
@@ -955,7 +964,7 @@ void Application::connect(size_t index) {
   if (!keep) clearCatalog();
   serverIndex_ = index;
   session_ = std::make_unique<net::Session>(config_.servers[index], state_,
-                                            statePath_, &stop_);
+                                            statePath_, &connectStop_);
   session_->setConfigPath(configPath_);
   others_.clear();
   serverItems_.clear();
@@ -964,7 +973,7 @@ void Application::connect(size_t index) {
   for (size_t i = 0; i < config_.servers.size(); ++i) {
     const auto &server = config_.servers[i];
     if (i == index || !server.enabled) continue;
-    others_.push_back(std::make_unique<net::Session>(server, state_, statePath_, &stop_));
+    others_.push_back(std::make_unique<net::Session>(server, state_, statePath_, &connectStop_));
     others_.back()->setConfigPath(configPath_);
     renewTokensWith(server);
     others.push_back(server);
@@ -1000,15 +1009,25 @@ void Application::refresh() {
   // placeholders again until it answers. A known menu stays as it is, and
   // so does the approval screen: its poll every 5 seconds is no new try.
   if (features_.empty() && !pairingPending_) menuKnown_ = false;
-  network_ = std::thread([this] {
+  earlyReady_ = false;
+  earlyGroups_ = {};
+  network_ = std::thread([this, empty = groups_.empty()] {
     // Reading the catalog (seconds of JSON) stays off the drawing core too.
     const platform::OnCore off(platform::NetworkCore);
     incomingError_ = {};
     incomingCatalog_ = false;
-    const bool ok = guarded("catalog", [this] {
+    const bool ok = guarded("catalog", [this, empty] {
       askOthers();
       const bool read = session_->refresh(incomingError_);
       const bool changed = read && !session_->unchanged();
+      if (changed && empty && !others_.empty()) {
+        std::vector<ServerItems> lists{{session_->server().url, session_->items()}};
+        for (const auto &other : others_)
+          if (const auto kept = serverItems_.find(other->server().url); kept != serverItems_.end())
+            lists.push_back({other->server().url, kept->second});
+        earlyGroups_ = groupedCatalog(mergeServers(lists));
+        earlyReady_ = true;
+      }
       // The others' lists are taken even when this one failed: what they
       // read is not asked again (their next answer is a 304).
       const bool othersChanged = readOthers(changed);
@@ -1253,8 +1272,16 @@ void Application::poll() {
     if (auto error = launchQueued())
       alert_ = error.message;
   if (!done_.exchange(false)) {
-    // Waiting for approval: asked less and less often, and not after a
-    // while (pairPollGap, PairWaitMs); the screen then has 다시 시도.
+    // session_'s list read while the others are still asked: shown now on
+    // an empty home (its shelves too); the merged list follows.
+    if (earlyReady_.exchange(false) && groups_.empty() && session_) {
+      featured_ = session_->featured();
+      genreNames_ = session_->genres();
+      scoreLabels_ = session_->scoreLabels();
+      setGroups(std::exchange(earlyGroups_, {}));
+    }
+    // Waiting for approval: asked every few seconds, and not after a while
+    // (pairPollGap, PairWaitMs); the screen then has 다시 시도.
     if (!network_.joinable() && pairingPending_ && !pairingStopped() && SDL_GetTicks() - pairPollAt_ >= pairPollGap()) {
       pairPollAt_ = 0;
       ++pairPolls_;
@@ -1265,11 +1292,25 @@ void Application::poll() {
     // a load that never ended.
     return;
   }
+  // Stopped for another server: what it brought is dropped, that one asked.
+  if (connectNext_) {
+    network_.join();
+    connectStop_ = false;
+    earlyReady_ = false;
+    earlyGroups_ = {};
+    incomingError_ = {};
+    detailRequest_ = detailLoading_ = refreshing_ = false; // nothing is waited for any more
+    const auto next = *std::exchange(connectNext_, std::nullopt);
+    connect(next);
+    return;
+  }
   takeNetwork();
 }
 // What the network thread brought: a detail, the approval state or the catalog.
 void Application::takeNetwork() {
   network_.join();
+  earlyReady_ = false;
+  earlyGroups_ = {}; // not taken in time: the merged list below is newer
   // An enroll token the session spent is gone from the copy here too, so a
   // later save of the servers does not write it back.
   if (session_ && session_->server().enrollToken.empty())
@@ -1278,6 +1319,12 @@ void Application::takeNetwork() {
   if (detailRequest_) {
     detailLoading_ = false;
     if (!incomingError_) {
+      // Only fresh ones are kept, and a few: each holds its text and lists.
+      for (auto it = details_.begin(); it != details_.end();)
+        it = SDL_GetTicks() - it->second.at >= DetailKeptMs ? details_.erase(it) : std::next(it);
+      while (details_.size() >= DetailsKept)
+        details_.erase(std::min_element(details_.begin(), details_.end(),
+                                        [](const auto &a, const auto &b) { return a.second.at < b.second.at; }));
       details_[detailServer_ + requestedId_] = {incomingDetail_,
                                                          SDL_GetTicks()};
       if (screen_ == Screen::Detail && detailGroup_ < groups_.size() &&
@@ -1296,6 +1343,15 @@ void Application::takeNetwork() {
   }
   pairingPending_ = session_->pairingPending();
   pairingInfo_ = session_->pairingInfo();
+  // Connected with a key it held, but the download's token was refused: the
+  // console is not the account's, so what the website sends never comes.
+  // Said once; the approval screen says it in its own words.
+  if (const auto &refused = session_->enrollRefusal(); !pairingPending_ && !refused.empty() &&
+                                                       std::exchange(enrollTold_, session_->server().url + refused) !=
+                                                           session_->server().url + refused)
+    message(refused == "other-account"
+                ? tr("This console is linked to another account. Games sent from your account will not reach it.")
+                : tr("This download could not link the console to your account. Download it from the website again to send games to it."));
   // A password taken out of config.json after approval leaves this copy
   // too, so saving the server form never writes it back.
   if (session_->server().password.empty())
@@ -1334,6 +1390,7 @@ void Application::takeNetwork() {
     state_.language = mine.language;
     state_.makeShortcuts = mine.makeShortcuts;
     state_.sounds = mine.sounds;
+    state_.logLevel = mine.logLevel;
     state_.installTarget = mine.installTarget;
     state_.theme = mine.theme;
     state_.pairMessages = mine.pairMessages;
@@ -2105,7 +2162,15 @@ void Application::action(Action a) {
         sounds_.setOn(state_.sounds);
         sounds_.play(Cue::Add); // turned on: heard at once
         break;
-      case 8: openBugReport(""); break;
+      // Errors, then everything, then nothing, then errors again.
+      case 8:
+        state_.logLevel = state_.logLevel == LogLevel::Errors ? LogLevel::All
+                        : state_.logLevel == LogLevel::All    ? LogLevel::Off
+                                                              : LogLevel::Errors;
+        setLogLevel(state_.logLevel);
+        saveOwnState();
+        break;
+      case 9: openBugReport(""); break;
       default:
         // A server opens its form; "+ 서버 추가" an empty one.
         openServerForm(selected_ < int(config_.servers.size()) ? std::max(0, selected_) : -1);
@@ -2506,8 +2571,10 @@ void Application::render() {
   clips_.clear();
   glideStep();
   header_.clear();
-  // Asked once a launch, as soon as a server answers; 설정's badge shows it.
-  if (connected_ && appUpdate_ == AppUpdate::Unknown && !updateWorker_.joinable())
+  // Asked once a launch, as soon as a server answers, or once it was tried
+  // and did not let the console in: an approved console whose account is
+  // off still gets a fix with its key.
+  if ((connected_ || (session_ && !network_.joinable())) && appUpdate_ == AppUpdate::Unknown && !updateWorker_.joinable())
     checkAppUpdate();
   headerHome_.clear();
   // The menu's cursor has rested on another screen: show it, the cursor

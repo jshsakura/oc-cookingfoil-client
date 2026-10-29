@@ -247,7 +247,7 @@ bool Application::startShortcut(const QueuedInstall &next) {
       }
       if (!picture.empty()) icon = shortcutIconJpeg(picture);
       if (icon.empty() && plan.iconUrl.rfind("http", 0) == 0)
-        logLine("shortcut: " + plan.display + " keeps the app's own icon (" + from + ")");
+        logDetail("shortcut: " + plan.display + " keeps the app's own icon (" + from + ")");
       platform::ShortcutRequest request;
       request.nroPath = forwarder::loaderPath(plan.launch.empty() ? plan.file : plan.launch);
       request.extraArgs = plan.extra;

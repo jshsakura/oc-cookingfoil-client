@@ -14,6 +14,13 @@ int runSendsTests() {
     {"id":"a3","url":"not a url"}]})");
   CHECK(feed.serverId == "s1" && feed.items.size() == 1 && feed.items[0].name == "One" && feed.items[0].size == 10);
   CHECK(sd::parse("nonsense").items.empty());
+  bool shaped = false;
+  CHECK(sd::parse(R"({"serverId":"s1","items":[]})", &shaped).items.empty() && shaped);
+  for (const char *broken : {"<html>proxy error</html>", "{}", R"({"items":{}})"}) {
+    shaped = true;
+    sd::parse(broken, &shaped);
+    CHECK(!shaped);
+  }
 
   // Server b sent the same game earlier: it comes once, answered on both.
   sd::Feed a{"s1", {{"a1", "", "One", "0100", "https://a.example.com/1", "2026-10-20T10:00:00Z", "", 10},
@@ -44,6 +51,11 @@ int runSendsTests() {
   // Firmware too old, and a full queue.
   CHECK(sd::admit({{1, false}}, {10 * GB, 0, 0}).held.size() == 1);
   CHECK(sd::admit({{1, true}}, {10 * GB, 0, sd::MaxQueue}).held.size() == 1);
+
+  // Only as many as can wait on screen: the rest are left for the next round.
+  const auto cards = sd::admit(std::vector<sd::Candidate>(25, {1, true}), {10 * GB, 0, 0, 20});
+  CHECK(cards.take.size() == 20 && cards.held.empty() && cards.take.back() == 19);
+  CHECK(sd::admit({{1, true}}, {10 * GB, 0, 0, 0}).take.empty());
 
   CHECK(sd::ackBody({"a1", "b1"}, true) == R"({"ids":["a1","b1"],"result":"accepted"})");
   CHECK(sd::ackBody({}, false) == R"({"ids":[],"result":"declined"})");
