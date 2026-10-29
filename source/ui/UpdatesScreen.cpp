@@ -132,7 +132,7 @@ void Application::updates() {
                           float((int(rows.size())) - (4)), 124);
   const int first = std::max(0, int(top));
   paint_.scrollbar(1266, 90, 480, top, 4, float(rows.size()));
-  clipTo(232, 90 - 8, 1048, 660 - 90 + 8);
+  clipList(90 - 8, 660 - 90 + 8);
   for (int i = first; i < int(rows.size()) && i <= first + 5; ++i) {
     const auto &row = rows[i];
     const auto *group = findGroup(row.baseId);

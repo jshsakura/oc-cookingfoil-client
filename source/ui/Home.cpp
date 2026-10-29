@@ -232,7 +232,7 @@ void Application::home() {
         continue;
       }
       // The shelf's last card: the whole list, which scrolls on and on.
-      hit(cx, cy, 150, 220, [this, n] { openTheme(n); });
+      hit(cx, cy, 150, CardTapHeight, [this, n] { openTheme(n); });
       if (focused && selected_ == count) paint_.ring(cx, cy, 150, 150);
       paint_.rect(cx, cy, 150, 150, Surface, 14);
       paint_.icon(9, cx + 75 - 18, cy + 46, Ink, 36);

@@ -1642,6 +1642,10 @@ private:
   std::vector<SDL_Rect> clips_;
   void clipTo(float x, float y, float w, float h);
   void unclip();
+  // A list under a screen's header: clipped from `top` down `h`, with the
+  // footer's line along its top edge so the rows pass under the header
+  // instead of stopping at nothing.
+  void clipList(float top, float h);
   void unglide() {
     glide_.active = glide_.held = glide_.settling = false;
     glideRest_.clear();

@@ -473,7 +473,7 @@ void Application::dropboxTab() {
                           float((count) - (Visible)), RowStep);
   const int first = std::max(0, int(top));
   paint_.scrollbar(1266, ListTop, RowStep * Visible - 12, top, Visible, float(count));
-  clipTo(232, ListTop - 8, 1048, 660 - ListTop + 8);
+  clipList(ListTop - 8, 660 - ListTop + 8);
   {
     const float y = ListTop - top * RowStep;
     rowHit(260, y, 992, RowHeight, 16, [this] {
