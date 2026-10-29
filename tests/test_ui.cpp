@@ -201,6 +201,14 @@ int runUiTests(SDL_Renderer *renderer) {
     app.render();
     app.touch(60, 30);
     CHECK(app.current() == foil::ui::Screen::Library);
+    // A card opened by a tap takes the cursor, so B comes back to it and the
+    // list does not jump to the top.
+    app.render();
+    app.touch(260 + 170 + 75, 250);
+    CHECK(app.current() == foil::ui::Screen::Detail);
+    app.action(foil::ui::Action::Back);
+    CHECK(app.current() == foil::ui::Screen::Library);
+    CHECK(app.cursor() == 1);
   }
   {
     // The SD card's free space on the footer opens 연결 to PC. The host runs

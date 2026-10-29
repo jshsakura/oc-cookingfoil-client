@@ -430,6 +430,7 @@ public:
   int savesTab() const { return savesTab_; }
   const std::string &headerFocus() const { return headerFocus_; }
   bool onMenu() const { return sidebar_; }
+  int cursor() const { return selected_; }
   bool serverFormOpen() const { return serverForm_.has_value(); }
   const Config &config() const { return config_; }
   size_t activeServer() const { return serverIndex_; }
@@ -1507,8 +1508,10 @@ private:
   bool writeServers(const Config &next, int prefer, const std::string &done);
   void openDetail(size_t group);
   void fetchDetail();
+  // `focus` puts the cursor on the card before a tap opens it, so B comes back
+  // to it rather than to wherever the cursor was left.
   void card(const Group &g, float x, float y, bool selected,
-            bool badges = true);
+            bool badges = true, std::function<void()> focus = {});
   // `exact`: the URL as given (no thumbnail size asked) and the picture
   // fitted whole, for art the server already made square (retro tiles).
   // `dark`: the cover sits on a dark backdrop (a banner), so its waiting
