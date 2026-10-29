@@ -196,11 +196,16 @@ std::string corePath(const std::string &core);
 struct PackRecord {
   std::string version;
   std::map<std::string, std::string> files;
+  // Files the card would not take under their name (path -> the sha256
+  // refused): not asked for again until the server's file changes or a full
+  // sync starts the record over. Each sync otherwise stopped on them again.
+  std::map<std::string, std::string> refused;
 };
 PackRecord parsePackRecord(const std::string &json);
 std::string serializePackRecord(const PackRecord &record);
 // The files to fetch: missing on the card, changed on the server, or never
-// recorded; `exists` and `sizeOf` look at the card.
+// recorded, but not one the card refused as it is now; `exists` and `sizeOf`
+// look at the card.
 struct PackPlan {
   std::vector<PackFile> fetch;
   uint64_t bytes = 0;

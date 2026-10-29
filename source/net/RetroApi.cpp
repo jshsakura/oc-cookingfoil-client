@@ -123,11 +123,12 @@ bool retroPackBundle(const Server &server, const State &state, const retro::Pack
                   skip, false, received, error, cancel);
 }
 bool retroFile(const Server &server, const State &state, const retro::PackFile &file, const std::string &sd,
-               std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel, long *status) {
+               std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel, long *status,
+               bool *refused) {
   if (!retro::packPathAllowed(file.path)) {
     error.message = trf("Not an allowed place: {0}", {file.path});
     return false;
   }
-  return fetchFile(server, state, file.url, sd, file.path, file.sha256, file.size, received, error, cancel, nullptr, status);
+  return fetchFile(server, state, file.url, sd, file.path, file.sha256, file.size, received, error, cancel, nullptr, status, refused);
 }
 } // namespace foil::net

@@ -14,8 +14,10 @@ std::string filePart(const std::string &sd, const std::string &path);
 // One file to sd/<path> through filePart, resumed when an earlier try left
 // one. `sha256` (64 hex) is checked; empty, the download's ETag is taken as
 // the checksum when it carries one. `size` 0 skips that check. `busy` gets
-// a 503's wait, `status` the HTTP status (a 429 to wait out).
+// a 503's wait, `status` the HTTP status (a 429 to wait out). `refused` is
+// set when the whole file came but the card would not take it under its name.
 bool fetchFile(const Server &server, const State &state, const std::string &url, const std::string &sd,
                const std::string &path, std::string sha256, uint64_t size, std::atomic<uint64_t> &received,
-               Error &error, const std::atomic<bool> *cancel, int *busy = nullptr, long *status = nullptr);
+               Error &error, const std::atomic<bool> *cancel, int *busy = nullptr, long *status = nullptr,
+               bool *refused = nullptr);
 } // namespace foil::net
