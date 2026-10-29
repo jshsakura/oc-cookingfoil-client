@@ -484,7 +484,6 @@ void Images::draw(const std::string &url, float x, float y, int w, int h,
           SDL_CreateRGBSurfaceWithFormat(0, 16, 8, 32, SDL_PIXELFORMAT_RGBA32);
       SDL_BlitScaled(source, nullptr, small, nullptr);
       auto *data = static_cast<Uint32 *>(small->pixels);
-      auto *pixels = static_cast<Uint32 *>(surface->pixels);
       float colors[8][16][3]{};
       for (int by = 0; by < 8; ++by)
         for (int bx = 0; bx < 16; ++bx)
@@ -498,24 +497,36 @@ void Images::draw(const std::string &url, float x, float y, int w, int h,
               colors[by][bx][1] += g / 25.f;
               colors[by][bx][2] += b / 25.f;
             }
-      for (int yy = 0; yy < ph; ++yy)
-        for (int xx = 0; xx < pw; ++xx) {
-          const float sx = xx * 15.f / pw, sy = yy * 7.f / ph;
-          const int bx = sx, by = sy;
-          const float fx = sx - bx, fy = sy - by;
-          float rgb[3]{};
-          for (int c = 0; c < 3; ++c)
-            rgb[c] =
-                (1 - fy) * ((1 - fx) * colors[by][bx][c] +
-                            fx * colors[by][std::min(15, bx + 1)][c]) +
-                fy *
-                    ((1 - fx) * colors[std::min(7, by + 1)][bx][c] +
-                     fx * colors[std::min(7, by + 1)][std::min(15, bx + 1)][c]);
-          const float opacity = .34f - .22f * xx / pw;
-          pixels[yy * pw + xx] =
-              SDL_MapRGBA(surface->format, 10 + rgb[0] * opacity,
-                          10 + rgb[1] * opacity, 14 + rgb[2] * opacity, 255);
+      // The same bilinear spread of the 16 x 8 colors, worked out per column
+      // (where it falls, its opacity) and per row (the two rows blended)
+      // once, so a pixel is one blend and a store, not a lookup and a
+      // SDL_MapRGBA each: the first draw of a banner was 7 ms on the PC.
+      std::vector<int> column(pw);
+      std::vector<float> across(pw), opacity(pw);
+      for (int xx = 0; xx < pw; ++xx) {
+        const float sx = xx * 15.f / pw;
+        column[xx] = int(sx);
+        across[xx] = sx - column[xx];
+        opacity[xx] = .34f - .22f * xx / pw;
+      }
+      auto *bytes = static_cast<Uint8 *>(surface->pixels);
+      for (int yy = 0; yy < ph; ++yy) {
+        const float sy = yy * 7.f / ph;
+        const int by = sy, below = std::min(7, by + 1);
+        const float fy = sy - by;
+        float row[16][3];
+        for (int bx = 0; bx < 16; ++bx)
+          for (int c = 0; c < 3; ++c) row[bx][c] = (1 - fy) * colors[by][bx][c] + fy * colors[below][bx][c];
+        auto *out = bytes + yy * surface->pitch; // RGBA32: R, G, B, A in memory
+        for (int xx = 0; xx < pw; ++xx, out += 4) {
+          const int bx = column[xx], right = std::min(15, bx + 1);
+          const float fx = across[xx], o = opacity[xx];
+          out[0] = Uint8(10 + ((1 - fx) * row[bx][0] + fx * row[right][0]) * o);
+          out[1] = Uint8(10 + ((1 - fx) * row[bx][1] + fx * row[right][1]) * o);
+          out[2] = Uint8(14 + ((1 - fx) * row[bx][2] + fx * row[right][2]) * o);
+          out[3] = 255;
         }
+      }
       SDL_FreeSurface(small);
     } else if (contain) {
       SDL_FillRect(surface, nullptr, SDL_MapRGBA(surface->format, 10, 10, 14, 255));
