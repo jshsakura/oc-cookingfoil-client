@@ -20,19 +20,6 @@ unsigned char hexValue(char c) {
     return static_cast<unsigned char>(c - '0');
   return static_cast<unsigned char>(10 + (std::tolower(static_cast<unsigned char>(c)) - 'a'));
 }
-// Uniform index below size (at most 256) by rejection sampling.
-size_t randomIndex(size_t size) {
-  const unsigned threshold = (256u / static_cast<unsigned>(size)) * static_cast<unsigned>(size);
-  while (true) {
-    unsigned char byte = 0;
-    if (!randomBytes(&byte, 1)) {
-      std::random_device device;
-      byte = static_cast<unsigned char>(device() & 0xFFu);
-    }
-    if (byte < threshold)
-      return byte % size;
-  }
-}
 std::string pathRequest(const std::string &path) { return "{\"path\":\"" + escapeJsonString(path) + "\"}"; }
 // Days since 1970-01-01 for a proleptic Gregorian date (Howard Hinnant).
 int64_t daysFromCivil(int64_t y, unsigned m, unsigned d) {
@@ -116,15 +103,11 @@ std::string generateRandomHex(size_t bytes) {
   return out;
 }
 
-std::string generateCodeVerifier(size_t length) {
-  static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
-  constexpr size_t size = sizeof(alphabet) - 1;
-  length = length < 43 ? 43 : length > 128 ? 128 : length;
-  std::string out;
-  out.reserve(length);
-  for (size_t i = 0; i < length; ++i)
-    out += alphabet[randomIndex(size)];
-  return out;
+std::string generateCodeVerifier() {
+  std::vector<unsigned char> bytes(32);
+  if (!randomBytes(bytes.data(), bytes.size()))
+    return "";
+  return base64UrlEncode(bytes);
 }
 
 std::string base64UrlEncode(const std::vector<unsigned char> &bytes) {
@@ -389,6 +372,10 @@ Parsed<BridgeSession> parseBridgeSession(const std::string &json) {
   return result;
 }
 
+std::string startBody(const std::string &codeVerifier) {
+  return "{\"code_challenge\":\"" + buildCodeChallengeS256(codeVerifier) + "\",\"code_challenge_method\":\"S256\"}";
+}
+
 std::string parseSessionStatus(const std::string &json) {
   Error error;
   const auto root = parseJson(json, error);
@@ -402,11 +389,10 @@ Parsed<BridgeGrant> parseBridgeGrant(const std::string &json) {
     return result;
   auto &g = result.value;
   g.authorizationCode = stringField(root.get(), "authorization_code");
-  g.codeVerifier = stringField(root.get(), "code_verifier");
   g.state = stringField(root.get(), "state");
   g.redirectUri = stringField(root.get(), "redirect_uri");
   g.tokenEndpoint = stringField(root.get(), "token_endpoint");
-  if (g.authorizationCode.empty() || g.codeVerifier.empty() || !field(root.get(), "state") ||
+  if (g.authorizationCode.empty() || !field(root.get(), "state") ||
       !field(root.get(), "redirect_uri") || g.tokenEndpoint.empty())
     result.error.message = "bridge grant is missing fields";
   else if (!isAllowedTokenEndpoint(g.tokenEndpoint))
@@ -507,9 +493,9 @@ Credentials withToken(Credentials c, const Token &token, std::time_t now) {
   c.expiresAt = token.expiresIn > 0 ? int64_t(now) + token.expiresIn : 0;
   return c;
 }
-std::string authorizationCodeBody(const BridgeGrant &grant, const std::string &clientId) {
+std::string authorizationCodeBody(const BridgeGrant &grant, const std::string &codeVerifier, const std::string &clientId) {
   return "grant_type=authorization_code&code=" + percentEncode(grant.authorizationCode) +
-         "&code_verifier=" + percentEncode(grant.codeVerifier) + "&client_id=" + percentEncode(clientId) +
+         "&code_verifier=" + percentEncode(codeVerifier) + "&client_id=" + percentEncode(clientId) +
          "&redirect_uri=" + percentEncode(grant.redirectUri);
 }
 std::string refreshBody(const std::string &refreshToken, const std::string &clientId) {

@@ -74,8 +74,14 @@ Error Dropbox::store() {
 DropboxStart Dropbox::start(const Server &server, const State &state) {
   DropboxStart result;
   const auto url = db::bridgeUrl(server.url, "", "start");
+  const auto verifier = db::generateCodeVerifier();
+  if (verifier.empty()) {
+    logLine("dropbox: no random bytes for the sign-in");
+    result.error.message = tr("Could not complete the Dropbox approval. Connect again from the start.");
+    return result;
+  }
   PostOptions options;
-  options.body = "{\"device_id\":\"switch\"}";
+  options.body = db::startBody(verifier);
   const auto response = post(url, bridgeHeaders(server, state, url), options, cancel_);
   if (response.status == 404 && response.error.empty()) {
     result.missing = true;
@@ -94,6 +100,7 @@ DropboxStart Dropbox::start(const Server &server, const State &state) {
     return result;
   }
   result.session = std::move(parsed.value);
+  result.session.codeVerifier = verifier;
   return result;
 }
 
@@ -152,7 +159,7 @@ Error Dropbox::finish(const Server &server, const State &state, const db::Bridge
   const auto clientId = db::clientIdFromAuthorizeUrl(session.authorizeUrl);
   if (clientId.empty()) return {tr("Could not read the server's Dropbox reply.")};
   PostOptions exchange;
-  exchange.body = db::authorizationCodeBody(grant.value, clientId);
+  exchange.body = db::authorizationCodeBody(grant.value, session.codeVerifier, clientId);
   const auto response =
       post(grant.value.tokenEndpoint, {"Content-Type: application/x-www-form-urlencoded"}, exchange, cancel_);
   if (!response.error.empty()) return {response.error};
