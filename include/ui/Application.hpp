@@ -413,7 +413,7 @@ public:
     connected_ = true;
     dropboxSession_.reset();
     if (!signIn.empty()) {
-      dropboxSession_ = net::dropbox::BridgeSession{"preview", "preview", signIn, "", 0};
+      dropboxSession_ = net::dropbox::BridgeSession{"preview", "preview", signIn, "", 0, ""};
       dropboxQr_.encode(signIn);
       dropboxPollAt_ = dropboxExpiresAt_ = SDL_GetTicks() + 15 * 60 * 1000;
     }
