@@ -10,6 +10,14 @@ int runCatalogTests() {
   CHECK(foil::thumbnailUrl("https://srv/i?size=sm") == "https://srv/i?size=sm");
   CHECK(foil::thumbnailUrl("installed:0100") == "installed:0100");
   CHECK(foil::thumbnailUrl("").empty());
+  // A DLC row names the DLC, not the game it belongs to.
+  CHECK(foil::dlcLabel("Naruto X Boruto Ultimate Ninja Storm Connections - Dlc Pack Vol. 1",
+                       "Naruto X Boruto Ultimate Ninja Storm Connections") == "Dlc Pack Vol. 1");
+  CHECK(foil::dlcLabel("Castlevania Belmonts Curse: Alucard Style Costume [0100BA4026E95001][v0]",
+                       "castlevania belmonts curse") == "Alucard Style Costume");
+  CHECK(foil::dlcLabel("Bonus Contents Pack", "Castlevania Belmonts Curse") == "Bonus Contents Pack");
+  CHECK(foil::dlcLabel("Castlevania Belmonts Curse", "Castlevania Belmonts Curse") == "Castlevania Belmonts Curse");
+  CHECK(foil::dlcLabel("[0100BA4026E95002]", "Game") == "[0100BA4026E95002]");
   {
     // The sounds: as long as their scores, loud only up to their gain, and
     // ending in silence (no click).

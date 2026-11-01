@@ -405,6 +405,26 @@ std::vector<size_t> selectCatalog(const std::vector<Group> &groups,
   }
   return result;
 }
+std::string dlcLabel(const std::string &dlcName, const std::string &gameName) {
+  std::string name = dlcName;
+  // "… [0100…][v0]" from a file name.
+  while (!name.empty() && name.back() == ']') {
+    const auto open = name.rfind('[');
+    if (open == std::string::npos) break;
+    name.erase(open);
+    while (!name.empty() && name.back() == ' ') name.pop_back();
+  }
+  const auto lower = [](std::string s) {
+    for (auto &c : s) c = char(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+  };
+  if (!gameName.empty() && name.size() > gameName.size() && lower(name).rfind(lower(gameName), 0) == 0) {
+    auto rest = name.substr(gameName.size());
+    const auto start = rest.find_first_not_of(" -:\xE2\x80\x93\xE2\x80\x94");
+    if (start != std::string::npos && start > 0) return rest.substr(start);
+  }
+  return name.empty() ? dlcName : name;
+}
 std::string versionLabel(const Item &item) {
   return item.versionName.empty()          ? "v" + std::to_string(item.version)
          : item.versionName.str().front() == 'v' ? item.versionName.str()

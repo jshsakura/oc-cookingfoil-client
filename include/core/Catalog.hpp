@@ -107,6 +107,10 @@ std::vector<HomeTheme> homeThemes(const std::vector<Group> &groups, size_t hero,
 // sm is 256px, md 512px (feature image-sizes); covers use sm, large art md.
 std::string thumbnailUrl(const std::string &url, const char *size = "sm");
 std::string versionLabel(const Item &item);
+// A DLC's own name: the game's name in front ("Game - Costume Set" under
+// "Game") and bracketed ids at the end are left off, so a short row shows
+// which DLC it is. Unchanged when the game's name is not in front.
+std::string dlcLabel(const std::string &dlcName, const std::string &gameName);
 // The store writes free titles as "0원" or "$0.00"; those read "무료".
 std::string priceText(const std::string &amount);
 std::string formatBytes(uint64_t bytes);
