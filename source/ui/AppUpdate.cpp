@@ -78,7 +78,17 @@ void Application::checkAppUpdate() {
 }
 // What the last update came to, said once at start when it went wrong:
 // undone or not put in.
+void Application::keepReport(const std::string &note) {
+  autoReport_ = note;
+  if (selfPath_.empty()) return;
+  std::string error;
+  if (!atomicWrite(selfPath_ + ".report", note, error)) logLine("report not kept: " + error);
+}
 void Application::noticeRollBack() {
+  // A report kept by an earlier run goes once a server answers; the file
+  // stays until one is sent.
+  if (std::error_code ec; !selfPath_.empty() && std::filesystem::exists(selfPath_ + ".report", ec))
+    autoReport_ = readFile(selfPath_ + ".report");
   if (selfPath_.empty()) return;
   std::error_code ec;
   const auto take = [&](const std::string &suffix, std::string &text) {
@@ -300,6 +310,7 @@ void Application::sendBugReport(const std::string &said) {
       ok = net::sendBugReport(server, state, log, error, &stop_);
     });
     incomingBugStatus_ = ok ? std::string(tr("Sent the bug report to the server.")) : error.message;
+    bugSent_ = ok;
     bugDone_ = true;
   });
 }
@@ -311,6 +322,8 @@ void Application::pollLog() {
     sendBugReport(std::exchange(autoReport_, std::string()));
   if (bugDone_.exchange(false)) {
     bugWorker_.join();
+    // Any report carries the log, so a kept one is no longer needed.
+    if (std::error_code ec; bugSent_ && !selfPath_.empty()) std::filesystem::remove(selfPath_ + ".report", ec);
     message(incomingBugStatus_); // said once; the row reads as before
   }
   // An error popup that just appeared goes into the log on the card.
