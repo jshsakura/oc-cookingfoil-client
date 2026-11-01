@@ -16,8 +16,9 @@ void Application::refreshInstalled(std::function<void()> first) {
   deviceBusy_ = true;
   readingSaves_ = removalOperation_ = false;
   deviceError_ = {};
-  deviceWorker_ = std::thread([this, first = std::move(first)] {
+  deviceWorker_ = std::thread([this, first = std::move(first), read = ++readsBegun_] {
     const platform::OnCore off(platform::WriterCore); // the drawing core keeps the screen
+    readIncoming_ = read;
     if (first && !guarded("installed first", first)) logLine("installed: the step before the read failed");
     if (!guarded("installed", [this] {
           auto result = platform::readInstalled();
@@ -43,6 +44,9 @@ void Application::pollDevice() {
   installed_ = std::move(incomingInstalled_);
   installedAt_ = SDL_GetTicks();
   updatesStale_ = true;
+  readShown_ = readIncoming_;
+  for (auto it = justInstalled_.begin(); it != justInstalled_.end();)
+    it = it->second < readShown_ ? justInstalled_.erase(it) : std::next(it);
   installed_.games = sortInstalled(std::move(installed_.games), installedSort_);
   // The home is built from the whole library: only when what is on the console
   // changed, not after every finished download (an update or a DLC does not).
@@ -54,6 +58,8 @@ void Application::pollDevice() {
     managedGame_.reset(); removal_.reset(); saves_.clear(); saveOpen_.reset();
     message(deviceError_ ? deviceError_.message : tr("Deleted. The installed list was refreshed."));
   }
+  // A read begun before the install ended does not have it: one more.
+  if (!justInstalled_.empty() && !installer_.running()) refreshInstalled();
 }
 void Application::cycleInstalledSort(int step) {
   const auto &games = installed_.games;

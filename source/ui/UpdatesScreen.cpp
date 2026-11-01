@@ -23,8 +23,10 @@ std::vector<UpdateCandidate> Application::pendingUpdates() const {
     updates_ = findUpdates(groups_, installed_.installed);
     updatesStale_ = false;
   }
-  // What waits in 다운로드 or comes down now cannot be asked for again.
+  // What waits in 다운로드 or comes down now cannot be asked for again, nor
+  // what was just installed while the list does not show it yet.
   std::set<std::string> taken;
+  for (const auto &[url, read] : justInstalled_) taken.insert(url);
   for (const auto &e : history_)
     if ((e.outcome == history::Outcome::Queued || e.outcome == history::Outcome::Running) && e.kind.empty())
       for (const auto &file : e.install.files) taken.insert(file.url);
@@ -152,7 +154,7 @@ void Application::updates() {
     if (row.item.type == "update" && local != installed_.games.end() && !local->displayVersion.empty())
       installed = local->displayVersion;
     // An update says which version it brings; a DLC says what it is.
-    const auto detail = row.item.type == "dlc" ? row.item.name : installed + " → " + versionLabel(row.item);
+    const auto detail = row.item.type == "dlc" ? dlcLabel(row.item.name, name) : installed + " → " + versionLabel(row.item);
     paint_.fonts.text(detail, 382, y + 65, 19, Secondary, false, 600);
     // Its kind, at the right end above the size.
     const std::string kind = row.item.type == "update" ? tr("Update|item") : row.installedVersion ? tr("DLC update") : tr("New DLC");
