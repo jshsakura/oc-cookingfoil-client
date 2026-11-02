@@ -660,28 +660,44 @@ bool Application::runRetroArch(bool full, const Server &server) {
         }
         // One file that will not come (a write the card refuses, a 404) does
         // not stop the rest: the others still arrive, and the first failure
-        // is what the user is told, with how many more there were.
+        // is what the user is told, with how many more there were. A server
+        // that answers nothing several files in a row is not waited out file
+        // by file: each one took minutes and held 다운로드 behind it.
+        constexpr int SilentInRow = 3;
         Error first;
         int failed = 0;
+        int silent = 0;
         for (const auto &file : plan.fetch) {
           if (retroCancel_ || done == int(plan.fetch.size())) break;
           // A busy server answers 429: wait a little longer each time and
           // try the same file again before giving up.
           bool ok = false;
+          bool refused = false;
+          long status = 0;
           for (int attempt = 0; attempt < 5 && !retroCancel_; ++attempt) {
-            long status = 0;
+            status = 0;
+            refused = false;
             error = {};
-            if ((ok = net::retroFile(server, state, file, sd, retroReceived_, error, &retroCancel_, &status))) break;
+            if ((ok = net::retroFile(server, state, file, sd, retroReceived_, error, &retroCancel_, &status, &refused)))
+              break;
             if (status != 429) break;
             for (int waited = 0; waited < (2 << attempt) * 10 && !retroCancel_; ++waited) SDL_Delay(100);
           }
           if (!ok) {
             if (retroCancel_) break;
             logLine("retroarch file failed: " + file.path + ": " + error.message);
+            if (refused) record.refused[file.path] = file.sha256;
             if (!failed++) first = error;
             error = {};
+            if (status != 0) silent = 0; // it answered, if not with the file
+            else if (++silent >= SilentInRow) {
+              logLine("retroarch: the server answered none of " + std::to_string(silent) + " files in a row; stopped");
+              break;
+            }
             continue;
           }
+          silent = 0;
+          record.refused.erase(file.path);
           record.files[file.path] = file.sha256;
           // Written as it goes, so a sync cut off (power, a crash) resumes
           // from here instead of from the start.

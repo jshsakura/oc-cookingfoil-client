@@ -327,20 +327,28 @@ PackRecord parsePackRecord(const std::string &json) {
   auto root = parseJson(json, error);
   if (!root) return record;
   record.version = stringField(root.get(), "version");
-  if (auto *files = field(root.get(), "files"); json_object_is_type(files, json_type_object)) {
-    json_object_object_foreach(files, key, value) {
-      if (json_object_is_type(value, json_type_string)) record.files[key] = json_object_get_string(value);
+  const auto read = [&](const char *name, std::map<std::string, std::string> &into) {
+    if (auto *files = field(root.get(), name); json_object_is_type(files, json_type_object)) {
+      json_object_object_foreach(files, key, value) {
+        if (json_object_is_type(value, json_type_string)) into[key] = json_object_get_string(value);
+      }
     }
-  }
+  };
+  read("files", record.files);
+  read("refused", record.refused);
   return record;
 }
 std::string serializePackRecord(const PackRecord &record) {
   Json root(json_object_new_object());
   json_object_object_add(root.get(), "version", json_object_new_string(record.version.c_str()));
-  auto *files = json_object_new_object();
-  for (const auto &[path, sha] : record.files)
-    json_object_object_add(files, path.c_str(), json_object_new_string(sha.c_str()));
-  json_object_object_add(root.get(), "files", files);
+  const auto write = [&](const char *name, const std::map<std::string, std::string> &from) {
+    auto *files = json_object_new_object();
+    for (const auto &[path, sha] : from)
+      json_object_object_add(files, path.c_str(), json_object_new_string(sha.c_str()));
+    json_object_object_add(root.get(), name, files);
+  };
+  write("files", record.files);
+  if (!record.refused.empty()) write("refused", record.refused);
   return json_object_to_json_string_ext(root.get(), JSON_C_TO_STRING_PLAIN);
 }
 PackPlan planPack(const Pack &pack, const PackRecord &record, bool (*exists)(const std::string &),
@@ -351,6 +359,9 @@ PackPlan planPack(const Pack &pack, const PackRecord &record, bool (*exists)(con
     const bool there = exists(local);
     // A settings file the user may have changed is only ever created.
     if (file.once && there) continue;
+    if (const auto no = record.refused.find(file.path);
+        !there && no != record.refused.end() && !file.sha256.empty() && no->second == file.sha256)
+      continue;
     const auto known = record.files.find(file.path);
     if (there && known != record.files.end() && known->second == file.sha256 && sizeOf(local) == file.size) continue;
     plan.fetch.push_back(file);

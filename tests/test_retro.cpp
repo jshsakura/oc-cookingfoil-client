@@ -3,6 +3,7 @@
 #include "core/I18n.hpp"
 #include "MockServer.hpp"
 #include "core/Json.hpp"
+#include <fstream>
 #include <algorithm>
 #include "net/FileFetch.hpp"
 #include "net/RetroApi.hpp"
@@ -364,6 +365,25 @@ int runRetroTests() {
   const auto cut = planPack(pack, record, exists, sizeOf, "sdmc:");
   CHECK(cut.fetch.size() == 1 && cut.fetch[0].path == "retroarch/cores/x.nro");
   shortFile.clear();
+  {
+    // A file the card refused is not asked for again while the server's is
+    // the same one; a changed file on the server, or one now on the card,
+    // is planned as before.
+    PackRecord refusing = record;
+    onCard.erase("sdmc:/retroarch/cores/x.nro");
+    refusing.refused["retroarch/cores/x.nro"] = "c";
+    CHECK(planPack(pack, refusing, exists, sizeOf, "sdmc:").fetch.empty());
+    refusing.refused["retroarch/cores/x.nro"] = "older";
+    CHECK(planPack(pack, refusing, exists, sizeOf, "sdmc:").fetch.size() == 1);
+    onCard.insert("sdmc:/retroarch/cores/x.nro");
+    refusing.refused["retroarch/cores/x.nro"] = "c";
+    refusing.files["retroarch/cores/x.nro"] = "old";
+    CHECK(planPack(pack, refusing, exists, sizeOf, "sdmc:").fetch.size() == 1);
+    const auto kept = parsePackRecord(serializePackRecord(refusing));
+    CHECK(kept.refused == refusing.refused && kept.files == refusing.files);
+    // A record from before refusals were kept still reads.
+    CHECK(parsePackRecord(R"({"version":"v1","files":{"a":"b"}})").refused.empty());
+  }
   record.files["retroarch/cores/x.nro"] = "old";
   const auto again = parsePackRecord(serializePackRecord(record));
   CHECK(again.files == record.files);
@@ -425,6 +445,38 @@ int runRetroTests() {
       CHECK(!error && status == 200);
       CHECK(foil::readFile(std::string(root) + "/" + path) == "core options");
       CHECK(!std::filesystem::exists(foil::net::filePart(root, path)));
+      // The card will not take the name (here a folder that cannot be
+      // emptied holds it): the whole file came, so it is a refusal, not the
+      // server's.
+      {
+        foil::retro::PackFile blocked = file;
+        blocked.path = "retroarch/config/Mupen64Plus-Next/blocked.opt";
+        const auto taken = std::string(root) + "/" + blocked.path;
+        std::filesystem::create_directories(taken + "/locked");
+        std::ofstream(taken + "/locked/inside") << "x";
+        std::filesystem::permissions(taken + "/locked", std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec);
+        bool refused = false;
+        status = 0;
+        error = {};
+        CHECK(!foil::net::retroFile(at, foil::State{}, blocked, root, received, error, nullptr, &status, &refused));
+        CHECK(refused && status == 200 && error);
+        std::filesystem::permissions(taken + "/locked", std::filesystem::perms::owner_all);
+      }
+      // A file the server would not send is not a refusal of the card's.
+      {
+        Mock missing;
+        missing.answer = [](const std::string &) { return Reply{404, "", "{}"}; };
+        foil::Server there;
+        there.url = "http://127.0.0.1:" + std::to_string(missing.port);
+        foil::retro::PackFile gone = file;
+        gone.path = "retroarch/system/gone.ini";
+        gone.url = there.url + "/api/retro/file/gone";
+        bool refused = false;
+        status = 0;
+        error = {};
+        CHECK(!foil::net::retroFile(there, foil::State{}, gone, root, received, error, nullptr, &status, &refused));
+        CHECK(status == 404 && error && !refused);
+      }
       std::filesystem::remove_all(root);
     }
   }
