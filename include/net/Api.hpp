@@ -53,6 +53,12 @@ int lastCurl();
 // the console's link is up (the name not found yet, the connection refused):
 // what a request sent the moment the console woke gets.
 bool linkNotUp(int curlCode);
+// How many more times the app's first connection tries after a failure:
+// several while the link is not up, once after a timeout that never
+// connected (a slow first name lookup), none otherwise. The second form
+// reads this thread's last request.
+int startupRetries(int curlCode, bool connected);
+int startupRetries();
 // Each server is asked to take the console's key once a run (Session); this
 // starts a new run's worth (tests).
 void forgetRebindAttempts();

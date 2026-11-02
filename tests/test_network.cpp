@@ -24,10 +24,18 @@ int runNetworkTests() {
         // that does not answer, or a bad certificate, is not.
         CHECK(foil::net::linkNotUp(6) && foil::net::linkNotUp(7));
         CHECK(!foil::net::linkNotUp(0) && !foil::net::linkNotUp(28) && !foil::net::linkNotUp(60));
+        // The app's first connection: several tries while the link is not up,
+        // one after a timeout that never connected (a slow first name
+        // lookup), none for a server that took the connection and then went
+        // quiet, a bad certificate or success.
+        CHECK(foil::net::startupRetries(6, false) > 1 && foil::net::startupRetries(7, false) > 1);
+        CHECK(foil::net::startupRetries(28, false) == 1);
+        CHECK(foil::net::startupRetries(28, true) == 0 && foil::net::startupRetries(60, true) == 0 &&
+              foil::net::startupRetries(0, true) == 0);
         // The last request on this thread is what lastCurl() reads: a port
         // nothing listens on refuses the connection.
         const auto refused = foil::net::get("http://127.0.0.1:1/api/library/sections");
-        CHECK(refused.curl == 7 && foil::net::lastCurl() == 7 && foil::net::linkNotUp(foil::net::lastCurl()));
+        CHECK(refused.curl == 7 && foil::net::lastCurl() == 7 && foil::net::startupRetries() > 1);
     }
     auto sections = foil::net::parseSections(R"({"sections":[{"items":[{"url":"https://host/game.nsz","name":"한글 日本 中文","title_id":"0100000000010000","app_version":131072,"size":4400000000,"languages":["ko","en"],"added_at":1728000000}]}]})");
     CHECK(!sections.error && sections.value.size() == 1);

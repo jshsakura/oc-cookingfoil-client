@@ -253,12 +253,27 @@ int signalStrength() {
 namespace {
 std::atomic<bool> certificateFailed{false};
 thread_local int lastCurlCode = 0;
+thread_local bool lastConnected = false;
+void noteResult(CURL* curl, int code) {
+    lastCurlCode = code;
+    curl_off_t connectedAt = 0;
+    lastConnected = curl_easy_getinfo(curl, CURLINFO_CONNECT_TIME_T, &connectedAt) == CURLE_OK && connectedAt > 0;
+}
 }
 bool takeCertificateFailure() { return certificateFailed.exchange(false); }
 int lastCurl() { return lastCurlCode; }
 bool linkNotUp(int curlCode) {
     return curlCode == CURLE_COULDNT_RESOLVE_HOST || curlCode == CURLE_COULDNT_CONNECT;
 }
+int startupRetries(int curlCode, bool connected) {
+    if (linkNotUp(curlCode)) return 6;
+    // The console's name lookup is not cut by curl's timeout (no resolver
+    // thread on the Switch): a first lookup that took 10-20 seconds ends
+    // as a timeout, and the next try finds the name at once.
+    if (curlCode == CURLE_OPERATION_TIMEDOUT && !connected) return 1;
+    return 0;
+}
+int startupRetries() { return startupRetries(lastCurlCode, lastConnected); }
 std::string connectionError(int code, const std::string& url) {
     if ((code == CURLE_COULDNT_RESOLVE_HOST || code == CURLE_COULDNT_CONNECT ||
          code == CURLE_OPERATION_TIMEDOUT) && !internetConnected())
@@ -353,7 +368,7 @@ Response getOnce(const std::string& url, const std::vector<std::string>& headers
     }
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
     result.curl = int(code);
-    lastCurlCode = result.curl;
+    noteResult(curl, result.curl);
     if (code != CURLE_OK && result.error.empty()) result.error = connectionError(code, url);
     if (code != CURLE_OK || result.status >= 400)
         logLine("GET " + url.substr(0, url.find_first_of("?#")) + " status=" + std::to_string(result.status) +
@@ -445,7 +460,7 @@ Response stream(const std::string& url, const std::vector<std::string>& headers,
     const auto code = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
     result.curl = int(code);
-    lastCurlCode = result.curl;
+    noteResult(curl, result.curl);
     // A body shorter than Content-Length (the file shrank on the server)
     // ends in CURLE_PARTIAL_FILE and counts as a failure.
     if (code != CURLE_OK && !context.aborted) result.error = connectionError(code, url);
@@ -543,7 +558,7 @@ Response postOnce(const std::string& url, const std::vector<std::string>& header
     const auto code = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
     result.curl = int(code);
-    lastCurlCode = result.curl;
+    noteResult(curl, result.curl);
     if (context.failedWrite && result.error.empty()) result.error = trf("Could not write the file: {0}", {options.saveTo});
     if (code != CURLE_OK && result.error.empty()) result.error = connectionError(code, url);
     // Only the address is logged: bodies carry tokens and codes.
