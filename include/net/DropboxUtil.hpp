@@ -19,8 +19,8 @@ std::string percentDecode(const std::string &value);
 // PKCE. Random bytes come from the console CSRNG.
 bool randomBytes(unsigned char *buffer, size_t size);
 std::string generateRandomHex(size_t bytes);
-// Clamped to 43..128 characters of the RFC 7636 unreserved set.
-std::string generateCodeVerifier(size_t length = 64);
+// 43 characters, base64url of 32 CSRNG bytes; empty when the CSRNG fails.
+std::string generateCodeVerifier();
 std::string base64UrlEncode(const std::vector<unsigned char> &bytes);
 std::vector<unsigned char> sha256(const std::string &input);
 std::string buildCodeChallengeS256(const std::string &verifier);
@@ -70,12 +70,17 @@ bool isSafeRevision(const std::string &revision);
 struct BridgeSession {
   std::string sessionId, pollToken, authorizeUrl, pollUrl;
   int retryAfter = 0; // seconds, 0 when absent
+  // Made here for this sign-in and never sent: the server sees only its
+  // S256 challenge, so a code it relays is no use without the console.
+  std::string codeVerifier;
 };
 Parsed<BridgeSession> parseBridgeSession(const std::string &json);
+// The sessions/start body: the verifier's S256 challenge, never the verifier.
+std::string startBody(const std::string &codeVerifier);
 // "pending", "approved" and so on; "failed" when unreadable.
 std::string parseSessionStatus(const std::string &json);
 struct BridgeGrant {
-  std::string authorizationCode, codeVerifier, state, redirectUri, tokenEndpoint;
+  std::string authorizationCode, state, redirectUri, tokenEndpoint;
 };
 // Requires every field, and a token endpoint that isAllowedTokenEndpoint.
 Parsed<BridgeGrant> parseBridgeGrant(const std::string &json);
@@ -117,7 +122,7 @@ bool needsRefresh(const Credentials &credentials, std::time_t now);
 // A copy with the response applied; a refresh that leaves out refresh_token
 // keeps the one already held.
 Credentials withToken(Credentials credentials, const Token &token, std::time_t now);
-std::string authorizationCodeBody(const BridgeGrant &grant, const std::string &clientId);
+std::string authorizationCodeBody(const BridgeGrant &grant, const std::string &codeVerifier, const std::string &clientId);
 std::string refreshBody(const std::string &refreshToken, const std::string &clientId);
 // The refresh token was revoked or expired: only linking again helps.
 bool isRevoked(long status, const std::string &body);

@@ -92,14 +92,16 @@ int requestTests() {
 }
 int pkceTests() {
   int failures = 0;
-  CHECK(db::generateCodeVerifier(43).size() == 43);
-  CHECK(db::generateCodeVerifier(128).size() == 128);
-  CHECK(db::generateCodeVerifier(10).size() == 43);
-  CHECK(db::generateCodeVerifier(200).size() == 128);
-  const auto verifier = db::generateCodeVerifier(64);
-  CHECK(verifier.size() == 64);
-  CHECK(verifier.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~") ==
+  const auto verifier = db::generateCodeVerifier();
+  CHECK(verifier.size() == 43);
+  CHECK(verifier.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") ==
         std::string::npos);
+  CHECK(db::generateCodeVerifier() != verifier);
+  // The server is sent the challenge alone: it can never redeem a code.
+  const auto start = db::startBody("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk");
+  CHECK(start == "{\"code_challenge\":\"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM\","
+                 "\"code_challenge_method\":\"S256\"}");
+  CHECK(start.find("dBjftJeZ") == std::string::npos);
   CHECK(db::generateRandomHex(16).size() == 32);
   const auto encoded = db::base64UrlEncode({0x03, 0x9f, 0xd7, 0x2e, 0xb3, 0xfb, 0xff});
   CHECK(encoded.find_first_of("+/=") == std::string::npos);
@@ -159,10 +161,11 @@ int bridgeTests() {
   CHECK(db::parseSessionStatus("{\"status\":\"approved\"}") == "approved");
   CHECK(db::parseSessionStatus("{}") == "failed" && db::parseSessionStatus("x") == "failed");
   {
-    const std::string fields = "\"authorization_code\":\"c\",\"code_verifier\":\"v\",\"state\":\"s\","
+    // No code_verifier: the console holds its own.
+    const std::string fields = "\"authorization_code\":\"c\",\"state\":\"s\","
                                "\"redirect_uri\":\"r\",\"token_endpoint\":";
     const auto good = db::parseBridgeGrant("{" + fields + "\"https://api.dropboxapi.com/oauth2/token\"}");
-    CHECK(!good.error && good.value.authorizationCode == "c" && good.value.codeVerifier == "v");
+    CHECK(!good.error && good.value.authorizationCode == "c");
     CHECK(db::parseBridgeGrant("{" + fields + "\"https://evil.example/token\"}").error);
     CHECK(db::parseBridgeGrant("{\"authorization_code\":\"c\"}").error);
   }
@@ -240,9 +243,8 @@ int linkTests() {
   {
     db::BridgeGrant g;
     g.authorizationCode = "c 1";
-    g.codeVerifier = "v";
     g.redirectUri = "https://server.example/api/dropbox/oauth/dropbox/callback";
-    const auto body = db::authorizationCodeBody(g, "key");
+    const auto body = db::authorizationCodeBody(g, "v", "key");
     CHECK(body == "grant_type=authorization_code&code=c%201&code_verifier=v&client_id=key&redirect_uri="
                   "https%3A%2F%2Fserver.example%2Fapi%2Fdropbox%2Foauth%2Fdropbox%2Fcallback");
     CHECK(db::refreshBody("r+1", "key") == "grant_type=refresh_token&refresh_token=r%2B1&client_id=key");
