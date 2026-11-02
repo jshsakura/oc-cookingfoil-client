@@ -1693,6 +1693,9 @@ private:
   std::string installedIcon(const InstalledGame &game);
   Screen screen_ = Screen::Home, previous_ = Screen::Home;
   bool sidebar_ = true, connected_ = false; // the cursor starts on the menu, on 홈
+  // The connection the app opens with waits for the console's link (refresh).
+  bool startupLink_ = true, linkWait_ = false;
+  bool linkReturned_ = false; // up again after a connection failed without it (noteSignal)
   // The cursor went to the menu only because the screen had nothing yet.
   bool autoSidebar_ = false;
   int nav_ = 0, row_ = 1, selected_ = 0;

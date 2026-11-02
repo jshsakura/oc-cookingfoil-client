@@ -47,6 +47,12 @@ std::string connectionError(int curlCode, const std::string& url);
 // A secure connection failed since the last call: the console clock may be
 // off (ui/ClockFix compares it with internet time).
 bool takeCertificateFailure();
+// curl's result for the last request this thread made.
+int lastCurl();
+// Failed before anything reached the server, in a way that clears up once
+// the console's link is up (the name not found yet, the connection refused):
+// what a request sent the moment the console woke gets.
+bool linkNotUp(int curlCode);
 // Each server is asked to take the console's key once a run (Session); this
 // starts a new run's worth (tests).
 void forgetRebindAttempts();
