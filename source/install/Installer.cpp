@@ -375,7 +375,7 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
         headers.push_back("Range: bytes=0-0");
         const auto asked = std::chrono::steady_clock::now();
         const auto first = net::get(files[i].url, headers, "", &cancel_);
-        logLine("variant: first byte HTTP " + std::to_string(first.status) + " after " +
+        logDetail("variant: first byte HTTP " + std::to_string(first.status) + " after " +
                 std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - asked).count()) +
                 "ms");
         if (first.status == 409) throw std::runtime_error(refusal(first.body, files[i].variantFailed));
@@ -395,6 +395,9 @@ void Installer::run(std::vector<Item> files, Server server, State state) {
           // The download token (or the session token) ran out: a fresh one,
           // and the same file goes on from the same byte, not counted as a
           // failed try.
+          // Suspended (the account off or deleted): no token or try helps.
+          if (const auto why = net::consoleSuspension(server.url); !why.empty())
+            throw std::runtime_error(net::suspensionMessage(why));
           const bool refused = session ? net::sessionRefusals(server.url) != refusals : net::downloadTokenRejected(server.url);
           if (refused && !cancel_ && renewed++ < 2 && net::renewDownloadToken(server.url, sent)) {
             --attempt;

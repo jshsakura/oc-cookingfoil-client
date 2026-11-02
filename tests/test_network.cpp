@@ -251,6 +251,13 @@ int runNetworkTests() {
         changed.sounds = false;
         CHECK(foil::saveState(path, changed, error));
         CHECK(!foil::loadState(path).value.sounds);
+        // The log level: errors unless chosen, and each level comes back.
+        CHECK(fresh.value.logLevel == foil::LogLevel::Errors);
+        for (const auto level : {foil::LogLevel::Off, foil::LogLevel::All, foil::LogLevel::Errors}) {
+            changed.logLevel = level;
+            CHECK(foil::saveState(path, changed, error));
+            CHECK(foil::loadState(path).value.logLevel == level);
+        }
         // Where installs go, chosen in 설정; empty follows config.json.
         CHECK(fresh.value.installTarget.empty());
         changed.installTarget = "nand";

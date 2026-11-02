@@ -55,6 +55,7 @@ void Application::fingerDown(float x, float y) {
   if (swallowTap_) return;
   for (auto it = hits_.rbegin(); it != hits_.rend(); ++it)
     if (inside(it->area)) {
+      if (!it->pressable) return;
       pressed_ = it->area;
       pressedLook_ = it->look;
       pressedRadius_ = it->radius;

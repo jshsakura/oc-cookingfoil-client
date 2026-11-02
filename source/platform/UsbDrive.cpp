@@ -3,161 +3,291 @@
 #include <mutex>
 #include <set>
 #ifdef __SWITCH__
-#include <cstdio>
+#include "core/Log.hpp"
+#include "mtp/Mtp.hpp"
+#include <atomic>
 #include <cstdlib>
-#include <cstring>
-#include <haze.h>
-#include <map>
-#include <strings.h>
+#include <memory>
 #include <switch.h>
+#include <utility>
 #endif
 namespace foil::platform::usb {
 namespace {
 std::mutex guard;
 Status shown;
 #ifdef __SWITCH__
-bool running = false, ready = false, failed = false, sessionOpen = false;
+bool running = false, ready = false, sessionOpen = false;
 std::set<std::string> touched;
 constexpr size_t TouchedMax = 512; // past it, only the card's top is swept
-// The folder a path from the PC is in ("/switch/app/x.nro" -> "/switch/app").
-std::string folderOf(const char *path) {
-  const char *slash = std::strrchr(path, '/');
-  return slash && slash != path ? std::string(path, slash) : std::string("/");
-}
-const char *nameOf(const char *path) {
-  const char *slash = std::strrchr(path, '/');
-  return slash ? slash + 1 : path;
-}
-void noteTouched(const char *path) {
-  if (touched.size() < TouchedMax) touched.insert(folderOf(path));
-}
-// Called on libhaze's thread: only notes what happened.
-void onEvent(const haze::CallbackData *data) {
-  std::lock_guard lock(guard);
-  switch (data->type) {
-  case haze::CallbackType_Ready: ready = true; break;
-  case haze::CallbackType_Failed: failed = true; break;
-  case haze::CallbackType_OpenSession: sessionOpen = true; break;
-  case haze::CallbackType_CloseSession: sessionOpen = false; break;
-  case haze::CallbackType_CreateFile:
-  case haze::CallbackType_CreateFolder:
-  case haze::CallbackType_DeleteFile:
-  case haze::CallbackType_DeleteFolder: noteTouched(data->file.filename); break;
-  case haze::CallbackType_RenameFile:
-  case haze::CallbackType_RenameFolder: noteTouched(data->rename.newname); break;
-  case haze::CallbackType_ReadBegin:
-  case haze::CallbackType_WriteBegin:
-    shown.file = nameOf(data->file.filename);
-    shown.toConsole = data->type == haze::CallbackType_WriteBegin;
-    shown.moved = 0;
-    if (shown.toConsole) noteTouched(data->file.filename);
-    break;
-  case haze::CallbackType_ReadProgress:
-  case haze::CallbackType_WriteProgress: shown.moved = data->progress.offset + data->progress.size; break;
-  case haze::CallbackType_ReadEnd:
-  case haze::CallbackType_WriteEnd:
-    shown.file.clear();
-    ++shown.copied;
-    break;
-  }
-}
+// Two buffers, one on the cable while the card reads or writes the other.
+constexpr size_t Chunk = 4 << 20;
+constexpr u16 Vendor = 0x057e, Product = 0x201d;
 // The card's top folders a PC never sees: the installed games' own data and
 // an emuMMC. Deleting either from a file manager loses what no copy brings
 // back, so they are left out of every listing and refused by path.
-bool hidden(const char *path) {
-  while (*path == '/') ++path;
-  for (const char *top : {"Nintendo", "emuMMC"}) {
-    const size_t n = std::strlen(top);
-    if (!strncasecmp(path, top, n) && (path[n] == '\0' || path[n] == '/')) return true;
-  }
-  return false;
+const std::vector<std::string> Guarded = {"Nintendo", "emuMMC"};
+std::atomic<bool> stopping{false};
+UsbDsEndpoint *bulkIn = nullptr, *bulkOut = nullptr;
+bool configured() {
+  UsbState state = UsbState_Detached;
+  return R_SUCCEEDED(usbDsGetState(&state)) && state == UsbState_Configured;
 }
-const Result Refused = MAKERESULT(Module_Libnx, LibnxError_NotFound);
-// The SD card as libhaze sees it, over the card's own file system.
-struct SdCard final : haze::FileSystemProxyImpl {
-  FsFileSystem *fs = fsdevGetDeviceFileSystem("sdmc");
-  std::mutex dirsGuard;
-  std::set<FsDir *> topDirs; // listings of the card's top, filtered
-  const char *GetName() const override { return ""; }
-  const char *GetDisplayName() const override { return "microSD Card"; }
-  Result GetTotalSpace(const char *, s64 *out) override { return fsFsGetTotalSpace(fs, "/", out); }
-  Result GetFreeSpace(const char *, s64 *out) override { return fsFsGetFreeSpace(fs, "/", out); }
-  Result GetEntryType(const char *path, FsDirEntryType *out) override {
-    return hidden(path) ? Refused : fsFsGetEntryType(fs, path, out);
+// A transfer's end, waited for in short steps so stop() and a pulled cable
+// are seen: -1 then, the transfer cancelled.
+long finish(UsbDsEndpoint *endpoint, u32 urb) {
+  while (R_FAILED(eventWait(&endpoint->CompletionEvent, 100'000'000))) {
+    if (!stopping && configured()) continue;
+    usbDsEndpoint_Cancel(endpoint);
+    eventWait(&endpoint->CompletionEvent, 1'000'000'000);
+    eventClear(&endpoint->CompletionEvent);
+    return -1;
   }
-  Result CreateFile(const char *path, s64 size, u32 option) override {
-    return hidden(path) ? Refused : fsFsCreateFile(fs, path, size, option);
+  eventClear(&endpoint->CompletionEvent);
+  UsbDsReportData report;
+  u32 requested = 0, transferred = 0;
+  if (R_FAILED(usbDsEndpoint_GetReportData(endpoint, &report)) ||
+      R_FAILED(usbDsParseReportData(&report, urb, &requested, &transferred)))
+    return -1;
+  return long(transferred);
+}
+struct UsbPipe final : mtp::Pipe {
+  u32 inUrb = 0, outUrb = 0;
+  void *into = nullptr;
+  bool zlt = false;
+  bool startReceive(void *buf, size_t size) override {
+    into = buf;
+    armDCacheFlush(buf, size);
+    return R_SUCCEEDED(usbDsEndpoint_PostBufferAsync(bulkOut, buf, size, &outUrb));
   }
-  Result DeleteFile(const char *path) override { return hidden(path) ? Refused : fsFsDeleteFile(fs, path); }
-  Result RenameFile(const char *from, const char *to) override {
-    return hidden(from) || hidden(to) ? Refused : fsFsRenameFile(fs, from, to);
+  long finishReceive() override {
+    const long n = finish(bulkOut, outUrb);
+    if (n > 0) armDCacheFlush(into, size_t(n));
+    return n;
   }
-  Result OpenFile(const char *path, u32 mode, FsFile *out) override {
-    return hidden(path) ? Refused : fsFsOpenFile(fs, path, mode, out);
+  bool startSend(const void *buf, size_t size, bool last) override {
+    // Only a transfer's final block closes with a zero-length packet (when
+    // it ends on a packet); the full blocks before it must not.
+    if (last != zlt && R_FAILED(usbDsEndpoint_SetZlt(bulkIn, last))) return false;
+    zlt = last;
+    armDCacheFlush(const_cast<void *>(buf), size);
+    return R_SUCCEEDED(usbDsEndpoint_PostBufferAsync(bulkIn, const_cast<void *>(buf), size, &inUrb));
   }
-  Result GetFileSize(FsFile *file, s64 *out) override { return fsFileGetSize(file, out); }
-  Result SetFileSize(FsFile *file, s64 size) override { return fsFileSetSize(file, size); }
-  Result ReadFile(FsFile *file, s64 off, void *buf, u64 size, u32 option, u64 *read) override {
-    return fsFileRead(file, off, buf, size, option, read);
+  bool finishSend() override { return finish(bulkIn, inUrb) >= 0; }
+};
+struct SdFile final : mtp::File {
+  FsFile file{};
+  bool writing = false;
+  ~SdFile() override {
+    if (writing) fsFileFlush(&file);
+    fsFileClose(&file);
   }
-  Result WriteFile(FsFile *file, s64 off, const void *buf, u64 size, u32 option) override {
-    return fsFileWrite(file, off, buf, size, option);
+  long read(uint64_t offset, void *buf, size_t size) override {
+    u64 got = 0;
+    return R_SUCCEEDED(fsFileRead(&file, s64(offset), buf, size, FsReadOption_None, &got)) ? long(got) : -1;
   }
-  void CloseFile(FsFile *file) override { fsFileClose(file); }
-  Result CreateDirectory(const char *path) override { return hidden(path) ? Refused : fsFsCreateDirectory(fs, path); }
-  Result DeleteDirectoryRecursively(const char *path) override {
-    // The card's top itself is never emptied from the PC.
-    const char *rest = path;
-    while (*rest == '/') ++rest;
-    return hidden(path) || !*rest ? Refused : fsFsDeleteDirectoryRecursively(fs, path);
-  }
-  Result RenameDirectory(const char *from, const char *to) override {
-    return hidden(from) || hidden(to) ? Refused : fsFsRenameDirectory(fs, from, to);
-  }
-  Result OpenDirectory(const char *path, u32 mode, FsDir *out) override {
-    if (hidden(path)) return Refused;
-    const Result rc = fsFsOpenDirectory(fs, path, mode, out);
-    const char *rest = path;
-    while (*rest == '/') ++rest;
-    if (R_SUCCEEDED(rc) && !*rest) {
-      std::lock_guard lock(dirsGuard);
-      topDirs.insert(out);
-    }
-    return rc;
-  }
-  Result ReadDirectory(FsDir *dir, s64 *total, size_t max, FsDirectoryEntry *buf) override {
-    bool top;
-    {
-      std::lock_guard lock(dirsGuard);
-      top = topDirs.count(dir);
-    }
-    for (;;) {
-      const Result rc = fsDirRead(dir, total, max, buf);
-      if (R_FAILED(rc) || !top || *total <= 0) return rc;
-      // Drop the hidden ones; a batch left empty reads on, since an empty
-      // batch tells libhaze the listing ended.
-      s64 kept = 0;
-      for (s64 i = 0; i < *total; ++i)
-        if (!hidden(buf[i].name)) buf[kept++] = buf[i];
-      *total = kept;
-      if (kept) return rc;
-    }
-  }
-  Result GetDirectoryEntryCount(FsDir *dir, s64 *out) override { return fsDirGetEntryCount(dir, out); }
-  void CloseDirectory(FsDir *dir) override {
-    {
-      std::lock_guard lock(dirsGuard);
-      topDirs.erase(dir);
-    }
-    fsDirClose(dir);
+  bool write(uint64_t offset, const void *buf, size_t size) override {
+    return R_SUCCEEDED(fsFileWrite(&file, s64(offset), buf, size, FsWriteOption_None));
   }
 };
+struct SdCard final : mtp::Storage {
+  FsFileSystem *fs = fsdevGetDeviceFileSystem("sdmc");
+  std::vector<FsDirectoryEntry> batch = std::vector<FsDirectoryEntry>(64);
+  bool list(const std::string &folder, std::vector<mtp::Entry> &out) override {
+    FsDir dir;
+    if (R_FAILED(fsFsOpenDirectory(fs, folder.c_str(), FsDirOpenMode_ReadDirs | FsDirOpenMode_ReadFiles, &dir))) return false;
+    s64 count = 0;
+    Result rc;
+    while (R_SUCCEEDED(rc = fsDirRead(&dir, &count, batch.size(), batch.data())) && count > 0)
+      for (s64 i = 0; i < count; ++i)
+        out.push_back({batch[i].name, batch[i].type == FsDirEntryType_Dir, uint64_t(std::max<s64>(0, batch[i].file_size))});
+    fsDirClose(&dir);
+    return R_SUCCEEDED(rc);
+  }
+  uint64_t totalSpace() override {
+    s64 n = 0;
+    return R_SUCCEEDED(fsFsGetTotalSpace(fs, "/", &n)) ? uint64_t(n) : 0;
+  }
+  uint64_t freeSpace() override {
+    s64 n = 0;
+    return R_SUCCEEDED(fsFsGetFreeSpace(fs, "/", &n)) ? uint64_t(n) : 0;
+  }
+  bool createFile(const std::string &path, uint64_t size) override {
+    // A FAT32 card holds 4 GB and up only as the console's split file; one
+    // of a size the PC did not say is made that way, so it can grow past it.
+    if (size == UINT64_MAX) return R_SUCCEEDED(fsFsCreateFile(fs, path.c_str(), 0, FsCreateOption_BigFile));
+    if (R_SUCCEEDED(fsFsCreateFile(fs, path.c_str(), s64(size), 0))) return true;
+    return size >= (4ull << 30) && R_SUCCEEDED(fsFsCreateFile(fs, path.c_str(), s64(size), FsCreateOption_BigFile));
+  }
+  bool createFolder(const std::string &path) override { return R_SUCCEEDED(fsFsCreateDirectory(fs, path.c_str())); }
+  bool remove(const std::string &path, bool folder) override {
+    return R_SUCCEEDED(folder ? fsFsDeleteDirectoryRecursively(fs, path.c_str()) : fsFsDeleteFile(fs, path.c_str()));
+  }
+  bool rename(const std::string &from, const std::string &to, bool folder) override {
+    if (folder) return R_SUCCEEDED(fsFsRenameDirectory(fs, from.c_str(), to.c_str()));
+    // A split file is a folder underneath: renamed as one when the other fails.
+    return R_SUCCEEDED(fsFsRenameFile(fs, from.c_str(), to.c_str())) ||
+           R_SUCCEEDED(fsFsRenameDirectory(fs, from.c_str(), to.c_str()));
+  }
+  std::unique_ptr<mtp::File> open(const std::string &path, bool write) override {
+    auto out = std::make_unique<SdFile>();
+    const u32 mode = write ? FsOpenMode_Write | FsOpenMode_Append : FsOpenMode_Read;
+    if (R_FAILED(fsFsOpenFile(fs, path.c_str(), mode, &out->file))) return nullptr;
+    out->writing = write;
+    return out;
+  }
+};
+struct Shown final : mtp::Listener {
+  void trace(const std::string &line) override { logDetail(line); }
+  void session(bool open) override {
+    std::lock_guard lock(guard);
+    sessionOpen = open;
+  }
+  void copyBegins(const std::string &name, bool toConsole) override {
+    std::lock_guard lock(guard);
+    shown.file = name;
+    shown.toConsole = toConsole;
+    shown.moved = 0;
+  }
+  void copyMoved(uint64_t bytes) override {
+    std::lock_guard lock(guard);
+    shown.moved = int64_t(bytes);
+  }
+  void copyEnds() override {
+    std::lock_guard lock(guard);
+    shown.file.clear();
+    ++shown.copied;
+  }
+  void touched(const std::string &folder) override {
+    std::lock_guard lock(guard);
+    if (usb::touched.size() < TouchedMax) usb::touched.insert(folder);
+  }
+  void dropped() override {
+    std::lock_guard lock(guard);
+    ++shown.dropped;
+  }
+};
+// True when this boot runs from an emuMMC (Atmosphère's ExosphereEmummcType).
+bool bootedEmummc() {
+  if (R_FAILED(splInitialize())) return false;
+  u64 type = 0;
+  const bool ok = R_SUCCEEDED(splGetConfig(SplConfigItem(65007), &type));
+  splExit();
+  return ok && type != 0;
+}
+std::string readSmall(FsFileSystem *fs, const char *path) {
+  FsFile file;
+  if (R_FAILED(fsFsOpenFile(fs, path, FsOpenMode_Read, &file))) return "";
+  std::string text(4096, '\0');
+  u64 got = 0;
+  if (R_FAILED(fsFileRead(&file, 0, text.data(), text.size(), FsReadOption_None, &got))) got = 0;
+  fsFileClose(&file);
+  return text.substr(0, got);
+}
+// The card, and the album of the system this boot runs (the emuMMC's when it
+// is one): its screenshots and clips can be copied off and deleted. A
+// console that has never taken one has no album folder, and no such drive.
+std::vector<mtp::Volume> volumes(FsFileSystem *fs) {
+  std::vector<mtp::Volume> out{{"SD Card", "", true, Guarded}};
+  const bool emummc = bootedEmummc();
+  const auto album = mtp::nintendoFolder(emummc, emummc ? readSmall(fs, "/emuMMC/emummc.ini") : "") + "/Album";
+  FsDirEntryType type;
+  if (R_SUCCEEDED(fsFsGetEntryType(fs, album.c_str(), &type)) && type == FsDirEntryType_Dir)
+    out.push_back({"Album", album, false, {}});
+  logDetail("usb: " + std::to_string(out.size()) + " drives" + (out.size() > 1 ? ", album " + album : std::string()));
+  return out;
+}
+struct Session {
+  UsbPipe pipe;
+  SdCard card;
+  Shown listener;
+  uint8_t *buffers[2];
+  mtp::Responder responder;
+  Session(uint8_t *a, uint8_t *b) : buffers{a, b}, responder(pipe, card, listener, buffers, Chunk, volumes(card.fs)) {}
+};
+Thread worker;
+uint8_t *buffers[2] = {};
+std::unique_ptr<Session> session;
+// The USB thread: a PC's commands, answered until stop(); a pulled cable
+// ends the session and the next PC starts over.
+void serve(void *) {
+  while (!stopping) {
+    if (!configured()) {
+      svcSleepThread(100'000'000);
+      continue;
+    }
+    while (!stopping && session->responder.serve()) {
+    }
+    session->responder.reset();
+  }
+}
+bool setUpUsb() {
+  if (R_FAILED(usbDsInitialize())) return false;
+  static const u16 English = 0x0409;
+  u8 manufacturer = 0, product = 0, serial = 0;
+  usb_device_descriptor device{USB_DT_DEVICE_SIZE, USB_DT_DEVICE, 0x0200, 0, 0, 0, 0x40, Vendor, Product, 0x0100, 0, 0, 0, 1};
+  // USB 2.0 LPM and USB 3 SuperSpeed, so a USB 3 port runs at its speed.
+  static const u8 bos[] = {0x05, USB_DT_BOS, 0x16, 0x00, 0x02,
+                           0x07, USB_DT_DEVICE_CAPABILITY, 0x02, 0x02, 0x00, 0x00, 0x00,
+                           0x0A, USB_DT_DEVICE_CAPABILITY, 0x03, 0x00, 0x0C, 0x00, 0x03, 0x00, 0x00, 0x00};
+  bool ok = R_SUCCEEDED(usbDsClearDeviceData()) && R_SUCCEEDED(usbDsAddUsbLanguageStringDescriptor(nullptr, &English, 1)) &&
+            R_SUCCEEDED(usbDsAddUsbStringDescriptor(&manufacturer, "Nintendo")) &&
+            R_SUCCEEDED(usbDsAddUsbStringDescriptor(&product, "Nintendo Switch")) &&
+            R_SUCCEEDED(usbDsAddUsbStringDescriptor(&serial, "CookingFoil"));
+  device.iManufacturer = manufacturer, device.iProduct = product, device.iSerialNumber = serial;
+  // High and SuperSpeed only, as libhaze set them up (the one a Mac took).
+  ok = ok && R_SUCCEEDED(usbDsSetUsbDeviceDescriptor(UsbDeviceSpeed_High, &device));
+  device.bcdUSB = 0x0300, device.bMaxPacketSize0 = 0x09;
+  ok = ok && R_SUCCEEDED(usbDsSetUsbDeviceDescriptor(UsbDeviceSpeed_Super, &device)) &&
+       R_SUCCEEDED(usbDsSetBinaryObjectStore(bos, sizeof(bos)));
+  UsbDsInterface *usbInterface = nullptr;
+  ok = ok && R_SUCCEEDED(usbDsRegisterInterface(&usbInterface));
+  if (!ok) return usbDsExit(), false;
+  // A still-image interface with the PTP protocol, named "MTP": what Windows,
+  // macOS and Linux take as an MTP device. Without the name a Mac takes it
+  // for a camera, and OpenMTP never gets past GetDeviceInfo.
+  u8 named = 0;
+  if (R_FAILED(usbDsAddUsbStringDescriptor(&named, "MTP"))) return usbDsExit(), false; // i18n: as is
+  const usb_interface_descriptor face{USB_DT_INTERFACE_SIZE, USB_DT_INTERFACE, usbInterface->interface_index, 0, 3,
+                                      USB_CLASS_IMAGE, 1, 1, named};
+  usb_endpoint_descriptor in{USB_DT_ENDPOINT_SIZE, USB_DT_ENDPOINT, u8(USB_ENDPOINT_IN | (usbInterface->interface_index + 1)),
+                             USB_TRANSFER_TYPE_BULK, 0, 0};
+  usb_endpoint_descriptor out{USB_DT_ENDPOINT_SIZE, USB_DT_ENDPOINT, u8(USB_ENDPOINT_OUT | (usbInterface->interface_index + 1)),
+                              USB_TRANSFER_TYPE_BULK, 0, 0};
+  usb_endpoint_descriptor events{USB_DT_ENDPOINT_SIZE, USB_DT_ENDPOINT, u8(USB_ENDPOINT_IN | (usbInterface->interface_index + 2)),
+                                 USB_TRANSFER_TYPE_INTERRUPT, 0x18, 6};
+  usb_ss_endpoint_companion_descriptor companion{USB_DT_SS_ENDPOINT_COMPANION_SIZE, USB_DT_SS_ENDPOINT_COMPANION, 0x0F, 0, 0};
+  usb_ss_endpoint_companion_descriptor eventsCompanion{USB_DT_SS_ENDPOINT_COMPANION_SIZE, USB_DT_SS_ENDPOINT_COMPANION, 0, 0, 0x40};
+  const auto append = [&](UsbDeviceSpeed speed, const void *d, size_t n) {
+    ok = ok && R_SUCCEEDED(usbDsInterface_AppendConfigurationData(usbInterface, speed, d, n));
+  };
+  for (const auto [speed, packet] : {std::pair{UsbDeviceSpeed_High, 512}, {UsbDeviceSpeed_Super, 1024}}) {
+    const bool super = speed == UsbDeviceSpeed_Super;
+    in.wMaxPacketSize = out.wMaxPacketSize = u16(packet);
+    append(speed, &face, USB_DT_INTERFACE_SIZE);
+    append(speed, &in, USB_DT_ENDPOINT_SIZE);
+    if (super) append(speed, &companion, USB_DT_SS_ENDPOINT_COMPANION_SIZE);
+    append(speed, &out, USB_DT_ENDPOINT_SIZE);
+    if (super) append(speed, &companion, USB_DT_SS_ENDPOINT_COMPANION_SIZE);
+    append(speed, &events, USB_DT_ENDPOINT_SIZE);
+    if (super) append(speed, &eventsCompanion, USB_DT_SS_ENDPOINT_COMPANION_SIZE);
+  }
+  UsbDsEndpoint *eventsEndpoint = nullptr;
+  ok = ok && R_SUCCEEDED(usbDsInterface_RegisterEndpoint(usbInterface, &bulkIn, in.bEndpointAddress)) &&
+       R_SUCCEEDED(usbDsInterface_RegisterEndpoint(usbInterface, &bulkOut, out.bEndpointAddress)) &&
+       R_SUCCEEDED(usbDsInterface_RegisterEndpoint(usbInterface, &eventsEndpoint, events.bEndpointAddress)) &&
+       R_SUCCEEDED(usbDsInterface_EnableInterface(usbInterface)) && R_SUCCEEDED(usbDsEnable());
+  if (!ok) return usbDsExit(), false;
+  return true;
+}
+void freeBuffers() {
+  for (auto &b : buffers) std::free(std::exchange(b, nullptr));
+}
 #endif
 } // namespace
 uint64_t neededMemory() {
-  // 8 MiB of buffers, 16 MiB for the session's file list, 16 MiB for the
-  // transfer threads' blocks, and room for the app to keep drawing.
-  return uint64_t(64) << 20;
+  // 8 MiB of buffers, the session's file list (names only, a few MiB for a
+  // card of many thousands), and room for the app to keep drawing.
+  return uint64_t(24) << 20;
 }
 #ifdef __SWITCH__
 StartError start() {
@@ -174,24 +304,39 @@ StartError start() {
     std::lock_guard lock(guard);
     shown = {};
     touched.clear();
-    ready = failed = sessionOpen = false;
+    ready = sessionOpen = false;
   }
-  haze::FsEntries entries;
-  entries.emplace_back(std::make_shared<SdCard>());
+  // Page-aligned, as usb:ds asks of what it moves.
+  for (auto &b : buffers) b = static_cast<uint8_t *>(std::aligned_alloc(0x1000, Chunk));
+  if (!buffers[0] || !buffers[1]) return freeBuffers(), StartError::Memory;
+  if (!setUpUsb()) return freeBuffers(), StartError::Usb;
+  stopping = false;
+  session = std::make_unique<Session>(buffers[0], buffers[1]);
   // Below the drawing thread's priority, on the core downloads do not take.
-  if (!haze::Initialize(onEvent, 0x2D, 2, entries)) return StartError::Usb;
+  if (R_FAILED(threadCreate(&worker, serve, nullptr, nullptr, 0x20000, 0x2D, 2)) || R_FAILED(threadStart(&worker))) {
+    threadClose(&worker);
+    session.reset();
+    usbDsExit();
+    return freeBuffers(), StartError::Usb;
+  }
   std::lock_guard lock(guard);
-  running = true;
+  running = ready = true;
   return StartError::None;
 }
 void stop() {
   {
     std::lock_guard lock(guard);
     if (!running) return;
-    // From here status() leaves usb:ds alone, before libhaze closes it.
+    // From here status() leaves usb:ds alone, before it closes.
     running = ready = false;
   }
-  haze::Exit();
+  stopping = true;
+  threadWaitForExit(&worker);
+  threadClose(&worker);
+  session.reset();
+  usbDsExit();
+  bulkIn = bulkOut = nullptr;
+  freeBuffers();
   std::lock_guard lock(guard);
   sessionOpen = false;
   shown.file.clear();
@@ -201,9 +346,7 @@ Status status() {
   Status out = shown;
   out.touched.assign(touched.begin(), touched.end());
   if (!running) return out.phase = Phase::Off, out;
-  if (failed) return out.phase = Phase::Failed, out;
-  UsbState state = UsbState_Detached;
-  const bool cable = ready && R_SUCCEEDED(usbDsGetState(&state)) && state == UsbState_Configured;
+  const bool cable = ready && configured();
   if (cable) shown.cableSeen = out.cableSeen = true;
   out.phase = !cable ? Phase::Waiting : sessionOpen ? Phase::Open : Phase::Plugged;
   return out;

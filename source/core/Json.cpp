@@ -12,6 +12,8 @@
 #include <mutex>
 #include <fcntl.h>
 #include <unistd.h>
+#include <set>
+#include <utility>
 namespace foil {
 static size_t invalidUtf8(const std::string& text) {
     for (size_t i = 0; i < text.size();) {
@@ -162,24 +164,15 @@ bool replaceHeld(const std::string& from, const std::string& to, std::string& er
     const auto name = std::filesystem::path(to).filename().string();
     if (ec == std::errc::file_exists || ec == std::errc::directory_not_empty) {
         // FS refuses replacement. Delete by entry type, verify the name is
-        // gone, then move once. A failure must not be hidden by truncating
-        // the target.
-        if (!platform::removePath(to, ec)) {
-            error = "removing " + name + ": " + ec.message();
-            return false;
-        }
-        if (platform::renamePath(from, to, ec)) return true;
-        if (ec != std::errc::no_such_file_or_directory) {
-            error = "putting " + name + " in place: " + ec.message();
-            return false;
-        }
-    } else if (ec != std::errc::no_such_file_or_directory) {
-        error = "rename: " + ec.message();
-        return false;
+        // gone, then move once.
+        if (platform::removePath(to, ec) && platform::renamePath(from, to, ec)) return true;
     }
-    // Horizon answers PathNotFound for some renames whose source and folder
-    // are both there (a Korean .opt into a RetroArch config folder, 0.5.4).
-    // What was there is logged; the name is freed and the bytes copied in.
+    // Any refusal left (Horizon answers PathNotFound for some renames whose
+    // source and folder are both there, a Korean .opt into a RetroArch config
+    // folder in 0.5.4, and PathAlreadyExists after the name was freed): a file
+    // is made anew in place from its bytes, what was there removed first or,
+    // when it cannot be removed, written over. The flushed copy beside it
+    // stays until that worked. What was there is logged.
     struct stat st {};
     const bool sourceThere = ::stat(from.c_str(), &st) == 0;
     const bool sourceFile = sourceThere && S_ISREG(st.st_mode);
@@ -191,10 +184,7 @@ bool replaceHeld(const std::string& from, const std::string& to, std::string& er
         return false;
     }
     std::error_code again;
-    if (targetThere && !platform::removePath(to, again)) {
-        error = "removing " + name + ": " + again.message();
-        return false;
-    }
+    if (targetThere && !platform::removePath(to, again)) logLine("replace " + name + ": removing: " + again.message() + "; written over");
     if (copyInto(from, to, error)) {
         ::unlink(from.c_str());
         error.clear();
@@ -204,6 +194,19 @@ bool replaceHeld(const std::string& from, const std::string& to, std::string& er
     error = "rename: " + ec.message() + ", copy: " + error;
     return false;
 }
+}
+namespace {
+std::mutex saveFailureLock;
+std::string saveFailure;
+std::set<std::string> saveFailuresTold;
+void noteSaveFailure(const std::string& name) {
+    std::lock_guard<std::mutex> held(saveFailureLock);
+    if (saveFailuresTold.insert(name).second) saveFailure = name;
+}
+}
+std::string takeSaveFailure() {
+    std::lock_guard<std::mutex> held(saveFailureLock);
+    return std::exchange(saveFailure, std::string());
 }
 bool atomicWrite(const std::string& path, const std::string& contents, std::string& error) {
     error.clear();
@@ -230,6 +233,7 @@ bool atomicWrite(const std::string& path, const std::string& contents, std::stri
     if (!flushed || !closed) { error = std::strerror(errno); ::unlink(temp.c_str()); return false; }
     if (!replaceHeld(temp, path, error)) {
         logLine("save: " + std::filesystem::path(path).filename().string() + ": " + error);
+        noteSaveFailure(std::filesystem::path(path).filename().string());
         // Removal may have succeeded before the rename failed. Keep the
         // fully flushed new copy available for retry or recovery.
         return false;

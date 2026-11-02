@@ -30,6 +30,9 @@ bool atomicWrite(const std::string& path, const std::string& contents, std::stri
 // The console refuses rename over an existing file, which must be removed
 // first. Writers of the same file line up, in atomicWrite and here.
 bool replaceFile(const std::string& from, const std::string& to, std::string& error);
+// The name of a file a save could not put in place since the last call,
+// once per file a run, so the screen can say so; empty when none.
+std::string takeSaveFailure();
 // mkdir -p that stops at a device root ("sdmc:"): std::filesystem::create_directories
 // takes "sdmc:" for a folder on the console and fails before making any.
 bool makeDirectories(const std::string& path);

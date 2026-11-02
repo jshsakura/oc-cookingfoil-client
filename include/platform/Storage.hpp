@@ -34,6 +34,14 @@ bool finishUpdate(const std::string &self, std::string &note);
 bool rollBackUpdate(const std::string &self, std::string &note);
 // The new build runs: the one before it is no longer kept.
 void confirmUpdate(const std::string &self);
+// The version of the build put in place for the next start, so a roll back
+// can say which build stopped.
+void noteTrialVersion(const std::string &self, const std::string &version);
+// A version this console rolled back twice in a row: not installed again.
+std::string refusedBuild(const std::string &self);
+// Where the app runs, for a bug report: Atmosphere's version, the program
+// it runs as (the game a title override borrows) and the applet type.
+std::string runEnvironment();
 // The file starts as an NRO does and is at least as long as its header says.
 bool wholeNro(const std::string &path);
 // Starts `nro` again once this app exits (the homebrew loader's next load);

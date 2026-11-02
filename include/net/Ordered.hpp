@@ -26,6 +26,8 @@ using OrderedSink = std::function<size_t(const uint8_t *data, size_t size)>;
 // [from, from + length) of `url` to `sink`. True when all of it went.
 bool orderedStream(const std::string &url, uint64_t from, uint64_t length, const OrderedSink &sink,
                    const OrderedOptions &options);
+// Why the last range on this thread stopped ("HTTP 200", curl's words), or empty.
+std::string orderedFailure();
 // The same range read into `out` (its size is the length); false on failure.
 bool orderedRead(const std::string &url, uint64_t from, void *out, size_t length, const OrderedOptions &options);
 } // namespace foil::net

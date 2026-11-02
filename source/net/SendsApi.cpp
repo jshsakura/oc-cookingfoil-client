@@ -19,7 +19,15 @@ SendsReply deviceSends(const Server &server, const State &state, const std::stri
     reply.failed = true;
     return reply;
   }
-  reply.feed = sends::parse(response.body);
+  // Not a feed (an error page answered 200): failed, not an empty list,
+  // so nothing it "no longer lists" is taken as answered.
+  bool shaped = false;
+  auto feed = sends::parse(response.body, &shaped);
+  if (!shaped) {
+    reply.failed = true;
+    return reply;
+  }
+  reply.feed = std::move(feed);
   reply.etag = response.etag;
   return reply;
 }

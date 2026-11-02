@@ -187,6 +187,17 @@ int runStoreTests() {
     // file: the database, with the whole history, is not rewritten for them.
     CHECK(store.saveResumePoint("nca:abc", point));
     CHECK(stamp() == earlier && store.resumePoint("nca:abc"));
+    {
+      // The same point again is not even a lock taken: it neither waits on
+      // another instance's lock nor makes and removes the lock file.
+      const auto lock = path + ".lock";
+      { std::ofstream f(lock); f << std::time(nullptr) << " 1 1\n"; }
+      const auto began = std::chrono::steady_clock::now();
+      CHECK(store.saveResumePoint("nca:abc", point));
+      CHECK(std::chrono::steady_clock::now() - began < std::chrono::milliseconds(500));
+      CHECK(std::filesystem::exists(lock));
+      std::filesystem::remove(lock);
+    }
     const auto points = (dir / "cookingfoil.resume.json").string();
     CHECK(foil::readFile(points).find("nca:abc") != std::string::npos);
     store.forgetResumePoint("nca:abc");

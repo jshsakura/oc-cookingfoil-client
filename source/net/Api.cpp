@@ -169,9 +169,10 @@ std::vector<std::string> authHeaders(const Server& server, const State& state, c
 }
 SessionGrant askSessionToken(const Server& server, const State& state) {
     const auto url = server.url + "/api/session";
-    const auto reply = get(url, serverHeaders(server, state, url, false));
+    const auto reply = get(url, serverHeaders(server, state, url, false), "", scopedCancel());
     SessionGrant grant;
     grant.status = reply.status;
+    grant.suspended = reply.session == "suspended";
     if (reply.status != 200) return grant;
     Error unread;
     const auto root = parseJson(reply.body, unread);
@@ -301,6 +302,7 @@ Response withSession(const std::string& url, const std::vector<std::string>& hea
 }
 }
 Response get(const std::string& url, const std::vector<std::string>& headers, const std::string& etag, const std::atomic<bool>* cancel) {
+    const CancelScope scope(cancel); // a renewal after a 401 stops with the request
     return withSession(url, headers, [&](const std::vector<std::string>& h) { return getOnce(url, h, etag, cancel); });
 }
 namespace {
@@ -473,6 +475,7 @@ namespace {
 Response postOnce(const std::string& url, const std::vector<std::string>& headers, const PostOptions& options, const std::atomic<bool>* cancel);
 }
 Response post(const std::string& url, const std::vector<std::string>& headers, const PostOptions& options, const std::atomic<bool>* cancel) {
+    const CancelScope scope(cancel);
     return withSession(url, headers, [&](const std::vector<std::string>& h) { return postOnce(url, h, options, cancel); });
 }
 namespace {
@@ -1100,7 +1103,7 @@ std::mutex catalogReading;
 }
 std::string Session::pairSecret() {
     const auto key = state_.accessKeys.find(server_.url);
-    if (key != state_.accessKeys.end() && !key->second.empty()) return "";
+    if (!repairing_ && key != state_.accessKeys.end() && !key->second.empty()) return "";
     if (const auto kept = state_.pairSecrets.find(server_.url); kept != state_.pairSecrets.end()) return kept->second;
     // Saved before it is ever sent: a new one after a restart would not match
     // the one the server holds.
@@ -1114,9 +1117,36 @@ std::string Session::pairSecret() {
     state_ = std::move(updated);
     return secret;
 }
+std::string suspensionMessage(const std::string& reason) {
+    if (reason == "account-gone") return tr("This console's account was deleted. Contact the server's admin.");
+    if (reason == "account-off") return tr("This console's account is turned off. Contact the server's admin.");
+    return tr("This console is suspended on this server. Contact the server's admin.");
+}
+namespace {
+// A 403 for a suspended console (its account off or deleted): the reason in
+// `error`, every key and token kept. Pairing then asks for a QR code without
+// the key (Session::pair), so another account can take the console.
+bool suspended(const Response& reply, Error& error) {
+    if (reply.status != 403) return false;
+    Error unread;
+    const auto body = reply.body.size() < 4096 ? parseJson(reply.body, unread) : Json(nullptr);
+    if (reply.session != "suspended" && !(body && stringField(body.get(), "error") == "suspended")) return false;
+    auto reason = body ? stringField(body.get(), "reason") : std::string();
+    if (reason != "account-off" && reason != "account-gone") reason = "suspended";
+    heardSuspension(reply.url, reason);
+    error.message = suspensionMessage(reason);
+    return true;
+}
+}
 bool Session::pair(Error& error) {
     const auto url = server_.url + "/api/pair/status";
-    auto headers = authHeaders(server_, state_, url);
+    // Suspended: asked as a console with only the server address and its
+    // pair secret, which the server answers with a re-pair QR code. The key
+    // stays: turning the account on again lets it in as before, and only an
+    // approval of the QR code replaces it.
+    State asking = state_;
+    if (repairing_) asking.accessKeys.erase(server_.url);
+    auto headers = authHeaders(server_, asking, url);
     if (const auto secret = pairSecret(); !secret.empty()) headers.push_back("X-Pair-Secret: " + secret);
     const auto response = get(url, headers, "", cancel_);
     const auto held = state_.accessKeys.find(server_.url);
@@ -1124,6 +1154,12 @@ bool Session::pair(Error& error) {
     if (response.status == 404) {
         if (keyless && server_.username.empty()) logLine("pair: no device approval on this server (404) and no key held");
         pairingPending_ = false; pairingInfo_ = {}; return true;
+    }
+    if (suspended(response, error)) {
+        if (repairing_) return false;
+        repairing_ = true;
+        error = {};
+        return pair(error);
     }
     if (!response.error.empty() || response.status != 200) { error.message = response.error.empty() ? tr("Could not check the device approval status.") : response.error; return false; }
     auto root = parseJson(response.body, error); if (error) return false;
@@ -1134,17 +1170,11 @@ bool Session::pair(Error& error) {
         pairPasswordOnly_ = true;
         markPairPasswordOnly(originOf(server_.url), true);
     }
-    // A key kept from before that the server no longer approves (the console
-    // was removed): the download's token approves it again, not a new request.
     const auto kept = state_.accessKeys.find(server_.url);
-    if (status != "approved" && !server_.enrollToken.empty() && kept != state_.accessKeys.end() && !kept->second.empty()) {
-        if (!enroll(error, true)) return false;
-        if (server_.enrollToken.empty()) { pairingPending_ = false; pairingInfo_ = {}; return true; }
-    }
     // Taken back (the account off, its password changed): the kept key is
     // no good, and approval starts again with a new pair secret, so the key
     // the server issues next goes only to this console.
-    if (status == "pending" && kept != state_.accessKeys.end() && !kept->second.empty() && server_.enrollToken.empty()) {
+    if (!repairing_ && status == "pending" && kept != state_.accessKeys.end() && !kept->second.empty() && server_.enrollToken.empty()) {
         forgetAccessKey();
         return pair(error);
     }
@@ -1156,7 +1186,7 @@ bool Session::pair(Error& error) {
             return false;
         }
         pairingPending_ = true; pairingInfo_ = parsePairingInfo(response.body, server_).value;
-        pairingInfo_.refusal = enrollRefusal_;
+        pairingInfo_.refusal = repairing_ ? "suspended" : enrollRefusal_;
         error.message = tr("Connects once you approve this device on the server website."); return false;
     }
     if (status != "approved") { error.message = tr("Check the device approval response."); return false; }
@@ -1175,6 +1205,7 @@ bool Session::pair(Error& error) {
         filed.unlock();
         if (written) forgetPasswordOnceKeyed();
     }
+    repairing_ = false;
     pairingPending_ = false; pairingInfo_ = {}; return true;
 }
 // Approved (a key held) on a server that takes the password for approval
@@ -1344,16 +1375,24 @@ std::map<std::string, std::string> enrollSpent;
 // One enroll at a time, so a second session for the server waits for the
 // first one's key instead of sending the token beside it.
 std::mutex enrollSending;
+// url + token -> tries answered 429 or 5xx this run: the server busy for a
+// moment, asked again at the next refresh, up to EnrollTries.
+std::map<std::string, int> enrollBusy;
+constexpr int EnrollTries = 3;
 }
 void Session::forgetEnrollAttempts() {
     std::lock_guard<std::mutex> held(enrollLock);
     enrollSkipped.clear();
     enrollSpent.clear();
+    enrollBusy.clear();
 }
-bool Session::enroll(Error& error, bool replacing) {
+bool Session::enroll(Error& error) {
+    // A token in config.json is spent even with a key held: the download it
+    // came with is the user's own account, and only the enroll ties this
+    // console to it (a console approved before by the server alone is no
+    // one's, and the website cannot send to it).
     const auto token = server_.enrollToken;
-    const auto key = state_.accessKeys.find(server_.url);
-    if (token.empty() || (!replacing && key != state_.accessKeys.end() && !key->second.empty())) return true;
+    if (token.empty()) return true;
     const auto tried = server_.url + '\n' + token;
     std::lock_guard<std::mutex> one(enrollSending);
     // The key made from the console: the one the server approves.
@@ -1364,7 +1403,7 @@ bool Session::enroll(Error& error, bool replacing) {
         if (const auto at = enrollSpent.find(tried); at != enrollSpent.end()) {
             const auto spent = at->second;
             held.unlock();
-            logLine("enroll: the token was spent earlier this run; its key goes on");
+            logDetail("enroll: the token was spent earlier this run; its key goes on");
             return keepEnrolledKey(spent, device, error);
         }
     }
@@ -1372,6 +1411,12 @@ bool Session::enroll(Error& error, bool replacing) {
     auto headers = authHeaders(server_, state_, url);
     for (auto& header : headers)
         if (header.rfind("X-Device-Key: ", 0) == 0) header = "X-Device-Key: " + device;
+    // The key held goes along even beside a session token: a console the
+    // server approved on its own proves with it that it is this console,
+    // or the server refuses (403 needs-key) and the token stays unspent.
+    if (const auto held = state_.accessKeys.find(server_.url); held != state_.accessKeys.end() && !held->second.empty() &&
+        std::none_of(headers.begin(), headers.end(), [](const std::string& h) { return h.rfind("X-Access-Key: ", 0) == 0; }))
+        headers.push_back("X-Access-Key: " + held->second);
     headers.push_back("Content-Type: application/json");
     Json body(json_object_new_object());
     json_object_object_add(body.get(), "token", json_object_new_string(token.c_str()));
@@ -1389,9 +1434,21 @@ bool Session::enroll(Error& error, bool replacing) {
         return true;
     };
     if (!sent.error.empty()) { error.message = sent.error; return false; }
+    // Suspended: the token stays for when the account is back, and pairing
+    // asks for a QR code meanwhile.
+    if (Error unused; suspended(sent, unused)) return true;
     // A server that does not know enroll (before it, or with pairing off):
     // the token is not for it, and the console connects as before.
     if (sent.status == 404 || sent.status == 405) return true;
+    // Busy for a moment: asked again at the next refresh, a few times, and
+    // meanwhile the console goes on as it is (its key, or the QR code).
+    if (sent.status == 429 || sent.status >= 500) {
+        std::lock_guard<std::mutex> held(enrollLock);
+        if (++enrollBusy[tried] < EnrollTries) {
+            logLine("enroll: HTTP " + std::to_string(sent.status) + ", asked again at the next refresh");
+            return true;
+        }
+    }
     // Expired or spent, past the account's limits (403: as many consoles as
     // it may hold), or another account's console (409): out of config.json,
     // so no later start sends it again, and the console asks for approval as
@@ -1408,6 +1465,13 @@ bool Session::enroll(Error& error, bool replacing) {
         enrollRefusal_ = sent.status == 409 ? "other-account" : sent.status == 401 && told ? sent.enroll : "";
         return true;
     }
+    // The server wants the key this console holds and got none it took: the
+    // token is not spent and stays for a later start; this run goes on as
+    // it is, and the screen says the console is not the account's.
+    if (sent.status == 403 && sent.enroll == "needs-key") {
+        enrollRefusal_ = "needs-key";
+        return skip("the server asks for the key held (403 needs-key)");
+    }
     Error unread;
     const auto reply = sent.status == 200 ? parseJson(sent.body, unread) : Json(nullptr);
     const auto accessKey = reply ? stringField(reply.get(), "accessKey") : std::string();
@@ -1417,6 +1481,13 @@ bool Session::enroll(Error& error, bool replacing) {
         std::lock_guard<std::mutex> held(enrollLock);
         enrollSpent[tried] = accessKey;
     }
+    // Whose console it is now, as the server says (bound: the download's
+    // account; false: an admin's console, which stays the admin's). An
+    // older server says nothing.
+    const auto* bound = field(reply.get(), "bound");
+    if (json_object_is_type(bound, json_type_boolean))
+        logDetail(std::string("enroll: ") + (json_object_get_boolean(bound) ? "linked to the download's account" : "kept by the server's admin"));
+    enrollRefusal_.clear();
     return keepEnrolledKey(accessKey, device, error);
 }
 // Saved as a key from approval is (saveKey); the server knows the console by
@@ -1432,6 +1503,17 @@ bool Session::keepEnrolledKey(const std::string& accessKey, const std::string& d
     }, KeySaveTries);
     enrollUnsaved_ = true; // the token leaves config.json once the key is written
     if (written) keyWritten();
+    // The session token and the ask behind it were the old key's: both go
+    // now, before anything else is asked with them (a 401 session-revoked
+    // and access-key-wrong right after the enroll).
+    // Before this run read the server's features, the session goes whole;
+    // the next library/info offers it again with the new key.
+    if (features_.count("session-token")) {
+        auto asking = state_;
+        asking.accessKeys[server_.url] = accessKey;
+        offerSessionFor(server_, asking);
+    } else
+        withdrawSession(originOf(server_.url));
     return true;
 }
 State Session::stateFromFile() {
@@ -1462,7 +1544,7 @@ bool Session::saveKey(const std::function<void(State&)>& change, int tries) {
     }
     state_ = std::move(updated);
     keyUnsaved_ = true;
-    logLine("key held for this run; written again at the next refresh");
+    logDetail("key held for this run; written again at the next refresh");
     return false;
 }
 void Session::keyWritten() {
@@ -1497,11 +1579,12 @@ void logRefusal(const std::vector<std::string>& headers, const Response& reply) 
 }
 }
 bool Session::refresh(Error& error) {
+    const CancelScope scope(cancel_);
     error = {};
     if (keyUnsaved_) {
         std::unique_lock<std::mutex> filed(stateFile);
         if (saveKey([](State&) {}, 1)) {
-            logLine("the held key is written now");
+            logDetail("the held key is written now");
             keyWritten();
         }
     }
@@ -1549,6 +1632,7 @@ bool Session::refresh(Error& error) {
     if (!response.error.empty()) { error.message = response.error; return false; }
     unchanged_ = response.status == 304;
     if (unchanged_) return true;
+    if (suspended(response, error)) return false;
     if (response.status != 200) {
         logRefusal(signIn, response);
         // The host too: a photo of the screen says where the console went.

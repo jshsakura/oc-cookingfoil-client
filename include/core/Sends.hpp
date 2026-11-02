@@ -22,7 +22,8 @@ struct Feed {
   std::vector<Sent> items;
 };
 // GET /api/device/sends; an item without an id or a url is left out.
-Feed parse(const std::string &json);
+// shaped: false when the text is no feed at all (an error page).
+Feed parse(const std::string &json, bool *shaped = nullptr);
 // One server's answer, with the address it came from.
 struct Source {
   std::string server;
@@ -51,13 +52,16 @@ struct Room {
   std::optional<uint64_t> free; // unknown until the worker has read it
   uint64_t queued = 0;          // room the queue already needs
   size_t queueCount = 0;
+  size_t cards = MaxItems; // how many more can wait on screen; the rest come next round
 };
 struct Admission {
   std::vector<size_t> take, held; // indexes into the candidates
   bool waiting = false;           // free space not known yet: nothing decided
 };
 // In order: a download that does not fit is held and the ones after it still
-// get their chance, so one large game does not stop the small ones.
+// get their chance, so one large game does not stop the small ones. Past the
+// cards that can still wait nothing is decided: those are neither taken nor
+// held, and the server lists them again.
 Admission admit(const std::vector<Candidate> &candidates, const Room &room);
 // POST /api/device/sends/ack.
 std::string ackBody(const std::vector<std::string> &ids, bool accepted);

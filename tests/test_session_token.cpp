@@ -1,4 +1,5 @@
 #include "Test.hpp"
+#include "core/Config.hpp"
 #include "core/Json.hpp"
 #include "core/Log.hpp"
 #include "core/Resume.hpp"
@@ -140,6 +141,41 @@ int runSessionTokenTests() {
     foil::net::withdrawSession(slow);
     foil::net::withdrawSession(quick);
   }
+  {
+    // A 503 (the server for now) is not a refusal: nothing is asked again
+    // until the gap ends, then the token comes. A 403 stands for the run;
+    // new credentials ask at once.
+    using namespace std::chrono_literals;
+    const std::string busy = "https://busy.example.com";
+    int asks = 0;
+    int status = 503;
+    foil::net::setSessionRetryGap(200ms);
+    foil::net::offerSession(busy, "a", [&] {
+      ++asks;
+      return status == 200 ? foil::net::SessionGrant{200, "busy-token", 3600} : foil::net::SessionGrant{status, "", 0};
+    });
+    CHECK(foil::net::sessionToken(busy).empty() && asks == 1);
+    status = 200;
+    CHECK(foil::net::sessionToken(busy).empty() && asks == 1); // within the gap
+    std::this_thread::sleep_for(250ms);
+    CHECK(foil::net::sessionToken(busy) == "busy-token" && asks == 2);
+    status = 403;
+    foil::net::offerSession(busy, "b", [&] {
+      ++asks;
+      return status == 200 ? foil::net::SessionGrant{200, "busy-token-2", 3600} : foil::net::SessionGrant{status, "", 0};
+    });
+    CHECK(foil::net::sessionToken(busy).empty() && asks == 3);
+    std::this_thread::sleep_for(250ms);
+    status = 200;
+    CHECK(foil::net::sessionToken(busy).empty() && asks == 3); // refused: not asked again
+    foil::net::offerSession(busy, "c", [&] {
+      ++asks;
+      return foil::net::SessionGrant{200, "busy-token-3", 3600};
+    });
+    CHECK(foil::net::sessionToken(busy) == "busy-token-3" && asks == 4);
+    foil::net::withdrawSession(busy);
+    foil::net::setSessionRetryGap(std::chrono::seconds(foil::net::RenewGapSeconds));
+  }
   Mock mock;
   foil::Server server;
   server.url = "http://127.0.0.1:" + std::to_string(mock.port);
@@ -152,12 +188,14 @@ int runSessionTokenTests() {
   int issued = 0;
   int64_t lifetime = 12 * 3600;
   int sessionStatus = 200;
+  std::atomic<int> sessionDelayMs{0};
   // Requests carrying these tokens are refused as expired.
   std::vector<std::string> dead;
   mock.answer = [&](const std::string &request) -> Reply {
     if (request.rfind("GET /api/library/info", 0) == 0)
       return {200, "", offers ? R"({"features":["session-token"]})" : R"({"features":[]})"};
     if (request.rfind("GET /api/session", 0) == 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(sessionDelayMs.load()));
       if (sessionStatus != 200) return {sessionStatus, "", "{}"};
       return {200, "Cache-Control: no-store\r\n", grant("cfs_t" + std::to_string(++issued), lifetime)};
     }
@@ -222,6 +260,51 @@ int runSessionTokenTests() {
     const auto after = foil::net::authHeaders(server, state, list);
     CHECK(std::any_of(after.begin(), after.end(), [](const std::string &h) { return has(h, "Basic"); }));
     CHECK(mock.take().empty()); // not asked again for this sign-in
+  }
+  {
+    // A server slow to give its token: work that is stopped (a picture whose
+    // screen closed, the app ending) stops waiting for it at once, and that
+    // is not taken for a refusal; the next request asks again.
+    using namespace std::chrono_literals;
+    dead.clear();
+    sessionStatus = 200;
+    foil::net::forgetSessions();
+    foil::net::offerSessionFor(server, state);
+    sessionDelayMs = 3000; // curl looks at the stop flag about once a second
+    std::atomic<bool> stopped{false};
+    std::string token;
+    auto took = 0ms;
+    std::thread work([&] {
+      const foil::net::CancelScope scope(&stopped);
+      const auto began = std::chrono::steady_clock::now();
+      token = foil::net::sessionToken(foil::originOf(server.url));
+      took = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - began);
+    });
+    std::this_thread::sleep_for(100ms);
+    stopped = true;
+    work.join();
+    CHECK(token.empty() && took < 1500ms);
+    // One stopped while another asks: it does not wait for that ask either.
+    stopped = false;
+    std::string asked, waited;
+    std::thread asking([&] { asked = foil::net::sessionToken(foil::originOf(server.url)); });
+    std::this_thread::sleep_for(100ms);
+    auto waitedFor = 0ms;
+    std::thread waiting([&] {
+      const foil::net::CancelScope scope(&stopped);
+      const auto began = std::chrono::steady_clock::now();
+      waited = foil::net::sessionToken(foil::originOf(server.url));
+      waitedFor = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - began);
+    });
+    std::this_thread::sleep_for(100ms);
+    stopped = true;
+    waiting.join();
+    asking.join();
+    CHECK(waited.empty() && waitedFor < 1500ms);
+    CHECK(foil::net::isSessionToken(asked) && !asked.empty());
+    sessionDelayMs = 0;
+    mock.take();
+    issued = 0;
   }
   {
     // A token that ends within ten minutes is renewed, with the sign-in,

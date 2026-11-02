@@ -19,7 +19,8 @@ int runSendsUiTests(SDL_Renderer *renderer) {
   Mock mock;
   foil::Server server;
   server.url = "http://127.0.0.1:" + std::to_string(mock.port);
-  bool answered = false, declined = false;
+  bool answered = false, declined = false, refuseDecline = false;
+  int declineAsks = 0;
   std::vector<std::string> sent;
   mock.answer = [&](const std::string &request) -> Reply {
     if (request.rfind("GET /api/pair/status", 0) == 0) return {404, "", "{}"}; // no approval on this server
@@ -37,7 +38,11 @@ int runSendsUiTests(SDL_Renderer *renderer) {
               R"("url":")" + server.url + R"(/file/sent.nsp"}]})"};
     }
     if (request.rfind("POST /api/device/sends/ack", 0) == 0) {
-      if (request.find("declined") != std::string::npos) declined = true;
+      if (request.find("declined") != std::string::npos) {
+        ++declineAsks;
+        if (refuseDecline) return {503, "", R"({"error":"busy"})"};
+        declined = true;
+      }
       answered = true;
       return {200, "", R"({"ok":true,"removed":1})"};
     }
@@ -101,6 +106,42 @@ int runSendsUiTests(SDL_Renderer *renderer) {
     const auto later = mock.take();
     const auto no = std::find_if(later.begin(), later.end(), [](const std::string &r) { return r.rfind("POST /api/device/sends/ack", 0) == 0; });
     CHECK(no != later.end() && no->find(R"({"ids":["b1b2c3d4e5f6"],"result":"declined"})") != std::string::npos);
+  }
+  {
+    // A refusal the server did not take (503), then a restart: the game it
+    // still lists never comes back as a card, and the refusal is sent again
+    // until the server takes it; then it is forgotten.
+    declined = false;
+    answered = true; // the list holds Other Game
+    refuseDecline = true;
+    declineAsks = 0;
+    auto state = foil::loadState(statePath).value;
+    state.sendsDeclined[server.url] = {"b1b2c3d4e5f6"};
+    foil::Error error;
+    CHECK(foil::saveState(statePath, state, error));
+    const auto run = [&](uint32_t ms, const auto &done) {
+      foil::ui::Application app(renderer, "", statePath);
+      CHECK(app.open());
+      app.previewStorage(64ull << 30, 16ull << 30);
+      app.setSession(std::make_unique<foil::net::Session>(server, foil::loadState(statePath).value, statePath));
+      app.refresh();
+      bool shown = false;
+      for (const auto until = SDL_GetTicks() + ms; SDL_GetTicks() < until && !done();) {
+        app.poll();
+        shown = shown || !app.arrivalShown().empty();
+        SDL_Delay(10);
+      }
+      CHECK(!shown && !app.outcomeOf("Other Game"));
+    };
+    run(3000, [&] { return declined; });
+    CHECK(declineAsks >= 1 && !declined);
+    CHECK(foil::loadState(statePath).value.sendsDeclined.count(server.url) == 1);
+    refuseDecline = false;
+    // Polled until the refusal is forgotten: the server takes it before the
+    // app reads the worker's answer and saves.
+    run(5000, [&] { return declined && foil::loadState(statePath).value.sendsDeclined.empty(); });
+    CHECK(declined);
+    CHECK(foil::loadState(statePath).value.sendsDeclined.empty());
   }
   std::filesystem::remove_all(root);
   return failures;

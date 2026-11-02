@@ -4,13 +4,14 @@
 #include <map>
 #include <set>
 namespace foil::sends {
-Feed parse(const std::string &json) {
+Feed parse(const std::string &json, bool *shaped) {
   Feed feed;
   Error ignored;
   const auto root = parseJson(json, ignored);
+  auto *items = root ? field(root.get(), "items") : nullptr;
+  if (shaped) *shaped = json_object_is_type(items, json_type_array);
   if (!root) return feed;
   feed.serverId = stringField(root.get(), "serverId");
-  auto *items = field(root.get(), "items");
   if (!json_object_is_type(items, json_type_array)) return feed;
   const size_t count = std::min<size_t>(json_object_array_length(items), MaxItems);
   for (size_t i = 0; i < count; ++i) {
@@ -61,7 +62,7 @@ Admission admit(const std::vector<Candidate> &candidates, const Room &room) {
   const uint64_t free = *room.free;
   uint64_t used = room.queued;
   size_t count = room.queueCount;
-  for (size_t i = 0; i < candidates.size(); ++i) {
+  for (size_t i = 0; i < candidates.size() && a.take.size() < room.cards; ++i) {
     const auto &c = candidates[i];
     const bool fits = c.runs && count < MaxQueue && used <= free && c.need <= free - used &&
                       free - used - c.need >= Reserve;

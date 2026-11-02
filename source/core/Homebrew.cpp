@@ -70,11 +70,12 @@ bool parseFiles(const std::string &json, App &app, const std::string &base) {
   app.files = std::move(read);
   return true;
 }
-std::vector<App> parse(const std::string &json, const std::string &base) {
+std::vector<App> parse(const std::string &json, const std::string &base, bool *shaped) {
   std::vector<App> out;
   Error error;
   auto root = parseJson(json, error);
   auto *list = root ? field(root.get(), "homebrew") : nullptr;
+  if (shaped) *shaped = json_object_is_type(list, json_type_array);
   if (!json_object_is_type(list, json_type_array)) return out;
   for (size_t i = 0; i < json_object_array_length(list); ++i) {
     auto *o = json_object_array_get_idx(list, i);

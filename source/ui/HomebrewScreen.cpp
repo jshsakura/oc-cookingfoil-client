@@ -67,7 +67,21 @@ void Application::loadHomebrew() {
           if (!unchanged) apps = homebrew::mergeServers(std::move(lists));
         }))
       error.message = tr("Something went wrong reading the homebrew list.");
-    homebrewFinish_ = [this, apps = std::move(apps), unchanged, error, shown = homebrewLoaded_ && !homebrew_.empty()]() mutable {
+    std::vector<std::string> asked;
+    for (const auto &source : sources) asked.push_back(source.server.url);
+    homebrewFinish_ = [this, apps = std::move(apps), unchanged, error, shown = homebrewLoaded_ && !homebrew_.empty(),
+                       asked = std::move(asked)]() mutable {
+      // Asked of servers no longer the ones in use (another chosen, one
+      // added or removed meanwhile): not shown; the list is asked anew.
+      std::vector<std::string> now;
+      for (const auto &server : serversWith("homebrew")) now.push_back(server.url);
+      if (now != asked) {
+        logLine("homebrew: a list for the servers before dropped; asking again");
+        homebrewLoaded_ = false;
+        homebrewError_ = {};
+        needHomebrewList();
+        return;
+      }
       homebrewLoaded_ = true;
       // A look again that failed keeps the list it had: said in the log only.
       if (error && shown) {
@@ -360,10 +374,19 @@ bool Application::getHomebrew(const homebrew::App &app) {
   for (const auto &file : app.files) bytes += file.size;
   // A bundle's bytes are the tar's (headers and padding too), a zip's its own.
   if (!app.bundleUrl.empty() && !app.files.empty()) bytes = homebrew::bundleSize(app);
+  // A zip is unpacked as it comes: what it takes on the card is its
+  // entries' size, while the queue counts what is downloaded.
+  const uint64_t room = app.archive.usable() ? std::max(app.archive.extracted(), app.archive.size) : bytes;
   if (app.archive.usable()) bytes = app.archive.size;
-  if (bytes && sdFree_ && *sdFree_ < bytes + (8u << 20)) {
+  // Beside what the queue already needs on the card (not what goes to the
+  // console's own storage).
+  uint64_t queued = 0;
+  for (const auto &q : installQueue_)
+    if (q.target != "nand") queued = q.file.size > UINT64_MAX - queued ? UINT64_MAX : queued + q.file.size;
+  const uint64_t slack = 8u << 20;
+  if (room && sdFree_ && (room > UINT64_MAX - queued - slack || *sdFree_ < room + queued + slack)) {
     alertTitle_ = tr("Cannot download this app");
-    alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(bytes)});
+    alert_ = trf("Not enough space on the SD card. {0} is needed.", {formatBytes(room)});
     return false;
   }
   return queueJob("homebrew", app.name, app.iconUrl, app.downloadUrl, bytes ? bytes : app.size, homebrew::serialize(app), 0,

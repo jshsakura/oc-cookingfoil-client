@@ -1,6 +1,7 @@
 #include "core/Json.hpp"
 #include "core/Log.hpp"
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <condition_variable>
 #include <deque>
@@ -256,7 +257,16 @@ void writeBatch(const std::deque<std::string> &raws) {
   if (size > long(2 * MaxLogBytes)) trimLog(logPath);
 }
 } // namespace
-void logLine(const std::string &raw) { writer().push(raw); }
+namespace {
+std::atomic<LogLevel> level{LogLevel::Errors};
+} // namespace
+void setLogLevel(LogLevel chosen) { level = chosen; }
+void logLine(const std::string &raw) {
+  if (level != LogLevel::Off) writer().push(raw);
+}
+void logDetail(const std::string &raw) {
+  if (level == LogLevel::All) writer().push(raw);
+}
 std::string logTail(size_t maxBytes) {
   flushLog();
   std::lock_guard<std::mutex> lock(mutex);

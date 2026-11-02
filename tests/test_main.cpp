@@ -14,12 +14,14 @@ int runRebindTests();
 int runSessionTokenTests();
 int runVaultTests();
 int runEnrollTests();
+int runSuspendedTests();
 int runSessionTests();
 int runCatalogTests();
 int runUpdatesTests();
 int runInstalledTests();
 int runPairingTests();
 int runPairingUiTests(SDL_Renderer *renderer);
+int runRepairUiTests(SDL_Renderer *renderer);
 int runSelectionTests();
 int runInstallerTests();
 int runPatchTests();
@@ -38,6 +40,7 @@ int runZstdResumeTests();
 int runNczPointTests();
 int runClientUpdateTests();
 int runHomebrewTests();
+int runImageSizeTests();
 int runHomebrewCardTests();
 int runNacpTests();
 int runResumeTests();
@@ -48,6 +51,7 @@ int runTunerTests();
 int runAdminEditTests();
 int runVotesTests();
 int runSendsTests();
+int runMtpTests();
 int runClientStringsTests();
 int runOriginTests();
 int runOriginRecordTests();
@@ -83,11 +87,11 @@ int main() {
   // A console that reads its ID, as on the Switch (test_state covers one
   // that cannot).
   foil::setDeviceIdentity(foil::deriveIdentity(0x756e697474657374ull));
-  const int failures = runDownloadCleanupTests() + runMacJunkTests() + runOrderedTests() + runConfigTests() + runNetworkTests() + runNtpTests() + runStateTests() + runRebindTests() + runSessionTokenTests() + runVaultTests() + runEnrollTests() +
+  const int failures = runDownloadCleanupTests() + runMacJunkTests() + runOrderedTests() + runConfigTests() + runNetworkTests() + runNtpTests() + runStateTests() + runRebindTests() + runSessionTokenTests() + runVaultTests() + runEnrollTests() + runSuspendedTests() +
                        runSessionTests() + runPairingTests() + runCatalogTests() + runUpdatesTests() + runInstalledTests() +
                        runSelectionTests() + runInstallerTests() + runPatchTests() + runI18nTests() +
-                       runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runLabelsTests() + runHistoryTests() + runStoreTests() + runZstdResumeTests() + runNczPointTests() + runClientUpdateTests() + runHomebrewTests() + runHomebrewCardTests() + runNacpTests() + runDropboxRowsTests() + runAchievementsTests() + runResumeTests() + runForwarderTests() + runDirectTests() + runCardPatchTests() + runTunerTests() + runSegmentedTests() + runAdminEditTests() + runVotesTests() + runSendsTests() + runClientStringsTests() + runOriginTests() + runOriginRecordTests() + runMergeCatalogTests() +
-                       runUiTests(app.renderer()) + runPairingUiTests(app.renderer()) + runShortcutUiTests(app.renderer()) +
+                       runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runLabelsTests() + runHistoryTests() + runStoreTests() + runZstdResumeTests() + runNczPointTests() + runClientUpdateTests() + runHomebrewTests() + runImageSizeTests() + runHomebrewCardTests() + runNacpTests() + runDropboxRowsTests() + runAchievementsTests() + runResumeTests() + runForwarderTests() + runDirectTests() + runCardPatchTests() + runTunerTests() + runSegmentedTests() + runAdminEditTests() + runVotesTests() + runSendsTests() + runMtpTests() + runClientStringsTests() + runOriginTests() + runOriginRecordTests() + runMergeCatalogTests() +
+                       runUiTests(app.renderer()) + runPairingUiTests(app.renderer()) + runRepairUiTests(app.renderer()) + runShortcutUiTests(app.renderer()) +
                        runSendsUiTests(app.renderer());
   std::printf("Core tests: %d failures\n", failures);
   return (ok && failures == 0) ? 0 : 1;

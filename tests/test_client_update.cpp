@@ -72,11 +72,24 @@ int runClientUpdateTests() {
       CHECK(foil::readFile(target) == nro("new build") && !std::filesystem::exists(target + ".old") &&
             !std::filesystem::exists(target + ".trial") && std::filesystem::exists(target + ".rolledback"));
       std::filesystem::remove(target + ".rolledback");
+      // The same build stopping twice in a row is not taken again; one that
+      // comes up starts the count over.
+      CHECK(foil::platform::refusedBuild(target).empty());
+      for (int time = 0; time < 2; ++time) {
+        foil::atomicWrite(target + ".new", nro("broken build"), ignored);
+        foil::platform::noteTrialVersion(target, "9.9.9");
+        CHECK(foil::platform::finishUpdate(target, reason) && !foil::platform::rollBackUpdate(target, reason));
+        CHECK(foil::platform::rollBackUpdate(target, reason) && foil::readFile(target + ".rolledback") == "9.9.9");
+        CHECK(foil::platform::refusedBuild(target) == (time ? "9.9.9" : ""));
+        CHECK(foil::readFile(target) == nro("new build"));
+        std::filesystem::remove(target + ".rolledback");
+      }
       // One that comes up is kept; the one before it goes.
       foil::atomicWrite(target + ".new", nro("good build"), ignored);
       CHECK(foil::platform::finishUpdate(target, reason) && !foil::platform::rollBackUpdate(target, reason));
       foil::platform::confirmUpdate(target);
       CHECK(!foil::platform::rollBackUpdate(target, reason) && foil::readFile(target) == nro("good build"));
+      CHECK(foil::platform::refusedBuild(target).empty());
       CHECK(!std::filesystem::exists(target + ".old") && !std::filesystem::exists(target + ".trial"));
       foil::atomicWrite(target, nro("new build"), ignored);
       // A download cut off (shorter than its header says, or not an NRO at

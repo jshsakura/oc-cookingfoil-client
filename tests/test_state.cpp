@@ -115,6 +115,27 @@ int runStateTests() {
     CHECK(foil::loadState(db).value.theme.empty());
   }
   {
+    // Saving what the file already holds writes nothing (the card's wear):
+    // settings and sealed secrets alike. A change is still written.
+    auto same = foil::loadState(db).value;
+    same.accessKeys[Remote] = "issued";
+    CHECK(foil::saveState(db, same, error));
+    const auto file = foil::DownloadStore::fileName(db);
+    const auto stamp = [&] { return std::filesystem::last_write_time(file); };
+    const auto earlier = stamp() - std::chrono::hours(24);
+    std::filesystem::last_write_time(file, earlier);
+    for (int i = 0; i < 5; ++i) CHECK(foil::saveState(db, same, error) && foil::saveSettings(db, same, error));
+    CHECK(stamp() == earlier);
+    same.language = same.language == "ko" ? "ja" : "ko";
+    CHECK(foil::saveSettings(db, same, error));
+    CHECK(stamp() != earlier);
+    const auto back = foil::loadState(db).value;
+    CHECK(back.language == same.language && back.accessKeys.at(Remote) == "issued" &&
+          foil::takeRebound() == foil::Rebound::None);
+    same.language = "ja";
+    CHECK(foil::saveSettings(db, same, error));
+  }
+  {
     // Held by a write still going (another instance's lock, fresh), or left
     // by a run closed mid-write: a read does not wait on it (a write replaces
     // the file whole by rename, so a read sees it whole either way).

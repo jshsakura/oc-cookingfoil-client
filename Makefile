@@ -23,7 +23,7 @@ ZSTD_FLAGS := -DZSTD_DISABLE_ASM -DZSTD_LEGACY_SUPPORT=0 -DDEBUGLEVEL=0 -DZSTD_T
 # public repository's history would each read differently.
 APP_VERSION := $(shell sed -n 's/^APP_VERSION := //p' makefiles/switch.mk)
 HOST_FLAGS += -DCOOKINGFOIL_VERSION=\"$(APP_VERSION)\"
-SHARED := $(wildcard source/core/*.cpp source/net/*.cpp source/ui/*.cpp source/install/*.cpp source/platform/*.cpp source/i18n/*.cpp source/zstd/*.cpp) $(QR_ROOT)/qrcodegen.cpp
+SHARED := $(wildcard source/core/*.cpp source/net/*.cpp source/ui/*.cpp source/install/*.cpp source/platform/*.cpp source/mtp/*.cpp source/i18n/*.cpp source/zstd/*.cpp) $(QR_ROOT)/qrcodegen.cpp
 # Save backups zip with minizip. Without it on the host (Debian/Ubuntu package
 # libminizip-dev) the zip code and its archive tests are left out.
 ifeq ($(shell pkg-config --exists minizip && echo yes),yes)
@@ -36,7 +36,7 @@ $(warning minizip not found: host build skips source/core/Zip.cpp (install libmi
 SHARED := $(filter-out source/core/Zip.cpp,$(SHARED))
 HOST_FLAGS += -DFOIL_NO_MINIZIP
 endif
-.PHONY: all host test clean switch-build engine-patch version
+.PHONY: all host test clean switch-build engine-patch version fuzz
 version:
 	@echo $(APP_VERSION)
 all: switch-build
@@ -101,6 +101,16 @@ test-i18n-tools: build-host/strings-check
 	python3 scripts/i18n.py selftest
 test: build-host/unit-tests test-switch-fs test-filesystem-policy test-i18n-tools
 	SDL_VIDEODRIVER=dummy ./build-host/unit-tests
+# The parsers of untrusted bytes, under ASan and UBSan on damaged input.
+fuzz:
+	@mkdir -p build-host
+	$(HOST_CXX) -std=c++17 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
+	  -ffunction-sections -fdata-sections -Iinclude $$(pkg-config --cflags json-c) tests/fuzz/zip.cpp \
+	  source/core/ZipStream.cpp -Wl,--gc-sections -o build-host/fuzz-zip
+	./build-host/fuzz-zip
+	$(HOST_CXX) -std=c++17 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
+	  -Iinclude tests/fuzz/image.cpp source/core/ImageSize.cpp -o build-host/fuzz-image
+	./build-host/fuzz-image
 clean:
 	rm -rf build build-host cookingfoil.nro cookingfoil.nacp cookingfoil.elf
 

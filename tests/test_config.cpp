@@ -181,6 +181,23 @@ int runConfigTests() {
       const auto text = foil::readFile(path);
       CHECK(std::count(text.begin(), text.end(), '\n') == 3);
       CHECK(text.find("(the line before 4 more times)") != std::string::npos && text.find("paired") != std::string::npos);
+      // The level from 설정: Errors keeps error lines and drops detail,
+      // All keeps both, Off writes nothing.
+      std::filesystem::remove(path);
+      foil::openLog(path);
+      foil::logLine("error A");
+      foil::logDetail("detail A");
+      foil::setLogLevel(foil::LogLevel::All);
+      foil::logDetail("detail B");
+      foil::setLogLevel(foil::LogLevel::Off);
+      foil::logLine("error C");
+      foil::logDetail("detail C");
+      foil::setLogLevel(foil::LogLevel::Errors);
+      foil::flushLog();
+      const auto levels = foil::readFile(path);
+      CHECK(levels.find("error A") != std::string::npos && levels.find("detail B") != std::string::npos);
+      CHECK(levels.find("detail A") == std::string::npos && levels.find("error C") == std::string::npos &&
+            levels.find("detail C") == std::string::npos);
       foil::openLog(""); // later tests log nowhere, as before
       std::filesystem::remove_all(dir);
     }

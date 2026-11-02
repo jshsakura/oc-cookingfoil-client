@@ -159,7 +159,7 @@ void Application::fetchDetail() {
   const auto &group = groups_[detailGroup_];
   auto *session = sessionFor(group.base ? group.base->server : group.representative.server);
   const auto found = details_.find(session->server().url + group.id);
-  if (found != details_.end() && SDL_GetTicks() - found->second.at < 60000) {
+  if (found != details_.end() && SDL_GetTicks() - found->second.at < DetailKeptMs) {
     detail_ = found->second.detail;
     syncDetailPatches();
     return;
