@@ -73,6 +73,31 @@ int archiveTests() {
     CHECK(!fs::exists(out / "abs.bin"));
   }
   {
+    // A name minizip cannot look up (256 bytes and up) is refused, not read
+    // past; 255 bytes still extracts.
+    const auto longNames = root / "long.zip";
+    // In a folder, since a single file name stops at 255 bytes on disk.
+    const std::string fits = std::string(126, 'a') + "/" + std::string(124, 'a') + ".bin", over = "b" + fits;
+    foil::ZipArchive zip;
+    CHECK(zip.create(longNames.string()));
+    CHECK(zip.addFile((src / "sub" / "slot1.bin").string(), fits));
+    CHECK(zip.close());
+    {
+      foil::ZipArchive read;
+      CHECK(read.open(longNames.string()) && read.listFiles() == std::vector<std::string>{fits});
+    }
+    CHECK(foil::unzipToDirectory(longNames.string(), (root / "long-out").string()));
+    CHECK(zip.create(longNames.string()));
+    CHECK(zip.addFile((src / "sub" / "slot1.bin").string(), over));
+    CHECK(zip.addFile((src / "sub" / "slot1.bin").string(), "ok.bin"));
+    CHECK(zip.close());
+    {
+      foil::ZipArchive read;
+      CHECK(read.open(longNames.string()) && read.listFiles() == std::vector<std::string>{"ok.bin"});
+    }
+    CHECK(!foil::unzipToDirectory(longNames.string(), (root / "long-out2").string()));
+  }
+  {
     // 2MB of zeros compresses far past 100:1 and is refused.
     const auto bomb = root / "bomb.zip";
     writeRaw(root / "zeros.bin", std::string(2 * 1024 * 1024, '\0'));
