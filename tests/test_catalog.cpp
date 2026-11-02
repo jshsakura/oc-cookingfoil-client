@@ -138,6 +138,10 @@ int runCatalogTests() {
     groups[3].representative.players = 1;
     const auto popular = foil::browseCatalog(groups, "", {"", foil::SortMode::Popular, foil::Filter::All, "", 0, 0, 0, 0, false, false, "", 0});
     CHECK(popular.size() >= 2 && popular[0] == 9 && popular[1] == 3);
+    // Past the ranked ones, the newest release comes first.
+    for (size_t n = 3; n < popular.size(); ++n)
+      CHECK(groups[popular[n - 1]].representative.releaseDate >= groups[popular[n]].representative.releaseDate);
+    CHECK(popular.size() > 2 && groups[popular[2]].representative.releaseDate == 20200002);
     const auto party = foil::browseCatalog(groups, "", {"", foil::SortMode::Popular, foil::Filter::All, "", 2, 0, 0, 0, false, false, "", 0});
     CHECK(!party.empty() && party[0] == 9);
     for (auto &group : groups) {

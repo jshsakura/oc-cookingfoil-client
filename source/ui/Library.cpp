@@ -51,7 +51,8 @@ void Application::library() {
   for (int row = std::max(0, int(top)); row < int(top) + 4 && row < rows; ++row)
     for (int col = 0; col < 6 && row * 6 + col < int(list.size()); ++col) {
       const int n = row * 6 + col;
-      card(groups_[list[n]], 260 + col * 170, Top + (row - top) * RowHeight, inContent() && selected_ == n);
+      card(groups_[list[n]], 260 + col * 170, Top + (row - top) * RowHeight, inContent() && selected_ == n, true,
+           [this, n] { selected_ = n; });
     }
   unclip();
   paint_.scrollbar(1266, 104, 540, top, 2.3f, float(rows));

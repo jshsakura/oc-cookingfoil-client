@@ -2240,10 +2240,13 @@ void Application::scoreBadge(int score, float right, float y) {
   paint_.fonts.middle(label, right - w + 5, y + h / 2, 13, White, true);
 }
 void Application::card(const Group &g, float x, float y, bool selected,
-                       bool badges) {
+                       bool badges, std::function<void()> focus) {
   const auto index = size_t(&g - groups_.data());
   if (index < groups_.size())
-    hit(x, y, 150, 220, [this, index] { openDetail(index); });
+    hit(x, y, 150, 220, [this, index, focus = std::move(focus)] {
+      if (focus) focus();
+      openDetail(index);
+    });
   cover(g.representative.icon, x, y, 150, selected, g.representative.name);
   // Download size on the top left, in the same small badge as the score:
   // the base with its update, as a player installs them.
