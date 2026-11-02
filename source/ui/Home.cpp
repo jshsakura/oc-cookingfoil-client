@@ -60,6 +60,12 @@ void Application::warmHome() {
         images_->request(thumbnailUrl(groups_[themes_[n].items[col]].representative.icon));
 }
 void Application::home() {
+  // The link dropped with the catalog on screen: as when it never came up.
+  if (linkDropped()) {
+    notice(tr("No internet connection."), std::string(net::offlineMessage()) + "\n" + tr("Try again in a moment."), 20, tr("Try again"),
+           [this] { refreshAll(); }, "", "", {}, 46);
+    return;
+  }
   if (groups_.empty()) {
     // A write still holds the records (a slow card): the home's shape, as
     // while it connects; past a few seconds, what may be holding them.
