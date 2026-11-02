@@ -1,0 +1,58 @@
+diff --git a/include/nx/nca_writer.h b/include/nx/nca_writer.h
+index 712833d..5fbc213 100755
+--- a/include/nx/nca_writer.h
++++ b/include/nx/nca_writer.h
+@@ -114,6 +114,8 @@ public:
+ 	void hashFrom(const Sha256Context& start) { m_sha = std::make_unique<Sha256Context>(start); }
+ 	// After close: 1 the written NCA hashes to its id, -1 it does not, 0 not hashed.
+ 	int hashCheck() const { return m_hashCheck; }
++	u64 hashedBytes() const { return m_hashedBytes; } // what the check hashed, resumed part included
++	virtual bool decompresses() const { return false; } // an NCZ, made whole here
+ protected:
+ 
+ 	std::vector<u8> m_contentBuffer;
+@@ -131,6 +133,7 @@ private:
+ 	std::shared_ptr<Mark> m_nextMark;
+ 	std::unique_ptr<Sha256Context> m_sha; // used by the card thread only, then at close
+ 	int m_hashCheck = 0;
++	u64 m_hashedBytes = 0;
+ 	void startFlusher();
+ 	void drainFlusher(); // waits for the card, then ends the thread
+ 	std::thread m_flusher;
+diff --git a/source/nx/nca_writer.cpp b/source/nx/nca_writer.cpp
+index 1414f2a..88de44c 100755
+--- a/source/nx/nca_writer.cpp
++++ b/source/nx/nca_writer.cpp
+@@ -284,6 +284,7 @@ void NcaBodyWriter::close()
+      // CookingFoil: an NCA's id is the start of its SHA-256.
+      if (m_sha)
+      {
++          m_hashedBytes = m_sha->bits_consumed / 8 + m_sha->num_buffered;
+           u8 digest[SHA256_HASH_SIZE];
+           sha256ContextGetHash(m_sha.get(), digest);
+           m_hashCheck = memcmp(digest, &m_ncaId, sizeof(NcmContentId)) == 0 ? 1 : -1;
+@@ -763,6 +764,8 @@ public:
+                };
+      }
+ 
++     bool decompresses() const override { return true; }
++
+      // CookingFoil: on from a kept point. `sections` is the NCZSECTN table as
+      // the file has it; what comes next is the stream from point.consumed.
+      void resumeFrom(const u8* sections, u64 size)
+@@ -1173,7 +1176,14 @@ void NcaWriter::close()
+                foil::logLine("NCA changed by the server: its hash is not checked");
+           else if (writer->hashCheck() < 0)
+           {
+-               foil::logLine("NCA hash differs from its id" + std::string(m_resumed ? " after a resume" : ""));
++               // Which NCA, how it came (NCZ is decompressed here) and how
++               // much was hashed: a count short of the file's size points at
++               // the check, not the data.
++               char id[33];
++               for (int i = 0; i < 16; ++i) std::snprintf(id + i * 2, 3, "%02x", reinterpret_cast<const u8*>(&m_ncaId)[i]);
++               const bool ncz = writer->decompresses();
++               foil::logLine("NCA " + std::string(id) + " hash differs from its id" + std::string(m_resumed ? " after a resume" : "") +
++                             " (" + (ncz ? "ncz" : "nca") + ", " + std::to_string(writer->hashedBytes()) + " bytes hashed)");
+                if (m_resumed)
+                     THROW_FORMAT("The resumed file does not match the original. It downloads again from the start.");
+           }

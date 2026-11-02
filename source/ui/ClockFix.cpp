@@ -12,16 +12,24 @@ namespace {
 // out; closer, the fault is elsewhere and nothing is asked.
 constexpr int64_t ClockSlack = 120;
 constexpr uint32_t CheckEvery = 60 * 1000;
+// A console clock before this day (2026-11-01 UTC) is wrong for certain: a
+// console whose clock was reset reads 2024-01-01. Such a clock is set at
+// start, without a question, before a connection has to fail on it.
+constexpr int64_t ClockFloor = 1793491200;
+bool clockSurelyWrong() { return int64_t(std::time(nullptr)) < ClockFloor; }
 } // namespace
 void Application::pollClock() {
   if (clockDone_.exchange(false)) {
     clockWorker_.join();
     if (clockFinish_) std::exchange(clockFinish_, nullptr)();
   }
-  if (!net::takeCertificateFailure() || clockAsked_ || clockFix_ != ClockFix::None || clockWorker_.joinable())
-    return;
+  const bool atStart = !clockStartChecked_;
+  clockStartChecked_ = true;
+  if (atStart && clockSurelyWrong()) logLine("clock: before " + platform::localTime(ClockFloor) + " at start");
+  else if (!net::takeCertificateFailure()) return;
+  if (clockAsked_ || clockFix_ != ClockFix::None || clockWorker_.joinable()) return;
   const auto now = SDL_GetTicks();
-  if (clockCheckedAt_ && now - clockCheckedAt_ < CheckEvery) return;
+  if (!atStart && clockCheckedAt_ && now - clockCheckedAt_ < CheckEvery) return;
   clockCheckedAt_ = now;
   clockFix_ = ClockFix::Checking; // nothing shows until it is known to be the clock
   clockWorker_ = std::thread([this] {
@@ -35,7 +43,35 @@ void Application::pollClock() {
       clockInternet_ = *internet;
       clockAskedAt_ = SDL_GetTicks();
       clockAsked_ = true;
-      clockFix_ = ClockFix::Ask;
+      // Nothing to ask about a clock that is surely wrong.
+      if (clockSurelyWrong()) setClockNow();
+      else clockFix_ = ClockFix::Ask;
+    };
+    clockDone_ = true;
+  });
+}
+void Application::setClockNow() {
+  clockFix_ = ClockFix::Setting;
+  // Internet time as read, moved on by the time since.
+  const auto target = clockInternet_ + int64_t((SDL_GetTicks() - clockAskedAt_) / 1000);
+  clockWorker_ = std::thread([this, target] {
+    const platform::OnCore off(platform::NetworkCore);
+    platform::ClockSet set;
+    guarded("clock", [&] { set = platform::setClock(target); });
+    clockFinish_ = [this, set] {
+      if (!set.ok) {
+        logLine("clock not set: " + set.detail);
+        // No report can go now, since the clock stops it too: it goes on its
+        // own once a server answers, after the clock is set by hand.
+        keepReport("The console clock could not be set.");
+        clockFix_ = ClockFix::Failed;
+        return;
+      }
+      logLine("clock set: " + set.detail);
+      clockFix_ = ClockFix::None;
+      // The connection the clock stopped, again.
+      if (!connected_ && serverIndex_ < config_.servers.size()) connect(serverIndex_);
+      message(tr("The console clock now matches internet time."));
     };
     clockDone_ = true;
   });
@@ -43,37 +79,11 @@ void Application::pollClock() {
 void Application::clockAction(Action a) {
   if (clockFix_ == ClockFix::Ask) {
     if (a == Action::Back) clockFix_ = ClockFix::None;
-    if (a != Action::Accept || !settled() || clockWorker_.joinable()) return;
-    clockFix_ = ClockFix::Setting;
-    // Internet time as asked, moved on by the time the question was up.
-    const auto target = clockInternet_ + int64_t((SDL_GetTicks() - clockAskedAt_) / 1000);
-    clockWorker_ = std::thread([this, target] {
-      const platform::OnCore off(platform::NetworkCore);
-      platform::ClockSet set;
-      guarded("clock", [&] { set = platform::setClock(target); });
-      clockFinish_ = [this, set] {
-        if (!set.ok) {
-          logLine("clock not set: " + set.detail);
-          clockFix_ = ClockFix::Failed;
-          return;
-        }
-        clockFix_ = ClockFix::None;
-        // The connection the clock stopped, again.
-        if (!connected_ && serverIndex_ < config_.servers.size()) connect(serverIndex_);
-        message(tr("The console clock now matches internet time."));
-      };
-      clockDone_ = true;
-    });
+    if (a == Action::Accept && settled() && !clockWorker_.joinable()) setClockNow();
     return;
   }
-  if (clockFix_ == ClockFix::Failed) {
-    if (a == Action::Back) clockFix_ = ClockFix::None;
-    if (a == Action::Accept && settled()) {
-      // The log already holds each step's answer.
-      clockFix_ = ClockFix::None;
-      openBugReport(tr("The console clock could not be set."));
-    }
-  }
+  if (clockFix_ == ClockFix::Failed && (a == Action::Back || (a == Action::Accept && settled())))
+    clockFix_ = ClockFix::None;
 }
 void Application::clockDialog() {
   constexpr int ClockIcon = 30;
@@ -84,9 +94,8 @@ void Application::clockDialog() {
     return;
   }
   if (clockFix_ == ClockFix::Failed) {
-    const auto body = modal(720, 24 + 60 + 24, tr("Could not set the clock"), tr("Close"), "", tr("Send a bug report"),
-                            ClockIcon);
-    paint_.fonts.wrapped(tr("Set the date and time in System Settings > System. A bug report sends the log of what happened so it can be looked into."),
+    const auto body = modal(720, 24 + 60 + 24, tr("Could not set the clock"), "", "", tr("Close"), ClockIcon);
+    paint_.fonts.wrapped(tr("Set the date and time in System Settings > System, then open the app again. What happened goes to the server on its own once it connects."),
                          body.x + 32, body.y + 24, 19, Secondary, body.w - 64, 3);
     return;
   }

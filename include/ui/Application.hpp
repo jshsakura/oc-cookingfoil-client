@@ -1341,11 +1341,13 @@ private:
   std::string appUpdateError_, selfPath_;
   void noticeRollBack(); // an update undone at start says so (AppUpdate.cpp)
   // A secure connection failed and the console clock is off from internet
-  // time: asked once per run, then set to it (ClockFix.cpp). Failing, the
-  // log keeps why and the popup leads to a bug report.
+  // time: asked once per run, then set to it (ClockFix.cpp). A clock that is
+  // surely wrong is set at start without asking. Failing, the log keeps why
+  // and a report goes on its own once a server answers.
   enum class ClockFix { None, Checking, Ask, Setting, Failed };
   ClockFix clockFix_ = ClockFix::None;
-  bool clockAsked_ = false;
+  bool clockAsked_ = false, clockStartChecked_ = false;
+  void setClockNow();
   int64_t clockInternet_ = 0;         // internet time when asked, Unix seconds
   uint32_t clockAskedAt_ = 0;         // SDL ticks then, to carry it forward
   uint32_t clockCheckedAt_ = 0;       // the last comparison, at most one a minute
@@ -1390,8 +1392,11 @@ private:
   int bugServer_ = 0; // the row of reportServers() it goes to
   std::string bugMessage_;
   std::thread bugWorker_;
-  std::string autoReport_; // sent once a server answers (a build that stopped twice)
-  std::atomic<bool> bugDone_{false};
+  std::string autoReport_; // sent once a server answers (a build that stopped twice, a clock not set)
+  // A report kept on the card (beside the app, ".report") until one is sent:
+  // what failed where no report could go, sent in a later run.
+  void keepReport(const std::string &note);
+  std::atomic<bool> bugDone_{false}, bugSent_{false};
   std::string incomingBugStatus_;
   std::string lastAlert_; // the alert already written to the log
   void checkAppUpdate();
@@ -1872,6 +1877,12 @@ private:
   // Updates and DLC not yet in 다운로드 (queued or downloading ones hide).
   std::vector<UpdateCandidate> pendingUpdates() const;
   uint32_t installedAt_ = 0; // when the installed list was last read
+  // Files installed since the list on screen was read, each with the number
+  // of reads begun by then. Until a later read is shown they are on the
+  // console but not in the list, and 내 게임 would count them as missing
+  // for that moment (a DLC's badge blinked 1).
+  std::map<std::string, uint64_t> justInstalled_;
+  uint64_t readsBegun_ = 0, readShown_ = 0, readIncoming_ = 0;
   bool updateNewer_ = false; // a newer build was found; kept while checking again
   // Every automatic ask is bounded; -, Y or A starts them again.
   uint32_t pairSince_ = 0;    // when approval became pending; polling stops after a while

@@ -1142,6 +1142,9 @@ void Application::poll() {
     }
   }
   if (observedInstall_ == install::Status::Running && installStatus == install::Status::Succeeded) {
+    for (const auto &e : history_)
+      if (e.outcome == history::Outcome::Running && e.kind.empty())
+        for (const auto &file : e.install.files) justInstalled_[file.url] = readsBegun_;
     // The server's shortcut over an older one: the HOME Menu reads its new
     // icon. The console calls run before the installed list is read, off the
     // drawing thread.
@@ -2419,21 +2422,21 @@ void Application::shell() {
     const bool newer = open && MenuScreens[i] == Screen::Settings && updateNewer_;
     // Longer languages step the size down to fit the menu instead of
     // running past it, or under the badge (at 171) when there is one.
-    const float labelRoom = count || newer ? 93 : 136;
+    // The badge keeps its right edge and grows to the left for "99+", a
+    // size smaller, so the number stays inside it.
+    const std::string badge = count > 99 ? "99+" : count ? std::to_string(count) : newer ? "1" : "";
+    const int badgeSize = badge.size() > 2 ? 14 : 16;
+    const float badgeW = std::max(28.f, paint_.fonts.measure(badge, badgeSize, true) + 14);
+    const float badgeX = 199 - badgeW;
+    const float labelRoom = badge.empty() ? 136 : badgeX - 78;
     int labelSize = 21;
     while (labelSize > 16 && paint_.fonts.measure(labels[i], labelSize, active) > labelRoom)
       --labelSize;
     paint_.fonts.middle(labels[i], 72, y + height / 2.f, labelSize, ink, active, labelRoom);
-    if (newer) {
-      paint_.rect(171, y + height / 2 - 14, 28, 28, Butter, 14);
-      paint_.fonts.text("1", 185 - paint_.fonts.measure("1", 16, true) / 2, paint_.fonts.centerTop("1", 16, true, y + height / 2),
-                        16, OnButter, true);
-    }
-    if (count) {
-      paint_.rect(171, y + height / 2 - 14, 28, 28, Butter, 14);
-      const auto text = count > 99 ? "99+" : std::to_string(count);
-      paint_.fonts.text(text, 185 - paint_.fonts.measure(text, 16, true) / 2,
-                        paint_.fonts.centerTop(text, 16, true, y + height / 2), 16, OnButter, true);
+    if (!badge.empty()) {
+      paint_.rect(badgeX, y + height / 2 - 14, badgeW, 28, Butter, 14);
+      paint_.fonts.text(badge, badgeX + badgeW / 2 - paint_.fonts.measure(badge, badgeSize, true) / 2,
+                        paint_.fonts.centerTop(badge, badgeSize, true, y + height / 2), badgeSize, OnButter, true);
     }
   }
 }

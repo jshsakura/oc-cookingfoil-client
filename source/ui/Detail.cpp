@@ -354,7 +354,7 @@ void Application::detail() {
       const auto &f = parts[n];
       label = f.type == "base"     ? std::string(tr("Base game"))
               : f.type == "update" ? std::string(tr("Update|item"))
-                                   : "DLC · " + f.name;
+                                   : dlcLabel(f.name, groups_[detailGroup_].representative.name);
       // A game with more than one base file: its kind and which of them,
       // A going to the next.
       const auto choices = selection_->baseChoices();
@@ -363,7 +363,7 @@ void Application::detail() {
                       "/" + std::to_string(choices)
             : f.type == "base"     ? trf("{0} · Required", {versionLabel(f)})
             : f.type == "update" ? trf("{0} · Latest", {versionLabel(f)})
-                                 : std::string(tr("Add-on content"));
+                                 : "DLC · " + std::string(tr("Add-on content"));
       // A file the check flagged says so on its row; 파일 상태 says why.
       const auto file = fileNameOf(f.url);
       for (const auto &check : detail_.integrity)
