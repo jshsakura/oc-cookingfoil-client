@@ -1025,16 +1025,18 @@ void Application::refresh() {
     const bool ok = guarded("catalog", [this, empty, first] {
       askOthers();
       bool read = session_->refresh(incomingError_);
-      // Opened the moment the console woke, its link not up yet: the app's
-      // first connection waits for it a little instead of failing until - is
-      // pressed. A server that answers, or one that does not, says so at once.
+      // Opened the moment the console woke, its link not up yet, or its
+      // first name lookup slow: the app's first connection tries again
+      // instead of failing until - is pressed (net::startupRetries). A server
+      // that answers, or a bad certificate, says so at once.
       constexpr uint32_t LinkWaitMs[] = {500, 1000, 1500, 2000, 3000, 4000};
-      for (size_t again = 0; first && !read && again < std::size(LinkWaitMs) && net::linkNotUp(net::lastCurl()); ++again) {
+      for (size_t again = 0; first && !read && again < std::min<size_t>(std::size(LinkWaitMs), net::startupRetries()); ++again) {
         for (const auto until = SDL_GetTicks() + LinkWaitMs[again]; SDL_GetTicks() < until && !stop_ && !connectStop_;)
           std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (stop_ || connectStop_) break;
+        const int code = net::lastCurl();
         read = session_->refresh(incomingError_);
-        if (read) logDetail("connected once the console's link was up, try " + std::to_string(again + 2));
+        if (read) logLine("connected on try " + std::to_string(again + 2) + " after curl " + std::to_string(code));
       }
       const bool changed = read && !session_->unchanged();
       if (changed && empty && !others_.empty()) {
