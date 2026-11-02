@@ -892,6 +892,7 @@ void Application::applyReload(int prefer, ReloadRead read) {
   auto &parsed = read.config;
   if (parsed.error) {
     error_ = parsed.error;
+    startupLink_ = false; // a server added from 설정 is not waited for
     screen(Screen::Settings);
     return;
   }
@@ -906,6 +907,7 @@ void Application::applyReload(int prefer, ReloadRead read) {
   }
   if (state.error) {
     error_ = state.error;
+    startupLink_ = false;
     screen(Screen::Settings);
     return;
   }
@@ -927,12 +929,15 @@ void Application::applyReload(int prefer, ReloadRead read) {
   serverIndex_ = 0;
   config_ = std::move(parsed.value);
   error_ = {};
+  // Only the connection the app opens with waits for the console's link.
+  const bool atStart = std::exchange(startupLink_, false);
   state_ = state.value;
   applyTheme();
   applyStartupLanguage();
   if (parsed.created)
     message(tr("Created the config file. Add a server with \"+ Add server\" in Settings."));
   if (prefer >= 0 && size_t(prefer) < config_.servers.size() && config_.servers[prefer].enabled) {
+    linkWait_ = atStart;
     connect(prefer);
     return;
   }
@@ -942,6 +947,7 @@ void Application::applyReload(int prefer, ReloadRead read) {
   // add one (설정 is a tap away). Only an error in the files sends it there.
   if (found == config_.servers.end())
     return;
+  linkWait_ = atStart;
   connect(found - config_.servers.begin());
 }
 void Application::connect(size_t index) {
@@ -1011,14 +1017,25 @@ void Application::refresh() {
   if (features_.empty() && !pairingPending_) menuKnown_ = false;
   earlyReady_ = false;
   earlyGroups_ = {};
-  network_ = std::thread([this, empty = groups_.empty()] {
+  network_ = std::thread([this, empty = groups_.empty(), first = std::exchange(linkWait_, false)] {
     // Reading the catalog (seconds of JSON) stays off the drawing core too.
     const platform::OnCore off(platform::NetworkCore);
     incomingError_ = {};
     incomingCatalog_ = false;
-    const bool ok = guarded("catalog", [this, empty] {
+    const bool ok = guarded("catalog", [this, empty, first] {
       askOthers();
-      const bool read = session_->refresh(incomingError_);
+      bool read = session_->refresh(incomingError_);
+      // Opened the moment the console woke, its link not up yet: the app's
+      // first connection waits for it a little instead of failing until - is
+      // pressed. A server that answers, or one that does not, says so at once.
+      constexpr uint32_t LinkWaitMs[] = {500, 1000, 1500, 2000, 3000, 4000};
+      for (size_t again = 0; first && !read && again < std::size(LinkWaitMs) && net::linkNotUp(net::lastCurl()); ++again) {
+        for (const auto until = SDL_GetTicks() + LinkWaitMs[again]; SDL_GetTicks() < until && !stop_ && !connectStop_;)
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (stop_ || connectStop_) break;
+        read = session_->refresh(incomingError_);
+        if (read) logDetail("connected once the console's link was up, try " + std::to_string(again + 2));
+      }
       const bool changed = read && !session_->unchanged();
       if (changed && empty && !others_.empty()) {
         std::vector<ServerItems> lists{{session_->server().url, session_->items()}};
@@ -1090,6 +1107,11 @@ void Application::poll() {
     stateWorker_.join();
     stateWaiting_ = false;
     reload(statePrefer_);
+  }
+  if (std::exchange(linkReturned_, false) && !connected_ && !network_.joinable() && !reloadWorker_.joinable()) {
+    logDetail("the console's link is up again: connecting");
+    startupLink_ = true; // the name may still not resolve for a moment
+    refreshAll();
   }
   pollDevice();
   pollSaveJob();
@@ -2444,6 +2466,10 @@ void Application::shell() {
 // footer's left.
 // Returns where it ends so the key hints can stay clear of it.
 void Application::noteSignal(int strength) {
+  // The link came up after the connection failed without it (it took
+  // longer than the first connection waits): connected again, as - would.
+  if (strength >= 0 && signal_ < 0 && session_ && !connected_ && error_ && !pairingPending_)
+    linkReturned_ = true;
   if (strength >= 0) {
     linkSeenUp_ = true;
     linkDropAt_ = 0;

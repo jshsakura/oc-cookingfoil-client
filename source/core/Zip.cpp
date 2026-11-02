@@ -19,6 +19,19 @@ namespace {
 constexpr size_t Buffer = 0x10000;
 // The ratio check only applies above this size, as in save-keeper.
 constexpr uint64_t RatioFloor = 1024 * 1024;
+// The current entry's name, or false when it holds a NUL or is longer than
+// unzLocateFile can find (a full buffer is also left unterminated).
+// unzLocateFile refuses 256 bytes and up (unzip.c's UNZ_MAXFILENAMEINZIP).
+constexpr size_t EntryNameBuffer = 256;
+bool entryName(void *unz, std::string &out) {
+  char name[EntryNameBuffer];
+  unz_file_info64 info{};
+  if (unzGetCurrentFileInfo64(unz, &info, name, sizeof(name), nullptr, 0, nullptr, 0) != UNZ_OK ||
+      info.size_filename >= sizeof(name) || std::memchr(name, 0, info.size_filename))
+    return false;
+  out.assign(name, info.size_filename);
+  return true;
+}
 void makeParent(const std::string &path) {
   const auto parent = std::filesystem::path(path).parent_path();
   std::error_code ec;
@@ -229,11 +242,10 @@ bool ZipArchive::extractAll(const std::string &destDir) {
   do {
     if (names.size() >= MaxZipEntries)
       return fail("too many entries in " + path_);
-    char name[512];
-    unz_file_info64 info{};
-    if (unzGetCurrentFileInfo64(unz_, &info, name, sizeof(name), nullptr, 0, nullptr, 0) != UNZ_OK)
+    std::string name;
+    if (!entryName(unz_, name))
       return fail("bad entry in " + path_);
-    names.emplace_back(name);
+    names.push_back(std::move(name));
   } while (unzGoToNextFile(unz_) == UNZ_OK);
   bool ok = true;
   for (const auto &name : names) {
@@ -261,12 +273,9 @@ std::vector<std::string> ZipArchive::listFiles() {
       logLine("zip: entry limit reached in " + path_);
       break;
     }
-    char name[512];
-    if (unzGetCurrentFileInfo64(unz_, nullptr, name, sizeof(name), nullptr, 0, nullptr, 0) == UNZ_OK) {
-      const size_t length = std::strlen(name);
-      if (length > 0 && name[length - 1] != '/')
-        files.emplace_back(name);
-    }
+    std::string name;
+    if (entryName(unz_, name) && !name.empty() && name.back() != '/')
+      files.push_back(std::move(name));
   } while (unzGoToNextFile(unz_) == UNZ_OK);
   return files;
 }

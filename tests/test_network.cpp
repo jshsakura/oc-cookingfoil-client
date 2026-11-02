@@ -18,6 +18,17 @@ int runNetworkTests() {
         CHECK(resolve.find("DNS") != std::string::npos);
         CHECK(!foil::net::connectionError(7, "http://host").empty());
     }
+    {
+        // What a request sent before the console's link is up gets (the name
+        // not found, the connection refused) is waited out at start; a server
+        // that does not answer, or a bad certificate, is not.
+        CHECK(foil::net::linkNotUp(6) && foil::net::linkNotUp(7));
+        CHECK(!foil::net::linkNotUp(0) && !foil::net::linkNotUp(28) && !foil::net::linkNotUp(60));
+        // The last request on this thread is what lastCurl() reads: a port
+        // nothing listens on refuses the connection.
+        const auto refused = foil::net::get("http://127.0.0.1:1/api/library/sections");
+        CHECK(refused.curl == 7 && foil::net::lastCurl() == 7 && foil::net::linkNotUp(foil::net::lastCurl()));
+    }
     auto sections = foil::net::parseSections(R"({"sections":[{"items":[{"url":"https://host/game.nsz","name":"한글 日本 中文","title_id":"0100000000010000","app_version":131072,"size":4400000000,"languages":["ko","en"],"added_at":1728000000}]}]})");
     CHECK(!sections.error && sections.value.size() == 1);
     if (!sections.value.empty()) {
