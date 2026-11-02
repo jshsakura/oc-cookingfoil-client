@@ -225,7 +225,7 @@ void Application::raGamesPage() {
   const float target = raPageRow_ == 0 ? 0 : std::clamp(head + (raPageRow_ - 1) * RowStep + RowHeight / 2 - view / 2, 0.f, max);
   const float offset = glide("raPage", 232, Top, 1048, view, target, max, 1);
   if (max > 0) paint_.scrollbar(1266, Top, view - 12, offset, view, content);
-  clipTo(232, Top - 8, 1048, view + 8);
+  clipList(Top - 8, view + 8);
   const float y = Top - offset;
   if (signedIn) raAccountRow(y, loading);
   else raConnectCard(y);

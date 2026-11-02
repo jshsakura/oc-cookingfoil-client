@@ -47,7 +47,7 @@ void Application::library() {
   const int rows = int((list.size() + 5) / 6);
   const float top = glide("library", 232, Top - 8, 1048, 660 - Top + 8, float(std::max(0, selected_ / 6 - 1)),
                           float(rows - 2), RowHeight);
-  clipTo(232, Top - 8, 1048, 660 - Top + 8);
+  clipList(Top - 8, 660 - Top + 8);
   for (int row = std::max(0, int(top)); row < int(top) + 4 && row < rows; ++row)
     for (int col = 0; col < 6 && row * 6 + col < int(list.size()); ++col) {
       const int n = row * 6 + col;

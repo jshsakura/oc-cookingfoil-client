@@ -737,7 +737,7 @@ void Application::patchesScreen() {
   paint_.scrollbar(1266, RowTop, RowStep * VisibleRows - 16, top, VisibleRows, float(games.size()));
   // One more row than fits, cut off by the footer, so a longer list looks
   // like it goes on instead of looking like four games in all.
-  clipTo(232, RowTop - 8, 1048, 660 - RowTop + 8);
+  clipList(RowTop - 8, 660 - RowTop + 8);
   for (int i = first; i < int(games.size()) && i <= first + VisibleRows + 1; ++i) {
     const auto &game = games[i];
     const float y = RowTop + (i - top) * RowStep;

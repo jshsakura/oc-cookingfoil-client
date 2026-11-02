@@ -2243,7 +2243,7 @@ void Application::card(const Group &g, float x, float y, bool selected,
                        bool badges, std::function<void()> focus) {
   const auto index = size_t(&g - groups_.data());
   if (index < groups_.size())
-    hit(x, y, 150, 220, [this, index, focus = std::move(focus)] {
+    hit(x, y, 150, CardTapHeight, [this, index, focus = std::move(focus)] {
       if (focus) focus();
       openDetail(index);
     });
@@ -2306,7 +2306,8 @@ void Application::card(const Group &g, float x, float y, bool selected,
 }
 void Application::footer(
     const std::vector<std::pair<std::string, std::string>> &screenHints) {
-  paint_.rect(0, 660, 1280, 60, Surface);
+  // The menu's color where a theme gives it one (pink), so the frame matches.
+  paint_.rect(0, 660, 1280, 60, sideColor());
   paint_.rect(0, 660, 1280, 1, Line);
   const float left = statusBar();
   // Until the server first answers the buttons mean little: placeholders,
@@ -2316,7 +2317,7 @@ void Application::footer(
     float x = 1248;
     for (const float w : {96.f, 110.f, 96.f, 110.f}) {
       x -= w;
-      paint_.skeleton(x, 676, w, 30, 15, false, Surface); // on the footer's white
+      paint_.skeleton(x, 676, w, 30, 15, false, sideColor()); // on the footer's own color
       x -= 24;
     }
     return;
@@ -2476,7 +2477,7 @@ float Application::statusBar() {
   // buttons show (the link, then the two storages).
   if (menuPending()) {
     for (const float w : {120.f, 210.f, 210.f}) {
-      paint_.skeleton(x, Mid - 15, w, 30, 15, false, Surface);
+      paint_.skeleton(x, Mid - 15, w, 30, 15, false, sideColor());
       x += w + 24;
     }
     return x;
@@ -2504,7 +2505,8 @@ float Application::statusBar() {
     paint_.icon(d.icon, x, Mid - 8, Secondary, 16);
     x += 24;
     constexpr float Bar = 56;
-    paint_.rect(x, Mid - 3, Bar, 6, Line, 3);
+    // Line is a shade of pink's own footer color; the ground shows on it.
+    paint_.rect(x, Mid - 3, Bar, 6, palette.side.a ? Ground : Line, 3);
     if (d.free && d.total && *d.total > 0) {
       const float used = 1.f - float(std::min(*d.free, *d.total)) / float(*d.total);
       paint_.rect(x, Mid - 3, std::max(6.f, Bar * used), 6, Butter, 3);

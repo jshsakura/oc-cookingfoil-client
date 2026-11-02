@@ -864,12 +864,12 @@ void Application::homebrewScreen() {
                           float(rowCount - 2), CardRowStep);
   const int first = std::max(0, int(top)) * 6;
   paint_.scrollbar(1266, 104, 500, top, 2.1f, float(rowCount));
-  clipTo(232, 104 - 8, 1048, 660 - 104 + 8);
+  clipList(104 - 8, 660 - 104 + 8);
   for (int n = 0; n < 24 && first + n < int(rows.size()); ++n) {
     const int i = first + n;
     const auto &app = homebrewAt(rows[i]);
     const float x = 260 + n % 6 * 170, y = 104 + (n / 6 + first / 6 - top) * CardRowStep;
-    hit(x, y, 150, 220, [this, i] {
+    hit(x, y, 150, CardTapHeight, [this, i] {
       if (inContent() && selected_ == i) action(Action::Accept);
       sidebar_ = false;
       selected_ = i;

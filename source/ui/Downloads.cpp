@@ -417,14 +417,14 @@ void Application::runningList(float y, const TopCard *card, float cardDy, float 
   const float max = std::max(0.f, content - view);
   const float top = glide("running", 232, from, 1048, view, std::clamp(focus, 0.f, max), max, 1);
   if (max > 0) paint_.scrollbar(1266, from, view - 12, top, view, content);
-  clipTo(232, from - 8, 1048, view + 8);
+  clipList(from - 8, view + 8);
   if (!installQueue_.empty()) queueList(from + lead - top + shift, from);
   // Over the rows: a rising card passes in front of them.
   if (card) {
     // A row's cover may have let the clip go: set again, not stacked (one
     // unclip below ends it; a second push stayed and cut the menu's taps).
     unclip();
-    clipTo(232, from - 8, 1048, view + 8);
+    clipList(from - 8, view + 8);
     topCard(*card, cardDy - top);
   }
   unclip();
@@ -600,7 +600,7 @@ void Application::downloadsHistory() {
   // Near the end of what is read, the next page is asked for.
   if (first + Visible + 10 >= count) readOlderHistory();
   paint_.scrollbar(1266, Top, Step * Visible - 12, top, Visible, float(count));
-  clipTo(232, Top - 8, 1048, 660 - Top + 8);
+  clipList(Top - 8, 660 - Top + 8);
   for (int n = first; n < count && n <= first + Visible + 1; ++n) {
     const auto &e = history_[list[n]];
     const float y = Top + (n - top) * Step;
