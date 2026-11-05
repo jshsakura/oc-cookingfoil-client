@@ -668,6 +668,18 @@ std::vector<Group> groupedCatalog(std::vector<Item> items) {
 } // namespace
 void Application::setItems(std::vector<Item> items) { setGroups(groupedCatalog(std::move(items))); }
 void Application::setGroups(std::vector<Group> groups) {
+  // A new list under the player (- pressed, the other servers' lists joining
+  // the first): the game, the filters and the shelf they are on stay.
+  const auto browsing = screen_ == Screen::Detail ? previous_ : screen_;
+  const auto game = browsing == Screen::Library ? libraryGameAtCursor() : "";
+  const auto shown = screen_ == Screen::Detail && detailGroup_ < groups_.size() ? groups_[detailGroup_].id : "";
+  const auto picked = [this](const std::vector<int> &indexes) {
+    std::vector<Theme> themes;
+    for (const auto i : indexes)
+      if (i > 0 && i < int(chips_.size())) themes.push_back(chips_[i]);
+    return themes;
+  };
+  const auto active = picked(activeChips_), draft = picked(draftChips_);
   groups_ = std::move(groups);
   groupIndex_.clear();
   groupIndex_.reserve(groups_.size());
@@ -677,11 +689,45 @@ void Application::setGroups(std::vector<Group> groups) {
   localizeNames();
   chips_ = libraryChips(groups_, genreNames_);
   rebuildHome();
-  activeChips_.clear();
+  // A chip the new list has no more of (a genre, a theme's own) still filters.
+  const auto indexes = [this](const std::vector<Theme> &themes) {
+    std::vector<int> out;
+    for (const auto &theme : themes) {
+      const auto found = std::find_if(chips_.begin() + std::min<size_t>(1, chips_.size()), chips_.end(), [&](const Theme &c) { return c.title == theme.title; });
+      out.push_back(int(found - chips_.begin()));
+      if (found == chips_.end()) chips_.push_back(theme);
+    }
+    return out;
+  };
+  activeChips_ = indexes(active);
+  draftChips_ = indexes(draft);
   ++catalogVersion_;
   connected_ = true;
   serverAnsweredAt_ = SDL_GetTicks();
-  selected_ = 0;
+  if (screen_ == Screen::Detail) keepDetailPage(shown);
+  if (browsing == Screen::Library) moveToLibraryGame(game);
+  else if (browsing == Screen::Home) keepHomePlace({row_, selected_});
+  else selected_ = 0;
+}
+// The page stays on its game. Only a game gone from the list leaves it, and
+// only changed files start the choices over: the old ones may not download.
+void Application::keepDetailPage(const std::string &id) {
+  const auto found = groupIndex_.find(id);
+  if (found == groupIndex_.end() || !selection_) {
+    screen_ = previous_;
+    return;
+  }
+  detailGroup_ = found->second;
+  const auto urls = [](const std::vector<Item> &files) {
+    std::vector<std::string> out;
+    for (const auto &file : files) out.push_back(file.url);
+    return out;
+  };
+  Selection fresh(groups_[detailGroup_], selection_->target);
+  if (urls(fresh.parts()) == urls(selection_->parts()) && urls(fresh.baseFiles()) == urls(selection_->baseFiles())) return;
+  selection_ = std::make_unique<Selection>(std::move(fresh));
+  part_ = int(selection_->rows()) + 1;
+  syncDetailPatches();
 }
 const Group *Application::findGroup(const std::string &id) const {
   const auto found = groupIndex_.find(id);
@@ -737,10 +783,29 @@ std::string *Application::listQuery() {
   }
 }
 void Application::openMenuScreen(Screen target) {
+  // A look at another screen does not lose the place: back by the menu, 홈
+  // is on the same shelf and the plain list on the same game.
+  if (screen_ == Screen::Library) libraryPlace_ = activeChips_.empty() && librarySort_ == SortMode::Recent ? libraryGameAtCursor() : "";
+  if (screen_ == Screen::Home) homePlace_ = {row_, selected_};
   // The menu opens the plain list; a theme only comes from Home's R.
   activeChips_.clear();
   librarySort_ = SortMode::Recent;
   screen(target);
+  if (target == Screen::Library) moveToLibraryGame(std::exchange(libraryPlace_, ""));
+  if (target == Screen::Home && homePlace_) keepHomePlace(*std::exchange(homePlace_, std::nullopt));
+}
+std::string Application::libraryGameAtCursor() const {
+  const auto &list = libraryList();
+  return selected_ >= 0 && selected_ < int(list.size()) && list[selected_] < groups_.size() ? groups_[list[selected_]].id : "";
+}
+void Application::moveToLibraryGame(const std::string &id) {
+  const auto &list = libraryList();
+  const auto found = std::find_if(list.begin(), list.end(), [&](size_t i) { return groups_[i].id == id; });
+  selected_ = found != list.end() ? int(found - list.begin()) : std::clamp(selected_, 0, std::max(0, int(list.size()) - 1));
+}
+void Application::keepHomePlace(std::pair<int, int> place) {
+  row_ = themes_.empty() ? place.first : std::clamp(place.first, 0, int(themes_.size()));
+  selected_ = row_ == 0 ? 0 : std::clamp(place.second, 0, int(homeRow(row_).size()));
 }
 void Application::screen(Screen screen) {
   // A toast belongs to the screen that showed it.
@@ -1451,8 +1516,6 @@ void Application::takeNetwork() {
   askServerStrings();
   // Same server: keep decoded covers; only the access keys may have changed.
   images_->updateState(state_);
-  if (screen_ == Screen::Detail)
-    screen_ = previous_;
   // A 304 keeps the catalog already on screen.
   if (!incomingCatalog_ && !groups_.empty()) {
     connected_ = true;
@@ -2063,8 +2126,10 @@ void Application::action(Action a) {
       openViewPopup();
       return;
     }
-    const auto list = libraryList();
+    const auto &list = libraryList();
     const int last = int(list.size()) - 1;
+    // The list can shrink under the cursor (a game installed under 미설치).
+    selected_ = std::clamp(selected_, 0, std::max(0, last));
     // Up from the top row goes to the search box and filter (the header).
     if (a == Action::Up)
       selected_ = std::max(0, selected_ - 6);
