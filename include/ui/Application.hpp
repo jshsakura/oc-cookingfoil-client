@@ -39,6 +39,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <tuple>
 #include <set>
 #include <cmath>
 #include <unordered_map>
@@ -434,6 +435,15 @@ public:
   bool onMenu() const { return sidebar_; }
   int cursor() const { return selected_; }
   void previewCursor(int at) { selected_ = at; }
+  size_t pendingCount() const { return pendingUpdates().size(); } // tests
+  void previewQueued(const std::string &url) { // tests: a file waiting in 다운로드
+    history::Entry entry;
+    entry.outcome = history::Outcome::Queued;
+    Item file;
+    file.url = url;
+    entry.install.files.push_back(file);
+    history_.push_back(entry);
+  }
   int shelf() const { return row_; } // tests: 홈's row under the cursor
   size_t libraryCount() const { return libraryList().size(); } // tests
   std::string detailGame() const { return screen_ == Screen::Detail && detailGroup_ < groups_.size() ? groups_[detailGroup_].id : ""; } // tests
@@ -924,7 +934,7 @@ private:
   void showMyGamesTab(int tab);
   float myGamesTabs(float right, float reserve);
   float myGamesButtonWidth(const std::string &label);
-  std::vector<UpdateCandidate> updateRows() const;
+  const std::vector<UpdateCandidate> &updateRows() const;
   void settings();
   void installedScreen();
   void management();
@@ -1269,6 +1279,17 @@ private:
     bool app = false; // an app's patches (switch/<app>/), not a game's
   };
   static std::vector<PatchGame> patchGames(const std::vector<PatchRow> &rows);
+  // The list as this frame shows it, made once however often drawing asks
+  // (most of the screen's cost). A button's action always reads it anew.
+  struct PatchList {
+    uint64_t frame = 0;
+    std::vector<PatchRow> all, shown;
+    std::vector<PatchGame> games;
+  };
+  mutable PatchList patchList_;
+  const PatchList &patchesThisFrame() const;
+  uint64_t frameNumber_ = 0;
+  bool drawing_ = false;
   // The patch the popups act on, by id so a list that changes under it
   // (a filter, a finished job) never moves it to another patch.
   const PatchRow *pickedPatch(const std::vector<PatchRow> &rows) const;
@@ -1277,6 +1298,7 @@ private:
   int patchPickRow_ = 0;
   std::string patchPickId_;
   std::vector<PatchRow> patchRows() const { return patchRows(allPatchRows()); } // allPatchRows() under the current tab
+  bool patchRowShown(const PatchRow &row) const;
   std::vector<PatchRow> patchRows(std::vector<PatchRow> all) const;          // `all` under the current tab
   PatchFilter patchFilter_ = PatchFilter::Stored; // 설치됨 first, as on 내 게임 and 홈브류
   void patchesScreen();
@@ -1906,7 +1928,12 @@ private:
   mutable std::vector<UpdateCandidate> updates_;
   mutable bool updatesStale_ = true;
   // Updates and DLC not yet in 다운로드 (queued or downloading ones hide).
-  std::vector<UpdateCandidate> pendingUpdates() const;
+  const std::vector<UpdateCandidate> &pendingUpdates() const;
+  // Made again only when what they are made from moved (pendingUpdates, updateRows).
+  mutable std::vector<UpdateCandidate> pendingRows_, updateRows_;
+  mutable uint64_t updatesMade_ = 0, pendingMade_ = 0;
+  mutable std::optional<std::pair<uint64_t, size_t>> pendingFrom_;
+  mutable std::optional<std::tuple<uint64_t, decltype(catalogVersion_), int, std::string>> updateRowsFrom_;
   uint32_t installedAt_ = 0; // when the installed list was last read
   // Files installed since the list on screen was read, each with the number
   // of reads begun by then. Until a later read is shown they are on the

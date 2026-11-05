@@ -44,6 +44,8 @@ public:
   std::string cachedPath(const std::string &url) const;
   void provide(const std::string &key, const std::string &bytes);
   void decode(int budget = 2);
+  size_t textureCount() const { return textures_.size(); } // tests
+  void textureBudget(uint32_t microseconds) { textureBudget_ = microseconds; } // tests
   bool ready() const;
   bool failed(const std::string &url) const;
   // Pictures that failed are asked for again the next time they are drawn
@@ -54,6 +56,10 @@ public:
             int radius = 14, bool blurred = false, bool contain = false);
 
 private:
+  // How long a frame may spend making new textures. A row of covers scrolling
+  // in comes over a few frames instead of holding one up; the first is always made.
+  uint32_t textureBudget_ = 4000;
+  Uint64 textureTicks_ = 0;
   struct Entry {
     std::string bytes;
     SDL_Surface *surface = nullptr;

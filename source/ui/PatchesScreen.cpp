@@ -1,5 +1,7 @@
 #include "platform/FileSystem.hpp"
 #include "ui/Application.hpp"
+#include <string_view>
+#include <unordered_map>
 #include "platform/Cores.hpp"
 #include "core/I18n.hpp"
 #include "core/Log.hpp"
@@ -64,18 +66,29 @@ bool Application::patchFilterMatches(PatchFilter filter, const PatchRow &row) {
   }
   return true;
 }
+bool Application::patchRowShown(const PatchRow &row) const {
+  return patchFilterMatches(patchFilter_, row) &&
+         textMatches({row.game, row.patch.name, row.patch.titleId, row.patch.homebrewApp}, patchQuery_);
+}
 std::vector<Application::PatchRow> Application::patchRows(std::vector<PatchRow> rows) const {
-  rows.erase(std::remove_if(rows.begin(), rows.end(),
-                            [this](const PatchRow &row) {
-                              return !patchFilterMatches(patchFilter_, row) ||
-                                     !textMatches({row.game, row.patch.name, row.patch.titleId, row.patch.homebrewApp},
-                                                  patchQuery_);
-                            }),
-             rows.end());
+  rows.erase(std::remove_if(rows.begin(), rows.end(), [this](const PatchRow &row) { return !patchRowShown(row); }), rows.end());
   return rows;
+}
+const Application::PatchList &Application::patchesThisFrame() const {
+  if (!drawing_ || patchList_.frame != frameNumber_) {
+    patchList_.all = allPatchRows();
+    patchList_.shown.clear();
+    for (const auto &row : patchList_.all)
+      if (patchRowShown(row)) patchList_.shown.push_back(row);
+    patchList_.games = patchGames(patchList_.shown);
+    patchList_.frame = drawing_ ? frameNumber_ : 0;
+  }
+  return patchList_;
 }
 std::vector<Application::PatchRow> Application::allPatchRows() const {
   std::vector<PatchRow> rows;
+  std::unordered_map<std::string_view, const InstalledGame *> consoleHas;
+  for (const auto &game : installed_.games) consoleHas.emplace(game.titleId, &game);
   auto describe = [&](PatchRow &row) {
     const auto record = patchRecords_.find(row.patch.id);
     if (record != patchRecords_.end())
@@ -92,12 +105,10 @@ std::vector<Application::PatchRow> Application::allPatchRows() const {
     }
     if (const auto *group = findGroup(row.patch.titleId))
       row.libraryGroup = int(group - groups_.data());
-    const auto local = std::find_if(installed_.games.begin(), installed_.games.end(),
-                                    [&](const InstalledGame &g) { return g.titleId == row.patch.titleId; });
-    if (local != installed_.games.end()) {
+    if (const auto local = consoleHas.find(row.patch.titleId); local != consoleHas.end()) {
       row.installed = true;
-      row.installedVersion = local->displayVersion;
-      row.installedNumber = local->version;
+      row.installedVersion = local->second->displayVersion;
+      row.installedNumber = local->second->version;
     }
     patchGame(row.patch, row.game, row.icon);
   };
@@ -143,7 +154,13 @@ std::vector<Application::PatchRow> Application::allPatchRows() const {
     rows.push_back(std::move(row));
   }
   // Newest on the server first, then by game and patch name.
-  std::stable_sort(rows.begin(), rows.end(), [](const PatchRow &a, const PatchRow &b) {
+  // Sorted by place: a row is large, and moving each one per compare was most
+  // of the list's cost.
+  std::vector<PatchRow *> order;
+  order.reserve(rows.size());
+  for (auto &row : rows) order.push_back(&row);
+  std::stable_sort(order.begin(), order.end(), [](const PatchRow *first, const PatchRow *second) {
+    const PatchRow &a = *first, &b = *second;
     if (a.patch.updatedAt != b.patch.updatedAt)
       return a.patch.updatedAt > b.patch.updatedAt;
     // Patches for a game nobody could name (shown by Title ID) go last.
@@ -154,7 +171,10 @@ std::vector<Application::PatchRow> Application::allPatchRows() const {
       return a.game < b.game;
     return a.patch.name < b.patch.name;
   });
-  return rows;
+  std::vector<PatchRow> sorted;
+  sorted.reserve(rows.size());
+  for (auto *row : order) sorted.push_back(std::move(*row));
+  return sorted;
 }
 std::vector<Application::PatchGame> Application::patchGames(const std::vector<PatchRow> &rows) {
   std::vector<PatchGame> games;
@@ -675,8 +695,9 @@ void Application::patchesScreen() {
   if (!patchesLoaded_ && !patchFetching_ && !patchError_ && connected_)
     fetchPatches();
   needHomebrewList(); // apps' patches take the app's name and icon from it
-  const auto all = allPatchRows();
-  const auto rows = patchRows(all);
+  const auto &list = patchesThisFrame();
+  const auto &all = list.all;
+  const auto &rows = list.shown;
   // The title counts what the tab shows, as on 내 게임 and 홈브류.
   int on = 0;
   for (const auto &row : rows)
@@ -727,7 +748,7 @@ void Application::patchesScreen() {
       notice(tr("No patches available."), tr("Patches in the server's patches folder appear here."), 32);
     return;
   }
-  const auto games = patchGames(rows);
+  const auto &games = list.games;
   selected_ = std::clamp(selected_, 0, int(games.size()) - 1);
   // The focus rides the middle row once past it, the list scrolling under it.
   // The row at the top follows the cursor, or the finger while it glides.
@@ -907,8 +928,9 @@ void Application::patchPicker(const std::vector<PatchRow> &rows, const PatchGame
   unclip();
 }
 void Application::patchDialog() {
-  const auto rows = patchRows();
-  const auto games = patchGames(rows);
+  const auto &list = patchesThisFrame();
+  const auto &rows = list.shown;
+  const auto &games = list.games;
   if (games.empty()) {
     confirmPatchRemove_ = managingPatch_ = pickingPatch_ = false;
     return;
