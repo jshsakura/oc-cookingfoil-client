@@ -877,7 +877,7 @@ bool Application::hasFocusable() const {
     return downloadsTab_ == 0 ? installer_.running() || !installQueue_.empty() || retroDownloading() || patchDownloading()
                               : !downloadsList().empty();
   case Screen::Patches:
-    return !patchRows().empty();
+    return !patchesThisFrame().shown.empty();
   case Screen::Homebrew:
     return !homebrewRows().empty();
   case Screen::Retro:
@@ -2665,6 +2665,8 @@ void Application::screenSkeleton() {
 }
 void Application::render() {
   poll();
+  ++frameNumber_;
+  drawing_ = true;
   // An alert that comes up says so once with the error cue.
   if (alert_.empty()) alertHeard_ = false;
   else if (!std::exchange(alertHeard_, true)) sounds_.play(Cue::Error);
@@ -2954,6 +2956,7 @@ void Application::render() {
     }
   }
   SDL_RenderPresent(paint_.renderer);
+  drawing_ = false;
 }
 
 std::vector<Item> Application::pickedNeeds() const {

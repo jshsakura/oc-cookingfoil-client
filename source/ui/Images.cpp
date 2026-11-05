@@ -396,6 +396,7 @@ bool Images::loaded(const std::string &url) const {
 void Images::decode(int budget) {
   std::lock_guard<std::mutex> lock(mutex_);
   ++frame_;
+  textureTicks_ = 0;
   for (auto &pair : entries_) {
     auto &e = pair.second;
     if (budget <= 0)
@@ -466,6 +467,9 @@ void Images::draw(const std::string &url, float x, float y, int w, int h,
                    ":" + std::to_string(radius) + ":" + std::to_string(blurred) + ":" + std::to_string(contain);
   auto found = textures_.find(key);
   if (found == textures_.end()) {
+    const auto freq = SDL_GetPerformanceFrequency();
+    if (textureTicks_ && textureTicks_ >= textureBudget_ * freq / 1000000) return;
+    const auto started = SDL_GetPerformanceCounter();
     if (textures_.size() > keptTextures()) { // on-screen ones stay
       for (auto it = textures_.begin(); it != textures_.end();)
         if (it->second.frame + 2 < frame_) {
@@ -570,6 +574,7 @@ void Images::draw(const std::string &url, float x, float y, int w, int h,
     SDL_FreeSurface(surface);
     SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
     found = textures_.emplace(key, Texture{texture, frame_}).first;
+    textureTicks_ += std::max<Uint64>(1, SDL_GetPerformanceCounter() - started);
   }
   found->second.frame = frame_;
   SDL_FRect dest{x, y, float(w), float(h)};
