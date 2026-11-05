@@ -433,6 +433,11 @@ public:
   const std::string &headerFocus() const { return headerFocus_; }
   bool onMenu() const { return sidebar_; }
   int cursor() const { return selected_; }
+  void previewCursor(int at) { selected_ = at; }
+  int shelf() const { return row_; } // tests: 홈's row under the cursor
+  size_t libraryCount() const { return libraryList().size(); } // tests
+  std::string detailGame() const { return screen_ == Screen::Detail && detailGroup_ < groups_.size() ? groups_[detailGroup_].id : ""; } // tests
+  size_t detailRows() const { return selection_ ? selection_->rows() : 0; } // tests
   bool serverFormOpen() const { return serverForm_.has_value(); }
   const Config &config() const { return config_; }
   size_t activeServer() const { return serverIndex_; }
@@ -848,6 +853,7 @@ private:
   // applet mode notice, which it repeats).
   void considerSelfShortcut();
   void checkHomebrewCard();
+  bool ledgerFileOnCard(const std::string &file) const;
   homebrew::Status homebrewStatus(const homebrew::App &app) const;
   // The installed title a title app (homebrew::App::title) is, or nullptr.
   const InstalledGame *homebrewInstalledTitle(const homebrew::App &app) const;
@@ -1527,6 +1533,10 @@ private:
   // `done` is the message once it is in. An alert says why when it fails.
   bool writeServers(const Config &next, int prefer, const std::string &done);
   void openDetail(size_t group);
+  void keepDetailPage(const std::string &id);
+  std::string libraryGameAtCursor() const;
+  void moveToLibraryGame(const std::string &id);
+  void keepHomePlace(std::pair<int, int> place);
   void fetchDetail();
   // `focus` puts the cursor on the card before a tap opens it, so B comes back
   // to it rather than to wherever the cursor was left.
@@ -1701,6 +1711,9 @@ private:
   int nav_ = 0, row_ = 1, selected_ = 0;
   // Filters that are on (indices into chips_, never 0 which is "전체").
   std::vector<int> activeChips_;
+  // Where the cursor was on these two when the menu left them.
+  std::string libraryPlace_;
+  std::optional<std::pair<int, int>> homePlace_;
   // The filtered list is rebuilt only when its inputs change.
   mutable std::string listKey_;
   mutable std::vector<size_t> listCache_;

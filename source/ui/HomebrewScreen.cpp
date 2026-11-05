@@ -146,14 +146,12 @@ bool Application::shortcutsUnasked() const {
     return id && !asked.count(id);
   });
 }
-void Application::checkHomebrewCard() {
-  // Before the first scan only: after it, what it found stands until the
-  // next one answers, with no stat per app on the drawing thread.
-  if (!homebrewScanned_) {
-    homebrewOnCard_.clear();
-    for (const auto &[id, record] : homebrewLedger_) homebrewOnCard_[record.file] = fileExists(sdRoot_ + "/" + record.file);
-  }
-  scanHomebrewCard();
+void Application::checkHomebrewCard() { scanHomebrewCard(); }
+// The ledger's file: there as the last look found. Before the first look the
+// ledger is believed, with no stat per app on the drawing thread.
+bool Application::ledgerFileOnCard(const std::string &file) const {
+  const auto found = homebrewOnCard_.find(file);
+  return found == homebrewOnCard_.end() ? !homebrewScanned_ : found->second;
 }
 // Every .nro under switch/, read off the main thread: apps other tools or
 // the player put there count as installed too.
@@ -263,19 +261,13 @@ homebrew::Status Application::homebrewStatus(const homebrew::App &app) const {
     return game ? homebrew::cardStatus(app.version, game->displayVersion) : homebrew::Status::Available;
   }
   const auto card = homebrewCardOf_.find(app.id);
-  return homebrew::status(app, homebrewLedger_, [this](const std::string &file) {
-    const auto found = homebrewOnCard_.find(file);
-    return found != homebrewOnCard_.end() && found->second;
-  }, card == homebrewCardOf_.end() ? nullptr : &homebrewCard_[card->second].version);
+  return homebrew::status(app, homebrewLedger_, [this](const std::string &file) { return ledgerFileOnCard(file); }, card == homebrewCardOf_.end() ? nullptr : &homebrewCard_[card->second].version);
 }
 // The app's file on the card: the ledger's while it is there, else the one
 // the card scan matched, else where it would go.
 std::string Application::homebrewFile(const homebrew::App &app) const {
   const auto found = homebrewLedger_.find(app.id);
-  if (found != homebrewLedger_.end()) {
-    const auto there = homebrewOnCard_.find(found->second.file);
-    if (there != homebrewOnCard_.end() && there->second) return found->second.file;
-  }
+  if (found != homebrewLedger_.end() && ledgerFileOnCard(found->second.file)) return found->second.file;
   const auto card = homebrewCardOf_.find(app.id);
   return card == homebrewCardOf_.end() ? app.installPath : homebrewCard_[card->second].path;
 }
