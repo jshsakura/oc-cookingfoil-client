@@ -246,7 +246,7 @@ void Application::viewPopup() {
 }
 void Application::dialogs() {
   if (!confirmInstall_ && alert_.empty() && !serverForm_ && !confirmCancel_ && !viewPopup_ &&
-      !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !tidyOpen_ && !homebrewSortAsk_ &&
+      !confirmPatchRemove_ && !managingPatch_ && !pickingPatch_ && !firmwareAsk_ && !tidyOpen_ && !homebrewSortAsk_ &&
       !languagePopup_ && !themePopup_ && languageGet_ == LanguageGet::None && !retroArchAsking_ && !raModal() && !saveNeedsGame_ && !savePicking_ && !serverAppSaveAsk_ &&
       !(screen_ == Screen::Saves && dropboxModal()) && !appUpdateAsk_ && appUpdate_ != AppUpdate::Downloading &&
       !homebrewRemoveAsk_ && !(homebrewAsk_ && homebrewExtras_) && !shortcutRemoveAsk_ && !selfShortcutAsk_ && !launchOffer_ && !usbOpen_ && !usbAppletAsk_ && !adminEdit_.open && unqueueAsk_ < 0 && !bugAsk_ && !serverInfo_ && !clockModal() && !resumeAsked())
@@ -260,7 +260,7 @@ void Application::dialogs() {
                     (homebrewAsk_ && homebrewExtras_) * 512 + (homebrewAsk_ && homebrewSaveAsk_) * 1024 + serverAppSaveAsk_ * 2048 +
                     (serverForm_ && serverForm_->confirmDelete) * 4096 + shortcutRemoveAsk_ * 8192 +
                     selfShortcutAsk_ * 16384 + (unqueueAsk_ >= 0) * 32768 + bugAsk_ * 65536 +
-                    clockModal() * 262144 + resumeAsked() * 524288 + raOpen_ * 1048576 + raListOpen_ * 2097152 + adminEdit_.open * 4194304 + serverInfo_ * 8388608 + bool(launchOffer_) * 16777216 + usbOpen_ * 33554432 + usbAppletAsk_ * 67108864;
+                    clockModal() * 262144 + resumeAsked() * 524288 + raOpen_ * 1048576 + raListOpen_ * 2097152 + adminEdit_.open * 4194304 + serverInfo_ * 8388608 + bool(launchOffer_) * 16777216 + usbOpen_ * 33554432 + usbAppletAsk_ * 67108864 + firmwareAsk_ * 134217728;
   if (which != popupKind_) {
     popupKind_ = which;
     popupAt_ = SDL_GetTicks();
@@ -325,6 +325,8 @@ void Application::dialogs() {
     homebrewSortDialog();
   } else if (confirmPatchRemove_ || managingPatch_ || pickingPatch_) {
     patchDialog();
+  } else if (firmwareAsk_ && alert_.empty()) {
+    firmwareDialog();
   } else if (shortcutRemoveAsk_ && alert_.empty()) {
     shortcutRemoveDialog();
   } else if (homebrewRemoveAsk_ && alert_.empty()) {

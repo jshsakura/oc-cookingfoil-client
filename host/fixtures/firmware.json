@@ -1,0 +1,7 @@
+{"source":{"name":"example","reachable":false,"checked_at":"2026-11-06T00:00:00Z"},"versions":[
+{"version":"23.0.1","released":"2026-10-01","available":true,"archive":{"url":"/api/firmware/23.0.1/download","size":340422248,"files":238,"unpacked":340300000}},
+{"version":"23.0.0","released":"2026-09-10","available":true,"archive":{"url":"/api/firmware/23.0.0/download","size":340421224,"files":238}},
+{"version":"22.5.0","released":"2026-06-16","available":true,"archive":{"url":"/api/firmware/22.5.0/download","size":340773992,"files":236}},
+{"version":"22.1.0","released":"2026-04-07","available":false,"reason":"upstream_gone","archive":{"url":"/api/firmware/22.1.0/download","size":340574833}},
+{"version":"2.0.0","released":"2021-07-02","available":true,"archive":{"url":"/api/firmware/2.0.0/download","size":254479158,"files":170}},
+{"version":"1.0.0","released":"2021-07-02","available":true,"archive":{"url":"/api/firmware/1.0.0/download","size":252038502,"files":167}}]}

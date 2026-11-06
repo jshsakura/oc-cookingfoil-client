@@ -27,8 +27,14 @@ int runDownloadCleanupTests() {
   write(root / "switch/app/.cf-example.part");
   write(root / "switch/app/app.nro");
   fs::create_directories(root / "switch/cookingfoil/patches/empty.part");
+  // A firmware version cut while unpacking, and its resume point; the
+  // finished version under firmware/ is not a piece.
+  write(root / "switch/cookingfoil/staging/firmware-23.0.1/a.nca");
+  write(root / "switch/cookingfoil/resume/firmware-23.0.1.json");
+  write(root / "switch/cookingfoil/staging/other/keep.bin");
+  write(root / "firmware/23.0.1/a.nca");
   const auto pieces = foil::downloadPieces(root.string());
-  CHECK(pieces.size() == 3);
+  CHECK(pieces.size() == 5);
   bool found = false;
   for (const auto &[path, bytes] : pieces) {
     if (path == staging.string()) {
@@ -37,7 +43,10 @@ int runDownloadCleanupTests() {
     }
   }
   const auto removed = foil::cleanDownloadPieces(pieces);
-  CHECK(removed.error.empty() && removed.bytes == 20);
+  CHECK(removed.error.empty() && removed.bytes == 28);
+  CHECK(!fs::exists(root / "switch/cookingfoil/staging/firmware-23.0.1") &&
+        !fs::exists(root / "switch/cookingfoil/resume/firmware-23.0.1.json"));
+  CHECK(fs::exists(root / "switch/cookingfoil/staging/other/keep.bin") && fs::exists(root / "firmware/23.0.1/a.nca"));
   CHECK(!fs::exists(root / "switch/cookingfoil/patches/empty.part"));
   CHECK(found && !fs::exists(staging));
   CHECK(fs::exists(installed / "atmosphere/contents/example/romfs/data.bin"));

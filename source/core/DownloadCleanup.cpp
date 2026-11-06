@@ -12,6 +12,7 @@ std::vector<std::pair<std::string, uint64_t>> downloadPieces(const std::string &
   namespace fs = std::filesystem;
   std::vector<std::pair<std::string, uint64_t>> out;
   const auto patches = fs::path(sd) / "switch/cookingfoil/patches";
+  const auto staging = fs::path(sd) / "switch/cookingfoil/staging";
   for (const char *root : {"switch", "retroarch"}) {
     std::error_code ec;
     fs::recursive_directory_iterator it(fs::path(sd) / root, fs::directory_options::skip_permission_denied, ec), end;
@@ -19,9 +20,11 @@ std::vector<std::pair<std::string, uint64_t>> downloadPieces(const std::string &
       const auto name = it->path().filename().string();
       if (it->is_symlink(ec)) continue;
       if (it->is_directory(ec)) {
-        if (endsWith(name, ".part")) {
+        // A patch's .part folder, or a firmware version still being unpacked.
+        const bool firmware = it->path().parent_path() == staging && name.rfind("firmware-", 0) == 0;
+        if (endsWith(name, ".part") || firmware) {
           it.disable_recursion_pending();
-          if (it->path().parent_path() != patches) continue;
+          if (!firmware && it->path().parent_path() != patches) continue;
           uint64_t bytes = 0;
           std::error_code scan;
           for (fs::recursive_directory_iterator file(it->path(), scan), stop; !scan && file != stop; file.increment(scan))
@@ -33,8 +36,8 @@ std::vector<std::pair<std::string, uint64_t>> downloadPieces(const std::string &
         }
         continue;
       }
-      const bool record = it->path().parent_path().filename() == "resume" && name.rfind("homebrew-", 0) == 0 &&
-                          endsWith(name, ".json");
+      const bool record = it->path().parent_path().filename() == "resume" &&
+                          (name.rfind("homebrew-", 0) == 0 || name.rfind("firmware-", 0) == 0) && endsWith(name, ".json");
       if (!endsWith(name, ".part") && !endsWith(name, std::string(".part") + ResumeFile) &&
           !endsWith(name, std::string(".part") + PlanFile) && !record) continue;
       std::error_code size;
