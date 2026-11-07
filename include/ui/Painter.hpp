@@ -3,6 +3,10 @@
 #include "ui/Theme.hpp"
 #include <map>
 namespace foil::ui {
+// How the footer's battery is colored: neutral, then amber at 30% and red
+// at 15%; green while charging, whatever the charge.
+enum class BatteryTone { Plain, Low, Empty, Charging };
+BatteryTone batteryTone(int percent, bool charging);
 class Painter {
 public:
   explicit Painter(SDL_Renderer *renderer)
@@ -77,6 +81,10 @@ public:
   // The icon set by name, for icons the server names (labels, rows); -1
   // for a name the client does not know.
   static int iconNamed(const std::string &name);
+  // The console's charge as a small battery centered on `mid`: its fill,
+  // the number inside when `number`, a bolt before it while charging, drawn
+  // on `ground`. Returns its width, 0 when `percent` is unknown (-1).
+  float battery(float x, float mid, int percent, bool charging, bool number, SDL_Color ground);
   float pill(const std::string &text, float x, float y, bool dark = false,
              int size = 15);
   // The green 검수됨 capsule (a shield check and the word), as the web library

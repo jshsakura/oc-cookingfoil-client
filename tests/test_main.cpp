@@ -22,6 +22,7 @@ int runInstalledTests();
 int runPairingTests();
 int runPairingUiTests(SDL_Renderer *renderer);
 int runRepairUiTests(SDL_Renderer *renderer);
+int runBatteryTests(SDL_Renderer *renderer);
 int runSelectionTests();
 int runInstallerTests();
 int runPatchTests();
@@ -93,7 +94,7 @@ int main() {
                        runSelectionTests() + runInstallerTests() + runPatchTests() + runI18nTests() +
                        runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runLabelsTests() + runHistoryTests() + runStoreTests() + runZstdResumeTests() + runNczPointTests() + runClientUpdateTests() + runHomebrewTests() + runImageSizeTests() + runHomebrewCardTests() + runNacpTests() + runDropboxRowsTests() + runAchievementsTests() + runResumeTests() + runForwarderTests() + runDirectTests() + runCardPatchTests() + runTunerTests() + runSegmentedTests() + runAdminEditTests() + runVotesTests() + runSendsTests() + runMtpTests() + runClientStringsTests() + runOriginTests() + runOriginRecordTests() + runMergeCatalogTests() +
                        runUiTests(app.renderer()) + runPairingUiTests(app.renderer()) + runRepairUiTests(app.renderer()) + runShortcutUiTests(app.renderer()) +
-                       runSendsUiTests(app.renderer()) + runKeepPlaceTests(app.renderer());
+                       runSendsUiTests(app.renderer()) + runKeepPlaceTests(app.renderer()) + runBatteryTests(app.renderer());
   std::printf("Core tests: %d failures\n", failures);
   return (ok && failures == 0) ? 0 : 1;
 }

@@ -113,6 +113,8 @@ int main(int argc, char **argv) {
   if (R_FAILED(socketInitialize(&sockets)))
     return 1;
   const bool nifm = R_SUCCEEDED(nifmInitialize(NifmServiceType_User));
+  // The footer's battery (platform/Power.cpp).
+  const bool psm = R_SUCCEEDED(psmInitialize());
   // Randomness for TLS (platform/TlsPlatform.cpp) and the Dropbox sign-in.
   const bool csrng = R_SUCCEEDED(csrngInitialize());
   if (R_FAILED(romfsInit())) {
@@ -282,6 +284,8 @@ int main(int argc, char **argv) {
   romfsExit();
   if (csrng)
     csrngExit();
+  if (psm)
+    psmExit();
   if (nifm)
     nifmExit();
   socketExit();

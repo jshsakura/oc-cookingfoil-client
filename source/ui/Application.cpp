@@ -2568,10 +2568,15 @@ float Application::statusBar() {
   if (SDL_GetTicks() - signalAt_ >= 1000 || !signalAt_) {
     signalAt_ = SDL_GetTicks();
     noteSignal(net::signalStrength());
+    battery_ = platform::battery();
   }
   const char *status = connectionStatus();
   constexpr float Mid = 690;
   float x = 28;
+  // The console's own charge first: it needs no server, so it shows from
+  // the first frame and nothing after it moves when the server answers.
+  if (const float w = paint_.battery(x, Mid, battery_.percent, battery_.charging, true, sideColor()))
+    x += w + 18;
   // Until the server first answers: placeholders, as the menu and the
   // buttons show (the link, then the two storages).
   if (menuPending()) {

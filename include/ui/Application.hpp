@@ -16,6 +16,7 @@
 #include "ui/Painter.hpp"
 #include "ui/Job.hpp"
 #include "ui/Qr.hpp"
+#include "platform/Power.hpp"
 #include "platform/Seal.hpp"
 #include "platform/UsbDrive.hpp"
 #include "ui/Sounds.hpp"
@@ -1023,6 +1024,7 @@ private:
   bool retroDownloading() const { return !retroBusy_.empty(); }
   int signal_ = 3;          // net::signalStrength(), refreshed by statusBar
   uint32_t signalAt_ = 0;
+  platform::Battery battery_; // platform::battery(), read with signal_
   // The console's link going down after it was up (out of sleep, out of
   // range), and the server's last answer: a drop newer than the answer
   // turns 연결됨 off until either comes back. A console that never reads
