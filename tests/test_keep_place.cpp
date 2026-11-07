@@ -237,5 +237,47 @@ int runKeepPlaceTests(SDL_Renderer *renderer) {
     app.previewQueued(update.url); // in the queue: not asked for again
     CHECK(app.pendingCount() == 0);
   }
+  {
+    // A tap on 업데이트 moves the cursor to that row and keeps it there;
+    // the same row tapped again goes in, not the one the pad was on.
+    auto items = withFirstFresh(parsed.value);
+    std::vector<foil::InstalledTitle> versions;
+    std::vector<foil::InstalledGame> games;
+    for (int n = 0; n < 3; ++n) {
+      const std::string base = "0100FFFFFFFF" + std::to_string(n) + "000";
+      foil::Item update = items.front();
+      update.type = foil::Word("update");
+      update.version = 65536;
+      update.url = "https://example.com/update" + std::to_string(n) + ".nsp";
+      update.titleId = "0100FFFFFFFF" + std::to_string(n) + "800";
+      update.baseId = base;
+      items.push_back(update);
+      versions.push_back({base, 0});
+      foil::InstalledGame game;
+      game.titleId = base;
+      game.name = "Game " + std::to_string(n);
+      games.push_back(game);
+    }
+    foil::ui::Application app(renderer, "", "", "host/fixtures/art");
+    CHECK(app.open());
+    app.setItems(items);
+    app.previewInstalled({{true, versions}, games});
+    app.previewQueueOpen();
+    app.screen(Screen::Installed);
+    app.render();
+    app.action(Action::Next); // 업데이트
+    app.render();
+    CHECK(app.current() == Screen::Updates);
+    CHECK(app.pendingCount() == 3);
+    CHECK(app.cursor() == 0);
+    const float third = 90 + 2 * 124 + 54;
+    app.touch(700, third);
+    app.render();
+    app.render();
+    CHECK(app.cursor() == 2);
+    app.touch(700, third);
+    app.render();
+    CHECK(app.pendingCount() == 2);
+  }
   return failures;
 }

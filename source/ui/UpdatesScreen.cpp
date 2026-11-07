@@ -154,9 +154,15 @@ void Application::updates() {
     const auto &row = rows[i];
     const auto *group = findGroup(row.baseId);
     const float y = 90 + (i - top) * 124;
-    rowHit(260, y, 992, 108, 18, [this, i] {
+    // The tapped row becomes the one the cursor keeps (updatesFocus_), or the
+    // next frame puts it back on the last row the pad chose; tapped again, it
+    // goes in, as A would.
+    rowHit(260, y, 992, 108, 18, [this, i, url = row.item.url] {
+      const bool again = inContent() && selected_ == i && updatesFocus_ == url;
       sidebar_ = false;
       selected_ = i;
+      updatesFocus_ = url;
+      if (again) installUpdates(false);
     });
     if (inContent() && i == selected_) paint_.ring(260, y, 992, 108, 18);
     paint_.rect(260, y, 992, 108, Surface, 18);
