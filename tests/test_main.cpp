@@ -60,6 +60,7 @@ int runSegmentedTests();
 int runShortcutUiTests(SDL_Renderer *renderer);
 int runSendsUiTests(SDL_Renderer *renderer);
 int runUiTests(SDL_Renderer *renderer);
+int runKeepPlaceTests(SDL_Renderer *renderer);
 int main() {
   foil::ui::Runtime app;
   if (!app.open(1920, 1080, true))
@@ -92,7 +93,7 @@ int main() {
                        runSelectionTests() + runInstallerTests() + runPatchTests() + runI18nTests() +
                        runSaveMetaTests() + runZipTests() + runDropboxUtilTests() + runSaveBackupTests() + runRetroTests() + runLabelsTests() + runHistoryTests() + runStoreTests() + runZstdResumeTests() + runNczPointTests() + runClientUpdateTests() + runHomebrewTests() + runImageSizeTests() + runHomebrewCardTests() + runNacpTests() + runDropboxRowsTests() + runAchievementsTests() + runResumeTests() + runForwarderTests() + runDirectTests() + runCardPatchTests() + runTunerTests() + runSegmentedTests() + runAdminEditTests() + runVotesTests() + runSendsTests() + runMtpTests() + runClientStringsTests() + runOriginTests() + runOriginRecordTests() + runMergeCatalogTests() +
                        runUiTests(app.renderer()) + runPairingUiTests(app.renderer()) + runRepairUiTests(app.renderer()) + runShortcutUiTests(app.renderer()) +
-                       runSendsUiTests(app.renderer());
+                       runSendsUiTests(app.renderer()) + runKeepPlaceTests(app.renderer());
   std::printf("Core tests: %d failures\n", failures);
   return (ok && failures == 0) ? 0 : 1;
 }
