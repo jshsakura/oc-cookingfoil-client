@@ -394,6 +394,49 @@ int runFirmwareDownloadTests() {
     CHECK(fs::exists(sd / "firmware/23.0.1" / parts[0].name) == (wait > 0));
     if (!wait) CHECK(error.message == foil::tr("The server is still getting this firmware. Try again shortly."));
   }
+  for (const char *refusal : {"410 Gone", "404 Not Found"}) {
+    // Gone from the source before the server kept it, or no longer listed:
+    // said in the list's words, nothing left on the card.
+    fresh();
+    Mock mock;
+    mock.body = zipOf(parts);
+    mock.answer = [refusal](int) {
+      return "HTTP/1.1 " + std::string(refusal) + "\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
+    };
+    mock.start(1);
+    foil::Server server;
+    server.url = mock.url;
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(!foil::net::firmwareDownload(server, foil::State{}, version(mock.url + "/fw", mock.body.size(), 3),
+                                       sd.string(), received, error, nullptr));
+    mock.thread.join();
+    CHECK(error.message == foil::tr("This firmware cannot be downloaded right now."));
+    CHECK(!fs::exists(sd / "firmware/23.0.1") && !fs::exists(sd / foil::firmware::staging("23.0.1")));
+  }
+  for (const bool off : {true, false}) {
+    // No source set on the server (404 firmware_off): an empty list, not a
+    // failure; any other 404 still fails.
+    Mock mock;
+    mock.answer = [off](int) {
+      const std::string body = off ? R"({"code":"firmware_off"})" : R"({"code":"nope"})";
+      return "HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: " + std::to_string(body.size()) +
+             "\r\n\r\n" + body;
+    };
+    mock.start(1);
+    foil::Server server;
+    server.url = mock.url;
+    std::string etag = "old";
+    foil::firmware::List list;
+    list.versions.push_back(version("x", 1, 1));
+    bool unchanged = true;
+    foil::Error error;
+    CHECK(foil::net::firmwareList(server, foil::State{}, etag, list, unchanged, error, nullptr) == off);
+    mock.thread.join();
+    CHECK(!unchanged);
+    if (off) CHECK(list.versions.empty() && etag.empty() && !error);
+    else CHECK(error);
+  }
   {
     // A cut with no more tries: the staging folder and its resume point stay
     // for the next try, and no firmware folder appears.

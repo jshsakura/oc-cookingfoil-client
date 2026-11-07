@@ -9,9 +9,10 @@
 namespace foil::net {
 bool fetchZip(const std::vector<std::string> &headers, const ZipSource &zip, const std::string &root,
               const ZipPick &pick, std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel,
-              bool &unusable, int &retryAfter) {
+              bool &unusable, int &retryAfter, long *refused) {
   unusable = false;
   retryAfter = 0;
+  if (refused) *refused = 0;
   const auto busy = [&](const Response &reply) {
     if (reply.status != 503) return false;
     retryAfter = reply.retryAfter > 0 ? reply.retryAfter : 5;
@@ -31,6 +32,7 @@ bool fetchZip(const std::vector<std::string> &headers, const ZipSource &zip, con
     else if (reply.status == 206 && reply.body.size() == length) out = reply.body;
     else {
       unusable = true;
+      if (refused && reply.status >= 400) *refused = reply.status;
       error.message = trf("Could not get the file. HTTP {0}", {std::to_string(reply.status)});
       return false;
     }
@@ -91,6 +93,7 @@ bool fetchZip(const std::vector<std::string> &headers, const ZipSource &zip, con
   if (!fetch.response.error.empty()) return fail(fetch.response.error, true);
   if (!rangedOk(fetch.response)) {
     unusable = true;
+    if (refused && fetch.response.status >= 400) *refused = fetch.response.status;
     return fail(trf("Could not get the file. HTTP {0}", {std::to_string(fetch.response.status)}), false);
   }
   if (!fetch.complete) return fail(tr("The download was interrupted. Download it again."), true);

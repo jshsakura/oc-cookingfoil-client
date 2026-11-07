@@ -10,12 +10,26 @@
 #include <filesystem>
 #include <thread>
 namespace foil::net {
+namespace {
+bool sourceOff(const std::string &body) {
+  Error ignored;
+  const auto root = parseJson(body, ignored);
+  return stringField(root.get(), "code") == "firmware_off";
+}
+} // namespace
 bool firmwareList(const Server &server, const State &state, std::string &etag, firmware::List &list, bool &unchanged,
                   Error &error, const std::atomic<bool> *cancel) {
   const auto url = server.url + "/api/firmware";
   const auto response = get(url, authHeaders(server, state, url), etag, cancel);
   unchanged = response.status == 304;
   if (unchanged) return true;
+  // No source set on the server yet: nothing to list, which the tab says
+  // as an empty list rather than as a failure.
+  if (response.status == 404 && sourceOff(response.body)) {
+    list = {};
+    etag.clear();
+    return true;
+  }
   if (!response.error.empty()) error.message = response.error;
   else if (response.status != 200) error.message = trf("Could not load the firmware list. HTTP {0}", {std::to_string(response.status)});
   else if (!firmware::parse(response.body, server.url, list)) error.message = tr("Could not read the firmware list.");
@@ -48,9 +62,13 @@ bool firmwareDownload(const Server &server, const State &state, const firmware::
   for (;;) {
     bool unusable = false;
     int retryAfter = 0;
+    long refused = 0;
     error = {};
-    if (fetchZip(headers, zip, sd, pick, received, error, cancel, unusable, retryAfter)) break;
+    if (fetchZip(headers, zip, sd, pick, received, error, cancel, unusable, retryAfter, &refused)) break;
     if (cancel && *cancel) return false;
+    // Gone from the source before the server kept it (410), or no longer
+    // listed (404): the list's own word, not a bare status.
+    if (refused == 410 || refused == 404) error.message = tr("This firmware cannot be downloaded right now.");
     // The server is still taking the zip from its source: wait as it asks.
     if (!retryAfter) {
       if (unusable) platform::removePath(staging, ec);
