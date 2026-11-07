@@ -2576,7 +2576,7 @@ float Application::statusBar() {
   // The console's own charge first: it needs no server, so it shows from
   // the first frame and nothing after it moves when the server answers.
   if (const float w = paint_.battery(x, Mid, battery_.percent, battery_.charging, true, sideColor()))
-    x += w + 18;
+    x += w + 10;
   // Until the server first answers: placeholders, as the menu and the
   // buttons show (the link, then the two storages).
   if (menuPending()) {
