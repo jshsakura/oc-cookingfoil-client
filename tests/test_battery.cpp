@@ -26,12 +26,13 @@ int runBatteryTests(SDL_Renderer *renderer) {
   setenv("FOIL_BATTERY", "140", 1);
   CHECK(foil::platform::battery().percent == 100);
   unsetenv("FOIL_BATTERY");
-  // Unknown takes no room; the bolt adds its own width before the body.
+  // Unknown takes no room; charging takes the same room as not (the bolt
+  // sits in the margin before it), so plugging in moves nothing.
   foil::ui::Painter painter(renderer);
   CHECK(painter.battery(0, 690, -1, false, true, foil::ui::Surface) == 0);
   const float plain = painter.battery(0, 690, 50, false, true, foil::ui::Surface);
   const float charging = painter.battery(0, 690, 50, true, true, foil::ui::Surface);
-  CHECK(plain > 0 && charging > plain);
+  CHECK(plain > 0 && charging == plain);
   CHECK(painter.battery(0, 690, 50, false, false, foil::ui::Surface) < plain);
   if (failures == 0) std::puts("Battery tests passed");
   return failures;

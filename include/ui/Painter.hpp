@@ -82,7 +82,8 @@ public:
   // for a name the client does not know.
   static int iconNamed(const std::string &name);
   // The console's charge as a small battery centered on `mid`: its fill,
-  // the number inside when `number`, a bolt before it while charging, drawn
+  // the number inside when `number`, a bolt in the 16px before x while
+  // charging (so nothing moves when it shows), drawn
   // on `ground`. Returns its width, 0 when `percent` is unknown (-1).
   float battery(float x, float mid, int percent, bool charging, bool number, SDL_Color ground);
   float pill(const std::string &text, float x, float y, bool dark = false,

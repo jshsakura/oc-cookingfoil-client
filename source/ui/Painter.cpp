@@ -624,27 +624,30 @@ float Painter::battery(float x, float mid, int percent, bool charging, bool numb
   const BatteryTone tone = batteryTone(percent, charging);
   const SDL_Color ink = tone == BatteryTone::Charging ? Good : tone == BatteryTone::Empty ? Bad
                         : tone == BatteryTone::Low ? Pending : Secondary;
-  float at = x;
-  if (charging) {
-    icon(51, at, mid - 7, ink, 14);
-    at += 14;
-  }
+  // The bolt hangs in the margin before x, so plugging in moves nothing.
+  if (charging) icon(51, x - 16, mid - 7, ink, 14);
+  const float at = x;
   // The number inside needs a wider body; the bare mark stays a glyph.
-  const float w = number ? 32 : 24, h = number ? 16 : 12, top = mid - h / 2;
-  rect(at, top, w, h, ink, 4);
-  rect(at + 1.5f, top + 1.5f, w - 3, h - 3, ground, 3);
-  rect(at + w + 1, mid - 3, 2, 6, ink, 1); // the terminal
-  const float inner = w - 6;
+  // A body tall enough that the fill reads as a level, not a line: the
+  // border and a 1px gap, then the fill to the border's height.
+  constexpr float Border = 1.5f, Inset = 2.5f;
+  const float w = number ? 32 : 24, h = number ? 18 : 14, top = mid - h / 2;
+  rect(at, top, w, h, ink, 5);
+  rect(at + Border, top + Border, w - 2 * Border, h - 2 * Border, ground, 4);
+  rect(at + w + 1, mid - 3.5f, 2, 7, ink, 1); // the terminal
+  const float inner = w - 2 * Inset;
   const float level = std::max(2.f, inner * float(percent) / 100.f);
   if (number) {
     // A wash under the number keeps it readable at any charge.
+    // Plain: the mark's own grey, faint, so it shows on every theme's
+    // footer (Line is pink's footer color).
     const SDL_Color wash = tone == BatteryTone::Charging ? GreenTint : tone == BatteryTone::Empty ? RedTint
-                           : tone == BatteryTone::Low ? Cream : Line;
-    rect(at + 3, top + 3, level, h - 6, wash, 1);
+                           : tone == BatteryTone::Low ? Cream : SDL_Color{ink.r, ink.g, ink.b, 56};
+    rect(at + Inset, top + Inset, level, h - 2 * Inset, wash, 3);
     const auto text = std::to_string(percent);
-    fonts.middle(text, at + w / 2 - fonts.measure(text, 11, true) / 2, mid, 11, ink, true);
+    fonts.middle(text, at + w / 2 - fonts.measure(text, 12, true) / 2, mid, 12, ink, true);
   } else {
-    rect(at + 3, top + 3, level, h - 6, ink, 1);
+    rect(at + Inset, top + Inset, level, h - 2 * Inset, ink, 3);
   }
   return at + w + 3 - x;
 }
