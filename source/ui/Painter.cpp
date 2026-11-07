@@ -459,6 +459,7 @@ static const char *IconPaths[] = {
     R"(<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>)", // 48 thumbs down
     R"(<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>)", // 49 moon (theme)
     R"(<circle cx="10" cy="7" r="1"/><circle cx="4" cy="20" r="1"/><path d="M4.7 19.3 19 5"/><path d="m21 3-3 1 2 2Z"/><path d="M9.26 7.68 5 12l2 5"/><path d="m10 14 5 2 3.5-3.5"/><path d="m18 12 1-1 1 1-1 1Z"/>)", // 50 usb (connect to PC)
+    R"(<path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z" fill="#FFFFFF"/>)", // 51 bolt (charging)
 };
 // Glyph-like marks read better a touch heavier than the menu icons.
 // Marks read a touch heavier than outline icons.
@@ -612,5 +613,39 @@ float Painter::pill(const std::string &s, float x, float y, bool dark,
   fonts.middle(s, x + (dark ? 14 : 9), y + (dark ? 35 : 26) / 2.f, size,
                dark ? White : Ink, !dark);
   return w;
+}
+BatteryTone batteryTone(int percent, bool charging) {
+  return charging ? BatteryTone::Charging : percent <= 15 ? BatteryTone::Empty
+         : percent <= 30 ? BatteryTone::Low : BatteryTone::Plain;
+}
+float Painter::battery(float x, float mid, int percent, bool charging, bool number, SDL_Color ground) {
+  if (percent < 0) return 0;
+  // Neutral while it does not matter, so the color alone says when it does.
+  const BatteryTone tone = batteryTone(percent, charging);
+  const SDL_Color ink = tone == BatteryTone::Charging ? Good : tone == BatteryTone::Empty ? Bad
+                        : tone == BatteryTone::Low ? Pending : Secondary;
+  float at = x;
+  if (charging) {
+    icon(51, at, mid - 7, ink, 14);
+    at += 14;
+  }
+  // The number inside needs a wider body; the bare mark stays a glyph.
+  const float w = number ? 32 : 24, h = number ? 16 : 12, top = mid - h / 2;
+  rect(at, top, w, h, ink, 4);
+  rect(at + 1.5f, top + 1.5f, w - 3, h - 3, ground, 3);
+  rect(at + w + 1, mid - 3, 2, 6, ink, 1); // the terminal
+  const float inner = w - 6;
+  const float level = std::max(2.f, inner * float(percent) / 100.f);
+  if (number) {
+    // A wash under the number keeps it readable at any charge.
+    const SDL_Color wash = tone == BatteryTone::Charging ? GreenTint : tone == BatteryTone::Empty ? RedTint
+                           : tone == BatteryTone::Low ? Cream : Line;
+    rect(at + 3, top + 3, level, h - 6, wash, 1);
+    const auto text = std::to_string(percent);
+    fonts.middle(text, at + w / 2 - fonts.measure(text, 11, true) / 2, mid, 11, ink, true);
+  } else {
+    rect(at + 3, top + 3, level, h - 6, ink, 1);
+  }
+  return at + w + 3 - x;
 }
 } // namespace foil::ui

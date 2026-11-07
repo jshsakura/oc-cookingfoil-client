@@ -18,23 +18,37 @@ void Application::showMyGamesTab(int tab) {
   if (onTabs) headerFocus_ = "tab" + std::to_string(tab);
   else if (!sidebar_ && !hasFocusable()) headerFocus_ = "tab" + std::to_string(tab);
 }
-std::vector<UpdateCandidate> Application::pendingUpdates() const {
+const std::vector<UpdateCandidate> &Application::pendingUpdates() const {
   if (updatesStale_ && installed_.installed.complete) {
     updates_ = findUpdates(groups_, installed_.installed);
     updatesStale_ = false;
+    ++updatesMade_;
   }
+  // The menu's badge asks every frame on every screen: the list is made again
+  // only when what it is made from moved.
+  size_t taken = 0;
+  const auto count = [&](const std::string &url) { taken += std::hash<std::string>{}(url); };
+  for (const auto &[url, read] : justInstalled_) count(url);
   // What waits in 다운로드 or comes down now cannot be asked for again, nor
   // what was just installed while the list does not show it yet.
-  std::set<std::string> taken;
-  for (const auto &[url, read] : justInstalled_) taken.insert(url);
+  const auto waiting = [](const history::Entry &e) {
+    return (e.outcome == history::Outcome::Queued || e.outcome == history::Outcome::Running) && e.kind.empty();
+  };
   for (const auto &e : history_)
-    if ((e.outcome == history::Outcome::Queued || e.outcome == history::Outcome::Running) && e.kind.empty())
-      for (const auto &file : e.install.files) taken.insert(file.url);
-  if (taken.empty()) return updates_;
-  std::vector<UpdateCandidate> out;
+    if (waiting(e))
+      for (const auto &file : e.install.files) count(file.url);
+  if (pendingFrom_ == std::make_pair(updatesMade_, taken)) return pendingRows_;
+  pendingFrom_ = {updatesMade_, taken};
+  ++pendingMade_;
+  std::set<std::string> urls;
+  for (const auto &[url, read] : justInstalled_) urls.insert(url);
+  for (const auto &e : history_)
+    if (waiting(e))
+      for (const auto &file : e.install.files) urls.insert(file.url);
+  pendingRows_.clear();
   for (const auto &row : updates_)
-    if (!taken.count(row.item.url)) out.push_back(row);
-  return out;
+    if (!urls.count(row.item.url)) pendingRows_.push_back(row);
+  return pendingRows_;
 }
 float Application::myGamesTabs(float right, float reserve) {
   const auto &all = pendingUpdates();
@@ -56,22 +70,23 @@ float Application::myGamesButtonWidth(const std::string &) {
     widest = std::max(widest, paint_.fonts.measure(installedSortLabel(InstalledSort(n)), 18, true));
   return widest + 106;
 }
-std::vector<UpdateCandidate> Application::updateRows() const {
-  auto rows = pendingUpdates();
+const std::vector<UpdateCandidate> &Application::updateRows() const {
+  const auto &pending = pendingUpdates();
+  auto from = std::make_tuple(pendingMade_, catalogVersion_, updatesTab_, updatesQuery_);
+  if (updateRowsFrom_ == from) return updateRows_;
+  updateRowsFrom_ = std::move(from);
   const std::string type = updatesTab_ == 1 ? "update" : updatesTab_ == 2 ? "dlc" : "";
-  rows.erase(std::remove_if(rows.begin(), rows.end(),
-                            [&](const auto &row) {
-                              if (!type.empty() && row.item.type != type) return true;
-                              const auto *group = findGroup(row.baseId);
-                              return !textMatches({row.item.name, row.baseId,
-                                                   group ? std::string_view(group->representative.name) : std::string_view()},
-                                                  updatesQuery_);
-                            }),
-             rows.end());
-  return rows;
+  updateRows_.clear();
+  for (const auto &row : pending) {
+    if (!type.empty() && row.item.type != type) continue;
+    const auto *group = findGroup(row.baseId);
+    if (textMatches({row.item.name, row.baseId, group ? std::string_view(group->representative.name) : std::string_view()}, updatesQuery_))
+      updateRows_.push_back(row);
+  }
+  return updateRows_;
 }
 void Application::updates() {
-  const auto rows = updateRows();
+  const auto &rows = updateRows();
   // Rows leave as they are queued and installed: the cursor stays on the
   // game it was on, and only when that one left does it take the row there.
   if (!rows.empty()) {
@@ -139,9 +154,15 @@ void Application::updates() {
     const auto &row = rows[i];
     const auto *group = findGroup(row.baseId);
     const float y = 90 + (i - top) * 124;
-    rowHit(260, y, 992, 108, 18, [this, i] {
+    // The tapped row becomes the one the cursor keeps (updatesFocus_), or the
+    // next frame puts it back on the last row the pad chose; tapped again, it
+    // goes in, as A would.
+    rowHit(260, y, 992, 108, 18, [this, i, url = row.item.url] {
+      const bool again = inContent() && selected_ == i && updatesFocus_ == url;
       sidebar_ = false;
       selected_ = i;
+      updatesFocus_ = url;
+      if (again) installUpdates(false);
     });
     if (inContent() && i == selected_) paint_.ring(260, y, 992, 108, 18);
     paint_.rect(260, y, 992, 108, Surface, 18);

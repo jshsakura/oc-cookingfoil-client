@@ -5,6 +5,7 @@
 #include "core/State.hpp"
 #include "net/Api.hpp"
 #include "ui/Application.hpp"
+#include "ui/Images.hpp"
 #include "MockServer.hpp"
 #include <algorithm>
 #include <string>
@@ -174,6 +175,109 @@ int runKeepPlaceTests(SDL_Renderer *renderer) {
     settle();
     CHECK(app.current() == Screen::Detail);
     CHECK(app.detailGame() == game);
+  }
+  {
+    // Patches through their frame's list: the screen, its filter and search
+    // show what an action reads anew.
+    foil::ui::Application app(renderer, "", "", "host/fixtures/art");
+    CHECK(app.open());
+    app.setItems(parsed.value);
+    app.screen(Screen::Patches);
+    app.render();
+    CHECK(app.current() == Screen::Patches);
+  }
+  {
+    // Many new covers in one frame: the first is made, the others follow in
+    // the next frames, and all of them arrive.
+    foil::ui::Images images(renderer);
+    const auto bytes = foil::readFile("host/fixtures/art/0100001019F6E000.jpg");
+    for (int i = 0; i < 4; ++i) images.provide("cover" + std::to_string(i), bytes);
+    images.decode(100);
+    images.textureBudget(0);
+    const auto frame = [&] {
+      for (int i = 0; i < 4; ++i) images.draw("cover" + std::to_string(i), 0, 0, 40, 40);
+      images.decode(0);
+    };
+    frame();
+    CHECK(images.textureCount() == 1);
+    frame();
+    CHECK(images.textureCount() == 2);
+    frame();
+    frame();
+    CHECK(images.textureCount() == 4);
+    frame(); // none new: nothing to spread
+    CHECK(images.textureCount() == 4);
+  }
+  {
+    // The waiting updates follow the installed list and the queue at once,
+    // though the list is kept between frames.
+    auto items = withFirstFresh(parsed.value);
+    const std::string base = "0100FFFFFFFF0000";
+    foil::Item update = items.front();
+    update.type = foil::Word("update");
+    update.version = 65536;
+    update.url = "https://example.com/update.nsp";
+    update.titleId = "0100FFFFFFFF0800";
+    update.baseId = base;
+    items.push_back(update);
+    foil::ui::Application app(renderer, "", "", "host/fixtures/art");
+    CHECK(app.open());
+    app.setItems(items);
+    foil::InstalledGame game;
+    game.titleId = base;
+    game.name = "Game";
+    app.previewInstalled({{true, {{base, 0}}}, {game}});
+    const auto before = app.pendingCount();
+    CHECK(before == 1);
+    CHECK(app.pendingCount() == before);
+    app.setItems(withFirstFresh(parsed.value)); // the update gone from the server
+    CHECK(app.pendingCount() == 0);
+    app.setItems(items);
+    CHECK(app.pendingCount() == before);
+    app.previewQueued(update.url); // in the queue: not asked for again
+    CHECK(app.pendingCount() == 0);
+  }
+  {
+    // A tap on 업데이트 moves the cursor to that row and keeps it there;
+    // the same row tapped again goes in, not the one the pad was on.
+    auto items = withFirstFresh(parsed.value);
+    std::vector<foil::InstalledTitle> versions;
+    std::vector<foil::InstalledGame> games;
+    for (int n = 0; n < 3; ++n) {
+      const std::string base = "0100FFFFFFFF" + std::to_string(n) + "000";
+      foil::Item update = items.front();
+      update.type = foil::Word("update");
+      update.version = 65536;
+      update.url = "https://example.com/update" + std::to_string(n) + ".nsp";
+      update.titleId = "0100FFFFFFFF" + std::to_string(n) + "800";
+      update.baseId = base;
+      items.push_back(update);
+      versions.push_back({base, 0});
+      foil::InstalledGame game;
+      game.titleId = base;
+      game.name = "Game " + std::to_string(n);
+      games.push_back(game);
+    }
+    foil::ui::Application app(renderer, "", "", "host/fixtures/art");
+    CHECK(app.open());
+    app.setItems(items);
+    app.previewInstalled({{true, versions}, games});
+    app.previewQueueOpen();
+    app.screen(Screen::Installed);
+    app.render();
+    app.action(Action::Next); // 업데이트
+    app.render();
+    CHECK(app.current() == Screen::Updates);
+    CHECK(app.pendingCount() == 3);
+    CHECK(app.cursor() == 0);
+    const float third = 90 + 2 * 124 + 54;
+    app.touch(700, third);
+    app.render();
+    app.render();
+    CHECK(app.cursor() == 2);
+    app.touch(700, third);
+    app.render();
+    CHECK(app.pendingCount() == 2);
   }
   return failures;
 }
