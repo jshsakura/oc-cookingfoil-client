@@ -6,9 +6,7 @@
 #include "net/ZipFetch.hpp"
 #include "platform/FileSystem.hpp"
 #include <algorithm>
-#include <chrono>
 #include <filesystem>
-#include <thread>
 namespace foil::net {
 namespace {
 bool sourceOff(const std::string &body) {
@@ -37,8 +35,8 @@ bool firmwareList(const Server &server, const State &state, std::string &etag, f
   etag = response.etag;
   return true;
 }
-bool firmwareDownload(const Server &server, const State &state, const firmware::Version &version, const std::string &sd,
-                      std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel, int waitSeconds) {
+bool firmwareDownload(const firmware::Version &version, const std::string &sd, std::atomic<uint64_t> &received,
+                      Error &error, const std::atomic<bool> *cancel) {
   if (!firmware::isVersion(version.version) || !version.archive.usable()) {
     error.message = tr("This firmware cannot be downloaded right now.");
     return false;
@@ -46,8 +44,9 @@ bool firmwareDownload(const Server &server, const State &state, const firmware::
   const auto staging = sd + "/" + firmware::staging(version.version);
   const auto target = sd + "/" + firmware::folder(version.version);
   const firmware::Version &v = version;
-  const ZipSource zip{v.archive.url, v.archive.size, v.archive.sha256.empty() ? v.archive.url : v.archive.sha256,
-                      sd + "/switch/cookingfoil/resume/firmware-" + v.version + ".json"};
+  ZipSource zip{v.archive.url, v.archive.size, v.archive.sha256.empty() ? v.archive.url : v.archive.sha256,
+                sd + "/switch/cookingfoil/resume/firmware-" + v.version + ".json"};
+  zip.follow = true; // a release asset answers with a redirect to its storage
   const auto pick = [&](const std::vector<ZipEntry> &inZip, std::vector<std::pair<ZipEntry, std::string>> &wanted,
                         std::string &why) { return firmware::pickEntries(v, inZip, wanted, why); };
   // A staging folder with no resume point is what an older try left: gone
@@ -57,31 +56,18 @@ bool firmwareDownload(const Server &server, const State &state, const firmware::
     error.message = ec.message();
     return false;
   }
-  const auto headers = downloadHeaders(server, state, v.archive.url);
-  const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(std::max(0, waitSeconds));
-  for (;;) {
-    bool unusable = false;
-    int retryAfter = 0;
-    long refused = 0;
-    error = {};
-    if (fetchZip(headers, zip, sd, pick, received, error, cancel, unusable, retryAfter, &refused)) break;
+  bool unusable = false;
+  int retryAfter = 0;
+  long refused = 0;
+  // No headers: the source is not ours, and gets neither our server's key
+  // nor the console's.
+  if (!fetchZip({}, zip, sd, pick, received, error, cancel, unusable, retryAfter, &refused)) {
     if (cancel && *cancel) return false;
-    // Gone from the source before the server kept it (410), or no longer
-    // listed (404): the list's own word, not a bare status.
+    // Gone from the source (410), or no longer there (404): the list's own
+    // word, not a bare status.
     if (refused == 410 || refused == 404) error.message = tr("This firmware cannot be downloaded right now.");
-    // The server is still taking the zip from its source: wait as it asks.
-    if (!retryAfter) {
-      if (unusable) platform::removePath(staging, ec);
-      return false;
-    }
-    const auto next = std::chrono::steady_clock::now() + std::chrono::seconds(std::min(retryAfter, 30));
-    if (next > until) {
-      error.message = tr("The server is still getting this firmware. Try again shortly.");
-      return false;
-    }
-    while (std::chrono::steady_clock::now() < next && !(cancel && *cancel))
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    if (cancel && *cancel) return false;
+    if (unusable) platform::removePath(staging, ec);
+    return false;
   }
   // Whole: it takes the version's place, an older copy of it going first.
   makeDirectories(sd + "/firmware");

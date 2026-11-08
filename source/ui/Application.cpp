@@ -3578,7 +3578,7 @@ Error Application::launchJob(const QueuedInstall &next) {
     started = runRetroGame(retro::parseGameJson(next.payload), serverFor(next.server));
   } else if (next.kind == "firmware") {
     firmware::Version version;
-    started = firmware::parseOne(next.payload, version) && runFirmware(version, serverFor(next.server));
+    started = firmware::parseOne(next.payload, version) && runFirmware(version);
   } else if (next.kind == "retroarch") {
     started = runRetroArch(next.payload == "full", serverFor(next.server));
   } else if (next.kind == "reapply") {

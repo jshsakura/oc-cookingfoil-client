@@ -1325,7 +1325,7 @@ private:
   void loadFirmware();
   void pollFirmware();
   bool queueFirmware(const firmware::Version &version);
-  bool runFirmware(const firmware::Version &version, const Server &server);
+  bool runFirmware(const firmware::Version &version);
   firmware::List firmware_;
   std::string firmwareEtag_, firmwareServer_;
   Error firmwareError_;

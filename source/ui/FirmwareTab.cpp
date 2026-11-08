@@ -230,12 +230,12 @@ bool Application::queueFirmware(const firmware::Version &v) {
   return queueJob("firmware", trf("Firmware {0}", {v.version}), "", v.archive.url, v.archive.size, firmware::serialize(v),
                   0, false, firmwareServer_);
 }
-bool Application::runFirmware(const firmware::Version &v, const Server &server) {
+bool Application::runFirmware(const firmware::Version &v) {
   retroBytes_ = v.archive.size;
   retroCancel_ = false;
-  return runRetroJob("firmware:" + v.version, [this, v, server, state = state_, sd = sdRoot_]() -> std::function<void()> {
+  return runRetroJob("firmware:" + v.version, [this, v, sd = sdRoot_]() -> std::function<void()> {
     Error error;
-    const bool ok = net::firmwareDownload(server, state, v, sd, retroReceived_, error, &retroCancel_);
+    const bool ok = net::firmwareDownload(v, sd, retroReceived_, error, &retroCancel_);
     const bool cancelled = retroCancel_;
     const uint64_t received = retroReceived_;
     return [this, ok, cancelled, received, error, v] {

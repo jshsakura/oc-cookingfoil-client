@@ -17,6 +17,10 @@ struct ZipSource {
   uint64_t size = 0;
   std::string tag;    // what makes a kept resume point the same zip (its sha256)
   std::string record; // the resume point's file
+  // Follow the source's redirects (a release asset's signed address) from the
+  // first request on; never from https to http. Only for a source that is
+  // sent no credentials: the client follows nothing else.
+  bool follow = false;
 };
 // From the zip's entries, the ones to write and where (under the root);
 // false, with why, when the zip will not do.

@@ -15,6 +15,7 @@ struct Response {
     std::string body, etag, error;
     int retryAfter = 0; // the Retry-After header in seconds; 0 when absent or a date
     std::string contentRange; // a 206's Content-Range header
+    std::string location; // a redirect's Location header
     uint64_t contentLength = 0; // 0 when absent
     std::string session; // X-CookingFoil-Session: why the session token was refused
     std::string enroll;  // X-CookingFoil-Enroll: "invalid" when an enroll token was refused
