@@ -15,7 +15,7 @@
 #include <mutex>
 #include <atomic>
 #include "core/Sha256.hpp"
-#include "core/ZipStream.hpp"
+#include "net/ZipFetch.hpp"
 #include <chrono>
 #include <cerrno>
 #include <cstdio>
@@ -136,107 +136,27 @@ bool fetchBundle(const Server &server, const State &state, const homebrew::App &
   std::filesystem::remove(record, ec);
   return true;
 }
-// The server keeps the app as a zip: its directory first (from the zip's
-// last bytes), then the whole zip in one request, each listed entry written
-// to its path as it arrives and checked by its CRC. A cut goes on from the
-// last whole file. `unusable`: the zip itself will not do (no such address,
-// not a zip, an entry the list names missing); `retryAfter`: the server's
-// file changed since the list (503), ask the list again.
+// The server keeps the app as a zip (net/ZipFetch.hpp); only the entries
+// its list names land, at the list's paths.
 bool fetchArchive(const Server &server, const State &state, const homebrew::App &app, const std::string &sd,
                   std::atomic<uint64_t> &received, Error &error, const std::atomic<bool> *cancel, bool &unusable,
                   int &retryAfter) {
-  unusable = false;
-  retryAfter = 0;
   const auto &zip = app.archive;
-  const auto headers = downloadHeaders(server, state, zip.url);
-  const auto busy = [&](const Response &reply) {
-    if (reply.status != 503) return false;
-    retryAfter = reply.retryAfter > 0 ? reply.retryAfter : 5;
-    error.message = trf("Could not get the file. HTTP {0}", {"503"});
-    return true;
-  };
-  const auto range = [&](uint64_t from, uint64_t length, std::string &out) {
-    auto asked = headers;
-    asked.push_back("Range: bytes=" + std::to_string(from) + "-" + std::to_string(from + length - 1));
-    const auto reply = get(zip.url, asked, "", cancel);
-    if (busy(reply)) return false;
-    if (!reply.error.empty()) {
-      error.message = reply.error;
-      return false;
-    }
-    if (reply.status == 200 && reply.body.size() == zip.size) out = reply.body.substr(size_t(from), size_t(length));
-    else if (reply.status == 206 && reply.body.size() == length) out = reply.body;
-    else {
-      unusable = true;
-      error.message = trf("Could not get the file. HTTP {0}", {std::to_string(reply.status)});
-      return false;
+  const auto pick = [&](const std::vector<ZipEntry> &inZip, std::vector<std::pair<ZipEntry, std::string>> &wanted,
+                        std::string &why) {
+    for (const auto &listed : zip.entries) {
+      const auto found = std::find_if(inZip.begin(), inZip.end(), [&](const ZipEntry &e) { return e.name == listed.entry; });
+      if (found == inZip.end() || (listed.size && found->size != listed.size)) {
+        why = trf("The archive does not match the server's list: {0}", {listed.path});
+        return false;
+      }
+      wanted.emplace_back(*found, listed.path);
     }
     return true;
   };
-  const uint64_t tailStart = zip.size > ZipTailBytes ? zip.size - ZipTailBytes : 0;
-  std::string tail, directory;
-  if (!range(tailStart, zip.size - tailStart, tail)) return false;
-  uint64_t at = 0, length = 0;
-  std::vector<ZipEntry> inZip;
-  if (!zipDirectory(tail, tailStart, zip.size, at, length)) {
-    unusable = true;
-    error.message = tr("This archive cannot be unpacked.");
-    return false;
-  }
-  if (at >= tailStart) directory = tail.substr(size_t(at - tailStart), size_t(length));
-  else if (!range(at, length, directory)) return false;
-  if (!zipEntries(directory, inZip)) {
-    unusable = true;
-    error.message = tr("This archive cannot be unpacked.");
-    return false;
-  }
-  std::vector<std::pair<ZipEntry, std::string>> wanted;
-  for (const auto &listed : zip.entries) {
-    const auto found = std::find_if(inZip.begin(), inZip.end(), [&](const ZipEntry &e) { return e.name == listed.entry; });
-    if (found == inZip.end() || (listed.size && found->size != listed.size)) {
-      unusable = true;
-      error.message = trf("The archive does not match the server's list: {0}", {listed.path});
-      return false;
-    }
-    wanted.emplace_back(*found, listed.path);
-  }
-  PartInfo part;
-  part.url = zip.url;
-  part.size = zip.size;
-  part.tag = zip.sha256; // the same zip
-  const auto record = sd + "/switch/cookingfoil/resume/homebrew-" + app.id + ".json";
-  const auto kept = parsePartInfo(readFile(record));
-  const uint64_t from = samePart(kept, part) ? kept.offset : 0;
-  const auto fetch = rangedTar(zip.url, headers, from, from ? kept.etag : "",
-      [&](uint64_t) { return std::make_unique<ZipWriter>(sd, wanted); },
-      [&](uint64_t boundary, const std::string &etag) {
-        auto info = part;
-        info.offset = boundary;
-        info.etag = etag;
-        std::string ignored;
-        makeDirectories(sd + "/switch/cookingfoil/resume");
-        atomicWrite(record, serializePartInfo(info), ignored);
-      },
-      received, cancel);
-  std::error_code ec;
-  const auto fail = [&](const std::string &message, bool keep) {
-    if (!keep) std::filesystem::remove(record, ec);
-    if (error.message.empty()) error.message = message;
-    return false;
-  };
-  if (busy(fetch.response)) return fail(error.message, false);
-  if (!fetch.tarError.empty()) {
-    unusable = true;
-    return fail(fetch.tarError, false);
-  }
-  if (!fetch.response.error.empty()) return fail(fetch.response.error, true);
-  if (!rangedOk(fetch.response)) {
-    unusable = true;
-    return fail(trf("Could not get the file. HTTP {0}", {std::to_string(fetch.response.status)}), false);
-  }
-  if (!fetch.complete) return fail(tr("The download was interrupted. Download it again."), true);
-  std::filesystem::remove(record, ec);
-  return true;
+  return fetchZip(downloadHeaders(server, state, zip.url),
+                  {zip.url, zip.size, zip.sha256, sd + "/switch/cookingfoil/resume/homebrew-" + app.id + ".json"}, sd,
+                  pick, received, error, cancel, unusable, retryAfter);
 }
 // The zip, and once more after the server's file changed (a new list, the
 // zip from the start); a zip that will not do leaves the .nro alone, from

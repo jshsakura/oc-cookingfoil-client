@@ -7,6 +7,7 @@
 #include "net/Ranged.hpp"
 #include "net/Socket.hpp"
 #include "net/HomebrewApi.hpp"
+#include "net/FirmwareApi.hpp"
 #include "core/Homebrew.hpp"
 #include "core/Sha256.hpp"
 #include "platform/Storage.hpp"
@@ -19,6 +20,7 @@
 #include <cstring>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <map>
 #include <poll.h>
@@ -281,8 +283,237 @@ int runLegacyPatchResumeTests() {
   fs::remove_all(root);
   return failures;
 }
+// A firmware version: its zip unpacked into a staging folder as it comes,
+// and moved to firmware/<version> only once whole.
+int runFirmwareDownloadTests() {
+  int failures = 0;
+  const auto sd = fs::temp_directory_path() / ("cf-fw-" + std::to_string(getpid()));
+  const auto fresh = [&] {
+    fs::remove_all(sd);
+    fs::create_directories(sd);
+  };
+  const auto put = [](const fs::path &path, const std::string &text) { std::ofstream(path, std::ios::binary) << text; };
+  const auto version = [](const std::string &url, uint64_t size, uint64_t files) {
+    foil::firmware::Version v;
+    v.version = "23.0.1";
+    v.available = true;
+    v.archive.url = url;
+    v.archive.size = size;
+    v.archive.files = files;
+    return v;
+  };
+  std::vector<ZipFile> parts(3);
+  parts[0] = {"00e57b67b4dbd750a2df0574cddc123d.nca", varied(40000, 11), false, false};
+  parts[1] = {"007ab9b9016a588732d828ab1874d1b8.cnmt.nca", varied(40000, 12), false, false};
+  parts[2] = {"1b2c3d4e5f60718293a4b5c6d7e8f901.nca", varied(40000, 13), true, true};
+  {
+    // Cut inside the second file: it goes on from the first one's end; an
+    // older copy of the version is replaced whole, the staging folder and
+    // the resume point are gone after.
+    fresh();
+    fs::create_directories(sd / "firmware/23.0.1");
+    put(sd / "firmware/23.0.1/stale.nca", "old");
+    std::vector<uint64_t> ends;
+    Mock mock;
+    mock.body = zipOf(parts, &ends);
+    mock.drop = [&](int i) { return i == 1 ? size_t(ends[0] + 100) : std::string::npos; };
+    mock.start(3);
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(foil::net::firmwareDownload(version(mock.url + "/releases/23.0.1.zip",
+                                                                     mock.body.size(), 3),
+                                      sd.string(), received, error, nullptr));
+    mock.thread.join();
+    for (const auto &part : parts)
+      CHECK(foil::readFile((sd / "firmware/23.0.1" / part.name).string()) == part.data);
+    CHECK(!fs::exists(sd / "firmware/23.0.1/stale.nca"));
+    CHECK(!fs::exists(sd / foil::firmware::staging("23.0.1")));
+    CHECK(!fs::exists(sd / "switch/cookingfoil/resume/firmware-23.0.1.json"));
+    CHECK(mock.requests.size() == 3 && rangeOf(mock.requests[2]) == std::to_string(ends[0]) + "-");
+  }
+  for (const char *bad : {"sub/00e57b67b4dbd750a2df0574cddc123d.nca", "readme.txt", "../evil.nca"}) {
+    // Anything but bare .nca names: nothing lands, not even in staging, and
+    // a version already on the card stays.
+    fresh();
+    fs::create_directories(sd / "firmware/23.0.1");
+    put(sd / "firmware/23.0.1/kept.nca", "kept");
+    auto odd = parts;
+    odd[1].name = bad;
+    Mock mock;
+    mock.body = zipOf(odd);
+    mock.start(1);
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(!foil::net::firmwareDownload(version(mock.url + "/fw", mock.body.size(), 3), sd.string(),
+                                       received, error, nullptr));
+    mock.thread.join();
+    CHECK(!error.message.empty());
+    CHECK(foil::readFile((sd / "firmware/23.0.1/kept.nca").string()) == "kept");
+    CHECK(!fs::exists(sd / foil::firmware::staging("23.0.1")));
+    CHECK(!fs::exists(sd / "evil.nca") && !fs::exists(sd / "switch/cookingfoil/staging/evil.nca"));
+  }
+  {
+    // More or fewer files than the server counted: refused.
+    fresh();
+    Mock mock;
+    mock.body = zipOf(parts);
+    mock.start(1);
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(!foil::net::firmwareDownload(version(mock.url + "/fw", mock.body.size(), 4), sd.string(),
+                                       received, error, nullptr));
+    mock.thread.join();
+    CHECK(!fs::exists(sd / "firmware/23.0.1"));
+  }
+  const auto redirect = [](const std::string &to) {
+    return "HTTP/1.1 302 Found\r\nConnection: close\r\nLocation: " + to + "\r\nContent-Length: 0\r\n\r\n";
+  };
+  const auto noCredentials = [](const Mock &m) {
+    for (const auto &request : m.requests)
+      if (request.find("Authorization") != std::string::npos || request.find("X-CookingFoil") != std::string::npos)
+        return false;
+    return true;
+  };
+  {
+    // The list's address answers with a redirect to where the asset is
+    // stored: followed, and neither place gets our server's credentials.
+    fresh();
+    Mock storage;
+    storage.body = zipOf(parts);
+    storage.start(2); // the zip's last bytes, then the zip
+    Mock source;
+    source.answer = [&](int) { return redirect(storage.url + "/signed?sig=1"); };
+    source.start(1);
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(foil::net::firmwareDownload(version(source.url + "/releases/23.0.1.zip", storage.body.size(), 3),
+                                      sd.string(), received, error, nullptr));
+    source.thread.join();
+    storage.thread.join();
+    for (const auto &part : parts)
+      CHECK(foil::readFile((sd / "firmware/23.0.1" / part.name).string()) == part.data);
+    CHECK(storage.requests.size() == 2 && storage.requests[1].find("GET /signed?sig=1 ") == 0);
+    CHECK(noCredentials(source) && noCredentials(storage));
+  }
+  {
+    // Cut, and the signed address ran out by the time it asks again: the
+    // source names a fresh one and the download goes on from the last whole
+    // file (the resume point is kept under the list's address).
+    fresh();
+    std::vector<uint64_t> ends;
+    Mock first, second;
+    first.body = second.body = zipOf(parts, &ends);
+    first.drop = [&](int i) { return i == 1 ? size_t(ends[0] + 100) : std::string::npos; };
+    first.answer = [](int i) {
+      return i == 2 ? std::string("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n") : "";
+    };
+    first.start(3); // the zip's last bytes, the cut zip, the expired address
+    second.start(2); // the fresh address's first byte, then on from the cut
+    Mock source;
+    source.answer = [&](int i) { return redirect((i == 0 ? first.url : second.url) + "/signed"); };
+    source.start(2);
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(foil::net::firmwareDownload(version(source.url + "/releases/23.0.1.zip", first.body.size(), 3),
+                                      sd.string(), received, error, nullptr));
+    source.thread.join();
+    first.thread.join();
+    second.thread.join();
+    for (const auto &part : parts)
+      CHECK(foil::readFile((sd / "firmware/23.0.1" / part.name).string()) == part.data);
+    CHECK(second.requests.size() == 2 && rangeOf(second.requests[1]) == std::to_string(ends[0]) + "-");
+    CHECK(noCredentials(source) && noCredentials(first) && noCredentials(second));
+  }
+  {
+    // A redirect that never ends: given up after five hops, nothing lands.
+    fresh();
+    Mock loop;
+    loop.answer = [&](int) { return redirect(loop.url + "/again"); };
+    loop.idleMs = 2000;
+    loop.start(6);
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(!foil::net::firmwareDownload(version(loop.url + "/fw", 1000, 3), sd.string(), received, error, nullptr));
+    loop.thread.join();
+    CHECK(loop.requests.size() == 6 && !error.message.empty());
+    CHECK(!fs::exists(sd / "firmware/23.0.1"));
+  }
+  for (const char *refusal : {"410 Gone", "404 Not Found"}) {
+    // Gone from the source, or no longer there: said in the list's words,
+    // nothing left on the card.
+    fresh();
+    Mock mock;
+    mock.body = zipOf(parts);
+    mock.answer = [refusal](int) {
+      return "HTTP/1.1 " + std::string(refusal) + "\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
+    };
+    mock.start(1);
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    CHECK(!foil::net::firmwareDownload(version(mock.url + "/fw", mock.body.size(), 3),
+                                       sd.string(), received, error, nullptr));
+    mock.thread.join();
+    CHECK(error.message == foil::tr("This firmware cannot be downloaded right now."));
+    CHECK(!fs::exists(sd / "firmware/23.0.1") && !fs::exists(sd / foil::firmware::staging("23.0.1")));
+  }
+  for (const bool off : {true, false}) {
+    // No source set on the server (404 firmware_off): an empty list, not a
+    // failure; any other 404 still fails.
+    Mock mock;
+    mock.answer = [off](int) {
+      const std::string body = off ? R"({"code":"firmware_off"})" : R"({"code":"nope"})";
+      return "HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: " + std::to_string(body.size()) +
+             "\r\n\r\n" + body;
+    };
+    mock.start(1);
+    foil::Server server;
+    server.url = mock.url;
+    std::string etag = "old";
+    foil::firmware::List list;
+    list.versions.push_back(version("x", 1, 1));
+    bool unchanged = true;
+    foil::Error error;
+    CHECK(foil::net::firmwareList(server, foil::State{}, etag, list, unchanged, error, nullptr) == off);
+    mock.thread.join();
+    CHECK(!unchanged);
+    if (off) CHECK(list.versions.empty() && etag.empty() && !error);
+    else CHECK(error);
+  }
+  {
+    // A cut with no more tries: the staging folder and its resume point stay
+    // for the next try, and no firmware folder appears.
+    fresh();
+    std::vector<uint64_t> ends;
+    Mock mock;
+    mock.body = zipOf(parts, &ends);
+    mock.drop = [&](int i) { return i == 1 ? size_t(ends[1] + 10) : std::string::npos; };
+    mock.idleMs = 2000;
+    mock.start(2);
+    std::atomic<uint64_t> received{0};
+    foil::Error error;
+    const auto v = version(mock.url + "/fw", mock.body.size(), 3);
+    CHECK(!foil::net::firmwareDownload(v, sd.string(), received, error, nullptr));
+    mock.thread.join();
+    CHECK(!fs::exists(sd / "firmware/23.0.1"));
+    CHECK(fs::exists(sd / "switch/cookingfoil/resume/firmware-23.0.1.json"));
+    CHECK(fs::exists(sd / foil::firmware::staging("23.0.1") / parts[0].name));
+    Mock again;
+    again.body = mock.body;
+    again.start(2); // the zip's last bytes, then the zip
+    auto moved = v;
+    moved.archive.url = again.url + "/fw";
+    received = 0;
+    error = {};
+    CHECK(foil::net::firmwareDownload(moved, sd.string(), received, error, nullptr));
+    again.thread.join();
+    for (const auto &part : parts)
+      CHECK(foil::readFile((sd / "firmware/23.0.1" / part.name).string()) == part.data);
+  }
+  fs::remove_all(sd);
+  return failures;
+}
 int runResumeTests() {
-  int failures = runLegacyPatchResumeTests();
+  int failures = runLegacyPatchResumeTests() + runFirmwareDownloadTests();
   using foil::RangeReply;
   {
     // An update over files already on the card: a file is replaced only once

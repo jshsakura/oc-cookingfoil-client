@@ -64,6 +64,9 @@ size_t writeHeader(char* data, size_t size, size_t count, void* context) {
         } else if (key == "content-range") {
             auto value = line.substr(colon + 1); const auto begin = value.find_first_not_of(" \t\r\n");
             static_cast<Response*>(context)->contentRange = begin == std::string::npos ? "" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
+        } else if (key == "location") {
+            auto value = line.substr(colon + 1); const auto begin = value.find_first_not_of(" \t\r\n");
+            static_cast<Response*>(context)->location = begin == std::string::npos ? "" : value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
         } else if (key == "content-length") {
             static_cast<Response*>(context)->contentLength = std::strtoull(line.c_str() + colon + 1, nullptr, 10);
         } else if (key == "x-cookingfoil-enroll") {

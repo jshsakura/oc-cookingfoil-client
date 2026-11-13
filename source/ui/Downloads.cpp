@@ -132,6 +132,7 @@ bool Application::topCardNow(const install::Progress &p, TopCard &card) {
     card.icon = held ? installQueue_.front().icon : running != history_.end() ? running->install.icon : "";
     const auto what = pack || kind == "retroarch" ? std::string("RetroArch")
                       : kind == "homebrew"         ? std::string(tr("Homebrew"))
+                      : kind == "firmware"         ? std::string(tr("Firmware|tab"))
                       : held && kind.empty()       ? std::string(tr("Game")) // a game held at start
                                                    : std::string(tr("Retro game"));
     // What is left to get, not the whole app: files already on the card are
@@ -400,7 +401,7 @@ bool Application::hasPage(const history::Entry &entry) const {
   if (entry.kind == "homebrew" || entry.kind == "shortcut")
     return !homebrew::parse("{\"homebrew\":[" + entry.payload + "]}", "").empty();
   if (entry.kind == "retro") return !retro::parseGameJson(entry.payload).bundleUrl.empty();
-  return entry.kind == "retroarch";
+  return entry.kind == "retroarch" || entry.kind == "firmware";
 }
 // Under the installer's card (or from the top): the retro and patch cards
 // and 대기 중, one area that glides under a finger or the right stick.
@@ -464,6 +465,7 @@ std::string Application::queueRowDetail(const QueuedInstall &q) const {
   const auto part = q.kind == "homebrew"    ? std::string(tr("Homebrew"))
                     : q.kind == "retro"     ? std::string(tr("Retro game"))
                     : q.kind == "retroarch" ? std::string("RetroArch")
+                    : q.kind == "firmware"  ? std::string(tr("Firmware|tab"))
                     : q.kind == "patch" || q.kind == "reapply" ? std::string(tr("Patch"))
                     : q.kind == "shortcut"  ? std::string(tr("HOME Menu shortcut"))
                     : q.file.type == "update" ? std::string(tr("Update|item"))
@@ -625,6 +627,7 @@ void Application::downloadsHistory() {
                        (fileBytes ? " · " + formatBytes(fileBytes) : std::string()) + " · " + when;
     if (e.kind == "retro") meta = std::string(tr("Retro game")) + " · " + meta;
     if (e.kind == "homebrew") meta = std::string(tr("Homebrew")) + " · " + meta;
+    if (e.kind == "firmware") meta = std::string(tr("Firmware|tab")) + " · " + meta;
     if (e.kind == "patch" || e.kind == "reapply") meta = std::string(tr("Patch")) + " · " + meta;
     if (!e.error.empty()) meta += " · " + e.error;
     // Its HOME Menu shortcut, made right after it, says so here (it has no row).
@@ -771,6 +774,15 @@ void Application::openHistoryRow(const history::Entry &entry) {
     }
     sidebar_ = false;
     openRetroDetail(game);
+    return;
+  }
+  if (entry.kind == "firmware") {
+    screen(Screen::Patches);
+    if (firmwareOffered()) {
+      patchFilter_ = PatchFilter::Firmware;
+      loadFirmware();
+    }
+    sidebar_ = false;
     return;
   }
   if (entry.kind == "patch" || entry.kind == "reapply") {

@@ -832,6 +832,9 @@ void Application::screen(Screen screen) {
   if (screen == Screen::Patches) {
     fetchPatches();
     patchCheckWanted_ = true;
+    // The card read anew on the way in; the list asked with its ETag.
+    if (!firmwareCardJob_.busy()) firmwareOnCard_.reset();
+    if (patchFilter_ == PatchFilter::Firmware) loadFirmware();
   }
   // 홈브류 asks the card which apps are still there; the list loads as it draws.
   // The list as the server has it now, asked with its ETag: unchanged costs
@@ -877,7 +880,7 @@ bool Application::hasFocusable() const {
     return downloadsTab_ == 0 ? installer_.running() || !installQueue_.empty() || retroDownloading() || patchDownloading()
                               : !downloadsList().empty();
   case Screen::Patches:
-    return !patchesThisFrame().shown.empty();
+    return patchFilter_ == PatchFilter::Firmware ? !firmwareRows().empty() : !patchesThisFrame().shown.empty();
   case Screen::Homebrew:
     return !homebrewRows().empty();
   case Screen::Retro:
@@ -1189,6 +1192,7 @@ void Application::poll() {
   pollDropbox();
   raJob_.poll();
   historyPageJob_.poll();
+  pollFirmware();
   voteJob_.poll();
   stringsJob_.poll();
   optionsJob_.poll();
@@ -1925,7 +1929,7 @@ void Application::action(Action a) {
     homebrewAction(a);
     return;
   }
-  if (confirmPatchRemove_ || managingPatch_ || pickingPatch_ || (screen_ == Screen::Patches && (a == Action::Queue || a == Action::Previous || a == Action::Next || a == Action::Search)) ||
+  if (confirmPatchRemove_ || managingPatch_ || pickingPatch_ || firmwareAsk_ || (screen_ == Screen::Patches && (a == Action::Queue || a == Action::Previous || a == Action::Next || a == Action::Search)) ||
       (screen_ == Screen::Patches && !sidebar_ && a != Action::Back)) {
     patchAction(a);
     return;
@@ -2849,6 +2853,10 @@ void Application::render() {
                                       : std::vector<std::pair<std::string, std::string>>{{"A", tr("Manage")}, {"B", tr("Back")}});
   else if (screen_ == Screen::Patches && managingPatch_ && galleryOpen_)
     footer({{"L R", tr("Prev / next photo")}, {"B", tr("Close")}});
+  else if (screen_ == Screen::Patches && patchFilter_ == PatchFilter::Firmware)
+    footer(firmwareRows().empty() || sidebar_
+               ? std::vector<std::pair<std::string, std::string>>{{"B", tr("Back")}}
+               : std::vector<std::pair<std::string, std::string>>{{"A", tr("Download")}, {"B", tr("Back")}});
   else if (screen_ == Screen::Patches)
     // L R and Y are header buttons, as on 설치된 게임.
     footer(patchRows().empty() || sidebar_
@@ -3032,6 +3040,8 @@ void Application::refreshAll() {
   if (!deviceBusy_ && !managedGame_) refreshInstalled();
 #endif
   if (screen_ == Screen::Patches) patchError_ = {};
+  firmwareLoaded_ = false; // 펌웨어 asks the server again when it shows
+  if (!firmwareCardJob_.busy()) firmwareOnCard_.reset();
   homebrewLoaded_ = false; // 홈브류 asks the server again when it shows
   raRead_ = false;         // the achievements id and sign-in too, on 레트로 게임
   raGamesAsked_ = false;   // and its games with achievements
@@ -3566,6 +3576,9 @@ Error Application::launchJob(const QueuedInstall &next) {
     started = !apps.empty() && runHomebrew(apps.front(), serverFor(next.server));
   } else if (next.kind == "retro") {
     started = runRetroGame(retro::parseGameJson(next.payload), serverFor(next.server));
+  } else if (next.kind == "firmware") {
+    firmware::Version version;
+    started = firmware::parseOne(next.payload, version) && runFirmware(version);
   } else if (next.kind == "retroarch") {
     started = runRetroArch(next.payload == "full", serverFor(next.server));
   } else if (next.kind == "reapply") {

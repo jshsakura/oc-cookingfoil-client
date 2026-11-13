@@ -28,6 +28,7 @@
 #include "core/ServerSaves.hpp"
 #include "core/ClientUpdate.hpp"
 #include "core/Patches.hpp"
+#include "core/Firmware.hpp"
 #include "core/Votes.hpp"
 #include "core/CardPatches.hpp"
 #include "core/I18n.hpp"
@@ -372,6 +373,15 @@ public:
     patchesLoaded_ = true;
     patchesFixed_ = true;
   }
+  // 패치's tab (0 설치됨 .. 3 펌웨어) and whether 펌웨어's popup is up.
+  int patchTab() const { return int(patchFilter_); }
+  bool firmwareAsking() const { return firmwareAsk_; }
+  // 펌웨어's list in the preview, as the server would send it.
+  void previewFirmware(firmware::List list) {
+    features_.insert("firmware");
+    firmware_ = std::move(list);
+    firmwareLoaded_ = true;
+  }
   void previewHomebrew(std::vector<homebrew::App> apps) {
     features_.insert("homebrew");
     homebrew_ = std::move(apps);
@@ -520,8 +530,9 @@ public:
   // Tabs over the list; L R or a tap switches.
   // Starts on the games this console has; L R widens to every patch.
   // Tabs: 설치됨 (on the SD card), 전체, 새 버전.
-  enum class PatchFilter { Stored, All, Updates };
-  static constexpr int PatchFilters = 3;
+  // 펌웨어 last: it shows only when a server offers firmware.
+  enum class PatchFilter { Stored, All, Updates, Firmware };
+  static constexpr int PatchFilters = 4;
 
 private:
   void takeNetwork();
@@ -1304,6 +1315,24 @@ private:
   std::vector<PatchRow> patchRows(std::vector<PatchRow> all) const;          // `all` under the current tab
   PatchFilter patchFilter_ = PatchFilter::Stored; // 설치됨 first, as on 내 게임 and 홈브류
   void patchesScreen();
+  // 패치's 펌웨어 tab: the server's firmware versions (GET /api/firmware),
+  // each unpacked into firmware/<version> for Daybreak.
+  bool firmwareOffered() const { return features_.count("firmware") || !serversWith("firmware").empty(); }
+  std::vector<const firmware::Version *> firmwareRows() const; // under the search
+  void firmwareTab(float titleRight);
+  void firmwareAction(Action action);
+  void firmwareDialog();
+  void loadFirmware();
+  void pollFirmware();
+  bool queueFirmware(const firmware::Version &version);
+  bool runFirmware(const firmware::Version &version);
+  firmware::List firmware_;
+  std::string firmwareEtag_, firmwareServer_;
+  Error firmwareError_;
+  bool firmwareLoaded_ = false, firmwareAsk_ = false;
+  std::optional<std::set<std::string>> firmwareOnCard_; // versions in firmware/, once read
+  Job firmwareJob_;      // the list
+  Job firmwareCardJob_;  // the card: what is there, a version deleted
   void patchAction(Action action);
   void fetchPatches();
   void pollPatches();

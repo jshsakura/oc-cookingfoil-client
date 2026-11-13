@@ -237,6 +237,12 @@ int main(int argc, char **argv) {
   // 홈브류 from the fixture's list, beside what the fake SD card holds.
   if (servePort && !fixture.empty() && std::filesystem::exists(fixture + "/homebrew.json"))
     ui.previewHomebrew(foil::homebrew::parse(foil::readFile(fixture + "/homebrew.json"), "http://fixture"));
+  // 패치's 펌웨어 tab from the fixture's list.
+  if (servePort && !fixture.empty() && std::filesystem::exists(fixture + "/firmware.json")) {
+    foil::firmware::List list;
+    if (foil::firmware::parse(foil::readFile(fixture + "/firmware.json"), "http://fixture", list))
+      ui.previewFirmware(std::move(list));
+  }
   // 관리자 편집 as an admin console sees it.
   if (servePort && !fixture.empty() && std::filesystem::exists(fixture + "/admin.json"))
     ui.previewAdminEdit(foil::admin::parseFields(foil::readFile(fixture + "/admin.json")));

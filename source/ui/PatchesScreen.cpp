@@ -42,6 +42,7 @@ const char *filterLabel(Application::PatchFilter filter) {
   switch (filter) {
   case Application::PatchFilter::Stored: return tr("Installed");
   case Application::PatchFilter::Updates: return tr("Updates");
+  case Application::PatchFilter::Firmware: return tr("Firmware|tab");
   default: return tr("All");
   }
 }
@@ -62,6 +63,7 @@ bool Application::patchFilterMatches(PatchFilter filter, const PatchRow &row) {
   switch (filter) {
   case PatchFilter::Stored: return row.record.has_value() || row.onCard;
   case PatchFilter::Updates: return updateAvailable(row);
+  case PatchFilter::Firmware: return false; // its own rows
   default: return true;
   }
   return true;
@@ -454,15 +456,26 @@ void Application::patchAction(Action a) {
       open(rows[game.rows[patchPickRow_]]);
     return;
   }
+  if (firmwareAsk_) {
+    firmwareAction(a);
+    return;
+  }
   if (a == Action::Previous || a == Action::Next) {
-    patchFilter_ = PatchFilter((int(patchFilter_) + (a == Action::Next ? 1 : PatchFilters - 1)) % PatchFilters);
+    // 펌웨어 only when a server offers it.
+    const int tabs = firmwareOffered() ? PatchFilters : PatchFilters - 1;
+    patchFilter_ = PatchFilter((std::min(int(patchFilter_), tabs - 1) + (a == Action::Next ? 1 : tabs - 1)) % tabs);
     selected_ = 0;
+    if (patchFilter_ == PatchFilter::Firmware) loadFirmware();
     if (!hasFocusable())
       sidebar_ = true;
     return;
   }
   if (a == Action::Search) {
     requestSearch();
+    return;
+  }
+  if (patchFilter_ == PatchFilter::Firmware) {
+    firmwareAction(a);
     return;
   }
   if (rows.empty()) {
@@ -706,12 +719,20 @@ void Application::patchesScreen() {
   // it; - reloads the list.
   const float searchX = SearchX;
   searchBar(patchQuery_, searchX);
-  const float tabsLeft =
-      headerTabs({filterLabel(PatchFilter::Stored), filterLabel(PatchFilter::All), filterLabel(PatchFilter::Updates)},
-                 int(patchFilter_), [this](int n) {
-                   patchFilter_ = PatchFilter(n);
-                   selected_ = 0;
-                 }, searchX - 16);
+  std::vector<std::string> tabs{filterLabel(PatchFilter::Stored), filterLabel(PatchFilter::All), filterLabel(PatchFilter::Updates)};
+  const bool firmwareTabShown = firmwareOffered();
+  if (firmwareTabShown) tabs.push_back(filterLabel(PatchFilter::Firmware));
+  else if (patchFilter_ == PatchFilter::Firmware) patchFilter_ = PatchFilter::Stored; // no server offers it now
+  const float tabsLeft = headerTabs(tabs, int(patchFilter_), [this](int n) {
+    patchFilter_ = PatchFilter(n);
+    selected_ = 0;
+    if (patchFilter_ == PatchFilter::Firmware) loadFirmware();
+  }, searchX - 16);
+  if (patchFilter_ == PatchFilter::Firmware) {
+    const auto shown = firmwareRows().size();
+    firmwareTab(pageTitle(tr("Mods"), !patchQuery_.empty() ? countLabel(shown, patchQuery_) : std::to_string(shown), tabsLeft));
+    return;
+  }
   const float titleEnd =
       pageTitle(tr("Mods"), !patchQuery_.empty() ? countLabel(rows.size(), patchQuery_) : on ? trf("{0} · {1} on", {std::to_string(rows.size()), std::to_string(on)}) : std::to_string(rows.size()), tabsLeft);
   // The background file check says it is running, quietly: a pulsing dot
